@@ -57,9 +57,32 @@ export interface AgentGroup<T> extends GroupDef {
   agents: T[];
 }
 
+/**
+ * The project as a seat that has never run sees it. Such a seat (STARTING) is set up the first time something wakes it: while the
+ * mission runs that can be any moment, on a parked project nothing wakes it until the mission runs, and once the mission is over
+ * nothing will.
+ */
+export interface SeatSetting {
+  /** The project is parked: nothing wakes an agent on its own. */
+  parked: boolean;
+  /** The mission has run before, so it waits to continue rather than to start (the Overview's button says which). */
+  started?: boolean;
+  /** The mission is delivered or failed. */
+  over?: boolean;
+}
+
+/** The idle group holds the seats that have never run, so its hint says what those are in this project's state. */
+function idleHint(s: SeatSetting | undefined): string {
+  if (s?.over) return "Done with the mission, or never woken during it.";
+  if (s?.parked) return "Ready, between turns, or done with the mission.";
+  return GROUPS.find((g) => g.id === "idle")!.hint;
+}
+
 /** Agents under their groups, in `GROUPS` order, each group in the order the roster gives (a seat's place in the mesh is stable). */
-export function groupAgents<T extends AgentLike>(agents: readonly T[], stalled: ReadonlySet<string>): AgentGroup<T>[] {
-  return GROUPS.map((g) => ({ ...g, agents: agents.filter((a) => groupOf(a.lifecycle, stalled.has(a.id)) === g.id) })).filter((g) => g.agents.length > 0);
+export function groupAgents<T extends AgentLike>(agents: readonly T[], stalled: ReadonlySet<string>, setting?: SeatSetting): AgentGroup<T>[] {
+  return GROUPS
+    .map((g) => ({ ...g, hint: g.id === "idle" ? idleHint(setting) : g.hint, agents: agents.filter((a) => groupOf(a.lifecycle, stalled.has(a.id)) === g.id) }))
+    .filter((g) => g.agents.length > 0);
 }
 
 /* ---------------------------------- turns ---------------------------------- */
@@ -98,7 +121,7 @@ export function lastTurnText(last: TurnLike | undefined, now: number): string {
 
 /* -------------------------------- card text -------------------------------- */
 
-export interface StateContext {
+export interface StateContext extends SeatSetting {
   /** The agent's running turn, if the history holds one. */
   running?: TurnLike;
   /** What it is doing this second ("Edit ledger-store.ts, running 6s"), from the live tool, or null when it has made no call. */
@@ -106,8 +129,6 @@ export interface StateContext {
   /** Its newest finished turn. */
   last?: TurnLike;
   now: number;
-  /** The project is parked: nothing wakes an agent for mail. */
-  parked: boolean;
   /** The step history has arrived. Before it has, "no turn in the history" would be a claim about a list nobody has fetched. */
   loaded?: boolean;
 }
@@ -117,6 +138,17 @@ export interface StateText {
   headline: string;
   /** What it is doing, or why it is in this state. */
   detail: string;
+}
+
+/**
+ * What a seat that has never run is waiting for. Every card of a parked team said "Starting up. The seat is being set up." about
+ * seats nobody would set up until the mission ran; the badge and the Graph said "starting" with it. The agent drawer says the same
+ * sentence when the seat is not running.
+ */
+export function unstartedText(s: SeatSetting): StateText {
+  if (s.over) return { headline: "Never ran", detail: "The mission ended before anything woke it." };
+  if (s.parked) return { headline: "Ready", detail: `Waiting for the mission to ${s.started ? "continue" : "start"}.` };
+  return { headline: "Starting up", detail: "The seat is being set up." };
 }
 
 /**
@@ -140,7 +172,10 @@ export function stateText(a: AgentLike, c: StateContext): StateText {
   }
   if (l === "SUSPENDED") return { headline: "Paused by you", detail: "It does not wake for mail until you unpause it." };
   if (l === "COMPLETED") return { headline: "Finished", detail: "Done with the mission, so there is nothing for it to run." };
-  if (l === "STARTING") return { headline: "Starting up", detail: "The seat is being set up." };
+  if (l === "STARTING") {
+    const u = unstartedText(c);
+    return c.parked && !c.over ? { ...u, detail: `${u.detail} Run one step wakes it for a single turn.` } : u;
+  }
   if (l === "WAITING" && (a.mailbox ?? 0) > 0) {
     const n = a.mailbox ?? 0;
     return {

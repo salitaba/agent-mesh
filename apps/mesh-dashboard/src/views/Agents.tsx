@@ -8,7 +8,8 @@ import { vitalsOf, type Vitals } from "../vitals";
 import { planSummary, planSummaryStale } from "../plan";
 import { compactNow, nowLine, timeLeftText } from "../livework";
 import { FeedStatus } from "../feedstatus";
-import { controlsHint, controlsOf, groupAgents, stateText, totalsText, turnsByAgent, type Control, type GroupId } from "../agents";
+import { controlsHint, controlsOf, groupAgents, stateText, totalsText, turnsByAgent, type Control, type GroupId, type SeatSetting } from "../agents";
+import { useMission } from "../useMission";
 import "./agents.css";
 
 /* A card says what the agent is doing, for how long, and whether it is stuck; its controls are the ones that make sense for an
@@ -27,21 +28,21 @@ interface RosterAgent {
   planTaskId?: string | null;
 }
 
-function AgentCard({ a, group, running, last, vitals, now, parked, loaded, onOpen, onControl }: {
+function AgentCard({ a, group, running, last, vitals, now, setting, loaded, onOpen, onControl }: {
   a: RosterAgent;
   group: GroupId;
   running?: TurnStep;
   last?: TurnStep;
   vitals?: Vitals;
   now: number;
-  parked: boolean;
+  setting: SeatSetting;
   loaded: boolean;
   onOpen: () => void;
   onControl: (a: RosterAgent, c: Control) => void;
 }): React.JSX.Element {
   const run = RUNNING.has(a.lifecycle);
   const doing = run && running?.currentTool ? running.currentTool : null;
-  const text = stateText(a, { running: run ? running : undefined, doing: doing ? compactNow(doing, now) : null, last, now, parked, loaded });
+  const text = stateText(a, { running: run ? running : undefined, doing: doing ? compactNow(doing, now) : null, last, now, ...setting, loaded });
   const left = run && running && typeof running.deadlineAt === "number" ? timeLeftText(running.deadlineAt, now) : null;
   const stalled = vitals?.health === "stalled";
   // A quiet turn is the one failure that otherwise reads as "working", so it is said in words on the card, not only by a colour.
@@ -61,7 +62,7 @@ function AgentCard({ a, group, running, last, vitals, now, parked, loaded, onOpe
           <div className="role">{a.role}</div>
         </div>
         {/* The kernel still says WORKING for a silent turn; the badge says what the vitals say, so it does not read as healthy. */}
-        <span className={`pill ${stalled ? "failed" : pillCls(a.lifecycle)}${run && !stalled ? " running-pulse" : ""}`}>{stalled ? "stalled" : plainLifecycle(a.lifecycle)}</span>
+        <span className={`pill ${stalled ? "failed" : pillCls(a.lifecycle)}${run && !stalled ? " running-pulse" : ""}`}>{stalled ? "stalled" : plainLifecycle(a.lifecycle, setting)}</span>
       </div>
 
       <div className="agent-state">
@@ -130,6 +131,7 @@ function Skeleton(): React.JSX.Element {
 
 export default function Agents(): React.JSX.Element {
   const { status, toast, openDetail, refreshStatus, steps, stepsLoaded, refreshSteps, serverDown, client, confirm } = useMesh();
+  const { facts } = useMission();
   const now = useNow(1000);
   // Live turns are what make a card say anything useful, and they arrive with /steps: the roster alone has no turn timing.
   useEffect(() => {
@@ -148,8 +150,13 @@ export default function Agents(): React.JSX.Element {
     return m;
   }, [running, now]);
   const stalled = useMemo(() => new Set([...vitals].filter(([, v]) => v.health === "stalled").map(([id]) => id)), [vitals]);
-  const groups = useMemo(() => groupAgents(roster, stalled), [roster, stalled]);
-  const parked = Boolean(status?.uiOnly) || status?.mode === "parked";
+  // A seat that has never run is ready on a parked team and never ran once the mission is over; the card, its badge and the group
+  // heading all read this, as the Graph and the agent drawer do.
+  const parked = facts.parked;
+  const over = facts.goalStatus === "COMPLETED" || facts.goalStatus === "FAILED";
+  const started = facts.hasHistory;
+  const setting = useMemo<SeatSetting>(() => ({ parked, over, started }), [parked, over, started]);
+  const groups = useMemo(() => groupAgents(roster, stalled, setting), [roster, stalled, setting]);
 
   const control = useCallback(async (a: RosterAgent, c: Control): Promise<void> => {
     if (c.id === "suspend" && c.asks && !(await confirmPause(confirm, a.id, true))) return;
@@ -196,7 +203,7 @@ export default function Agents(): React.JSX.Element {
                 last={last.get(a.id)}
                 vitals={vitals.get(a.id)}
                 now={now}
-                parked={parked}
+                setting={setting}
                 loaded={stepsLoaded}
                 onOpen={() => openDetail("agent", a.id)}
                 onControl={(ag, c) => void control(ag, c)}

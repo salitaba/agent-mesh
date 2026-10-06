@@ -3,8 +3,9 @@ import assert from "node:assert/strict";
 
 import {
   GROUPS, actionNote, controlsHint, controlsOf, groupAgents, groupOf, lastTurnText, pauseWarning, stateText, totalsText, turnsByAgent,
-  type AgentLike, type TurnLike,
+  unstartedText, type AgentLike, type TurnLike,
 } from "../../apps/mesh-dashboard/src/agents";
+import { plainLifecycle } from "../../apps/mesh-dashboard/src/format";
 
 /**
  * The Agents page's decisions: which group an agent is in, what its card says it is doing and for how long, which controls it
@@ -144,6 +145,39 @@ test("before the step history has arrived a card does not claim the history is e
   const last = turn("x", "ok", 12 * 60_000);
   assert.equal(stateText(agent("x", "WAITING"), ctx({ loaded: false, last })).detail, stateText(agent("x", "WAITING"), ctx({ last })).detail);
   assert.equal(stateText(agent("x", "WAITING"), ctx({ loaded: true })).detail, "No turn in the loaded history.", "loaded and empty is a fact");
+});
+
+/**
+ * On a parked project nobody sets a seat up until the mission runs, yet every card of the demo's parked team said "Starting up.
+ * The seat is being set up." and its badge and the Graph said "starting". A seat that has never run says what is true of it in
+ * the project's state, and the card, the badge (plainLifecycle) and the group heading say it together.
+ */
+test("a seat that has never run is ready on a parked team, starting up on a running one, and never ran once it is over", () => {
+  const parked = stateText(agent("pm", "STARTING"), ctx({ parked: true }));
+  assert.deepEqual(parked, { headline: "Ready", detail: "Waiting for the mission to start. Run one step wakes it for a single turn." });
+  assert.equal(stateText(agent("pm", "STARTING"), ctx({ parked: true, started: true })).detail, "Waiting for the mission to continue. Run one step wakes it for a single turn.", "the Overview offers Continue, not Start, on a mission that has run");
+  assert.deepEqual(stateText(agent("pm", "STARTING"), ctx()), { headline: "Starting up", detail: "The seat is being set up." }, "running: it is set up as soon as it is woken");
+  assert.deepEqual(stateText(agent("pm", "STARTING"), ctx({ parked: true, over: true })), { headline: "Never ran", detail: "The mission ended before anything woke it." });
+  assert.deepEqual(unstartedText({ parked: true }), { headline: "Ready", detail: "Waiting for the mission to start." }, "the drawer's sentence, without the button the drawer already explains");
+  assert.equal(stateText(agent("pm", "IDLE"), ctx({ parked: true })).headline, "Idle", "only a seat that has never run changes its word");
+});
+
+test("the badge says what the card says", () => {
+  assert.equal(plainLifecycle("STARTING", { parked: true }), "ready");
+  assert.equal(plainLifecycle("STARTING", { parked: true, over: true }), "never ran");
+  assert.equal(plainLifecycle("STARTING"), "starting");
+  assert.equal(plainLifecycle("STARTING", { parked: false }), "starting");
+  for (const l of ["IDLE", "WAITING", "COMPLETED", "THINKING"]) assert.equal(plainLifecycle(l, { parked: true, over: true }), plainLifecycle(l), l);
+});
+
+test("the idle group's heading says what its seats can be in this project's state", () => {
+  const team = [agent("pm", "STARTING"), agent("qa", "STARTING")];
+  const hint = (setting?: Parameters<typeof groupAgents>[2]): string => groupAgents(team, new Set(), setting)[0]!.hint;
+  assert.equal(hint(), "Starting up, between turns, or done with the mission.");
+  assert.equal(hint({ parked: false }), "Starting up, between turns, or done with the mission.");
+  assert.equal(hint({ parked: true }), "Ready, between turns, or done with the mission.");
+  assert.equal(hint({ parked: true, over: true }), "Done with the mission, or never woken during it.");
+  assert.equal(groupAgents([agent("dev", "WAITING")], new Set(), { parked: true })[0]!.hint, GROUPS.find((g) => g.id === "waiting")!.hint, "other groups keep their own words");
 });
 
 test("a paused or finished agent says what that means for it", () => {

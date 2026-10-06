@@ -7,7 +7,8 @@ import { useMesh, useMeshStreams, type TimelineEvent, type TurnStep } from "./st
 import { StatusPill, LifecyclePill, StepMini, OutcomePill, isTopTrap, rowKey, AgentAvatar, Banner, Button, Chip, ErrorState, Input, Pill, Select, TabPanel, Tabs, TextArea, ZoneNote, agentColor, type ConfirmFn } from "./components";
 import { Icon } from "./icons";
 import { messageTypeLabel, recipientsOf, toggleRecipient } from "./message-form";
-import { actionNote, controlsHint, controlsOf, pauseWarning } from "./agents";
+import { actionNote, controlsHint, controlsOf, pauseWarning, unstartedText } from "./agents";
+import { useMission } from "./useMission";
 import { CopyBtn, SandboxStrip, StepSkeleton, StepStatusBlock, envLine, stateMeta, textStats, useSandboxPerms } from "./stepdetail";
 import { ArtifactReader } from "./artifactreader";
 import { baselineOf, vitalsOf, type TurnPhases } from "./vitals";
@@ -259,6 +260,9 @@ export function AgentDrawer({ id }: { id: string }): React.JSX.Element {
   const { toast, closeDrawer, openDrawer, openDetail, steps: allSteps, lastSeq, client, confirm, events } = useMesh();
   const { streams } = useMeshStreams();
   const nameOf = useNameOf(events);
+  // What a seat that has never run is waiting for depends on the project, as on its card (agents.ts).
+  const { facts } = useMission();
+  const setting = { parked: facts.parked, started: facts.hasHistory, over: facts.goalStatus === "COMPLETED" || facts.goalStatus === "FAILED" };
   // The events console is where an event can be read properly now, so this feed
   // hands off to it rather than stacking a third drawer on top of this one.
   // `closeDrawer` is a no-op when this drawer came from the route instead of the
@@ -380,7 +384,7 @@ export function AgentDrawer({ id }: { id: string }): React.JSX.Element {
   return (
     <>
       <h2 id="drawer-title"><AgentAvatar id={id} color="var(--accent)" />{(id)}
-        <span className={`pill ${pillCls(s.lifecycle)}${RUNNING.has(s.lifecycle) ? " running-pulse" : ""}`}>{(plainLifecycle(s.lifecycle))}</span>
+        <span className={`pill ${pillCls(s.lifecycle)}${RUNNING.has(s.lifecycle) ? " running-pulse" : ""}`}>{(plainLifecycle(s.lifecycle, setting))}</span>
         <CloseX /></h2>
       <p className="muted" style={{ margin: "4px 0" }}>{(d.role)} · active {(ago(s.lastActivityAt))}</p>
 
@@ -442,7 +446,9 @@ export function AgentDrawer({ id }: { id: string }): React.JSX.Element {
                 ? "Woken and starting a turn — output will appear here."
                 : s.lifecycle === "WAITING"
                   ? "Parked on its mailbox with nothing to do. That is a healthy resting state, not a stall."
-                  : `Not running (${plainLifecycle(s.lifecycle)}).`}
+                  : s.lifecycle === "STARTING"
+                    ? `${unstartedText(setting).headline}. ${unstartedText(setting).detail}`
+                    : `Not running (${plainLifecycle(s.lifecycle)}).`}
             </div>
           )}
           {json.activeTask ? <div className="now-task"><b>Working on:</b> {(String(json.activeTask.title ?? json.activeTask.id).slice(0, 90))} <Chip>{(json.activeTask.status)}</Chip></div> : null}

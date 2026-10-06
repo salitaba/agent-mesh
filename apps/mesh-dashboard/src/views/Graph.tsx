@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { plainLifecycle } from "../format";
 import { useMesh } from "../store";
+import { useMission } from "../useMission";
 import { Card, EmptyState, ErrorState, PageHeader, rowKey, useNow } from "../components";
 import { AgentDrawer } from "../drawers";
 import { sinceText } from "../feed";
@@ -24,6 +25,9 @@ const RING_WORD: Record<NodeTone, string> = {
 
 export default function Graph(): React.JSX.Element {
   const { events, openDrawer, client } = useMesh();
+  // A seat that has never run is "ready" on a parked team, as its card says, not "starting".
+  const { facts } = useMission();
+  const where = { parked: facts.parked, over: facts.goalStatus === "COMPLETED" || facts.goalStatus === "FAILED" };
   const [graph, setGraph] = useState<any>(null);
   // A swallowed catch here left `graph` null forever, so a dead server was indistinguishable from a slow one. Failure is a state.
   const [err, setErr] = useState<string | null>(null);
@@ -130,7 +134,7 @@ export default function Graph(): React.JSX.Element {
           {nodes.map((nd) => {
             const s = pos.get(nd.id)!;
             const spot = labelPlacement(s.angle);
-            const state = plainLifecycle(nd.lifecycle);
+            const state = plainLifecycle(nd.lifecycle, where);
             return (
               <g
                 key={nd.id}
@@ -157,7 +161,7 @@ export default function Graph(): React.JSX.Element {
           {kinds.map((k) => <li key={k.id}><i className={`gr-line ${k.id}`} aria-hidden="true" />{k.label}</li>)}
           <li><i className="gr-line dash" aria-hidden="true" />carried a message in the last {RECENT_EVENTS} events</li>
           {(["working", "waiting", "stopped", "paused", "idle"] as NodeTone[]).filter((t) => tones.has(t)).map((t) => (
-            <li key={t}><i className={`gr-ring ${t}`} aria-hidden="true" />{RING_WORD[t]}</li>
+            <li key={t}><i className={`gr-ring ${t}`} aria-hidden="true" />{t === "idle" && where.parked && !where.over ? "ready, idle or finished" : RING_WORD[t]}</li>
           ))}
         </ul>
       </Card>

@@ -82,8 +82,18 @@ const LIFECYCLE_PLAIN: Record<string, string> = {
   THINKING: "working", REQUESTING: "asking for help", WORKING: "working", WAITING: "waiting",
   REVIEWING: "reviewing", BLOCKED: "blocked", SUSPENDED: "paused", FAILED: "crashed", COMPLETED: "done",
 };
-export const plainLifecycle = (s: unknown): string =>
-  LIFECYCLE_PLAIN[String(s || "").toUpperCase()] || String(s || "-").toLowerCase();
+/**
+ * `where` is the project, for the one state whose word depends on it. A seat that has never run (STARTING) is set up the first
+ * time something wakes it: while the mission runs that can be any moment, so it is "starting"; on a parked project nothing wakes
+ * it until the mission runs, so it is "ready"; once the mission is over nothing will, so it "never ran" (agents.ts says the same
+ * on the card).
+ */
+export const plainLifecycle = (s: unknown, where?: { parked?: boolean; over?: boolean }): string => {
+  const k = String(s || "").toUpperCase();
+  if (k === "STARTING" && where?.over) return "never ran";
+  if (k === "STARTING" && where?.parked) return "ready";
+  return LIFECYCLE_PLAIN[k] || String(s || "-").toLowerCase();
+};
 
 const GOAL_PLAIN: Record<string, string> = {
   CREATED: "created", ACTIVE: "running", PAUSED: "paused", BLOCKED: "blocked",
