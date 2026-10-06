@@ -6,7 +6,9 @@
 .graph-wrap { position: relative; }
 .graph-wrap + .card { margin-top: var(--s3); }
 
-.gr-svg { display: block; width: 100%; height: min(60vh, 520px); }
+/* Tall enough for the drawing at its own size: a short window (a phone on its side, a laptop with its tools open) used to shrink it
+   to 60% of the window, which is names at 6 px, when the page can simply scroll. */
+.gr-svg { display: block; width: 100%; height: min(max(60vh, 480px), 520px); }
 .gr-svg text { fill: var(--text); font: 12px var(--sans); }
 .gr-svg text.name { font-weight: 500; }
 .gr-svg text.dim { fill: var(--muted); font: 11px var(--mono); }
