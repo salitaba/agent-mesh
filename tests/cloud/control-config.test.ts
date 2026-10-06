@@ -108,7 +108,7 @@ test("an address with its default port is the origin without it, and a trailing 
   });
 });
 
-test("the example configuration that ships is valid once its key is where it says, the build trusts that key, and the places its pages mark for the operator are decided", () => {
+test("the example configuration that ships is valid once its key is where it says and the build trusts that key; a place its pages mark for the operator keeps a production service from starting", () => {
   const keys = generateLicenseKeyPair();
   const root = path.join(__dirname, "..", "..", "..");
   const dir = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), "control-example-"));
@@ -123,16 +123,22 @@ test("the example configuration that ships is valid once its key is where it say
     const file = path.join(here, "control.yaml");
     const load = (publicKeys: Record<string, string> = { k1: keys.publicKey }): ControlConfig => loadControlConfig(file, ENV, { publicKeys });
 
-    // As it ships, the pages carry places for the operator, and a production service is not started on them.
-    assert.throws(load, /the pages in '[^']*pages' have \d+ places marked TODO\(owner\)/);
-    for (const f of ["terms.html", "privacy.html", path.join("assets", "app.js")]) fs.writeFileSync(path.join(pages, f), fs.readFileSync(path.join(pages, f), "utf8").replace(/TODO\(owner\)/g, "decided"));
-
+    // The pages that ship carry nothing for the operator to decide (the owner wrote the legal text), so the example is valid as it is.
     const c = load();
     assert.equal(c.appHost, "app.curule.example");
     assert.equal(c.pagesDir, pages, "the pages are the product's own");
     assert.deepEqual(c.warnings, []);
     assert.ok(describeControl(c).length > 8);
     assert.throws(() => load({}), /this build trusts no public key 'k1'/);
+
+    // A place marked for the operator, wherever it is put, still stops a production service: the guard is on the marker, not on what happens to be shipped.
+    const terms = path.join(pages, "terms.html");
+    const written = fs.readFileSync(terms, "utf8");
+    assert.ok(written.includes("</main>"), "the terms page has a main region to put a note in");
+    fs.writeFileSync(terms, written.replace("</main>", '<p class="todo">TODO(owner): name the court that hears a dispute.</p></main>'));
+    assert.throws(load, /the pages in '[^']*pages' have 1 place marked TODO\(owner\)/);
+    fs.writeFileSync(terms, written);
+    assert.equal(load().appHost, "app.curule.example", "and the service starts again once the place is decided");
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
