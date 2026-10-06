@@ -461,7 +461,8 @@ table.tbl { width: 100%; border-collapse: collapse; font-size: 14px; }
 /* viewboundary.tsx: the error's own first line sits under the explanation, in the mono face, and may be long. */
 .view-crash-msg { display: block; margin-top: var(--s2); font-size: 12px; overflow-wrap: anywhere; }
 /* viewboundary.tsx ViewLoading: the shape of a page while a view's file arrives. It is invisible for the first 150ms so a view that loads at once does not flash. */
-.view-loading { display: grid; gap: var(--s3); padding: var(--s5) var(--s4); opacity: 0; animation: view-loading-in .2s ease 150ms forwards; }
+/* One column the width of the view: an auto column grew to the 380px line, and on a phone the blocks ran off the right edge. */
+.view-loading { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--s3); padding: var(--s5) var(--s4); opacity: 0; animation: view-loading-in .2s ease 150ms forwards; }
 .view-loading-text { margin: 0; font-size: 14px; color: var(--muted); }
 .view-loading-title { width: 220px; max-width: 60%; height: 22px; }
 .view-loading-line { width: 380px; max-width: 90%; height: 12px; }
