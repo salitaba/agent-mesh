@@ -25,6 +25,12 @@ python3 -m http.server --directory site 8080      # then open http://127.0.0.1:8
 | `assets/shots/` | | The product screenshots, under stable names (see below) |
 | `assets/favicon.svg`, `apple-touch-icon.png`, `social-card.png` | | Copies of the files in [`brand/`](../brand/README.md); a test fails if one stops matching the kit |
 
+Where a mark helps a reader find the card they want, the card has one: a small drawing (an inline SVG in the stylesheet's colours, hidden
+from a screen reader, since the heading says the same) on the four reasons and the three security answers of the home page, and on
+the three answers in the security page's At a glance box. A shield is what it does, an arrow out of a box is what leaves, a barred
+circle is what it does not do, wherever it appears, so the kind shows in the shape and not in the colour; `tests/build/site-copy.test.ts`
+pins that each card in a row has its own drawing and that the security answers are the same drawings on both pages.
+
 A page works with a script switched off: the menu, the tabs in the product frame and the Annual/Monthly choice are plain CSS,
 the plan cards and tables are in the markup, and the contact addresses are text. What the script adds is the calculator, the
 copy buttons, and the links to the documents and the source (which live on GitHub, so they cannot be written into the pages: see

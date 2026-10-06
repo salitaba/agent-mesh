@@ -349,6 +349,37 @@ test("the security page's At a glance box answers in three short lines, in the p
   assert.match(box, /<a href="https:\/\/app\.curule\.dev\/privacy" data-cloud="privacy">Curule Cloud&rsquo;s privacy notice<\/a>/, "and sends the visitor to what Curule Cloud keeps");
 });
 
+test("the cards that carry a mark are the ones where it helps a reader find the one they want: each has its own drawing, and a drawing means the same on every page", () => {
+  const home = page(pages, "index.html");
+  const security = page(pages, "security/index.html");
+  const section = (html: string, id: string): string => new RegExp(`<section[^>]*\\sid="${id}"[\\s\\S]*?\\n</section>`).exec(html)![0];
+  const marks = (html: string): Array<{ title: string; shape: string }> =>
+    [...html.matchAll(/<div class="card">(<svg class="mark[^"]*" viewBox="0 0 24 24" aria-hidden="true" focusable="false">([\s\S]*?)<\/svg>)<h3>([^<]+)<\/h3>/g)].map((m) => ({ title: m[3]!, shape: m[2]! }));
+  const why = marks(section(home.html, "why"));
+  const answers = marks(section(home.html, "security"));
+  assert.deepEqual(why.map((m) => m.title), ["Enforced, not asked", "Recorded and replayable", "Bounded", "Yours"], "the four reasons");
+  assert.deepEqual(answers.map((m) => m.title), ["What it does", "What leaves your environment", "What it does not do"], "and the three answers");
+  for (const group of [why, answers]) assert.equal(new Set(group.map((m) => m.shape)).size, group.length, "no two cards in a row have the same drawing");
+  // The security answers are the security page's three, in the same drawings: a shield is what it does, an arrow out of a box is what
+  // leaves, a barred circle is what it does not do, wherever the reader meets them.
+  const glance = [...section(security.html, "glance").matchAll(/<svg class="mark[^"]*" viewBox="0 0 24 24" aria-hidden="true" focusable="false">([\s\S]*?)<\/svg>/g)].map((m) => m[1]);
+  assert.deepEqual(answers.map((m) => m.shape), glance);
+  // Every mark on every page is drawn the same way: hidden from a screen reader (the heading says it), with no style or colour of its own.
+  const css = read("site", "assets", "site.css");
+  assert.match(css, /\n\.mark \{[^}]*fill: none; stroke: currentColor;/, "in the colour of the text it sits in, by the stylesheet's tokens, light and dark");
+  let count = 0;
+  for (const p of pages) {
+    for (const m of p.markup.matchAll(/<svg\b([^>]*)>/g)) {
+      if (!/class="mark/.test(m[1]!)) continue;
+      count++;
+      assert.match(m[1]!, /aria-hidden="true"/, `${p.rel}: a mark is not announced`);
+      assert.match(m[1]!, /focusable="false"/, `${p.rel}: or focusable`);
+      assert.ok(!/\s(style|fill|stroke|width|height)=/.test(m[1]!), `${p.rel}: and carries no colour or size of its own: ${m[1]}`);
+    }
+  }
+  assert.ok(count >= 10, `the marks (${count})`);
+});
+
 test("the pages say what they must: the plans, how licences work, the security stance, who to write to, and what is still the owner's to write", () => {
   const pricing = page(pages, "pricing/index.html");
   for (const id of ["plans", "compare", "paying", "calculator", "licences", "faq"]) assert.match(pricing.html, new RegExp(`<section[^>]*\\sid="${id}"`), `pricing: section #${id}`);
