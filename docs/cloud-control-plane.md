@@ -533,9 +533,11 @@ service that sells it says (`data-usage-sold`). Each plan is a card with what it
 plan. The pages are plain HTML,
 one stylesheet and one script, with no build step and nothing loaded from another address. The control plane serves them at
 fixed paths (`/`, `/signup`, `/login`, `/verify`, `/forgot`, `/reset`, `/account`, `/terms`, `/privacy`) and the assets by
-name; a path that is not on that list is never looked for on the disk. A browser that follows a wrong address (it asks for HTML) is
-shown `404.html` with the status 404, and a program, or any address under `/api`, `/owner` or `/webhooks`, still gets the JSON
-error. The colours and the type are the site's.
+name; a path that is not on that list is never looked for on the disk. A page is never cached. An asset is kept by the browser but
+asked about each time (`Cache-Control: no-cache` and an `ETag`, answered `304` with no body while it has not changed), so that
+after the service is upgraded a customer is never given the new page with the old script or stylesheet. A browser that follows a
+wrong address (it asks for HTML) is shown `404.html` with the status 404, and a program, or any address under `/api`, `/owner` or
+`/webhooks`, still gets the JSON error. The colours and the type are the site's.
 
 - **They are written for the policy they are served under**: `default-src 'self'`, `script-src 'self'`, `style-src 'self'`,
   `frame-ancestors 'none'`. No inline script, no inline style, no handler attribute, no address of another site. A test reads

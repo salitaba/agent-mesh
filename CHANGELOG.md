@@ -79,7 +79,10 @@ their first mission, an operator who leaves a mission running. What each surface
   (`assets/site.css?v=9af9e701cf`), so a new page asks for the new files at once: `node scripts/site-chrome.mjs` writes it (run it after
   editing `assets/site.css`, `site.js` or `pricing.js`; its `--check`, and a test, fail until it has), and `site:domain` writes the
   script's. *Back to top* is shown when a reader two screens down scrolls up, or reaches the end, and no longer sits on the ends of
-  the lines being read on a phone. Publish the site again to apply it; a browser that holds the old page needs one reload.
+  the lines being read on a phone. Publish the site again to apply it; a browser that holds the old page needs one reload. The
+  account pages had the same weakness in a smaller form (their script and stylesheet were kept for five minutes, so right after an
+  upgrade a customer could be given the new page and the old script): they are now sent with an `ETag` and asked about each time,
+  which costs a `304` and no body.
 - **A customer's account knows where they are.** The account page opens with one next step (choose a plan; add your model key;
   make your first workspace; open it) and a stepper, and shows what is theirs at that stage: Balance and Usage only on a plan that
   sells usage, the plan once with "Change plan" behind a button, Delete behind "More" (still needing the typed name), the password

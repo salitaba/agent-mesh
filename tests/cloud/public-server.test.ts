@@ -108,7 +108,7 @@ test("the pages are a short list, and an asset is a name with no slash in it: no
     assert.equal((await get("/login/")).status, 200, "a trailing slash is the same page");
 
     const js = await get("/assets/app.js");
-    assert.deepEqual([js.status, js.body, js.headers["content-type"], js.headers["cache-control"], js.headers["x-content-type-options"]], [200, "console.log('app');", "text/javascript; charset=utf-8", "public, max-age=300", "nosniff"]);
+    assert.deepEqual([js.status, js.body, js.headers["content-type"], js.headers["cache-control"], js.headers["x-content-type-options"]], [200, "console.log('app');", "text/javascript; charset=utf-8", "no-cache", "nosniff"]);
     assert.equal(js.headers["content-security-policy"], undefined, "a script is not a page: it carries no page policy");
     assert.equal((await get("/assets/app.css")).headers["content-type"], "text/css; charset=utf-8");
     assert.equal((await get("/assets/logo.svg")).headers["content-type"], "image/svg+xml");
@@ -143,6 +143,44 @@ test("the pages are a short list, and an asset is a name with no slash in it: no
     assert.equal((await get("/", { method: "POST" })).status, 404, "a page is for reading: another method goes to the API, which has nothing there");
     assert.equal((await get("/", { host: "evil.example" })).status, 404, "pages are for the app's own address");
     assert.equal((await get("/login", { host: "x-000000.ws.example.com" })).status, 404, "and not for a workspace's");
+  } finally {
+    await srv.close();
+    pages.remove();
+  }
+});
+
+test("an asset is asked about each time and not kept for minutes: it carries a fingerprint, an unchanged one is answered 304 with no body, a replaced one is sent whole, and a page has none", async () => {
+  // A page is never cached, so a new page is always the new one. If its script or its stylesheet could be kept for minutes without
+  // asking, then right after the service is upgraded a customer would be given the new page and the old script, whose parts would do nothing.
+  const pages = pagesDir();
+  const p = await plane();
+  const srv = await serve(p, { pagesDir: pages.dir });
+  const get = (pathname: string, headers: Record<string, string> = {}, method = "GET") => ask(srv.port, { host: "app.example.com", path: pathname, method, headers });
+  try {
+    const first = await get("/assets/app.js");
+    const tag = String(first.headers.etag);
+    assert.match(tag, /^"[A-Za-z0-9_-]{27}"$/);
+    assert.equal(first.headers["cache-control"], "no-cache", "the browser may keep it, and must ask before it uses it again");
+    for (const header of [tag, `W/${tag}`, `"another", ${tag}`, "*"]) {
+      const same = await get("/assets/app.js", { "if-none-match": header });
+      assert.deepEqual([same.status, same.body, same.headers.etag, same.headers["cache-control"], same.headers["x-content-type-options"]], [304, "", tag, "no-cache", "nosniff"], `If-None-Match: ${header}`);
+    }
+    assert.equal((await get("/assets/app.js", { "if-none-match": '"something else"' })).status, 200, "a fingerprint of another file is not this one");
+    // The service is upgraded and the file is replaced: the same question is answered with the new file, and a new fingerprint.
+    fs.writeFileSync(path.join(pages.dir, "assets", "app.js"), "console.log('the new app');");
+    const after = await get("/assets/app.js", { "if-none-match": tag });
+    assert.deepEqual([after.status, after.body], [200, "console.log('the new app');"], "the old fingerprint is not the new file's");
+    assert.notEqual(after.headers.etag, tag);
+    assert.equal((await get("/assets/app.js", { "if-none-match": String(after.headers.etag) })).status, 304);
+    // The same file has the same fingerprint, and another file has another.
+    assert.equal((await get("/assets/app.js")).headers.etag, after.headers.etag);
+    assert.notEqual((await get("/assets/app.css")).headers.etag, after.headers.etag);
+    // A page is never kept and has no fingerprint, whatever it is asked.
+    const home = await get("/", { "if-none-match": "*" });
+    assert.deepEqual([home.status, home.headers.etag, home.headers["cache-control"]], [200, undefined, "no-store"]);
+    // A HEAD is answered as the GET would be, with the fingerprint and no body.
+    const head = await get("/assets/app.css", {}, "HEAD");
+    assert.deepEqual([head.status, head.body, typeof head.headers.etag], [200, "", "string"]);
   } finally {
     await srv.close();
     pages.remove();
@@ -328,7 +366,7 @@ test("every page the product has is served at its own address from its own file,
     }
     for (const [name, type] of assets) {
       const r = await get(secure.port, `/assets/${name}`);
-      assert.deepEqual([r.status, r.body, r.headers["content-type"], r.headers["cache-control"]], [200, `asset ${name}`, type, "public, max-age=300"], name);
+      assert.deepEqual([r.status, r.body, r.headers["content-type"], r.headers["cache-control"]], [200, `asset ${name}`, type, "no-cache"], name);
       assert.equal(r.headers["content-security-policy"], undefined, `${name} is not a page`);
     }
     // A page and an asset are told apart by what they are, whichever of the two a name looks like.

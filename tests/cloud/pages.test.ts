@@ -62,7 +62,8 @@ test("the folder holds the pages and their assets and nothing else, and the serv
     }
     for (const [file, type] of [["app.js", "text/javascript; charset=utf-8"], ["app.css", "text/css; charset=utf-8"], ["favicon.svg", "image/svg+xml"]] as const) {
       const r = await ask(srv.port, { host: "app.example.com", path: `/assets/${file}` });
-      assert.deepEqual([r.status, r.headers["content-type"], r.headers["cache-control"]], [200, type, "public, max-age=300"], file);
+      assert.deepEqual([r.status, r.headers["content-type"], r.headers["cache-control"]], [200, type, "no-cache"], `${file}: kept, and asked about each time`);
+      assert.match(String(r.headers.etag), /^"[A-Za-z0-9_-]{27}"$/, `${file} carries a fingerprint, so that the question costs no more than a 304`);
       assert.equal(r.body, read(path.join(ASSETS, file)));
     }
     for (const missing of ["/index.html", "/index", "/account.html", "/assets/", "/assets/missing.js", "/assets/../account.html"]) assert.equal((await ask(srv.port, { host: "app.example.com", path: missing })).status, 404, missing);

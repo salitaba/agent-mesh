@@ -6,6 +6,7 @@
  * told to serve is not answered as if it were. TLS is terminated in front of this, which is also what supplies the caller's
  * address: `trustProxyHops` says how many proxies in front of the service add to `X-Forwarded-For`, and with none it is not read.
  */
+import { createHash } from "node:crypto";
 import * as fs from "node:fs";
 import * as http from "node:http";
 import * as path from "node:path";
@@ -162,6 +163,16 @@ export function createOwnerServer(o: OwnerServerOptions): http.Server {
   );
 }
 
+/** Whether an If-None-Match header names this fingerprint (a list, with or without the weak marker) or any (`*`). */
+function holds(header: string | string[] | undefined, etag: string): boolean {
+  if (header === undefined) return false;
+  const text = Array.isArray(header) ? header.join(",") : header;
+  return text.split(",").some((one) => {
+    const tag = one.trim().replace(/^W\//, "");
+    return tag === "*" || tag === etag;
+  });
+}
+
 export function createPublicServer(o: PublicServerOptions): http.Server {
   const hops = o.trustProxyHops ?? 0;
   const maxBody = o.maxBodyBytes ?? 64 * 1024;
@@ -183,7 +194,13 @@ export function createPublicServer(o: PublicServerOptions): http.Server {
     return sendFile(req, res, file, 200);
   }
 
-  /** One file of the pages' folder, as a page or an asset: with the policy a page is written for, and a page is never cached. */
+  /**
+   * One file of the pages' folder, as a page or an asset: with the policy a page is written for, and a page is never cached.
+   * An asset is kept, but only so long as it is the file the page was written for: it is sent with a fingerprint (an ETag) and the
+   * browser asks each time whether it has changed, which costs a 304 with no body. A script or a stylesheet kept for minutes without
+   * asking would be older than the page that asks for it as soon as the service is upgraded, and a new page run by its old script
+   * is a page with parts that do nothing.
+   */
   function sendFile(req: http.IncomingMessage, res: http.ServerResponse, file: string, status: number): boolean {
     let body: Buffer;
     try {
@@ -192,14 +209,24 @@ export function createPublicServer(o: PublicServerOptions): http.Server {
       return false;
     }
     const isPage = path.extname(file) === ".html";
+    const etag = isPage ? undefined : `"${createHash("sha256").update(body).digest("base64url").slice(0, 27)}"`;
+    const common = {
+      "x-content-type-options": "nosniff",
+      "referrer-policy": "no-referrer",
+      "cache-control": isPage ? "no-store" : "no-cache",
+      ...(etag ? { etag } : {}),
+      ...(secure ? { "strict-transport-security": "max-age=31536000; includeSubDomains" } : {}),
+    };
+    if (etag && status === 200 && holds(req.headers["if-none-match"], etag)) {
+      res.writeHead(304, common);
+      res.end();
+      return true;
+    }
     res.writeHead(status, {
       "content-type": TYPES[path.extname(file)] ?? "application/octet-stream",
       "content-length": String(body.length),
-      "x-content-type-options": "nosniff",
-      "referrer-policy": "no-referrer",
-      "cache-control": isPage ? "no-store" : "public, max-age=300",
+      ...common,
       ...(isPage ? { "content-security-policy": PAGE_CSP, "cross-origin-opener-policy": "same-origin", "x-frame-options": "DENY" } : {}),
-      ...(secure ? { "strict-transport-security": "max-age=31536000; includeSubDomains" } : {}),
     });
     res.end(req.method === "HEAD" ? undefined : body);
     return true;
