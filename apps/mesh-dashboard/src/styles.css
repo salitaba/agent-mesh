@@ -1156,7 +1156,7 @@ kbd { font: 11px var(--mono); border: 1px solid var(--line-strong); border-botto
   .confirm { top: auto; bottom: 0; left: 0; right: 0; transform: none; width: auto;
     max-height: 88vh; overflow: auto; border-radius: var(--r) var(--r) 0 0; border-bottom: none; }
   .confirm-acts { flex-direction: column-reverse; }
-  .confirm-acts button { width: 100%; min-height: 38px; }
+  .confirm-acts button { width: 100%; min-height: 44px; }
 }
 
 /* ---------- step view: wide, single-scroll, inspector ----------
