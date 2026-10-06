@@ -16,7 +16,21 @@ var IMAGE_RELEASED = false;
 var IMAGE_NAME = "ghcr.io/salitaba/curule";
 
 (function () {
+  // Of a page's sections, by the distance of each top from the top of the window, the one being read: the last whose top has
+  // passed the line (a section scrolled into the upper part of the window has started), or -1 while none has.
+  var readingAt = function (tops, line) {
+    var at = -1;
+    for (var i = 0; i < tops.length; i++) if (tops[i] <= line) at = i;
+    return at;
+  };
+
+  // The pure parts, for the tests, when the file is loaded as a module; in a browser nothing is exported.
+  if (typeof module === "object" && module !== null && typeof module.exports === "object") module.exports = { readingAt: readingAt };
+  if (typeof document === "undefined") return;
+
   var all = function (selector) { return Array.prototype.slice.call(document.querySelectorAll(selector)); };
+  var within = function (node, selector) { return Array.prototype.slice.call(node.querySelectorAll(selector)); };
+  var reducedMotion = function () { return !!(window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches); };
   var el = function (tag, className, text) {
     var node = document.createElement(tag);
     if (className) node.className = className;
@@ -107,6 +121,82 @@ var IMAGE_NAME = "ghcr.io/salitaba/curule";
       bar.appendChild(button);
       box.insertBefore(bar, box.firstChild);
     });
+  }
+
+  // On this page: on a long page the row of its sections stays under the header while the page is read, and the chip of the
+  // section being read is marked. The line a section's top has to pass is a third of the way down the window, and never above
+  // where a followed section lands (the page's scroll padding), or a section that was followed would not count as read. The
+  // observer's root is the window above that line, so it says when a top crosses it, which is when the section being read can
+  // change. A browser without one keeps the row where it is, a row of plain links, as it is without a script.
+  var tocBar = document.querySelector(".toc-bar");
+  var row = tocBar && tocBar.querySelector(".toc");
+  if (row && typeof window.IntersectionObserver === "function") {
+    var chips = within(row, "a").filter(function (a) { return /^#./.test(a.getAttribute("href") || ""); });
+    var sections = chips.map(function (a) { return document.getElementById(a.getAttribute("href").slice(1)); });
+    var current = -1;
+    var held = -1;
+    var holding = 0;
+    var line = 0;
+    var watcher = null;
+    var resizing = 0;
+    // The marked chip is kept in view in the row, with a little of its neighbours, without scrolling the page.
+    var reveal = function (chip) {
+      var box = row.getBoundingClientRect();
+      var at = chip.getBoundingClientRect();
+      var room = 24;
+      var to = at.left - room < box.left ? row.scrollLeft + at.left - box.left - room : at.right + room > box.right ? row.scrollLeft + at.right - box.right + room : null;
+      if (to === null) return;
+      if (typeof row.scrollTo === "function") row.scrollTo({ left: Math.max(0, to), behavior: reducedMotion() ? "auto" : "smooth" });
+      else row.scrollLeft = Math.max(0, to);
+    };
+    var mark = function (i) {
+      if (i === current) return;
+      current = i;
+      chips.forEach(function (a, j) {
+        if (j === i) a.setAttribute("aria-current", "true");
+        else a.removeAttribute("aria-current");
+      });
+      if (i >= 0) reveal(chips[i]);
+    };
+    // A chip that is followed is the section being read from the moment it is chosen: the sections a smooth scroll passes on the
+    // way there are not marked one after another. The hold ends when the page gets there, or when the scroll ends anywhere else
+    // (the reader took over), or after a few seconds in a browser that does not say when a scroll ends.
+    var spy = function () {
+      var i = readingAt(sections.map(function (s) { return s ? s.getBoundingClientRect().top : Infinity; }), line);
+      if (held >= 0) {
+        if (i !== held) return;
+        held = -1;
+        window.clearTimeout(holding);
+      }
+      mark(i);
+    };
+    var release = function () {
+      window.clearTimeout(holding);
+      held = -1;
+      spy();
+    };
+    row.addEventListener("click", function (event) {
+      var i = chips.indexOf(event.target && event.target.closest ? event.target.closest("a") : null);
+      if (i < 0) return;
+      mark(i);
+      held = i;
+      window.clearTimeout(holding);
+      holding = window.setTimeout(release, 3000);
+    });
+    window.addEventListener("scrollend", function () { if (held >= 0) release(); });
+    var watch = function () {
+      var landing = parseFloat(window.getComputedStyle(document.documentElement).scrollPaddingTop) || 0;
+      line = Math.round(Math.max(window.innerHeight / 3, landing + 20));
+      if (watcher) watcher.disconnect();
+      watcher = new window.IntersectionObserver(spy, { rootMargin: "0px 0px " + (line - window.innerHeight) + "px 0px" });
+      sections.forEach(function (s) { if (s) watcher.observe(s); });
+    };
+    window.addEventListener("resize", function () {
+      window.clearTimeout(resizing);
+      resizing = window.setTimeout(watch, 150);
+    });
+    watch();
+    tocBar.className += " is-live";
   }
 
   // The phone menu closes when a link in it is followed (on the same page) and on Escape.

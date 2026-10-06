@@ -20,7 +20,7 @@ python3 -m http.server --directory site 8080      # then open http://127.0.0.1:8
 | `legal/index.html` | `/legal/` | The source licence in plain words, privacy (this site collects nothing), and the terms |
 | `404.html` | any address that is not found | A short page with links; written with addresses from the root, because a host shows it at the address that was not found |
 | `assets/site.css` | | The one stylesheet: the brand's colours under the names the pages use, the system fonts, and every component |
-| `assets/site.js` | | Sets the links that leave the site, the copy buttons on the commands, and the phone menu; nothing else |
+| `assets/site.js` | | Sets the links that leave the site, the copy buttons on the commands, the phone menu, and the On this page bar of the long pages; nothing else |
 | `assets/pricing.js` | | The calculator on the pricing page |
 | `assets/shots/` | | The product screenshots, under stable names (see below) |
 | `assets/favicon.svg`, `apple-touch-icon.png`, `social-card.png` | | Copies of the files in [`brand/`](../brand/README.md); a test fails if one stops matching the kit |
@@ -29,6 +29,13 @@ A page works with a script switched off: the menu, the tabs in the product frame
 the plan cards and tables are in the markup, and the contact addresses are text. What the script adds is the calculator, the
 copy buttons, and the links to the documents and the source (which live on GitHub, so they cannot be written into the pages: see
 the next section).
+
+The long pages (pricing, security, legal) have an *On this page* bar under their heading: a row of chips, one for each section.
+Without a script it is a row of plain links. With one, the bar stays under the header while the page is read, and the chip of the
+section being read is marked (`aria-current`, and a filled chip with a dot). It is one row at every width, scrolled sideways when
+the chips do not fit, so it is as tall where it rests as where it stays and nothing moves when it starts to stay. A followed link
+lands below the header and the bar: `--head-h` and `--toc-h` in `assets/site.css` are their heights, and
+`tests/build/site-script.test.ts` checks them against the rules that make them.
 
 ## No request leaves the site, and the pages say so
 

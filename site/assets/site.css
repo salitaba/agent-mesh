@@ -25,11 +25,16 @@
   --gutter: clamp(16px, 4vw, 32px);
   --section: clamp(64px, 9vw, 112px);
   --radius: 12px;
+  /* What stays at the top of the window: the header (68 and its line), and on a long page the On this page bar under it (a 44
+     chip, 8 above and below, and its line). A heading that is followed lands below both, with room to breathe. */
+  --head-h: 69px;
+  --toc-h: 61px;
 }
 
 /* ---------------------------------------------------------------- base */
 *, *::before, *::after { box-sizing: border-box; }
-html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; scroll-padding-top: 88px; }
+html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; scroll-padding-top: calc(var(--head-h) + 19px); }
+html:has(.toc-bar) { scroll-padding-top: calc(var(--head-h) + var(--toc-h) + 20px); }
 body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.6 var(--font); -webkit-font-smoothing: antialiased; }
 img, svg { max-width: 100%; }
 a { color: var(--accent); text-underline-offset: .2em; text-decoration-thickness: 1px; }
@@ -274,14 +279,36 @@ hr { border: 0; border-top: 1px solid var(--line); margin: 0; }
 .prose ul, .prose ol { margin: 0 0 1em; padding-left: 1.25em; }
 .prose li { margin-bottom: .45em; padding-left: .2em; }
 .prose li::marker { color: var(--muted); }
-.toc { display: flex; flex-wrap: wrap; gap: 8px; margin: 28px 0 0; padding: 0; list-style: none; }
-.toc a { display: inline-flex; align-items: center; min-height: 44px; padding: 0 16px; border: 1px solid var(--line); border-radius: 999px; background: var(--panel); color: var(--ink); font-size: .9375rem; font-weight: 600; text-decoration: none; }
+/*
+ * On this page: a long page's sections as a row of chips, sitting on the line under the page's heading. Without a script it is a
+ * row of plain links. The shared script makes it stay under the header while the page is read (.is-live) and marks the section
+ * being read. It is one row at every width, scrolled sideways when the chips do not fit, so it is as tall at rest as when it
+ * stays: nothing under it moves when it starts to stay, and on a phone it never takes three rows of the screen.
+ */
+.page-head.has-toc { padding-bottom: 20px; border-bottom: 0; }
+.toc-bar { border-bottom: 1px solid var(--line); background: var(--bg); }
+@supports (backdrop-filter: blur(1px)) and (background: color-mix(in srgb, red 50%, blue)) {
+  .toc-bar { background: color-mix(in srgb, var(--bg) 86%, transparent); -webkit-backdrop-filter: saturate(1.3) blur(14px); backdrop-filter: saturate(1.3) blur(14px); }
+}
+.toc-bar.is-live { position: sticky; top: var(--head-h); z-index: 30; }
+.toc { display: flex; gap: 8px; margin: 0; padding: 8px max(var(--gutter), (100% - var(--max)) / 2); overflow-x: auto; list-style: none; scrollbar-width: none; }
+.toc::-webkit-scrollbar { display: none; }
+.toc li { flex: none; }
+.toc a { display: inline-flex; align-items: center; min-height: 44px; padding: 0 16px; border: 1px solid var(--line); border-radius: 999px; background: var(--panel); color: var(--ink); font-size: .9375rem; font-weight: 600; white-space: nowrap; text-decoration: none; }
 .toc a:hover { border-color: var(--muted); }
+/* The section being read: a filled chip, and a dot before its name so that it is not told by colour alone. The padding moves
+   to make room for the dot without making the chip any wider, so the row does not shift as the reader goes on. */
+.toc a[aria-current="true"] { position: relative; padding: 0 10px 0 22px; border-color: var(--ink); background: var(--ink); color: var(--bg); }
+.toc a[aria-current="true"]::before { content: ""; position: absolute; left: 10px; top: 50%; width: 6px; height: 6px; margin-top: -3px; border-radius: 50%; background: currentColor; }
 .split { display: grid; grid-template-columns: minmax(0, 1fr); gap: 20px 56px; padding-block: clamp(40px, 6vw, 72px); border-bottom: 1px solid var(--line); }
 .split:last-child { border-bottom: 0; }
 .split > header h2 { font-size: clamp(1.5rem, 1.1rem + 1.6vw, 2.125rem); }
 .split > header p { margin-top: 12px; color: var(--muted); font-size: .9375rem; }
-@media (min-width: 900px) { .split { grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); } .split > header { position: sticky; top: 100px; align-self: start; } }
+@media (min-width: 900px) {
+  .split { grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); }
+  .split > header { position: sticky; top: calc(var(--head-h) + 31px); align-self: start; }
+  html:has(.toc-bar) .split > header { top: calc(var(--head-h) + var(--toc-h) + 30px); }
+}
 .rows { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0; margin: 0; padding: 0; list-style: none; border-top: 1px solid var(--line); }
 .rows > li { display: grid; grid-template-columns: minmax(0, 1fr); gap: 4px; padding: 16px 0; border-bottom: 1px solid var(--line); }
 .rows b { font-size: 1rem; }
@@ -423,9 +450,11 @@ hr { border: 0; border-top: 1px solid var(--line); margin: 0; }
   .tab-input:nth-of-type(3):checked ~ .tabs label:nth-child(3),
   .tab-input:nth-of-type(4):checked ~ .tabs label:nth-child(4),
   .billing-input:nth-of-type(1):checked ~ .billing label:nth-child(1),
-  .billing-input:nth-of-type(2):checked ~ .billing label:nth-child(2) { forced-color-adjust: none; background: Highlight; color: HighlightText; }
+  .billing-input:nth-of-type(2):checked ~ .billing label:nth-child(2),
+  .toc a[aria-current="true"] { forced-color-adjust: none; background: Highlight; color: HighlightText; }
 }
 @media print {
   .site-header, .skip, .tabs, .billing, .copy, .site-footer .foot-grid { display: none; }
+  .toc-bar.is-live { position: static; }
   body { background: #fff; color: #000; }
 }
