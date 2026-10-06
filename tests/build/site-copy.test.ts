@@ -349,6 +349,25 @@ test("the security page's At a glance box answers in three short lines, in the p
   assert.match(box, /<a href="https:\/\/app\.curule\.dev\/privacy" data-cloud="privacy">Curule Cloud&rsquo;s privacy notice<\/a>/, "and sends the visitor to what Curule Cloud keeps");
 });
 
+test("the page for an address that is not found offers the pages a person was probably looking for, each with what it is for, and the way home", () => {
+  const notFound = page(pages, "404.html");
+  const items = [...notFound.html.matchAll(/<li( data-cloud-only)?><a href="([^"]+)"([^>]*)><b>([^<]+)<\/b><span>([^<]+)<\/span><\/a><\/li>/g)];
+  assert.deepEqual(items.map((m) => m[4]), ["Try the demo", "Pricing", "Documentation", "Security", "Contact", "Your account"], "a short list, in the order a visitor's questions come");
+  for (const [, cloud, href, attrs, name, what] of items) {
+    assert.ok(what!.length >= 20 && /^[A-Z]/.test(what!) && what!.endsWith("."), `${name}: a sentence that says what it is for`);
+    if (cloud) {
+      assert.match(attrs!, /data-cloud="login"/, "the account is the app's sign-in, and is offered only while Curule Cloud is open");
+      continue;
+    }
+    // It starts at the root of the site, as every address on this page does (it is shown at any depth), and the page it names exists.
+    assert.match(href!, /^\/(?:[a-z]+\/|#try)?$/, `${name}: ${href}`);
+    const file = href === "/#try" ? "index.html" : `${href!.slice(1)}index.html`;
+    assert.ok(pages.some((p) => p.rel === file), `${name}: ${href} is a page of the site`);
+  }
+  assert.ok(items.length >= 4 && items.length <= 7, "short enough to read at a glance");
+  assert.match(notFound.html, /<p class="mt-l"><a class="btn btn-primary" href="\/">Go to the home page<\/a><\/p>/, "and the way home is still one press");
+});
+
 test("the cards that carry a mark are the ones where it helps a reader find the one they want: each has its own drawing, and a drawing means the same on every page", () => {
   const home = page(pages, "index.html");
   const security = page(pages, "security/index.html");

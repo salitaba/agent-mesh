@@ -88,7 +88,7 @@ test("when it is open, every page has Sign in and Get started in its header, wit
   for (const rel of REL) {
     const doc = visit(rel, APP);
     const bar = doc.querySelector(".bar-actions")!;
-    const signIn = doc.querySelectorAll('[data-cloud="login"]');
+    const signIn = doc.querySelector(".site-header")!.querySelectorAll('[data-cloud="login"]');
     assert.equal(signIn.length, 2, `${rel}: Sign in, in the bar and in the phone menu`);
     for (const a of signIn) {
       assert.equal(shown(a), true, rel);
@@ -185,6 +185,14 @@ test("the home page's way in is two cards while Curule Cloud is open and one whi
   assert.match(open[0]!.textContent, /A flat monthly plan for the hosting\. You bring your own model key and pay your model provider directly: we do not resell model usage\./);
   assert.match(open[1]!.textContent, /Nothing phones home: no telemetry, no update check, no licence server\./);
   assert.match(open[1]!.textContent, /Nothing for the Community plan: one open project, up to eight agents, no licence key\. A paid licence lifts the limits\./);
+});
+
+test("the page for an address that is not found offers the account while Curule Cloud is open, and not while it is not", () => {
+  const open = visit("404.html", APP).querySelectorAll(".nf-list li").filter((li) => shown(li));
+  assert.deepEqual(open.map((li) => li.querySelector("b")!.textContent), ["Try the demo", "Pricing", "Documentation", "Security", "Contact", "Your account"]);
+  assert.equal(open[5]!.querySelector("a")!.href, `${APP}/login`, "an address typed for the account (/login, /account) ends here, one press from it");
+  const closed = visit("404.html", "").querySelectorAll(".nf-list li").filter((li) => shown(li));
+  assert.deepEqual(closed.map((li) => li.querySelector("b")!.textContent), ["Try the demo", "Pricing", "Documentation", "Security", "Contact"]);
 });
 
 test("when it is open, the security answers on the home page and on the security page say they are about the software you run yourself, and where Curule Cloud differs", () => {

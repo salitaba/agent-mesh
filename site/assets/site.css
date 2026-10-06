@@ -508,9 +508,15 @@ hr { border: 0; border-top: 1px solid var(--line); margin: 0; }
 .address-row:target { background: var(--panel); box-shadow: inset 4px 0 0 var(--accent); }
 
 /* ---------------------------------------------------------------- not found */
-.nf { padding: clamp(64px, 14vw, 160px) 0; }
-.nf h1 { max-width: 14ch; }
+.nf { padding: clamp(40px, 7vw, 88px) 0; }
+.nf h1 { max-width: 18ch; font-size: clamp(2.25rem, 1.2rem + 4.4vw, 4rem); }
 .nf .lede { margin: 24px 0 32px; }
+.nf-list { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; max-width: 46rem; margin: 0; padding: 0; list-style: none; }
+@media (min-width: 640px) { .nf-list { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.nf-list li { display: flex; }
+.nf-list a { display: grid; flex: 1; align-content: start; gap: 2px; min-height: 44px; padding: 14px 18px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); color: var(--ink); text-decoration: none; }
+.nf-list a:hover { border-color: var(--muted); }
+.nf-list span { color: var(--muted); font-size: .9375rem; }
 
 /* ---------------------------------------------------------------- back to top */
 /* Made by the shared script at the end of <main>. The dock has no height and stays at the bottom of the window while <main> is in

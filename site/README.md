@@ -18,7 +18,7 @@ python3 -m http.server --directory site 8080      # then open http://127.0.0.1:8
 | `security/index.html` | `/security/` | An At a glance box (what it protects, what leaves your environment, what it does not do: one line each, from the page's own sentences, each linking to its section, with a mark that says what kind of answer it is), then the three in full, a hardening checklist, assurance, and how to report a problem |
 | `contact/index.html` | `/contact/` | Which address is for what, in three rows (the place the links to sales, support and security land, each with a copy button that the script adds), and what to put in the message |
 | `legal/index.html` | `/legal/` | The source licence in plain words, privacy (this site collects nothing), and the terms |
-| `404.html` | any address that is not found | A short page with links; written with addresses from the root, because a host shows it at the address that was not found |
+| `404.html` | any address that is not found | A short list of the pages a person was probably looking for, each with what it is for (and the account, while Curule Cloud is open), and the way home; written with addresses from the root, because a host shows it at the address that was not found |
 | `assets/site.css` | | The one stylesheet: the brand's colours under the names the pages use, the system fonts, and every component |
 | `assets/site.js` | | Sets the links that leave the site, the copy buttons on the commands, the phone menu, the On this page bar of the long pages, Back to top, and the documentation page's filter; nothing else |
 | `assets/pricing.js` | | The calculator on the pricing page |
