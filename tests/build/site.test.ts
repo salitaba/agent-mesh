@@ -401,22 +401,31 @@ test("a table or a command that goes on past its box shows a shadow at the edge 
   }
 });
 
-test("a card that a link points at is marked once the link is followed, by a second line and not by colour alone", () => {
+test("a card or a row that a link points at is marked once the link is followed, by a second line or a bar and not by colour alone", () => {
   const css = fs.readFileSync(path.join(SITE, "assets", "site.css"), "utf8");
   const kinds = ["card", "doc-card", "plan"];
   assert.match(css, /\n\.card:target, \.doc-card:target, \.plan:target \{ border-color: var\(--accent\); box-shadow: inset 0 0 0 1px var\(--accent\); \}/, "inside the border: the card does not move");
   assert.match(/@media \(forced-colors: active\) \{[\s\S]*?\n\}/.exec(css)![0], /\.card:target, \.doc-card:target, \.plan:target \{ outline: 2px solid Highlight;/, "a forced-colour mode drops the shadow; an outline stays");
-  // The cards links do point at (the contact page's three, from the security, pricing and documentation pages) are of those kinds.
-  let cards = 0;
+  // The contact page's addresses are rows, which the plan buttons, the documentation page and the security page point at: a bar at the
+  // row's edge says which one was meant, and a forced-colour mode, which drops the shadow, gets an outline.
+  assert.match(css, /\n\.address-row:target \{ background: var\(--panel\); box-shadow: inset 4px 0 0 var\(--accent\); \}/);
+  assert.match(/@media \(forced-colors: active\) \{[\s\S]*?\n\}/.exec(css)![0], /\.address-row:target \{ outline: 2px solid Highlight;/);
+  // What links do point at (the contact page's three, from the plan buttons, the documentation page and the security page) is of those kinds.
+  let rows = 0;
   for (const p of pages) {
     for (const m of p.markup.matchAll(/\bhref="([^"#]*)#([\w-]+)"/g)) {
       const target = m[1] === "" ? p : pages.find((q) => q.rel === fileOf(m[1]!, p));
       const element = target && new RegExp(`<(\\w+)\\b[^>]*\\sid="${m[2]}"[^>]*>`).exec(target.markup);
-      if (!element || !/^article$/.test(element[1]!)) continue;
-      cards++;
+      if (!element) continue;
       const classes = /\sclass="([^"]*)"/.exec(element[0])?.[1]?.split(/\s+/) ?? [];
+      if (element[1] === "li" && classes.includes("address-row")) {
+        rows++;
+        continue;
+      }
+      if (!/^article$/.test(element[1]!)) continue;
       assert.ok(classes.some((c) => kinds.includes(c)), `${p.rel}: #${m[2]} is a card the stylesheet does not mark: ${element[0]}`);
     }
   }
-  assert.ok(cards >= 3, `links point at cards (${cards})`);
+  // (No link points at a card today: the contact page's were the only ones. The rule stays for the next page that has one.)
+  assert.ok(rows >= 3, `links point at the rows of addresses (${rows}): from the plan buttons, the documentation page and the security page`);
 });

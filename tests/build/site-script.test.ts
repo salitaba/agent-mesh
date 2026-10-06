@@ -10,12 +10,35 @@ import assert from "node:assert/strict";
 import * as fs from "fs";
 import * as path from "path";
 import * as vm from "node:vm";
-import { parsePage, type FakeDocument, type FakeNode } from "../cloud/pages-support";
-import { SITE, page, sitePages } from "./site-pages";
+import { FakeNode, parsePage, type FakeDocument } from "../cloud/pages-support";
+import { SITE, decode, page, sitePages } from "./site-pages";
 
 const SCRIPT = fs.readFileSync(path.join(SITE, "assets", "site.js"), "utf8");
 const CSS = fs.readFileSync(path.join(SITE, "assets", "site.css"), "utf8");
 const pages = sitePages();
+
+// The small DOM has no appendChild, insertBefore, firstChild, nextSibling or parentNode, which the copy buttons use in a browser: the
+// few lines that give it those, so that the script can run on a page with a clipboard. Each test file is its own process.
+const nodes = FakeNode.prototype as unknown as Record<string, unknown>;
+if (!("insertBefore" in nodes)) {
+  Object.defineProperties(nodes, {
+    parentNode: { get(this: FakeNode) { return this.parent; } },
+    firstChild: { get(this: FakeNode) { return this.children[0] ?? null; } },
+    nextSibling: { get(this: FakeNode) { return this.parent?.children[this.parent.children.indexOf(this) + 1] ?? null; } },
+  });
+  nodes.appendChild = function (this: FakeNode, node: FakeNode): FakeNode {
+    this.append(node);
+    return node;
+  };
+  nodes.insertBefore = function (this: FakeNode, node: FakeNode, before: FakeNode | null): FakeNode {
+    node.parent?.children.splice(node.parent.children.indexOf(node), 1);
+    node.parent = this;
+    const at = before ? this.children.indexOf(before) : -1;
+    if (at < 0) this.children.push(node);
+    else this.children.splice(at, 0, node);
+    return node;
+  };
+}
 
 interface Pure {
   readingAt(tops: number[], line: number): number;
@@ -483,6 +506,100 @@ test("the filter is for the map and leaves the cards at the top alone: they are 
   for (const a of r.doc.querySelectorAll(".start a")) {
     if (a.hasAttribute("data-doc")) assert.match(a.href, /^https:\/\/github\.com\/salitaba\/agent-mesh\/blob\/main\/docs\/[\w/.#-]+$/, "the script gave the title its address");
   }
+});
+
+// ---------------------------------------------------------------- copy buttons
+
+interface Copying {
+  doc: FakeDocument;
+  /** What the page wrote to the clipboard, in order. */
+  written: string[];
+  /** The live region the script makes for a screen reader. */
+  said: () => string;
+  runTimers: () => void;
+  click: (button: FakeNode) => Promise<void>;
+}
+
+/** A page with the script run on it in a browser that can copy, and that allows it or does not. */
+function copying(rel: string, allow = true, edit: (html: string) => string = (html) => html): Copying {
+  const doc = parsePage(edit(page(pages, rel).html));
+  const written: string[] = [];
+  const timers: Array<() => void> = [];
+  const navigator = { clipboard: { writeText: (text: string) => (written.push(text), allow ? Promise.resolve() : Promise.reject(new Error("not allowed"))) } };
+  vm.runInNewContext(SCRIPT, { document: doc, navigator, window: { setTimeout: (fn: () => void) => timers.push(fn), clearTimeout: () => undefined } }, { filename: "site.js" });
+  const region = doc.querySelectorAll("div").find((d) => d.getAttribute("role") === "status")!;
+  return {
+    doc,
+    written,
+    said: () => region.textContent,
+    runTimers: () => timers.splice(0).forEach((fn) => fn()),
+    click: async (button) => {
+      for (const fn of button.listeners.get("click") ?? []) fn(event(button));
+      await new Promise((resolve) => setImmediate(resolve));
+    },
+  };
+}
+
+test("an address to write to has a copy button right beside it that copies the address and says so, and the address stays a link and text", async () => {
+  const r = copying("contact/index.html");
+  const rows = r.doc.querySelectorAll(".address-row");
+  assert.deepEqual(rows.map((row) => row.id), ["sales", "support", "security"]);
+  for (const row of rows) {
+    const link = row.querySelector("a[data-mail]")!;
+    const button = row.querySelector("button")!;
+    const kind = row.id;
+    assert.equal(link.getAttribute("data-mail"), kind);
+    assert.ok(link.href.startsWith("mailto:") && link.textContent.includes("@"), `${kind}: the address is still a link to a mail program, and text`);
+    assert.ok(link.parent!.children.indexOf(button) === link.parent!.children.indexOf(link) + 1, `${kind}: the button is right after the address`);
+    assert.equal(button.getAttribute("type") ?? (button as unknown as { type: string }).type, "button", `${kind}: it submits nothing`);
+    assert.equal(button.getAttribute("aria-label"), `Copy the ${kind} address`, `${kind}: its name says which address`);
+    assert.equal(button.textContent, "Copy");
+    await r.click(button);
+    assert.equal(r.written[r.written.length - 1], link.textContent.trim(), `${kind}: the address is what was copied`);
+    assert.equal(button.textContent, "Copied", `${kind}: and the button says so`);
+    assert.equal(r.said(), `Copied the ${kind} address to the clipboard`, `${kind}: and so does the live region, for a screen reader`);
+    r.runTimers();
+    assert.equal(button.textContent, "Copy", `${kind}: after a moment it is a copy button again`);
+    assert.equal(r.said(), "");
+  }
+  assert.equal(r.written.length, 3);
+});
+
+test("a browser that does not allow copying is told so, with where to look, and the code boxes' buttons copy the commands without the trailing space", async () => {
+  const refused = copying("contact/index.html", false);
+  const button = refused.doc.querySelector(".address-row button")!;
+  await refused.click(button);
+  assert.equal(button.textContent, "Not copied");
+  assert.equal(refused.said(), "The browser did not allow copying; select the text instead");
+  // A block that ends in a blank line (an editor leaves one) is copied without it, or the paste would run the last command at once.
+  const home = copying("index.html", true, (html) => html.replace('echo "$MESH_API_TOKEN"</code>', 'echo "$MESH_API_TOKEN"\n\n</code>'));
+  const boxes = home.doc.querySelectorAll(".code");
+  assert.equal(boxes.length, 3);
+  assert.match(boxes[0]!.querySelector("pre")!.textContent, /\s\n$/, "the first block ends in a blank line");
+  for (const box of boxes) {
+    const copy = box.querySelector(".code-bar button")!;
+    assert.equal(copy.getAttribute("aria-label"), "Copy these commands");
+    await home.click(copy);
+    assert.equal(home.written[home.written.length - 1], decode(box.querySelector("pre")!.textContent).replace(/\s+$/, ""));
+    assert.ok(!/\s$/.test(home.written[home.written.length - 1]!), "no trailing space or line");
+    assert.equal(home.said(), "Copied to the clipboard");
+  }
+});
+
+test("the copy buttons are 44 pixel targets on a phone and where a finger points, and so is the address beside one", () => {
+  assert.match(CSS, /@media \(max-width: 719px\), \(pointer: coarse\) \{ \.copy \{ min-height: 44px; \} \}/);
+  assert.match(CSS, /\n\.address-row \.address a \{[^}]*min-height: 44px;/);
+  assert.match(CSS, /\n\.copy \{ min-height: 36px;/, "and a button with a mouse is a little smaller, as the code boxes' always were");
+});
+
+test("without a clipboard no page has a copy button, and an address that is not one yet (a marker) is not offered to copy", () => {
+  for (const p of pages) {
+    const doc = parsePage(p.html);
+    vm.runInNewContext(SCRIPT, { document: doc, navigator: {}, window: { setTimeout, clearTimeout } }, { filename: "site.js" });
+    assert.equal(doc.querySelectorAll(".copy").length, 0, p.rel);
+  }
+  const r = copying("contact/index.html", true, (html) => html.replace(/(<a data-mail="support" href="[^"]*">)[^<]*(<\/a>)/, "$1TODO(owner): support address$2"));
+  assert.deepEqual(r.doc.querySelectorAll(".address-row").map((row) => row.querySelectorAll("button").length), [1, 0, 1], "the placeholder is text, and nothing is offered to copy");
 });
 
 // ---------------------------------------------------------------- the phone menu

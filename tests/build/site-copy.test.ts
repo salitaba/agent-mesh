@@ -266,6 +266,24 @@ test("the documentation page starts with the goals a visitor comes with, each na
   assert.ok(!/\bscript\b/i.test(textOf(start)), "how the links are set is not the visitor's business");
 });
 
+test("the contact page says which address is for what in three rows that a link to it lands on, and the cards below say what to put in the message", () => {
+  const contact = page(pages, "contact/index.html");
+  const rows = [...contact.html.matchAll(/<li class="address-row" id="(\w+)">([\s\S]*?)<\/li>/g)];
+  assert.deepEqual(rows.map((r) => r[1]), ["sales", "support", "security"]);
+  for (const [, id, row] of rows) {
+    assert.match(row!, new RegExp(`<b>${id![0]!.toUpperCase()}${id!.slice(1)}</b><span>[^<]{20,}</span>`), `${id}: who it is for`);
+    const address = new RegExp(`<a data-mail="${id}" href="mailto:([^"]+)">([^<]+)</a>`).exec(row!);
+    assert.ok(address && address[1] === address[2], `${id}: the address is a link to a mail program and is written out`);
+  }
+  assert.equal((contact.html.match(/\bdata-mail=/g) ?? []).length, 3, "each address is written once on the page, so a copy button and a link to it mean the same thing");
+  for (const p of pages) {
+    for (const m of p.markup.matchAll(/\bhref="([^"#]*contact\/)#(\w+)"/g)) assert.ok(rows.some((r) => r[1] === m[2]), `${p.rel}: ${m[0]} lands on the address, not above it`);
+  }
+  const cards = [...contact.html.matchAll(/<article class="card contact">\s*<h3>([^<]+)<\/h3>\s*<h4>([^<]+)<\/h4>/g)].map((m) => [m[1], m[2]]);
+  assert.deepEqual(cards, [["To sales", "Please say"], ["To support", "Please include"], ["To security", "Please include"]]);
+  assert.match(contact.html, /Do not open a public issue\. We acknowledge a report within 3 business days\./, "what to expect from a security report stays on the page");
+});
+
 test("the documentation page tells a visitor where its links go, and that there is no documentation site yet, not how it is built", () => {
   const docs = page(pages, "docs/index.html");
   // What a visitor with a script reads: everything but what is only for a visitor without one.

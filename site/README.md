@@ -16,7 +16,7 @@ python3 -m http.server --directory site 8080      # then open http://127.0.0.1:8
 | `pricing/index.html` | `/pricing/` | The two ways to pay (while Curule Cloud is open), the plans with the Annual/Monthly choice, the comparison table, what a plan pays for, a calculator, how licences work, and questions |
 | `docs/index.html` | `/docs/` | "Start here": a card for each thing a visitor comes to do (run the demo, deploy it, describe a team and its rules, use Curule Cloud), each naming the one document to open first; then a map of the documents in the repository: what each is for, and whether it is reference, a guide, short, or a log, with a filter over them |
 | `security/index.html` | `/security/` | An At a glance box (what it protects, what leaves your environment, what it does not do: one line each, from the page's own sentences, each linking to its section, with a mark that says what kind of answer it is), then the three in full, a hardening checklist, assurance, and how to report a problem |
-| `contact/index.html` | `/contact/` | Who to write to for sales, support and security, and what to put in the message |
+| `contact/index.html` | `/contact/` | Which address is for what, in three rows (the place the links to sales, support and security land, each with a copy button that the script adds), and what to put in the message |
 | `legal/index.html` | `/legal/` | The source licence in plain words, privacy (this site collects nothing), and the terms |
 | `404.html` | any address that is not found | A short page with links; written with addresses from the root, because a host shows it at the address that was not found |
 | `assets/site.css` | | The one stylesheet: the brand's colours under the names the pages use, the system fonts, and every component |
@@ -36,6 +36,11 @@ section being read is marked (`aria-current`, and a filled chip with a dot). It 
 the chips do not fit, so it is as tall where it rests as where it stays and nothing moves when it starts to stay. A followed link
 lands below the header and the bar: `--head-h` and `--toc-h` in `assets/site.css` are their heights, and
 `tests/build/site-script.test.ts` checks them against the rules that make them.
+
+Wherever the script finds a clipboard it adds a Copy button to each block of commands, and one beside each address on the contact
+page (`a[data-mail]`, when the text is an address): one click writes it to the clipboard and says "Copied", to a screen reader
+too, for a moment. The address stays a link and text, so a page with no script, or a browser that does not allow copying, loses
+only the button. On a phone the button is a 44 pixel target.
 
 Once a reader is two screens down any page, a *Back to top* button shows in the bottom right corner. The script makes it, at the
 end of `<main>`: it stays at the bottom of the window while the content is in view and rests above the footer at the end, so it

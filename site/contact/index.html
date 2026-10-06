@@ -69,12 +69,27 @@
 
 <section class="section">
   <div class="wrap">
-    <div class="grid grid-3">
-      <article class="card contact" id="sales">
-        <h2>Sales</h2>
-        <p>Plans, licences, quotes and Enterprise terms.</p>
+    <h2 class="legend-title">Which address, for what</h2>
+    <ul class="addresses mt-s">
+      <li class="address-row" id="sales">
+        <div><b>Sales</b><span>Plans, licences, quotes and Enterprise terms.</span></div>
         <p class="address"><a data-mail="sales" href="mailto:ali79taba@gmail.com">ali79taba@gmail.com</a></p>
-        <h3>Please say</h3>
+      </li>
+      <li class="address-row" id="support">
+        <div><b>Support</b><span>Installing it, running it, and what a refusal means.</span></div>
+        <p class="address"><a data-mail="support" href="mailto:ali79taba@gmail.com">ali79taba@gmail.com</a></p>
+      </li>
+      <li class="address-row" id="security">
+        <div><b>Security</b><span>A vulnerability in Curule, reported privately.</span></div>
+        <p class="address"><a data-mail="security" href="mailto:ali79taba@gmail.com">ali79taba@gmail.com</a></p>
+      </li>
+    </ul>
+
+    <h2 class="legend-title mt-xl">What to put in the message</h2>
+    <div class="grid grid-3 mt-s">
+      <article class="card contact">
+        <h3>To sales</h3>
+        <h4>Please say</h4>
         <ul class="tick">
           <li>which plan you are asking about;</li>
           <li>how many projects you would have open, and the most agents in one team;</li>
@@ -84,11 +99,9 @@
         </ul>
         <p class="small">It goes to a person, not to a form. If we agree, a licence key is issued by hand.</p>
       </article>
-      <article class="card contact" id="support">
-        <h2>Support</h2>
-        <p>Installing it, running it, and what a refusal means.</p>
-        <p class="address"><a data-mail="support" href="mailto:ali79taba@gmail.com">ali79taba@gmail.com</a></p>
-        <h3>Please include</h3>
+      <article class="card contact">
+        <h3>To support</h3>
+        <h4>Please include</h4>
         <ul class="tick">
           <li>the plan you are on;</li>
           <li>the output of <code>curule doctor</code>, which is safe to paste into a ticket;</li>
@@ -97,11 +110,9 @@
         </ul>
         <p class="small">Response times follow your plan; they are in the <a href="../pricing/#compare">comparison table</a>. The Community plan is supported through the issue tracker and the documentation: <a href="../docs/" data-repo="issues">open an issue</a>.</p>
       </article>
-      <article class="card contact" id="security">
-        <h2>Security</h2>
-        <p>A vulnerability in Curule, reported privately.</p>
-        <p class="address"><a data-mail="security" href="mailto:ali79taba@gmail.com">ali79taba@gmail.com</a></p>
-        <h3>Please include</h3>
+      <article class="card contact">
+        <h3>To security</h3>
+        <h4>Please include</h4>
         <ul class="tick">
           <li>what you found;</li>
           <li>how to reproduce it: a request, a configuration, a version;</li>

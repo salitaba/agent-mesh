@@ -238,10 +238,10 @@ hr { border: 0; border-top: 1px solid var(--line); margin: 0; }
    there without a script too; the comparison tables do the same. */
 .code pre { margin: 0; padding: 16px 18px; overflow-x: auto; font: .84375rem/1.7 var(--mono); tab-size: 2; background: linear-gradient(to left, var(--code) 30%, transparent) right / 48px 100% no-repeat local, linear-gradient(to left, var(--edge), transparent) right / 12px 100% no-repeat scroll; }
 .code-bar { display: flex; justify-content: flex-end; padding: 6px 6px 0; }
-.code .copy { min-height: 36px; padding: 0 14px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); color: var(--ink); font: 600 .8125rem/1 var(--font); cursor: pointer; }
-.code .copy:hover { border-color: var(--muted); }
+.copy { min-height: 36px; padding: 0 14px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); color: var(--ink); font: 600 .8125rem/1 var(--font); cursor: pointer; }
+.copy:hover { border-color: var(--muted); }
 .code-bar + pre { padding-top: 8px; }
-@media (max-width: 719px), (pointer: coarse) { .code .copy { min-height: 44px; } }
+@media (max-width: 719px), (pointer: coarse) { .copy { min-height: 44px; } }
 .try { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0; margin: 0; padding: 0; list-style: none; counter-reset: try; }
 .try > li { position: relative; counter-increment: try; padding: 0 0 32px 56px; }
 .try > li::before { content: counter(try); position: absolute; left: 0; top: -2px; display: grid; place-items: center; width: 36px; height: 36px; border: 1px solid var(--line); border-radius: 50%; background: var(--panel); font: 600 .9375rem/1 var(--mono); }
@@ -489,10 +489,19 @@ hr { border: 0; border-top: 1px solid var(--line); margin: 0; }
 .tick { margin: 0 0 16px; padding: 0; list-style: none; font-size: .9375rem; }
 .tick li { position: relative; margin-bottom: 6px; padding-left: 22px; color: var(--muted); }
 .tick li::before { content: ""; position: absolute; left: 3px; top: .5em; width: 8px; height: 5px; border-left: 2px solid var(--ok); border-bottom: 2px solid var(--ok); transform: rotate(-45deg); }
-.contact h2 { font-size: 1.5rem; letter-spacing: -.02em; line-height: 1.2; margin-bottom: 8px; }
-.contact h3 { margin: 20px 0 8px; font-size: .8125rem; font-weight: 650; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
-.contact .address { margin: 16px 0 0; font-size: 1.0625rem; font-weight: 600; overflow-wrap: anywhere; }
+.contact h3 { font-size: 1.5rem; letter-spacing: -.02em; line-height: 1.2; margin-bottom: 8px; }
+.contact h4 { margin: 20px 0 8px; font-size: .8125rem; font-weight: 650; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
 .contact .small { color: var(--muted); }
+/* Which address, for what: a row for each, the address at the right of what it is for (under it on a phone), and a copy button the
+   script adds beside it. A link that points at a row marks it, by a bar at its edge and not by colour alone. */
+.addresses { display: grid; margin: 0; padding: 0; list-style: none; border-top: 1px solid var(--line); }
+.address-row { display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px 24px; padding: 18px 16px; border-bottom: 1px solid var(--line); }
+@media (min-width: 760px) { .address-row { grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); align-items: center; } }
+.address-row b { display: block; font-size: 1.0625rem; }
+.address-row span { color: var(--muted); font-size: .9375rem; }
+.address-row .address { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; margin: 0; font-size: 1.0625rem; font-weight: 600; overflow-wrap: anywhere; }
+.address-row .address a { display: inline-flex; align-items: center; min-height: 44px; }
+.address-row:target { background: var(--panel); box-shadow: inset 4px 0 0 var(--accent); }
 
 /* ---------------------------------------------------------------- not found */
 .nf { padding: clamp(64px, 14vw, 160px) 0; }
@@ -538,6 +547,7 @@ hr { border: 0; border-top: 1px solid var(--line); margin: 0; }
   .billing-input:nth-of-type(2):checked ~ .billing label:nth-child(2),
   .toc a[aria-current="true"] { forced-color-adjust: none; background: Highlight; color: HighlightText; }
   .card:target, .doc-card:target, .plan:target { outline: 2px solid Highlight; outline-offset: 2px; }
+  .address-row:target { outline: 2px solid Highlight; outline-offset: -2px; }
 }
 @media print {
   .site-header, .skip, .tabs, .billing, .copy, .site-footer .foot-grid { display: none; }

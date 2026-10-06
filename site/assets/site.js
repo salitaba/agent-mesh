@@ -108,28 +108,41 @@ var IMAGE_NAME = "ghcr.io/salitaba/curule";
     var status = el("div", "sr");
     status.setAttribute("role", "status");
     document.body.appendChild(status);
-    all(".code").forEach(function (box) {
-      var pre = box.querySelector("pre");
-      if (!pre || box.querySelector(".copy")) return;
+    // A button that copies what `text()` returns. It says "Copied" for a moment, and says so to a screen reader through the live
+    // region, whose words are `spoken`; its name is `label`. When the browser does not allow it, it says so and where to look.
+    var copyButton = function (label, spoken, text) {
       var button = el("button", "copy", "Copy");
       button.type = "button";
-      button.setAttribute("aria-label", "Copy these commands");
+      button.setAttribute("aria-label", label);
       var timer = 0;
-      var say = function (shown, spoken) {
+      var say = function (shown, said) {
         button.textContent = shown;
-        status.textContent = spoken;
+        status.textContent = said;
         window.clearTimeout(timer);
         timer = window.setTimeout(function () { button.textContent = "Copy"; status.textContent = ""; }, 2200);
       };
       button.addEventListener("click", function () {
-        navigator.clipboard.writeText(pre.textContent.replace(/\s+$/, "")).then(
-          function () { say("Copied", "Copied to the clipboard"); },
+        navigator.clipboard.writeText(text()).then(
+          function () { say("Copied", spoken); },
           function () { say("Not copied", "The browser did not allow copying; select the text instead"); }
         );
       });
+      return button;
+    };
+    all(".code").forEach(function (box) {
+      var pre = box.querySelector("pre");
+      if (!pre || box.querySelector(".copy")) return;
       var bar = el("div", "code-bar");
-      bar.appendChild(button);
+      bar.appendChild(copyButton("Copy these commands", "Copied to the clipboard", function () { return pre.textContent.replace(/\s+$/, ""); }));
       box.insertBefore(bar, box.firstChild);
+    });
+    // An address to write to is copied in one tap: on a phone with no mail program set up, or with webmail, the link opens nothing
+    // useful, and a copied address goes where the person's mail is. The address stays text and a link without a script.
+    all("a[data-mail]").forEach(function (link) {
+      var address = link.textContent.trim();
+      if (!/^[^\s@]+@[^\s@]+$/.test(address) || (link.nextSibling && link.nextSibling.className === "copy")) return;
+      var kind = link.getAttribute("data-mail");
+      link.parentNode.insertBefore(copyButton("Copy the " + kind + " address", "Copied the " + kind + " address to the clipboard", function () { return address; }), link.nextSibling);
     });
   }
 
