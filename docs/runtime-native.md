@@ -253,8 +253,8 @@ started with these instead of the three above:
 
 A host with a provider, a model and a key is managed the same way: a team made on it runs on the native runtime, on that key, and
 the provider bills the customer directly. `curule doctor` lists the four settings by name and says so, and never prints the key.
-Until a key is set the workspace runs, with no models: the shipped demo (stub runtime) still works. The workspace reaches the
-provider through the operator's egress proxy, so the provider's host must be on its list.
+Until a key is set the workspace is started with no models. On a container workspace whose network is internal, the provider is
+reached through the operator's egress proxy, so the provider's host must be on its list.
 
 The shipped demo runs on the stub runtime and makes no model calls, so it is left as it is. The welcome says the models are
 supplied and that what a team uses is charged to the account's balance, and `curule doctor` lists the three settings by name.
