@@ -10,7 +10,7 @@ import assert from "node:assert/strict";
 import * as fs from "fs";
 import * as path from "path";
 import { PLANS } from "../../packages/licensing/src/index";
-import { ROOT, SITE, decode, page, shareable, sitePages } from "./site-pages";
+import { ROOT, SITE, decode, page, shareable, sitePages, textOf } from "./site-pages";
 
 const pages = sitePages();
 const WORDS = ["zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten", "eleven", "twelve"];
@@ -189,6 +189,18 @@ test("a document is as long as its label on the documentation page says", () => 
   for (const must of ["../README.md", "architecture.md", "configuration.md", "commercial/deployment.md", "operations.md", "commercial/security.md", "commercial/security-questionnaire.md", "../SECURITY.md", "commercial/licensing.md", "commercial/pricing.md", "protocol.md", "runtime.md", "../CHANGELOG.md", "brand.md"]) {
     assert.ok(listed.has(path.normalize(must)), `the documentation page lists ${must}`);
   }
+});
+
+test("the documentation page tells a visitor where its links go, and that there is no documentation site yet, not how it is built", () => {
+  const docs = page(pages, "docs/index.html");
+  // What a visitor with a script reads: everything but what is only for a visitor without one.
+  const read = textOf(docs.html.replace(/<noscript>[\s\S]*?<\/noscript>/g, " "));
+  assert.ok(read.includes("Each title opens the document on GitHub."), "where a title goes");
+  assert.ok(read.includes("The path under it is where the file is in the repository"), "and what the path under it is");
+  assert.ok(read.includes("there is no separate documentation site yet"), "the honest part stays");
+  assert.ok(!/\bscript\b/i.test(read), "how the links are set is the page's business, not the visitor's");
+  // A visitor without a script is told what does not work for them, and what to use instead.
+  assert.match(docs.html, /<noscript><p class="notice[^"]*">With JavaScript off the titles do not open anything: the path under each one is where the file is\.<\/p><\/noscript>/);
 });
 
 test("the numbers the pages quote about licences, support and reporting are the documents' own", () => {
