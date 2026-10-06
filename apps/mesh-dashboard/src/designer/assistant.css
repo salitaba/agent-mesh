@@ -31,6 +31,14 @@ button.linklike:hover { text-decoration: underline; }
 }
 .ms-chat-thinking.live pre { color: var(--muted); }
 .ms-chat-compose { display: flex; flex-direction: column; gap: var(--s2); }
+/* Before anything is said: a question, and two ways to begin that fill the box and send nothing. */
+.ms-chat-start { display: flex; flex-direction: column; gap: var(--s2-5); color: var(--text-dim); font-size: 14px; line-height: 1.5; }
+.ms-chat-start p { margin: 0; }
+.ms-starters { display: flex; flex-wrap: wrap; gap: var(--s2); }
+.ms-starter { display: inline-flex; align-items: center; min-height: 36px; padding: var(--s1) var(--s3); background: var(--panel-2); border: 1px solid var(--line-control); border-radius: 999px; color: var(--text); font: 14px/1.3 var(--sans); text-align: left; cursor: pointer; }
+.ms-starter:hover { border-color: var(--accent); }
+.ms-key-link { color: var(--accent-2); font-weight: 600; text-decoration: underline; }
+@media (max-width: 560px) { .ms-starter { min-height: 44px; } }
 .ms-panel { display: flex; flex-direction: column; gap: var(--s3); }
 ul.diff-list { margin: var(--s1) 0; padding-left: 18px; font-size: 14px; color: var(--text-dim); max-height: 180px; overflow: auto; }
 .ms-chat-card { display: flex; flex-direction: column; gap: var(--s1-5); padding: var(--s2-5) var(--s3); border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--panel); }

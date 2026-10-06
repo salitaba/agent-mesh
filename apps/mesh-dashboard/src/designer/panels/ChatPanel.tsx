@@ -11,6 +11,9 @@ import { summarizeDiff } from "../diff";
 import { confirmationFor, confirmationSatisfied, goalDriftWarning, showsTextProposal, splitByTarget, summarizeMutation, type LiveMission } from "../mutations";
 import { Button, Input, TextArea } from "../../components";
 import { useMesh } from "../../store";
+import { useHostFacts } from "../../hostfacts";
+import { KEY_MISSING, keyIsMissing } from "../../firstrun";
+import { ASSISTANT_ASK, STARTERS, assistantTrouble, readableProblem } from "../assistant-text";
 import { clearChat, getSnapshot, markApplied, sendMessage, setReview, setShowThinking, subscribe } from "../chatStore";
 import { getDraftSnapshot, type DraftState } from "../storage";
 import { list as listCommands, setPendingProposal } from "../../commands";
@@ -39,6 +42,11 @@ const designerUndo = (): (() => void) | null => {
 export default function ChatPanel(): React.JSX.Element {
   const { client, toast, setView, status } = useMesh();
   const { entries, busy, failed, review, applied, live, showThinking } = useSyncExternalStore(subscribe, getSnapshot);
+  // A workspace with no model key cannot be answered by the designer, and the person is the one who can fix that: say so before they type.
+  const hostFacts = useHostFacts();
+  const hosted = hostFacts?.hosted ?? null;
+  const keyMissing = hostFacts !== null && keyIsMissing(hostFacts);
+  const trouble = failed ? assistantTrouble(failed, { hosted, keyMissing }) : null;
   /* The mission as it is actually RUNNING, for the draft card's drift warning.
    * Note `live` above is the streaming reply, not the live mesh. Memoized on
    * the goal identity because /status re-polls every few seconds and this maps
@@ -70,7 +78,7 @@ export default function ChatPanel(): React.JSX.Element {
 
   const send = () => {
     const text = input.trim();
-    if (!text || busy) return;
+    if (!text || busy || keyMissing) return;
     setInput("");
     void sendMessage(client, text, getDraftSnapshot().model ?? undefined);
   };
@@ -141,7 +149,27 @@ export default function ChatPanel(): React.JSX.Element {
           stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 48;
         }}
       >
-        {entries.length === 0 ? <div className="muted">No messages yet. Try: add a security reviewer, or describe the team you want in a sentence.</div> : null}
+        {entries.length === 0 ? (
+          <div className="ms-chat-start">
+            <p>{ASSISTANT_ASK}</p>
+            {/* A starter fills the box and sends nothing: the person reads it, changes it if they like, and sends it. */}
+            <div className="ms-starters" role="group" aria-label="Ways to begin">
+              {STARTERS.map((st) => (
+                <button
+                  key={st.id}
+                  type="button"
+                  className="ms-starter"
+                  onClick={() => {
+                    setInput(st.text);
+                    document.querySelector<HTMLTextAreaElement>("#ms-dock textarea")?.focus();
+                  }}
+                >
+                  {st.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        ) : null}
         {entries.map((e, i) => {
           const staged = e.proposal ?? null;
           const split = staged ? splitByTarget(staged.mutations) : { draft: [] as StagedMutation[], server: [] as StagedMutation[] };
@@ -171,7 +199,7 @@ export default function ChatPanel(): React.JSX.Element {
               {e.content}
               {e.role === "assistant" && e.problems?.length ? (
                 <ul className="ms-chat-problems">
-                  {e.problems.map((p) => <li key={p}>{p}</li>)}
+                  {e.problems.map((p) => <li key={p}>{readableProblem(p)}</li>)}
                 </ul>
               ) : null}
               {e.role === "assistant" && cards > 0 ? (
@@ -267,11 +295,24 @@ export default function ChatPanel(): React.JSX.Element {
         ) : null}
         {busy && !live?.text && !(showThinking && live?.thinking) ? <div className="muted" role="status">The designer is thinking…</div> : null}
       </div>
-      {failed ? <div className="verdict bad" role="alert">{failed}</div> : null}
+      {keyMissing && hosted ? (
+        <div className="verdict warn" role="status">
+          {KEY_MISSING}{" "}
+          <a className="ms-key-link" href={hosted.accountUrl} target="_blank" rel="noopener noreferrer">Add your model key<span className="sr-only"> (opens your account page in a new tab)</span></a>
+          {" "}You can still build the team yourself: add seats on the canvas or in the list.
+        </div>
+      ) : trouble ? (
+        <div className="verdict bad" role="alert">
+          {trouble.text}
+          {hosted && trouble.kind === "credentials" ? (
+            <>{" "}<a className="ms-key-link" href={hosted.accountUrl} target="_blank" rel="noopener noreferrer">Open your account page<span className="sr-only"> (in a new tab)</span></a></>
+          ) : null}
+        </div>
+      ) : null}
       <div className="ms-chat-compose">
         <TextArea
           rows={3}
-          placeholder="For example: add a security reviewer that qa must consult before release"
+          placeholder={entries.length === 0 ? "For example: a product manager, an architect and two developers" : "For example: add a security reviewer that qa must consult before release"}
           aria-label="Message to the designer"
           value={input}
           onChange={(e) => setInput(e.target.value)}
@@ -283,7 +324,7 @@ export default function ChatPanel(): React.JSX.Element {
           }}
         />
         <div className="ms-chat-actions">
-          <Button variant="primary" disabled={busy || !input.trim()} onClick={send}>{busy ? "Waiting…" : "Send"}</Button>
+          <Button variant="primary" disabled={busy || !input.trim() || keyMissing} onClick={send}>{busy ? "Waiting…" : "Send"}</Button>
           <Button variant="ghost" disabled={busy || entries.length === 0} onClick={clearChat}>Clear</Button>
           <label className="ms-chat-think" title="show the model's reasoning as it streams">
             <input type="checkbox" checked={showThinking} onChange={(e) => setShowThinking(e.target.checked)} />
