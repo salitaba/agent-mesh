@@ -862,6 +862,8 @@ kbd { font: 11px var(--mono); border: 1px solid var(--line-strong); border-botto
   .respond-form .row { flex-direction: column; align-items: stretch; }
   .respond-form .primary { min-height: 44px; }
   .row-actions button, button.small { min-height: 32px; }
+  /* The Message panel's recipient chips are the way to address a seat on a phone, so they are full touch targets. */
+  .send-chips .chip-toggle { min-height: 44px; }
 }
 
 /* Phone: the header stops being a bar. Measured at 390px the old layout was four rows, 138px tall, and the document

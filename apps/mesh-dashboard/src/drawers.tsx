@@ -6,6 +6,7 @@ import { planLabel, planStale } from "./plan";
 import { useMesh, useMeshStreams, type TimelineEvent, type TurnStep } from "./store";
 import { StatusPill, LifecyclePill, StepMini, OutcomePill, isTopTrap, rowKey, AgentAvatar, Banner, Button, Chip, ErrorState, Input, Pill, Select, TabPanel, Tabs, TextArea, ZoneNote, agentColor, type ConfirmFn } from "./components";
 import { Icon } from "./icons";
+import { messageTypeLabel, recipientsOf, toggleRecipient } from "./message-form";
 import { actionNote, controlsHint, controlsOf, pauseWarning } from "./agents";
 import { CopyBtn, SandboxStrip, StepSkeleton, StepStatusBlock, envLine, stateMeta, textStats, useSandboxPerms } from "./stepdetail";
 import { ArtifactReader } from "./artifactreader";
@@ -69,6 +70,7 @@ export function MessageDrawer(): React.JSX.Element {
   const parked = Boolean(status?.uiOnly) || status?.mode === "parked";
   const missionOver = status?.goal?.status === "COMPLETED" || status?.goal?.status === "FAILED";
   const [to, setTo] = useState("");
+  const picked = recipientsOf(to, ids);
   const [type, setType] = useState("INFORM");
   const [note, setNote] = useState("");
   const [payload, setPayload] = useState('{ "note": "" }');
@@ -94,7 +96,11 @@ export function MessageDrawer(): React.JSX.Element {
     } else {
       body = { note };
     }
-    const recipients = to.split(",").map((s) => s.trim()).filter(Boolean);
+    const recipients = recipientsOf(to, ids);
+    if (!recipients.length) {
+      setOut({ ok: false, text: "Pick at least one agent." });
+      return;
+    }
     setSending(true);
     setOut(null);
     try {
@@ -130,9 +136,25 @@ export function MessageDrawer(): React.JSX.Element {
           <label htmlFor="send-to">To</label>
           <Input id="send-to" list="send-to-list" placeholder="Choose an agent" required autoComplete="off" value={to} onChange={(e) => setTo(e.target.value)} aria-describedby="send-to-hint" />
           <datalist id="send-to-list">{ids.map((i: string) => <option key={i}>{i}</option>)}</datalist>
-          <span id="send-to-hint" className="muted" style={{ fontSize: 12 }}>To write to several agents, separate their names with commas.</span>
+          {/* One chip per seat, each adding or taking out its name in the field above, so nobody has to type an id. There is no
+              "everyone": the server takes "all" as a name and puts it in no seat's mailbox. */}
+          {ids.length ? (
+            <div className="chips send-chips" role="group" aria-label="Recipients">
+              {ids.map((id: string) => {
+                const on = picked.includes(id);
+                return (
+                  <button key={id} type="button" className={`chip-toggle${on ? " on" : ""}`} aria-pressed={on} onClick={() => setTo(toggleRecipient(to, id, ids))}>
+                    <Icon name={on ? "check" : "plus"} size={12} />{id}
+                  </button>
+                );
+              })}
+            </div>
+          ) : null}
+          <span id="send-to-hint" className="muted" style={{ fontSize: 12 }}>
+            {ids.length ? "Pick the agents, or type their names separated by commas." : "To write to several agents, separate their names with commas."}
+          </span>
         </div>
-        <div className="field"><label htmlFor="send-type">What is this?</label><Select id="send-type" value={type} onChange={(e) => setType(e.target.value)}>{(vocab?.messageTypes || ["INFORM", "MISSION", "REQUEST", "REQUEST_REVIEW", "ESCALATE", "DONE"]).map((t: string) => <option key={t} value={t}>{MESSAGE_PLAIN[t] || t.toLowerCase()} ({t})</option>)}</Select></div>
+        <div className="field"><label htmlFor="send-type">What is this?</label><Select id="send-type" value={type} onChange={(e) => setType(e.target.value)}>{(vocab?.messageTypes || ["INFORM", "MISSION", "REQUEST", "REQUEST_REVIEW", "ESCALATE", "DONE"]).map((t: string) => <option key={t} value={t} title={t}>{messageTypeLabel(t)}</option>)}</Select></div>
         {advanced ? (
           <div className="field"><label htmlFor="send-payload">Message (JSON)</label><TextArea id="send-payload" rows={4} mono spellCheck={false} value={payload} onChange={(e) => setPayload(e.target.value)} /></div>
         ) : (
