@@ -3,9 +3,10 @@ import assert from "node:assert/strict";
 
 import {
   GROUPS, actionNote, controlsHint, controlsOf, groupAgents, groupOf, lastTurnText, pauseWarning, stateText, totalsText, turnsByAgent,
-  memoryKey, unstartedText, type AgentLike, type TurnLike,
+  memoryKey, unstartedText, worryText, type AgentLike, type TurnLike,
 } from "../../apps/mesh-dashboard/src/agents";
 import { plainLifecycle } from "../../apps/mesh-dashboard/src/format";
+import { vitalsOf } from "../../apps/mesh-dashboard/src/vitals";
 
 /**
  * The Agents page's decisions: which group an agent is in, what its card says it is doing and for how long, which controls it
@@ -277,4 +278,31 @@ test("a request that got no answer does not claim to have failed or succeeded", 
     assert.equal(n.kind, "bad");
     assert.match(n.text, /not known whether this took effect/);
   }
+});
+
+test("the line under a card whose turn has gone quiet is two sentences, in whichever words the vitals put the state", () => {
+  // Every way a running turn can be graded slow or stalled: no token yet, tool work and then nothing, a stream that went quiet.
+  const at = (ms: number): number => NOW - ms;
+  const running = (startedAgo: number, phases?: Parameters<typeof vitalsOf>[0]["phases"]): ReturnType<typeof vitalsOf> => vitalsOf({ running: true, startedAt: iso(startedAgo), phases, now: NOW });
+  const states = [
+    running(59_000),
+    running(20_000),
+    running(90_000, { startedAt: at(90_000), llmCallAt: at(90_000), lastActivityAt: at(40_000) }),
+    running(90_000, { startedAt: at(90_000), llmCallAt: at(90_000), lastActivityAt: at(12_000) }),
+    running(90_000, { startedAt: at(90_000), llmCallAt: at(90_000), firstTokenAt: at(80_000), lastTokenAt: at(45_000), lastActivityAt: at(45_000) }),
+    running(90_000, { startedAt: at(90_000), llmCallAt: at(90_000), firstTokenAt: at(80_000), lastTokenAt: at(12_000), lastActivityAt: at(12_000) }),
+  ];
+  const seen = new Set<string>();
+  for (const v of states) {
+    assert.ok(v.health === "stalled" || v.health === "slow", `${v.label}: ${v.detail}`);
+    const text = worryText(v.health === "stalled", v.detail);
+    assert.match(text, /^(No sign of life|Quiet)\. [A-Z0-9]/, text);
+    assert.doesNotMatch(text, /\. [a-z]/, text);
+    assert.ok(text.endsWith(v.detail.slice(1)), "what the vitals said is kept whole");
+    seen.add(text.split(".")[0]!);
+  }
+  assert.deepEqual([...seen].sort(), ["No sign of life", "Quiet"], "both the stalled and the slow wording were exercised");
+  assert.equal(worryText(true, "the model has not sent a single token in 59s"), "No sign of life. The model has not sent a single token in 59s");
+  assert.equal(worryText(false, "20s with no output yet"), "Quiet. 20s with no output yet", "a detail that starts with a figure is left as it is");
+  assert.equal(worryText(false, ""), "Quiet. ", "an empty detail does not throw");
 });

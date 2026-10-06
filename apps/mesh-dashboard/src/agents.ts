@@ -246,6 +246,15 @@ export function controlsOf(lifecycle: string): Control[] {
   return [WAKE, PAUSE];
 }
 
+/**
+ * The line on a card whose turn has gone quiet: what that means, then the vitals' own account of it. The account is a clause that
+ * starts in lower case ("the model has not sent a single token in 59s"), so it is capitalised here: the card used to read "No sign
+ * of life. the model has not...".
+ */
+export function worryText(stalled: boolean, detail: string): string {
+  return `${stalled ? "No sign of life." : "Quiet."} ${detail.charAt(0).toUpperCase()}${detail.slice(1)}`;
+}
+
 /** One sentence under a card's or a drawer's buttons that says what they do to an agent in this state. */
 export function controlsHint(lifecycle: string, stalled = false): string {
   const l = String(lifecycle || "").toUpperCase();

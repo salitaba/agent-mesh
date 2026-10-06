@@ -8,7 +8,7 @@ import { vitalsOf, type Vitals } from "../vitals";
 import { planSummary, planSummaryStale } from "../plan";
 import { compactNow, nowLine, timeLeftText } from "../livework";
 import { FeedStatus } from "../feedstatus";
-import { controlsHint, controlsOf, groupAgents, stateText, totalsText, turnsByAgent, type Control, type GroupId, type SeatSetting } from "../agents";
+import { controlsHint, controlsOf, groupAgents, stateText, totalsText, turnsByAgent, worryText, type Control, type GroupId, type SeatSetting } from "../agents";
 import { useMission } from "../useMission";
 import "./agents.css";
 
@@ -73,7 +73,7 @@ function AgentCard({ a, group, running, last, vitals, now, setting, loaded, onOp
       {worry ? (
         <p className={`agent-worry ${stalled ? "bad" : "warn"}`} title={worry.detail}>
           <Icon name="alert" size={14} />
-          <span>{stalled ? "No sign of life. " : "Quiet. "}{worry.detail}</span>
+          <span>{worryText(stalled, worry.detail)}</span>
         </p>
       ) : null}
 
