@@ -814,6 +814,26 @@ function humanTokens(n: number): string {
  * brevity — a summary that hides them is how a stalled run gets mistaken for a
  * finished one.
  */
+/** The longest a criterion is printed in the acceptance list before the rest of it is left out. */
+export const CRITERION_LINE_MAX = 240;
+
+/**
+ * A criterion as one line of the report: its whole text when it is a sentence or two, and the start of it, with what was left out
+ * counted, when it is a document. A reopen puts the operator's whole reason into the criterion it mints: the nineteenth cronlite
+ * run's reopen was 7.6k characters (three defects and 19 checks to run), and the report printed all of it, 49 of its 127 lines,
+ * between the other six criteria and the spend. The text is in the goal, and the report data (`--json`) carries it whole; this is
+ * only the rendering.
+ */
+export function criterionLine(description: string): string {
+  if (description.length <= CRITERION_LINE_MAX) return description;
+  const flat = description.replace(/\s+/g, " ").trim();
+  if (flat.length <= CRITERION_LINE_MAX) return flat;
+  const cut = flat.slice(0, CRITERION_LINE_MAX);
+  const space = cut.lastIndexOf(" ");
+  const head = (space > CRITERION_LINE_MAX / 2 ? cut.slice(0, space) : cut).replace(/[ ,;:.]+$/, "");
+  return `${head} … (+${flat.length - head.length} more characters in the criterion)`;
+}
+
 export function renderRunReport(report: RunReport): string {
   const out: string[] = [];
   const rule = "─".repeat(64);
@@ -873,7 +893,7 @@ export function renderRunReport(report: RunReport): string {
       const met = SATISFIED_CRITERION_STATUSES.includes(c.status);
       const mark = met ? "✔" : c.status === "ASSERTED" ? "~" : "·";
       const tag = c.mandatory ? "" : " (optional)";
-      out.push(bullet(`${mark} ${c.description}${tag}`));
+      out.push(bullet(`${mark} ${criterionLine(c.description)}${tag}`));
       if (met && c.evidence.length > 0) {
         out.push(bullet(`    evidence: ${c.evidence.slice(0, 3).join(", ")}${c.evidence.length > 3 ? ` (+${c.evidence.length - 3})` : ""}`));
       }

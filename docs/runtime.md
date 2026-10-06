@@ -956,6 +956,13 @@ none) and answers the cards. A state snapshot written before `withdrawnAt` exist
 migrated on import: a criterion of a reopened goal that is still `UNSATISFIED` or
 `ASSERTED` is stamped with the goal's `reopenedAt`.
 
+**The report prints a reopen as one line.** The reason a reopen carries becomes a mandatory criterion, and the end-of-run
+report lists every criterion. The nineteenth cronlite run's reopen was 7.6k characters (three defects and nineteen commands for
+QA to run), and the report printed all of it: 49 of its 127 lines, between the six criteria the mission began with and the
+spend. A criterion longer than 240 characters is now one line in the report, its start, on one line, and a count of what was
+left out (`… (+7,431 more characters in the criterion)`); a short one, line breaks and all, is printed as it was, and the
+report's data (`GET /goals/:id/run-report`) carries every description whole.
+
 ## State & persistence
 
 Local v1: `events.jsonl` (canonical, append-only) + JSON snapshots + filesystem
