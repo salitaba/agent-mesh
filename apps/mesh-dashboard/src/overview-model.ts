@@ -18,6 +18,21 @@ import { criterionDone, plainArtifact } from "./format";
 import type { MissionPhase } from "./mission";
 
 /* ------------------------------------------------------------------------- */
+/* Whether there is a mission to show                                         */
+/* ------------------------------------------------------------------------- */
+
+/**
+ * Whether the mission has been read. A mesh must declare a goal, so a `/status` without one is a project that answered before it
+ * read its log, or the host's answer for a project that is not running ({"error": "project 'demo' is closed"}). Below the
+ * headline nothing is known then, and the Overview used to draw it anyway: "Checks: None. This goal declares no mandatory checks.",
+ * "0 events", "This goal declares no checks." and "Could not load recent work", about a mission nobody had read yet.
+ */
+export function missionRead(status: unknown): boolean {
+  const goal = status && typeof status === "object" ? (status as { goal?: unknown }).goal : undefined;
+  return !!goal && typeof goal === "object";
+}
+
+/* ------------------------------------------------------------------------- */
 /* The log, in order                                                          */
 /* ------------------------------------------------------------------------- */
 

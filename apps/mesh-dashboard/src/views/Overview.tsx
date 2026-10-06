@@ -12,7 +12,7 @@ import { useToolApprovals } from "../useToolApprovals";
 import { escalationText, holdsOf } from "../escalation-card";
 import { orderDecisions, toolRequestsBySeat, type LoadState } from "../inbox-model";
 import type { MissionAction } from "../mission";
-import { buildAttention, bufferIsBehind, bySeq, capacityWaits, checksSummary, heroNote, standingBlocks, type FixTarget } from "../overview-model";
+import { buildAttention, bufferIsBehind, bySeq, capacityWaits, checksSummary, heroNote, missionRead, standingBlocks, type FixTarget } from "../overview-model";
 import { HOST_SPEND_CEILING_REASON, liveMissionVerdict, terminalMissionVerdict, verdictText } from "../../../../packages/protocol/src/catalog";
 import { AttentionList } from "./AttentionList";
 import { GoalChecks } from "./GoalChecks";
@@ -59,6 +59,9 @@ export default function Overview(): React.JSX.Element {
 
   useEffect(() => {
     let dead = false;
+    // A failure from before the mission was read (a project still starting answers 409) is not this read's: while it is in flight
+    // the panel says it is loading, not "Could not load recent work".
+    setStepsErr(false);
     client.api("GET", "/steps?limit=6").catch(() => null).then((st) => {
       if (dead) return;
       if (Array.isArray(st?.json)) {
@@ -144,16 +147,19 @@ export default function Overview(): React.JSX.Element {
   );
   const blocks = useMemo(() => standingBlocks(timeline), [timeline]);
 
-  if (!status) {
+  // Until the mission has been read, the headline says what is happening (connecting, starting, closed) and nothing is drawn under
+  // it: no figure, check or failure about a mission that is not there yet. The skeleton is for a mission on its way, not a stopped one.
+  if (!missionRead(status)) {
+    const busy = state.phase === "loading";
     return (
       <div className="ov">
         <PageHeader title="Overview" />
         {serverDown ? (
           <ErrorState what="the overview" detail="The server stopped answering. It may be restarting." onRetry={() => void refreshStatus()} />
         ) : (
-          <section className="ov-hero" aria-busy="true" aria-label="Mission status">
+          <section className="ov-hero" aria-busy={busy || undefined} aria-label="Mission status">
             <p className="ov-headline" role="status">{state.headline}</p>
-            <div className="ov-skel" aria-hidden="true"><i className="big" /><i className="mid" /><i className="short" /></div>
+            {busy ? <div className="ov-skel" aria-hidden="true"><i className="big" /><i className="mid" /><i className="short" /></div> : null}
           </section>
         )}
       </div>

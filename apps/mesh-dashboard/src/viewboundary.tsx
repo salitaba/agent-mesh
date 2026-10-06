@@ -83,15 +83,17 @@ export class ViewBoundary extends React.Component<Props, State> {
 }
 
 /**
- * What the view area shows while a lazily loaded view's file arrives. It stays invisible for the first moment, so a view that
- * loads at once does not flash a grey frame, and has the shape of a page (a title, a line, three blocks) so what replaces it
- * does not jump.
+ * What the view area shows while something it needs is still on its way: a lazily loaded view's file, or the host's list of
+ * projects on first paint. It stays invisible for the first moment, so a view that loads at once does not flash a grey frame, and
+ * has the shape of a page (a title, a line, three blocks) so what replaces it does not jump. It says so in words as well: grey
+ * blocks alone, on a slow link, read as a page that came out blank.
  */
 export function ViewLoading(): React.JSX.Element {
   return (
-    <div className="view-loading" role="status" aria-busy="true" aria-label="Loading view">
-      <span className="sk view-loading-title" />
-      <span className="sk view-loading-line" />
+    <div className="view-loading" role="status" aria-busy="true">
+      <p className="view-loading-text">Loading this page…</p>
+      <span className="sk view-loading-title" aria-hidden="true" />
+      <span className="sk view-loading-line" aria-hidden="true" />
       <div className="view-loading-blocks" aria-hidden="true">
         <span className="sk" />
         <span className="sk" />

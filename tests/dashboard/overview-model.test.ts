@@ -15,6 +15,7 @@ import {
   heroNote,
   idleCause,
   missionClock,
+  missionRead,
   nameOfUri,
   shortRef,
   sortFiles,
@@ -23,7 +24,7 @@ import {
   type AttentionInput,
   type HeroNoteInput,
 } from "../../apps/mesh-dashboard/src/overview-model";
-import { describeMission, type MissionFacts } from "../../apps/mesh-dashboard/src/mission";
+import { describeMission, factsFromStatus, type MissionFacts } from "../../apps/mesh-dashboard/src/mission";
 
 /**
  * The Overview stacked up to four banners, each with its own prose, and decided in the middle of a 460-line component which
@@ -511,4 +512,17 @@ test("an unreachable server lists nothing: the last known problems are not live 
   const input = attn({ blockingDecisions: 3, blocks: [block("dev", true)], triagedAway: 4 });
   assert.deepEqual(buildAttention({ ...input, phase: "offline" }), []);
   assert.deepEqual(buildAttention({ ...input, phase: "loading" }), []);
+});
+
+test("the Overview draws a mission only once the status names its goal; before that the headline says why there is none", () => {
+  const starting = { agents: [], mode: "parked", eventCount: 0 };
+  const closed = { error: "project 'demo' is closed", status: "closed", projectId: "demo" };
+  assert.equal(missionRead(null), false, "no answer yet");
+  assert.equal(missionRead(starting), false, "a project that answered before it read its log");
+  assert.equal(missionRead(closed), false, "the host's answer for a project that is not running");
+  assert.equal(missionRead({ goal: { id: "goal-1", status: "ACTIVE", acceptanceCriteria: [] }, agents: [] }), true);
+  // What stands in for the page then: the starting project's headline, which is a loading state, never "no checks" or "0 events".
+  const s = describeMission(factsFromStatus(starting));
+  assert.equal(s.phase, "loading");
+  assert.match(s.headline, /starting/);
 });

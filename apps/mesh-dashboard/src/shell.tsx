@@ -13,6 +13,7 @@ import { useMissionActions } from "./useMissionActions";
 import { useToolRequests } from "./inbox";
 import { list, register, setPendingAgent, unregister, getVersion, subscribe, type Command } from "./commands";
 import { paletteMatches, pointerMoved } from "./palette";
+import { ViewLoading } from "./viewboundary";
 import { HostEmptyState, ProjectTabs } from "./tabs";
 import { useProjectsOptional } from "./projects";
 import { holdsForProject, isHostView, serverKind, showsSection } from "./navmodel";
@@ -250,9 +251,11 @@ export function Shell({ viewNode }: { viewNode: React.ReactNode }): React.JSX.El
   // the views paints a dashboard out of failures.
   const noProjects = hasProjects && projectsCtx.loaded && projectsCtx.projects.length === 0;
   // Until the registry answers we do not know which of the two servers this is,
-  // and the views must not fetch on the guess. It is one local request, so this
-  // holds the content area for a few milliseconds rather than showing a
-  // skeleton — the chrome around it is already painted.
+  // and the views must not fetch on the guess. On a laptop that is one local
+  // request, but a hosted workspace is a network away, and the content area sat
+  // blank under "Connecting…" for as long as it took. It holds the view
+  // placeholder instead, which stays invisible for its first moment, so the fast
+  // case still paints nothing and the slow one says it is loading.
   const registryPending = projectsCtx != null && projectsCtx.hasRegistry === null;
   const goal = status?.goal || {};
   // Mandatory-only, matching Overview and the termination gate. The header used
@@ -633,8 +636,11 @@ export function Shell({ viewNode }: { viewNode: React.ReactNode }): React.JSX.El
   const primary = state.primary;
   const spentRatio = mission?.limit ? Math.min(1, (mission.consumed ?? 0) / mission.limit) : 0;
   // A mesh must declare a goal, so a status that has none is a project that answered before it finished reading its log:
-  // "No goal" here said the mesh had nothing to do, beside a chip that said it was starting.
-  const goalTitle = !status ? "Connecting…" : goal.description ? goal.description.split("\n")[0].slice(0, 90) : "Loading the mission…";
+  // "No goal" here said the mesh had nothing to do, beside a chip that said it was starting. Only a mission on its way is
+  // "loading": beside "Closed" or "Offline" the chip says it all, and "Loading the mission…" there was not true.
+  const goalTitle = goal.description
+    ? goal.description.split("\n")[0].slice(0, 90)
+    : state.phase === "loading" ? (status ? "Loading the mission…" : "Connecting…") : "";
 
   return (
     <div id="app" className={`${focusOn ? "focus-mode" : ""}${hasProjects ? " with-tabs" : ""}`}>
@@ -762,7 +768,7 @@ export function Shell({ viewNode }: { viewNode: React.ReactNode }): React.JSX.El
               operator with no project open is exactly who should be able to set
               a spend ceiling *before* opening one. Every other view really does
               need a project, so they still get the empty state. */}
-          {registryPending ? null : noProjects && view !== "hostsettings" ? <HostEmptyState /> : holdView ? <ProjectStarting name={projectName} /> : viewNode}
+          {registryPending ? <ViewLoading /> : noProjects && view !== "hostsettings" ? <HostEmptyState /> : holdView ? <ProjectStarting name={projectName} /> : viewNode}
         </main>
       </FocusCtx.Provider>
 
