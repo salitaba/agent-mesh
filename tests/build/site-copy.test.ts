@@ -150,7 +150,7 @@ test("every page carries the trademark line, and Claude and Anthropic appear onl
 test("the home page says what it is, and the 'Try it' commands are the ones that work today", () => {
   const home = page(pages, "index.html");
   assert.match(home.html, /<h1>A team of AI agents, run like an organization\.<\/h1>/, "the tagline, exactly");
-  for (const id of ["why", "how", "product", "try", "security", "pricing", "faq"]) assert.match(home.html, new RegExp(`<section[^>]*\\sid="${id}"`), `section #${id}`);
+  for (const id of ["ways", "why", "how", "product", "try", "security", "pricing", "faq"]) assert.match(home.html, new RegExp(`<section[^>]*\\sid="${id}"`), `section #${id}`);
   // Each state shows ten questions. Two of them are asked in both states and answered differently, so the page holds twelve.
   assert.equal((home.html.match(/<details(?: data-(?:selfhost|cloud)-only(?: hidden)?)?>/g) ?? []).length, 12, "the questions are native <details>, and the home page answers the ten it lists in each state");
   assert.equal((home.html.match(/<details data-cloud-only(?: hidden)?>/g) ?? []).length, 2, "and the two that say Curule is not hosted and has no checkout have the answers that say otherwise, for the day Curule Cloud is open");
@@ -172,6 +172,22 @@ test("the home page says what it is, and the 'Try it' commands are the ones that
   assert.ok(read("README.md").includes("docker build -t curule .") && read("README.md").includes("-e MESH_API_TOKEN=\"$(openssl rand -hex 32)\" curule demo"), "README.md gives the same commands");
   assert.ok(read("deploy", "docker", "entrypoint.sh").includes("demo)"), "the image's entrypoint has the demo command");
   assert.ok(home.copy.includes("Open the demo-stub project and press Start mission"), "and the steps in the dashboard");
+});
+
+test("the two ways in say what is paid in words, and write no figure of their own: the licences' prices are in the generated blocks and Curule Cloud's are the account pages'", () => {
+  for (const rel of ["index.html", "pricing/index.html"]) {
+    const ways = /<section class="section" id="ways"[\s\S]*?\n<\/section>/.exec(page(pages, rel).html)![0];
+    assert.ok(!/\$\s?\d|\d%/.test(textOf(ways)), `${rel}: a price or a percentage written by hand in the way in`);
+    assert.equal((ways.match(/<article class="way"/g) ?? []).length, 2, `${rel}: two ways`);
+    assert.equal((ways.match(/<p class="way-action">/g) ?? []).length, 2, `${rel}: and one thing to press in each`);
+    for (const card of ways.matchAll(/<article class="way"[\s\S]*?<\/article>/g)) {
+      assert.equal((card[0].match(/<dt>/g) ?? []).length, 2, `${rel}: who it is for, and what is paid`);
+      assert.equal((card[0].match(/<a /g) ?? []).length, 1, `${rel}: one action`);
+    }
+  }
+  // The Community plan the cards name is the plan table's, as the other places that describe it are (the test above reads these too).
+  const { maxProjects, maxSeatsPerMesh } = PLANS.community.limits;
+  for (const rel of ["index.html", "pricing/index.html"]) assert.match(page(pages, rel).prose, new RegExp(`Nothing for the Community plan: ${WORDS[maxProjects!]} open project, up to ${WORDS[maxSeatsPerMesh!]} agents`), rel);
 });
 
 test("the home page's hero explains itself: a short subhead, at most three proof points the page argues, and the picture of the product right under the actions", () => {

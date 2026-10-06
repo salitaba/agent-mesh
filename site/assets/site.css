@@ -150,17 +150,6 @@ hr { border: 0; border-top: 1px solid var(--line); margin: 0; }
 .proof li::before { content: ""; position: absolute; left: 3px; top: .5em; width: 9px; height: 5px; border-left: 2px solid var(--ok); border-bottom: 2px solid var(--ok); transform: rotate(-45deg); }
 .actions { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 24px; margin-top: 28px; }
 
-.facts { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0; margin: clamp(40px, 6vw, 64px) 0 clamp(32px, 5vw, 48px); padding: 0; list-style: none; border-top: 1px solid var(--line); }
-.facts li { display: grid; grid-template-columns: minmax(0, 1fr); align-content: start; gap: 4px; padding: 18px 0; border-bottom: 1px solid var(--line); }
-.facts strong { font-size: .9375rem; }
-.facts span { color: var(--muted); font-size: .875rem; line-height: 1.5; }
-@media (min-width: 640px) { .facts { grid-template-columns: repeat(2, 1fr); column-gap: 32px; } }
-@media (min-width: 1000px) {
-  .facts { grid-template-columns: repeat(4, 1fr); column-gap: 0; border-bottom: 1px solid var(--line); }
-  .facts li { padding: 20px 24px; border-bottom: 0; border-left: 1px solid var(--line); }
-  .facts li:first-child { padding-left: 0; border-left: 0; }
-}
-
 /* ---------------------------------------------------------------- product frame and tabs */
 .frame { margin: 0; overflow: hidden; border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel); box-shadow: var(--lift); }
 .frame-bar { display: flex; align-items: center; gap: 7px; height: 38px; padding: 0 14px; border-bottom: 1px solid var(--line); background: var(--bg); }
@@ -201,6 +190,26 @@ hr { border: 0; border-top: 1px solid var(--line); margin: 0; }
 @media (min-width: 600px) { .grid-4 { grid-template-columns: repeat(2, 1fr); } }
 @media (min-width: 900px) { .grid-3 { grid-template-columns: repeat(3, 1fr); } }
 @media (min-width: 1040px) { .grid-4 { grid-template-columns: repeat(4, 1fr); } }
+
+/* Two ways in: the cards of a choice, side by side, each with who it is for, what it costs and the one thing to press. The button
+   stays at the foot of its card, so the two line up whatever each says above it. */
+.hero + .section { padding-top: clamp(8px, 2vw, 32px); }
+.toc-bar + .section { padding-top: clamp(32px, 4vw, 48px); }
+.ways { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; }
+@media (min-width: 760px) { .ways { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.way { display: flex; flex-direction: column; padding: 28px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel); }
+.way-kind { margin: 0 0 6px; color: var(--muted); font-size: .75rem; font-weight: 650; letter-spacing: .12em; text-transform: uppercase; }
+.way h3 { font-size: 1.5rem; letter-spacing: -.02em; }
+.way dl { display: grid; gap: 18px; margin: 20px 0 28px; }
+.way dt { color: var(--muted); font-size: .8125rem; font-weight: 600; }
+.way dd { margin: 2px 0 0; font-size: .9375rem; }
+.way-action { margin: auto 0 0; }
+/* With one of the two ways hidden (the site where Curule Cloud is not open) the one that is left takes the width, and its two answers
+   sit side by side, so that it is not half a row with nothing beside it. */
+@media (min-width: 760px) {
+  .ways:has(> .way[hidden]) { grid-template-columns: minmax(0, 1fr); }
+  .ways:has(> .way[hidden]) dl { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 32px; }
+}
 
 .steps { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0; list-style: none; counter-reset: step; border-top: 1px solid var(--line); }
 .steps li { position: relative; counter-increment: step; padding: 28px 0 28px 64px; border-bottom: 1px solid var(--line); }

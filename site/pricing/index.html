@@ -63,7 +63,8 @@
   <div class="wrap">
     <p class="eyebrow">Pricing</p>
     <h1>Pricing for the runtime.</h1>
-    <p class="lede">You pay for the licensed limits and the support that comes with them. The model is billed to you by your own provider, at your own rates, and we never touch it. Prices are in US dollars and exclude taxes.</p>
+    <p class="lede" data-selfhost-only hidden>You pay for the licensed limits and the support that comes with them. The model is billed to you by your own provider, at your own rates, and we never touch it. Prices are in US dollars and exclude taxes.</p>
+    <p class="lede" data-cloud-only>There are two ways to pay: a flat monthly plan where we run it for you, or a licence for the software you run yourself. Either way the model is billed to you by your own provider, at your own rates, and we never touch it. Prices are in US dollars and exclude taxes.</p>
   </div>
 </section>
 <nav class="toc-bar" aria-label="On this page">
@@ -77,12 +78,28 @@
   </ul>
 </nav>
 
-<section class="section" id="cloud" data-cloud-only>
+<section class="section" id="ways" data-cloud-only>
   <div class="wrap">
-    <div class="card">
-      <h2>Rather not run it yourself?</h2>
-      <p class="mt-s">Curule Cloud runs a workspace for you. You pay a flat monthly plan for the hosting; you bring your own model key and pay your provider directly, because we do not resell model usage. The plans and their prices are on the sign-up page, because they are kept in one place. The plans below are licences for the software you run yourself.</p>
-      <p class="btn-row mt-s"><a class="btn btn-primary" href="https://app.curule.dev/" data-cloud="home">See the Curule Cloud plans</a><a class="btn" href="https://app.curule.dev/signup" data-cloud="signup">Get started</a></p>
+    <h2 class="legend-title">Do you run it, or do we?</h2>
+    <div class="ways mt-s">
+      <article class="way">
+        <p class="way-kind">Curule Cloud</p>
+        <h3>We run it for you</h3>
+        <dl>
+          <div><dt>Who it is for</dt><dd>You would rather not run servers. Sign up, pick a plan and open a workspace in your browser.</dd></div>
+          <div><dt>What you pay</dt><dd>A flat monthly plan for the hosting. Its plans and prices are on the sign-up page, because they are kept in one place. You bring your own model key and pay your provider directly: we do not resell model usage.</dd></div>
+        </dl>
+        <p class="way-action"><a class="btn btn-primary" href="https://app.curule.dev/" data-cloud="home">See the Curule Cloud plans</a></p>
+      </article>
+      <article class="way">
+        <p class="way-kind">Licence</p>
+        <h3>You run it</h3>
+        <dl>
+          <div><dt>Who it is for</dt><dd>You want it on your own infrastructure, with your own model credentials. The plans below are licences for the software you run yourself.</dd></div>
+          <div><dt>What you pay</dt><dd>Nothing for the Community plan: one open project, up to eight agents. Team and Business lift the limits, by the month or the year, and Enterprise is quoted.</dd></div>
+        </dl>
+        <p class="way-action"><a class="btn" href="#plans">See the licence plans</a></p>
+      </article>
     </div>
   </div>
 </section>

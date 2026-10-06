@@ -121,14 +121,37 @@
         <p class="small muted mt-s">Every capture on this page is of the scripted demo, which makes no model calls.</p>
       </div>
     </div>
+  </div>
+</section>
 
-    <ul class="facts" aria-label="What is true of it">
-      <li data-selfhost-only hidden><strong>Self-hosted</strong><span>One container per team, on your infrastructure and with your model credentials.</span></li>
-      <li data-cloud-only><strong>Yours to run, or ours</strong><span>One container per team on your infrastructure with your own model credentials, or a workspace on Curule Cloud, where we run it and you bring your own model key.</span></li>
-      <li><strong>Nothing phones home</strong><span>No telemetry, no analytics, no update check, no licence server.</span></li>
-      <li><strong>Free to start</strong><span>The Community plan: one open project, up to eight agents, no licence key.</span></li>
-      <li><strong>Source-available</strong><span>Business Source License 1.1. Each version becomes Apache 2.0 four years after it is published.</span></li>
-    </ul>
+<section class="section" id="ways">
+  <div class="wrap">
+    <div class="section-head">
+      <p class="eyebrow" data-selfhost-only hidden>Start here</p>
+      <h2 class="title" data-selfhost-only hidden>You run it, and it is free to start.</h2>
+      <p class="eyebrow" data-cloud-only>Two ways in</p>
+      <h2 class="title" data-cloud-only>Who runs it?</h2>
+    </div>
+    <div class="ways">
+      <article class="way" data-cloud-only>
+        <p class="way-kind">Curule Cloud</p>
+        <h3>We run it for you</h3>
+        <dl>
+          <div><dt>Who it is for</dt><dd>You would rather not run servers. Sign up, pick a plan and open a workspace in your browser: the same dashboard and agents as the product you run yourself, on servers we operate.</dd></div>
+          <div><dt>What you pay</dt><dd>A flat monthly plan for the hosting. You bring your own model key and pay your model provider directly: we do not resell model usage.</dd></div>
+        </dl>
+        <p class="way-action"><a class="btn btn-primary" href="https://app.curule.dev/signup" data-cloud="signup">Get started</a></p>
+      </article>
+      <article class="way">
+        <p class="way-kind">Self-hosted</p>
+        <h3>You run it</h3>
+        <dl>
+          <div><dt>Who it is for</dt><dd>You want it on your own infrastructure, with your own model credentials: one container per team. Nothing phones home: no telemetry, no update check, no licence server.</dd></div>
+          <div><dt>What you pay</dt><dd>Nothing for the Community plan: one open project, up to eight agents, no licence key. A paid licence lifts the limits. The source is available under the Business Source License 1.1.</dd></div>
+        </dl>
+        <p class="way-action"><a class="btn" href="#try">Try the demo</a></p>
+      </article>
+    </div>
   </div>
 </section>
 
@@ -293,7 +316,7 @@ docker build -t curule .</code></pre></div>
       <h2 class="title">Questions, answered plainly.</h2>
     </div>
     <div class="faq">
-      <details><summary>Do I need an Anthropic account?</summary><div class="answer"><p>No. You need credentials for a model provider that you own. The native runtime takes any provider that offers an OpenAI-compatible endpoint or the Anthropic API, and Claude Code takes an Anthropic API key or Amazon Bedrock, Google Cloud (Vertex) or Microsoft Foundry credentials. The agents use them and your provider bills you. A self-hosted Curule never sees them and does not resell model usage.</p><p data-cloud-only>On Curule Cloud the models are supplied, so you need no provider account there.</p></div></details>
+      <details><summary>Do I need an Anthropic account?</summary><div class="answer"><p>No. You need credentials for a model provider that you own. The native runtime takes any provider that offers an OpenAI-compatible endpoint or the Anthropic API, and Claude Code takes an Anthropic API key or Amazon Bedrock, Google Cloud (Vertex) or Microsoft Foundry credentials. The agents use them and your provider bills you. A self-hosted Curule never sees them and does not resell model usage.</p><p data-cloud-only>On Curule Cloud you bring your own model key as well: we run the servers and do not resell model usage, so your provider bills you there too.</p></div></details>
       <details><summary>Does it send my code to you?</summary><div class="answer"><p>No. It runs on your infrastructure and sends nothing to us. Your code goes to your model provider, because the agents cannot work without it, under your agreement with them.</p></div></details>
       <details><summary>What is the free plan?</summary><div class="answer"><p>Community: one open project of up to eight agents, with the full runtime, dashboard, designer and command line. It needs no licence and never expires.</p></div></details>
       <details><summary>Is it open source?</summary><div class="answer"><p>No, it is source-available. The code is public under the Business Source License 1.1: you can read, build, modify and run it, and real work on the free plan is free. Running more than the free plan allows, or offering it to others as a hosted service or inside your own product, needs a commercial licence. Each version becomes Apache 2.0 four years after it is published.</p></div></details>
@@ -311,8 +334,8 @@ docker build -t curule .</code></pre></div>
 
 <section class="section cta" data-cloud-only>
   <div class="wrap">
-    <h2>Open a workspace, or run it yourself.</h2>
-    <p class="lede">Curule Cloud runs it for you: sign up, pick a plan and open a workspace in your browser. To run it on your own infrastructure, start with the demo, which needs no API key.</p>
+    <h2>Open a workspace, or try the demo first.</h2>
+    <p class="lede">Sign up for a workspace on Curule Cloud, or run the scripted demo on your own machine: it needs no API key and no account.</p>
     <div class="btn-row">
       <a class="btn btn-primary btn-lg" href="https://app.curule.dev/signup" data-cloud="signup">Get started</a>
       <a class="btn btn-lg" href="#try">Try the demo</a>

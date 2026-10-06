@@ -12,8 +12,8 @@ python3 -m http.server --directory site 8080      # then open http://127.0.0.1:8
 
 | File | Address | What it holds |
 |---|---|---|
-| `index.html` | `/` | The tagline, what Curule is and a picture of it beside the first actions (a product frame: overview, events, designer), why it is not a group chat, how a mission goes, a tour of the console in six views, the commands that run the demo today, security in brief, the plans in a line, and the questions |
-| `pricing/index.html` | `/pricing/` | The plans with the Annual/Monthly choice, the comparison table, what a plan pays for, a calculator, how licences work, and questions |
+| `index.html` | `/` | The tagline, what Curule is and a picture of it beside the first actions (a product frame: overview, events, designer), the two ways in (we run it, or you do), why it is not a group chat, how a mission goes, a tour of the console in six views, the commands that run the demo today, security in brief, the plans in a line, and the questions |
+| `pricing/index.html` | `/pricing/` | The two ways to pay (while Curule Cloud is open), the plans with the Annual/Monthly choice, the comparison table, what a plan pays for, a calculator, how licences work, and questions |
 | `docs/index.html` | `/docs/` | A map of the documents in the repository: what each is for, and whether it is reference, a guide, short, or a log, with a filter over them |
 | `security/index.html` | `/security/` | What it protects, what leaves your environment, what it does not do, a hardening checklist, assurance, and how to report a problem |
 | `contact/index.html` | `/contact/` | Who to write to for sales, support and security, and what to put in the message |
@@ -77,8 +77,8 @@ are the app's, on the app's own address. The way from one to the other is `CLOUD
 
 | `CLOUD_URL` | What a visitor sees |
 |---|---|
-| `"https://app.curule.dev"` (as shipped) | "Sign in" and "Get started" in every page's header (and "Sign in" in the phone menu); the home page leads with "Get started" and says Curule is also run for you; the pricing page has a strip that sends a visitor to the app's plans, and says the plans on the page are licences for the software you run yourself; the sentences that said it is not offered give way to the ones that say it is. |
-| `""` | Curule as software you run. No page mentions Curule Cloud, sign-in or sign-up; the header's one button is "Try the demo"; the FAQ says it is not offered as a hosted service. |
+| `"https://app.curule.dev"` (as shipped) | "Sign in" and "Get started" in every page's header (and "Sign in" in the phone menu); the home page leads with "Get started", says Curule is also run for you and sets the two ways in side by side; the pricing page opens with the same choice, sends a visitor to the app's plans for Curule Cloud's, and says the plans on the page are licences for the software you run yourself; the sentences that said it is not offered give way to the ones that say it is. |
+| `""` | Curule as software you run. No page mentions Curule Cloud, sign-in or sign-up; the header's one button is "Try the demo"; the home page's way in is the one card for the software you run; the FAQ says it is not offered as a hosted service. |
 
 The pages carry both versions of every sentence that depends on it: `data-selfhost-only` is what is shown while the service is not
 open, `data-cloud-only` is what is shown once it is, and `data-cloud="login|signup|home|terms|privacy"` is a link to that page of

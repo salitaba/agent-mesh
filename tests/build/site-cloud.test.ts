@@ -41,16 +41,19 @@ const shown = (node: FakeNode): boolean => {
   return true;
 };
 
-/** What a visitor reads on the page: the text of what is not hidden. */
-function visibleText(doc: FakeDocument): string {
+/** What a visitor reads in part of a page: the text of what is not hidden. */
+function visibleTextOf(node: FakeNode): string {
   const out: string[] = [];
   const walk = (n: FakeNode): void => {
     if (n.isText) out.push(n.textContent);
     else if (!n.hidden && n.tag !== "script" && n.tag !== "style") for (const c of n.children) walk(c);
   };
-  walk(doc.body);
+  walk(node);
   return out.join(" ").replace(/\s+/g, " ");
 }
+
+/** What a visitor reads on the page. */
+const visibleText = (doc: FakeDocument): string => visibleTextOf(doc.body);
 
 const REL = pages.map((p) => p.rel);
 
@@ -104,7 +107,10 @@ test("when it is open, every page has Sign in and Get started in its header, wit
 test("the address may end in a slash, and a dashboard's own sign-in link gives way to the account's: a visitor is not asked which is theirs", () => {
   for (const cloud of [`${APP}/`, `${APP}///`]) {
     const doc = visit("index.html", cloud, "https://mesh.curule.dev/");
-    assert.deepEqual(doc.querySelectorAll('[data-cloud="login"], [data-cloud="signup"]').map((a) => a.href).sort(), [`${APP}/login`, `${APP}/login`, `${APP}/signup`, `${APP}/signup`, `${APP}/signup`, `${APP}/signup`].sort(), cloud);
+    const links = doc.querySelectorAll('[data-cloud="login"], [data-cloud="signup"]');
+    for (const a of links) assert.equal(a.href, `${APP}/${a.getAttribute("data-cloud")}`, `${cloud}: ${a.textContent}`);
+    assert.equal(links.filter((a) => a.getAttribute("data-cloud") === "login").length, 2, "Sign in, in the bar and in the phone menu");
+    assert.ok(links.filter((a) => a.getAttribute("data-cloud") === "signup").length >= 4, "and Get started, in the bar, the hero, the way in and the end of the page");
   }
   const both = visit("index.html", APP, "https://mesh.curule.dev/");
   const dashboard = both.querySelectorAll("[data-app]");
@@ -131,7 +137,11 @@ test("when it is open, the home page leads with Get started, says Curule is also
   for (const rel of REL) {
     const said = visibleText(visit(rel, APP));
     for (const phrase of ["not offered as a hosted service", "We do not run it for you", "Not today", "There is no checkout and no account", "no billing system on this site. A paid plan", "There is no checkout, and we agree"]) assert.ok(!said.includes(phrase), `${rel}: still says "${phrase}"`);
+    // Curule Cloud sells hosting. The customer brings a model key, so no page may say the models come with it.
+    assert.ok(!/models are supplied|supply the models|need no provider account|no model key/i.test(said), `${rel}: says Curule Cloud supplies the models`);
   }
+  const anthropic = home.querySelectorAll("details").find((d) => shown(d) && d.querySelector("summary")!.textContent === "Do I need an Anthropic account?")!;
+  assert.match(anthropic.textContent, /On Curule Cloud you bring your own model key as well: we run the servers and do not resell model usage, so your provider bills you there too\./, "the answer to who pays for the model agrees with the rest of the page");
   const closed = visibleText(visit("index.html", ""));
   assert.match(closed, /Not today\. It is software you run, one instance per team/, "and while it is closed the same question is answered as it was");
 });
@@ -153,15 +163,45 @@ test("the hero has one clear action in each state, Get started while Curule Clou
   assert.deepEqual(switched.map((n) => n.className || n.tag), ["actions", "small muted mt-s", "actions", "small muted mt-s"], "the statement, the subhead, the proof and the picture do not depend on whether Curule Cloud is open");
 });
 
-test("when it is open, the pricing page says the plans below are licences and sends a visitor to the app for Curule Cloud's, which are kept there and not copied", () => {
+test("the home page's way in is two cards while Curule Cloud is open and one while it is not, each saying who it is for, what is paid and the one thing to press", () => {
+  const states = [
+    ["open", APP, ["Two ways in", "Who runs it?"], ["We run it for you", "You run it"], [[["Get started", `${APP}/signup`]], [["Try the demo", "#try"]]]],
+    ["closed", "", ["Start here", "You run it, and it is free to start."], ["You run it"], [[["Try the demo", "#try"]]]],
+  ] as const;
+  for (const [state, url, heading, titles, actions] of states) {
+    const doc = visit("index.html", url);
+    const ways = doc.getElementById("ways")!;
+    assert.deepEqual([...ways.querySelectorAll(".eyebrow"), ...ways.querySelectorAll("h2")].filter((n) => shown(n)).map((n) => n.textContent), heading, `${state}: its heading`);
+    const cards = ways.querySelectorAll(".way").filter((c) => shown(c));
+    assert.deepEqual(cards.map((c) => c.querySelector("h3")!.textContent), titles, `${state}: the cards`);
+    cards.forEach((card, i) => {
+      assert.deepEqual(card.querySelectorAll("dt").map((t) => t.textContent), ["Who it is for", "What you pay"], `${state}: ${titles[i]} says who it is for and what is paid`);
+      assert.deepEqual(card.querySelectorAll(".way-action a").map((a) => [a.textContent, a.href]), actions[i], `${state}: ${titles[i]}: the one thing to press`);
+    });
+    if (state === "closed") assert.ok(!/Curule Cloud/.test(visibleTextOf(ways)), "closed, the way in says nothing of what is not there");
+  }
+  const open = visit("index.html", APP).getElementById("ways")!.querySelectorAll(".way").filter((c) => shown(c));
+  assert.match(open[0]!.textContent, /the same dashboard and agents as the product you run yourself, on servers we operate/, "the account service's own words for what it is");
+  assert.match(open[0]!.textContent, /A flat monthly plan for the hosting\. You bring your own model key and pay your model provider directly: we do not resell model usage\./);
+  assert.match(open[1]!.textContent, /Nothing phones home: no telemetry, no update check, no licence server\./);
+  assert.match(open[1]!.textContent, /Nothing for the Community plan: one open project, up to eight agents, no licence key\. A paid licence lifts the limits\./);
+});
+
+test("when it is open, the pricing page puts the two ways in side by side, says the plans below are licences and sends a visitor to the app for Curule Cloud's, which are kept there and not copied", () => {
   const doc = visit("pricing/index.html", APP);
-  const strip = doc.getElementById("cloud")!;
-  assert.equal(shown(strip), true);
-  assert.match(strip.textContent, /Rather not run it yourself\?/);
-  assert.match(strip.textContent, /The plans and their prices are on the sign-up page, because they are kept in one place\./);
-  assert.match(strip.textContent, /The plans below are licences for the software you run yourself\./);
-  assert.deepEqual(strip.querySelectorAll("a").map((a) => [a.textContent, a.href]), [["See the Curule Cloud plans", `${APP}/`], ["Get started", `${APP}/signup`]]);
-  assert.ok(!/\$\s?\d/.test(strip.textContent), "no price of Curule Cloud is written on this page: the account pages' plans are the one place they are");
+  const ways = doc.getElementById("ways")!;
+  assert.equal(shown(ways), true);
+  assert.match(ways.querySelector("h2")!.textContent, /^Do you run it, or do we\?$/);
+  const [cloud, licence] = ways.querySelectorAll(".way") as [FakeNode, FakeNode];
+  assert.deepEqual([cloud, licence].map((c) => c.querySelector("h3")!.textContent), ["We run it for you", "You run it"]);
+  for (const card of [cloud, licence]) assert.deepEqual(card.querySelectorAll("dt").map((t) => t.textContent), ["Who it is for", "What you pay"], "each says who it is for and what is paid");
+  assert.match(cloud.textContent, /A flat monthly plan for the hosting\. Its plans and prices are on the sign-up page, because they are kept in one place\. You bring your own model key and pay your provider directly: we do not resell model usage\./);
+  assert.match(licence.textContent, /The plans below are licences for the software you run yourself\./);
+  assert.deepEqual(cloud.querySelectorAll("a").map((a) => [a.textContent, a.href]), [["See the Curule Cloud plans", `${APP}/`]], "one action in each");
+  assert.deepEqual(licence.querySelectorAll("a").map((a) => [a.textContent, a.href]), [["See the licence plans", "#plans"]]);
+  assert.ok(!/\$\s?\d/.test(ways.textContent), "no price is written in it: Curule Cloud's plans are the account pages' to state, and the licences' are in the cards below");
+  assert.equal(page(pages, "pricing/index.html").html.includes('id="cloud"'), false, "and the strip it replaces is gone: the way in is said once");
+  assert.equal(shown(visit("pricing/index.html", "").getElementById("ways")!), false, "while it is closed there is one way, and the page starts at the plans");
   const rows = doc.querySelectorAll("li").filter((li) => shown(li) && li.textContent.startsWith("A hosted service."));
   assert.equal(rows.length, 1);
   assert.match(rows[0]!.textContent, /Curule Cloud, where we run it for you, is priced separately\./);
