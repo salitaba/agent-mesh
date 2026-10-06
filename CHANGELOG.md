@@ -171,7 +171,10 @@ sections 1 to 24) are described there, run by run.
 - **The reopen dialog took one line.** It is a field of several lines now, and says that a list of checks (each a command and the
   output it must print) is what gets every one run: QA ran all nineteen of a list, and one example of each problem in a
   description. The QA, pm and developer prompts say what to do with such a list, and that a product's licence and author are not the
-  developer's to choose (every one of the last six runs' products declared `"license": "MIT"`).
+  developer's to choose (every one of the last six runs' products declared `"license": "MIT"`). QA's prompt also takes the
+  architecture's testable constraints as its checklist, a command for each, run in the turn: the nineteenth run's architect wrote 35
+  of them and QA never opened the document (it ran the developer's 51 tests and ten CLI commands, and the library refused `*` in a
+  list, which the constraints list as a valid item).
 - A mission delivered in front of the person left **What shipped** saying "No files are recorded for this goal" until a reload: the
   Overview read the file list once, when it opened. It reads it again when an artifact event arrives, and the message count while
   the mission runs and once more when it stops.

@@ -22,6 +22,14 @@ test("QA runs the operator's checks first, every one, and a report that leaves o
   assert.match(qa, /A check you did not run is NOT TESTED, and a report that leaves one out cannot pass/);
 });
 
+test("QA takes the architecture's testable constraints as its checklist: a command for each, run in the turn, or listed as not tested", () => {
+  const qa = role("qa");
+  assert.match(qa, /The architecture's testable constraints are your checklist/);
+  assert.match(qa, /read it with `mesh_artifact_read`/);
+  assert.match(qa, /Give every constraint a command of its own, run in this turn, and put the command and the output it printed in the report/);
+  assert.match(qa, /a constraint you wrote no command for is listed under NOT TESTED, not skipped/);
+});
+
 test("the pm accepts the operator's reopen only on a report that gives every check", () => {
   const pm = role("pm");
   assert.match(pm, /An `operator-feedback-…` criterion that lists checks is accepted only on a QA report that gives every one of them with the output it printed/);
