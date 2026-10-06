@@ -72,9 +72,10 @@ npm run cloud -- control --config control.yaml --check
 The check reports every problem at once and, in production, refuses what cannot be seen from outside once the service runs
 ([the list](cloud-control-plane.md#running-it)). Until it passes, nothing else is worth starting.
 
-The terms and the privacy notice in `apps/cloud-server/pages` carry `TODO(owner)` wherever the operator has to write or confirm
-something: who the company is, where, how to reach it, what it keeps and for how long. The software cannot write them, and a
-production service is not started while any remain. They are the operator's text, with whatever advice the operator takes.
+The terms and the privacy notice in `apps/cloud-server/pages` are the operator's text: who runs the service, how to reach them, what
+is kept and for how long. A place that still needs the operator's decision is marked `TODO(owner)`, and a production service is not
+started while any remain. The software cannot write them; they carry whatever advice the operator takes, and they say that a lawyer
+has not reviewed them.
 
 ## 5. Mail (first contact)
 

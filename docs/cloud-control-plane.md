@@ -513,15 +513,23 @@ name; a path that is not on that list is never looked for on the disk. The colou
   where it returns to: what the account looked like before leaving is kept in the tab, so a payment that was applied while the
   person was away is said to have arrived, and one that has not been is waited for for a minute and then said to be on its way.
   The balance is shown rounded down.
+- **They help the person at them, and only with a script.** The main button of a form says what it is doing while the call is out
+  (`data-busy` in the markup: Signing in, Creating account, Sending, Saving, Changing) and is itself again afterwards; a password
+  field has Show and Hide, which the markup carries hidden, so a browser that runs no script shows no control that does nothing, and
+  a password that was shown is hidden again when it is sent; the heading and the tab's title follow what the page has become (a sent
+  link is "Check your email", a failed check "That link did not work", a changed password "Password changed"); and on a device with
+  a mouse the cursor starts in the first field, while a finger's page is left alone, because a keyboard that opens by itself covers
+  the page it opened for.
 - **What a page says about a period is the service's own setting.** How long a session or a link lasts, how long workspaces keep
   running after a payment fails and how long they are kept after a subscription ends are options of the control plane;
   `GET /api/plans` returns them as `policy`, the pages fill them in (`data-policy`), and a test fails if a page states one as a
   fixed number.
-- **The terms and the privacy notice are placeholders.** They state what the software does (what it keeps, who receives what),
-  and every place that needs the operator is marked `TODO(owner)`: the legal entity, refunds and tax, the acceptable-use list,
-  liability and governing law, the processors, retention, a contact. They are not legal advice and they are not finished. The
-  check [refuses to start a production service](#running-it) while any marker is left. The footer's contact link stays hidden
-  until `CONTACT` in `assets/app.js` is given an address.
+- **The terms and the privacy notice are the operator's text.** They state what the software does (what it keeps, who receives what)
+  and the operator's own commitments: who the operator is, refunds and tax, the acceptable-use list, liability, the processors and a
+  contact. They say plainly that a lawyer has not reviewed them and that the governing law is not set, and they are not legal advice.
+  A place that still needs the operator's decision is marked `TODO(owner)`, and the check [refuses to start a production
+  service](#running-it) while any marker is left. The footer's contact link stays hidden until `CONTACT` in `assets/app.js` is given
+  an address.
 - **To change them, copy the folder** and name the copy in `pages`. The files are the product's, so the colours, the logo and the
   words can all be yours; what must stay is the `id`s and `data-` attributes the script looks for (a test compares each page with
   the list at the top of the script) and the absence of anything inline.
