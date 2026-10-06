@@ -327,6 +327,27 @@ hr { border: 0; border-top: 1px solid var(--line); margin: 0; }
    to make room for the dot without making the chip any wider, so the row does not shift as the reader goes on. */
 .toc a[aria-current="true"] { position: relative; padding: 0 10px 0 22px; border-color: var(--ink); background: var(--ink); color: var(--bg); }
 .toc a[aria-current="true"]::before { content: ""; position: absolute; left: 10px; top: 50%; width: 6px; height: 6px; margin-top: -3px; border-radius: 50%; background: currentColor; }
+/* At a glance: a long page's answers in a box under its heading, each with a mark that says what kind of answer it is (a shield: what it
+   does; an arrow out of a box: what leaves; a barred circle: what it does not do), so that the kind shows in the shape and not in the
+   colour, and a link to the section that argues it. */
+.mark { flex: none; width: 24px; height: 24px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.mark-ok { color: var(--ok); }
+.mark-out { color: var(--accent); }
+.mark-no { color: var(--warn); }
+.glance { margin-top: clamp(32px, 4vw, 48px); padding: 24px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel); }
+.glance-list { display: grid; grid-template-columns: minmax(0, 1fr); gap: 20px; margin: 0; padding: 0; list-style: none; }
+.glance-list li { display: grid; grid-template-columns: 24px minmax(0, 1fr); align-content: start; gap: 2px 12px; }
+.glance-list .mark { margin-top: 10px; }
+.glance-list h3 { font-size: 1.0625rem; line-height: 1.3; }
+.glance-list h3 a { display: inline-flex; align-items: center; min-height: 44px; }
+.glance-list p { grid-column: 2; margin: 0; color: var(--muted); font-size: .9375rem; }
+@media (min-width: 900px) {
+  .glance-list { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0; }
+  .glance-list li { padding: 0 28px; }
+  .glance-list li:first-child { padding-left: 0; }
+  .glance-list li:last-child { padding-right: 0; }
+  .glance-list li + li { border-left: 1px solid var(--line); }
+}
 .split { display: grid; grid-template-columns: minmax(0, 1fr); gap: 20px 56px; padding-block: clamp(40px, 6vw, 72px); border-bottom: 1px solid var(--line); }
 .split:last-child { border-bottom: 0; }
 .split > header h2 { font-size: clamp(1.5rem, 1.1rem + 1.6vw, 2.125rem); }

@@ -297,6 +297,40 @@ test("the numbers the pages quote about licences, support and reporting are the 
   assert.ok(flat(read("docs", "commercial", "security.md")).includes("exit 78") || flat(read("docs", "commercial", "security.md")).includes("32 characters"), "the listen policy the security page describes");
 });
 
+test("the security page's At a glance box answers in three short lines, in the page's own words, each linking to the section that argues it", () => {
+  const security = page(pages, "security/index.html");
+  const box = /<section class="glance" id="glance"[\s\S]*?\n<\/section>/.exec(security.html)![0];
+  assert.ok(security.html.indexOf('class="toc-bar"') < security.html.indexOf('id="glance"') && security.html.indexOf('id="glance"') < security.html.indexOf('id="protects"'), "under the heading and the bar, before the first section");
+  const items = [...box.matchAll(/<li>([\s\S]*?)<\/li>/g)].map((m) => m[1]!);
+  assert.equal(items.length, 3, "what it protects, what leaves your environment, what it does not do");
+  const rest = textOf(security.html.replace(box, " ")).toLowerCase();
+  const sections: Array<[string, string[]]> = [
+    ["protects", ["it fails closed on the network", "agents never hold the operator's credentials", "pinned by tests"]],
+    ["leaves", ["no telemetry, no analytics, no update check and no licence server"]],
+    ["not", ["no single sign-on and no per-operator identity", "no isolation between projects in one instance", "not been independently assessed"]],
+  ];
+  const shapes = new Set<string>();
+  items.forEach((item, i) => {
+    const [id, phrases] = sections[i]!;
+    assert.match(item, new RegExp(`<h3><a href="#${id}">[^<]+</a></h3>`), `${id}: its heading is a link to its section`);
+    assert.match(security.html, new RegExp(`<section class="split" id="${id}">`), `${id}: the section is there`);
+    const text = textOf(/<p>[\s\S]*?<\/p>/.exec(item)![0]);
+    assert.ok(text.split(" ").length <= 30, `${id}: one short line (${text.split(" ").length} words)`);
+    for (const phrase of phrases) {
+      assert.ok(text.toLowerCase().includes(phrase), `${id}: says "${phrase}"`);
+      assert.ok(rest.includes(phrase), `${id}: "${phrase}" is a sentence of the page, argued below`);
+    }
+    // A mark that says what kind of answer it is: drawn, hidden from a screen reader (the heading says it), no style attribute.
+    const svg = /<svg class="mark mark-(?:ok|out|no)" viewBox="0 0 24 24" aria-hidden="true" focusable="false">([\s\S]*?)<\/svg>/.exec(item);
+    assert.ok(svg, `${id}: a mark`);
+    shapes.add(svg![1]!);
+  });
+  assert.equal(shapes.size, 3, "three different marks: the kind is in the shape and not in the colour");
+  // The box is for the software you run yourself. While Curule Cloud is open it says that what leaves your environment is different there.
+  assert.match(box, /<p class="notice neutral mt-m" data-cloud-only>On Curule Cloud we run it for you, so what leaves your environment is different there:/);
+  assert.match(box, /<a href="https:\/\/app\.curule\.dev\/privacy" data-cloud="privacy">Curule Cloud&rsquo;s privacy notice<\/a>/, "and sends the visitor to what Curule Cloud keeps");
+});
+
 test("the pages say what they must: the plans, how licences work, the security stance, who to write to, and what is still the owner's to write", () => {
   const pricing = page(pages, "pricing/index.html");
   for (const id of ["plans", "compare", "paying", "calculator", "licences", "faq"]) assert.match(pricing.html, new RegExp(`<section[^>]*\\sid="${id}"`), `pricing: section #${id}`);
