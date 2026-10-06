@@ -13,8 +13,8 @@ import * as http from "http";
 import * as os from "os";
 import * as path from "path";
 import { startHostServer, type HostHandle } from "../../apps/mesh-server/src/host";
-import { accountUrlOf, createFromTemplate, defaultParent, expandHome, modelAccessFound, projectErrorReason, suggestRoot } from "../../apps/mesh-server/src/new-project";
-import { findShippedRoot, describeTemplates, parseMeshSource, resolveConfig } from "../../packages/config/src/index";
+import { GOAL_MAX, accountUrlOf, createFromTemplate, defaultParent, expandHome, modelAccessFound, projectErrorReason, readGoal, suggestRoot, withGoal } from "../../apps/mesh-server/src/new-project";
+import { defaultMeshTemplate, findShippedRoot, describeTemplates, parseMeshSource, resolveConfig } from "../../packages/config/src/index";
 
 const SHIPPED = findShippedRoot(__dirname)!;
 
@@ -179,6 +179,119 @@ test("the demo is made in the folder named, registered, self-contained, and repo
     const listed = await call(l.host.url, "GET", "/api/projects");
     assert.deepEqual(listed.json.projects.map((p: { id: string }) => p.id), ["my-demo"]);
   });
+});
+
+const PLACEHOLDER_BLOCK = "  goal: |\n    Describe the mission goal here.\n";
+const goalOf = (dir: string): string => parseMeshSource(fs.readFileSync(path.join(dir, "mesh.yaml"), "utf8")).mesh.goal;
+
+test("a goal given with the team goes into its mesh.yaml in place of the placeholder, and nothing else in the file changes", { timeout: 30_000 }, async () => {
+  await withHost(async (l) => {
+    const target = path.join(l.outside, "launch-report");
+    const r = await post(l, { template: "default", root: target, goal: "  Write a short, sourced report on how small teams review code.  \n" });
+    assert.equal(r.status, 201, JSON.stringify(r.json));
+    const text = fs.readFileSync(path.join(target, "mesh.yaml"), "utf8");
+    assert.equal(goalOf(target), "Write a short, sourced report on how small teams review code.", "trimmed, and exactly what was typed otherwise");
+    assert.doesNotMatch(text, /Describe the mission goal here/);
+    // The file is the default team's, byte for byte, but for the goal's own lines: comments, seats and budgets are untouched.
+    const template = defaultMeshTemplate("launch-report", "launch-report", "claude");
+    assert.ok(template.includes(PLACEHOLDER_BLOCK), "the placeholder this test replaces is the one the template writes");
+    assert.equal(text, template.replace(PLACEHOLDER_BLOCK, "  goal: |-\n    Write a short, sourced report on how small teams review code.\n"));
+    assert.doesNotThrow(() => resolveConfig(path.join(target, "mesh.yaml")));
+    assert.ok(fs.existsSync(path.join(target, "roles", "architect.md")), "the team is still the default team");
+    // The project the host registered boots from this file, so the mission it mints is for this goal: nothing to save and apply first.
+    assert.equal((await call(l.host.url, "GET", "/api/projects")).json.projects[0].id, "launch-report");
+  });
+});
+
+test("a goal of several lines, with what a person pastes in it, reads back exactly as it was typed", { timeout: 30_000 }, async () => {
+  await withHost(async (l) => {
+    const typed = "Build a tool that:\r\n- reads a CSV\r\n\r\n  - and checks it: # not a comment\r\n--- not a document marker\r\n\t1. tabbed \"quoted\" 'single' ünïcode 😀";
+    const want = "Build a tool that:\n- reads a CSV\n\n  - and checks it: # not a comment\n--- not a document marker\n 1. tabbed \"quoted\" 'single' ünïcode 😀";
+    const target = path.join(l.outside, "multi");
+    const r = await post(l, { template: "default", root: target, goal: typed });
+    assert.equal(r.status, 201, JSON.stringify(r.json));
+    assert.equal(goalOf(target), want, "line ends are one kind and a tab is a space; every other character is kept");
+    assert.doesNotThrow(() => resolveConfig(path.join(target, "mesh.yaml")));
+  });
+});
+
+test("no goal, or a blank one, leaves the placeholder for the Designer to ask about, as before", { timeout: 30_000 }, async () => {
+  await withHost(async (l) => {
+    let n = 0;
+    for (const goal of [undefined, null, "", "   \n\t  "]) {
+      const target = path.join(l.outside, `none-${n++}`);
+      const r = await post(l, { template: "default", root: target, ...(goal === undefined ? {} : { goal }) });
+      assert.equal(r.status, 201, JSON.stringify(goal));
+      assert.equal(goalOf(target).trim(), "Describe the mission goal here.", JSON.stringify(goal));
+      assert.equal(fs.readFileSync(path.join(target, "mesh.yaml"), "utf8"), defaultMeshTemplate(`none-${n - 1}`, `none-${n - 1}`, "claude"), "the file is exactly what a request with no goal has always written");
+    }
+  });
+});
+
+test("a goal that is not text, is too long or holds what is not text is refused with a sentence, before anything is written", { timeout: 30_000 }, async () => {
+  await withHost(async (l) => {
+    const target = path.join(l.outside, "refused");
+    const before = listing(l.base);
+    const attempts: Array<[unknown, string]> = [
+      [42, "bad_goal"], [true, "bad_goal"], [["a goal"], "bad_goal"], [{ text: "a goal" }, "bad_goal"],
+      ["x".repeat(GOAL_MAX + 1), "goal_too_long"], [`${"x".repeat(GOAL_MAX)}\n  `.repeat(1) + "y", "goal_too_long"],
+      ["a\u0000b", "bad_goal"], ["esc \u001b[31mred", "bad_goal"], ["bell \u0007", "bad_goal"], ["del \u007f", "bad_goal"], ["c1 \u0085 break", "bad_goal"], ["sep \u2028 line", "bad_goal"], ["sep \u2029 para", "bad_goal"],
+    ];
+    for (const [goal, code] of attempts) {
+      const r = await post(l, { template: "default", root: target, goal });
+      assert.equal(r.status, 400, JSON.stringify(goal).slice(0, 40));
+      assert.equal(r.json.code, code, JSON.stringify(goal).slice(0, 40));
+      assert.equal(r.json.error, r.json.reason);
+      assert.match(r.json.reason, /^[A-Z].*[.!?]$/, "one sentence a page can show as it is");
+    }
+    assert.match((await post(l, { template: "default", root: target, goal: "x".repeat(GOAL_MAX + 1) })).json.reason, /2,001 characters.*2,000/);
+    assert.equal(fs.existsSync(target), false, "no folder, no mesh.yaml");
+    assert.deepEqual(listing(l.base), before, "nothing anywhere changed");
+    assert.deepEqual((await call(l.host.url, "GET", "/api/projects")).json.projects, []);
+    // The most a goal can be is allowed, and a long one is fine.
+    const longest = "y".repeat(GOAL_MAX);
+    assert.equal((await post(l, { template: "default", root: path.join(l.outside, "longest"), goal: longest })).status, 201);
+    assert.equal(goalOf(path.join(l.outside, "longest")), longest);
+  });
+});
+
+test("a goal is for the default team: a shipped example has the goal its scripts were written for, and is refused another", { timeout: 30_000 }, async () => {
+  await withHost(async (l) => {
+    const target = path.join(l.outside, "demo");
+    const r = await post(l, { template: "demo-stub", root: target, goal: "Something else entirely." });
+    assert.equal(r.status, 400, JSON.stringify(r.json));
+    assert.equal(r.json.code, "goal_not_for_template");
+    assert.match(r.json.reason, /comes with a goal of its own/);
+    assert.equal(fs.existsSync(target), false, "nothing written");
+    // A blank goal says nothing, so it is not a conflict: the demo is made as it always is.
+    const ok = await post(l, { template: "demo-stub", root: target, goal: "  " });
+    assert.equal(ok.status, 201, JSON.stringify(ok.json));
+    assert.equal(goalOf(target).trim(), "Build and ship a small idempotent payment endpoint.", "its own goal, as written");
+  });
+});
+
+test("on a host that was given its models, the team is made on them and with the goal that was given", { timeout: 30_000 }, async () => {
+  await withHost(async (l) => {
+    const target = path.join(l.projects, "managed-team");
+    const r = await post(l, { template: "default", root: target, goal: "Review the open pull requests and say which are ready." });
+    assert.equal(r.status, 201, JSON.stringify(r.json));
+    const raw = parseMeshSource(fs.readFileSync(path.join(target, "mesh.yaml"), "utf8"));
+    assert.equal(raw.mesh.goal, "Review the open pull requests and say which are ready.");
+    assert.equal(raw.mesh.runtime?.default, "native", "the managed rewrite and the goal are both in the one file");
+  }, { confined: true, env: { CURULE_GATEWAY_URL: "https://gateway.curule.example/v1", CURULE_GATEWAY_KEY: "curule_vk_000000000000_SECRET" } });
+});
+
+test("the goal helpers: what is read, what is written, and that a goal set twice is the second", () => {
+  assert.deepEqual(readGoal(undefined), { ok: true, goal: null });
+  assert.deepEqual(readGoal(null), { ok: true, goal: null });
+  assert.deepEqual(readGoal("  hi  "), { ok: true, goal: "hi" });
+  assert.deepEqual(readGoal("a\r\nb\rc\td"), { ok: true, goal: "a\nb\nc d" });
+  assert.equal(readGoal("x".repeat(GOAL_MAX)).ok, true);
+  assert.equal(readGoal("x".repeat(GOAL_MAX + 1)).ok, false);
+  const text = defaultMeshTemplate("my-mesh", "my-mesh", "claude");
+  const once = withGoal(text, "First.");
+  assert.equal(parseMeshSource(withGoal(once, "Second.\nWith a second line.")).mesh.goal, "Second.\nWith a second line.");
+  assert.equal(withGoal(text, "Describe the mission goal here."), text.replace(PLACEHOLDER_BLOCK, "  goal: |-\n    Describe the mission goal here.\n"), "only the block's own marker differs");
 });
 
 test("without a folder, the template goes where the welcome said it would, and a second one does not collide with the first", { timeout: 30_000 }, async () => {

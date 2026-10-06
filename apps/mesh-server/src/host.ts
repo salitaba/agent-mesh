@@ -993,7 +993,7 @@ export function createHostServer(deps: {
           // the folder the person named. Same safety as the add below; see new-project.ts for the rules.
           if (b.template !== undefined) {
             registry.reload();
-            const made = await createFromTemplate({ template: b.template, root: b.root }, { registry, shippedRoot });
+            const made = await createFromTemplate({ template: b.template, root: b.root, goal: b.goal }, { registry, shippedRoot });
             if (!made.ok) return json(made.status, { error: made.reason, code: made.code, reason: made.reason });
             return json(201, { ...summarize(made.ref), scaffolded: true, template: made.template });
           }

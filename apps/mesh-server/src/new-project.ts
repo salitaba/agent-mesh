@@ -13,13 +13,17 @@
  *     request ("add an existing folder"), so it is refused with a reason that says so;
  *   - a template is looked up in the closed set `describeTemplates` returns (the default team, and the folders that exist
  *     under the install's `examples/`). The request's text is compared against that list and never joined onto a path;
- *   - every refusal carries a `reason`: one sentence the dashboard shows as it is.
+ *   - every refusal carries a `reason`: one sentence the dashboard shows as it is;
+ *   - a goal, when one is given, is judged before anything is written, and replaces the placeholder in the default team's
+ *     mesh.yaml and nothing else in it (a mission reads its goal once, when its project first starts, so a goal that arrives with
+ *     the team is the one the mission begins with).
  *
  * Nothing here knows about HTTP. host.ts maps a refusal to a status and a body, and a success to a project summary.
  */
 import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
+import { Scalar, parseDocument } from "yaml";
 import {
   ConfigError,
   describeTemplates,
@@ -81,6 +85,42 @@ export type NewProjectResult =
   | { ok: false; status: number; code: string; reason: string };
 
 const refuse = (status: number, code: string, reason: string): NewProjectResult => ({ ok: false, status, code, reason });
+
+/** The most a goal can be: `mesh.goal.maxLength` in schemas/mesh.schema.json, and the same figure the Designer's field holds to. */
+export const GOAL_MAX = 2000;
+
+export type GoalRead = { ok: true; goal: string | null } | { ok: false; code: "bad_goal" | "goal_too_long"; reason: string };
+
+/** What a goal may not hold besides a line end: the other control characters, and the two separators some readers take for line ends. */
+const NOT_TEXT = /[\u0000-\u0008\u000b-\u001f\u007f-\u009f\u2028\u2029]/;
+
+/**
+ * The goal a person wrote for a new team, as it will be written: trimmed, with one kind of line end, a tab from a pasted list made a
+ * space. None given (absent, null, empty, blanks) is `null`, and the placeholder stays for the Designer to ask about. Anything that
+ * is not text, is longer than the schema allows or holds another control character is refused with one sentence.
+ */
+export function readGoal(input: unknown): GoalRead {
+  if (input === undefined || input === null) return { ok: true, goal: null };
+  if (typeof input !== "string") return { ok: false, code: "bad_goal", reason: "Give the goal as text." };
+  const goal = input.replace(/\r\n?/g, "\n").replace(/\t/g, " ").trim();
+  if (NOT_TEXT.test(goal)) return { ok: false, code: "bad_goal", reason: "The goal has a character that cannot be saved in a text file. Retype it as plain text." };
+  if (goal.length > GOAL_MAX) {
+    return { ok: false, code: "goal_too_long", reason: `The goal is ${goal.length.toLocaleString("en-US")} characters, and the most a goal can be is ${GOAL_MAX.toLocaleString("en-US")}. Shorten it.` };
+  }
+  return { ok: true, goal: goal === "" ? null : goal };
+}
+
+/**
+ * A mesh.yaml with its goal set to `goal` and nothing else changed: comments, order and every other line are the file's own. It is a
+ * block (`goal: |-`) like the one it replaces, so what a person typed reads back exactly, whatever it holds.
+ */
+export function withGoal(text: string, goal: string): string {
+  const doc = parseDocument(text);
+  const node = new Scalar(goal);
+  node.type = Scalar.BLOCK_LITERAL;
+  doc.setIn(["mesh", "goal"], node);
+  return String(doc);
+}
 
 /** Where a person's own folders are on this machine; the same answer the folder picker starts from. */
 const homeDir = (env: NodeJS.ProcessEnv): string => env.HOME || env.USERPROFILE || os.homedir() || "/";
@@ -212,13 +252,19 @@ export function writeDefaultTeam(dir: string, name: string, env: NodeJS.ProcessE
   if (managed) rewriteForTheService(path.join(dir, MESH_CONFIG_FILENAME), managed);
 }
 
-export async function createFromTemplate(input: { template: unknown; root: unknown }, deps: NewProjectDeps): Promise<NewProjectResult> {
+export async function createFromTemplate(input: { template: unknown; root: unknown; goal?: unknown }, deps: NewProjectDeps): Promise<NewProjectResult> {
   const env = deps.env ?? process.env;
   const templates = describeTemplates(deps.shippedRoot);
   // The closed set. The request's text is only ever compared with `id`s that came from the install, never used as a path.
   const template = typeof input.template === "string" ? templates.find((t) => t.id === input.template) : undefined;
   if (!template) {
     return refuse(400, "unknown_template", "This host does not offer that starting point. Choose one from the list, or add a folder that already holds a mesh.yaml.");
+  }
+  const goal = readGoal(input.goal);
+  if (!goal.ok) return refuse(400, goal.code, goal.reason);
+  // A shipped example has the goal its seats' scripts were written for: another would make a team that plays its part against the wrong brief.
+  if (goal.goal !== null && template.kind !== "default") {
+    return refuse(400, "goal_not_for_template", `${template.title} comes with a goal of its own. A goal can be given only for the default team.`);
   }
 
   const registered = deps.registry.list();
@@ -253,6 +299,10 @@ export async function createFromTemplate(input: { template: unknown; root: unkno
   try {
     if (template.kind === "default") {
       writeDefaultTeam(target, path.basename(realLocation(target)), env);
+      if (goal.goal !== null) {
+        const file = path.join(target, MESH_CONFIG_FILENAME);
+        fs.writeFileSync(file, withGoal(fs.readFileSync(file, "utf8"), goal.goal), "utf8");
+      }
     } else {
       // An example is only in `templates` when the install ships examples, so `shippedRoot` is set.
       scaffoldExample(deps.shippedRoot as string, template.id, target);
