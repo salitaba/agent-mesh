@@ -4,6 +4,7 @@
  * wire edit does in ./edits. */
 
 import { AUTHORITY_DOMAINS, AUTHORITY_TOKENS, AUTHORITY_VERBS, CAPABILITY_TOKENS } from "../../../../packages/protocol/src/catalog";
+import { GOAL_PLACEHOLDER } from "../goal";
 import { locateIssue } from "./locate";
 import type { Tab } from "./types";
 
@@ -272,17 +273,8 @@ export const TEMPLATES: Template[] = [
 
 /* ---------------- the goal a scaffold starts with ---------------- */
 
-/** What `curule init` and the Triad template write as a goal. A mesh that still says this has no goal yet, and the Designer says so. */
-export const GOAL_PLACEHOLDER = "Describe the mission goal here.";
-
-/** True for an empty goal and for the scaffold's own placeholder. */
-export const goalIsPlaceholder = (goal: unknown): boolean => {
-  const g = typeof goal === "string" ? goal.trim() : "";
-  return g === "" || g === GOAL_PLACEHOLDER;
-};
-
-/** The longest goal the schema accepts (`mesh.goal.maxLength`). */
-export const GOAL_MAX = 2000;
+// The placeholder and its length are the console's one answer (../goal), shared with the welcome, the top bar and the Start dialog.
+export { GOAL_MAX, GOAL_PLACEHOLDER, goalIsPlaceholder } from "../goal";
 
 /* ---------------- error → inspector tab routing ---------------- */
 

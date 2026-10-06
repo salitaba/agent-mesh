@@ -119,9 +119,10 @@ interface ProjectsState {
    * Without it a mesh-less folder still fails with `missing`, which the picker
    * uses to offer an explicit "create mesh here" instead of writing unasked.
    * `opts.template` makes the project from a starting point the host offers (`GET /api/templates`): the host writes
-   * it into `root` and refuses a folder that already holds a mesh.yaml.
+   * it into `root` and refuses a folder that already holds a mesh.yaml. `opts.goal` is the goal for the default team, written into
+   * its mesh.yaml in place of the placeholder before the project first starts.
    */
-  addProject: (root: string, opts?: { init?: boolean; template?: string }) => Promise<AddResult>;
+  addProject: (root: string, opts?: { init?: boolean; template?: string; goal?: string }) => Promise<AddResult>;
   /**
    * Each answers with the project as the host now reports it, or with why the host refused (the plan allows one open
    * project at a time, the host did not answer). A project that fails to come up is NOT a refusal: the request worked and
@@ -433,8 +434,8 @@ export function ProjectsProvider({ children, eventTypes }: { children: (activeId
     });
   }, []);
 
-  const addProject = useCallback(async (root: string, opts?: { init?: boolean; template?: string }): Promise<AddResult> => {
-    const body = opts?.template ? { root, template: opts.template } : opts?.init ? { root, init: true } : { root };
+  const addProject = useCallback(async (root: string, opts?: { init?: boolean; template?: string; goal?: string }): Promise<AddResult> => {
+    const body = opts?.template ? { root, template: opts.template, ...(opts.goal ? { goal: opts.goal } : {}) } : opts?.init ? { root, init: true } : { root };
     let res: Awaited<ReturnType<typeof post>>;
     try {
       res = await post("/api/projects", body);

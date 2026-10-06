@@ -5,6 +5,9 @@
  *   Create a new mesh     the default team on the Claude runtime, in a folder the person picks.
  *   Add an existing folder  a folder that already holds a mesh.yaml. Nothing is written.
  *
+ * A Curule Cloud workspace is welcomed differently (HostedWelcome): its person has no folders, host or environment to set, so the page
+ * asks what they want done and makes the team with that goal, and the folders and files are under Details. The host says which it is.
+ *
  * Each says what it needs, what it costs and which files it writes where, from facts the host read out of its own files
  * (`GET /api/templates`), so no name or count here can drift from what the host does. Nothing is written until a button is
  * pressed, and a folder that already holds a mesh.yaml is never replaced.
@@ -13,18 +16,25 @@
  */
 import React, { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import "./firstrun.css";
-import { Button, IconButton, PageHeader, useDismissable } from "./components";
+import { Button, IconButton, PageHeader, TextArea, useDismissable } from "./components";
 import { Icon, type IconName } from "./icons";
 import { api } from "./api";
 import { useProjects } from "./projects";
 import { hashFor } from "./route";
 import { FolderPickerModal } from "./folderpicker";
+import { requestArrival } from "./designer/arrival";
+import { GOAL_EXAMPLES, goalDraft, withExample } from "./goal";
+import { useTemplates, type TemplatesState } from "./hostfacts";
 import {
+  HOSTED,
+  KEY_MISSING,
   failureText,
   folderVerdict,
+  hostedAfter,
+  keyIsMissing,
   landingView,
   looksAbsolute,
-  parseTemplates,
+  modelTag,
   pickDefault,
   pickDemo,
   readBrowse,
@@ -40,38 +50,7 @@ import {
   type TemplatesAnswer,
 } from "./firstrun";
 
-type TemplatesState =
-  | { phase: "loading" }
-  | { phase: "ready"; answer: TemplatesAnswer }
-  /** The host has no `/api/templates`: an older host. Adding a folder that holds a mesh.yaml still works. */
-  | { phase: "unsupported" }
-  | { phase: "error"; message: string };
-
-function useTemplates(): { state: TemplatesState; reload: () => void } {
-  const [state, setState] = useState<TemplatesState>({ phase: "loading" });
-  const [attempt, setAttempt] = useState(0);
-  useEffect(() => {
-    let alive = true;
-    setState({ phase: "loading" });
-    void (async () => {
-      let res: Awaited<ReturnType<typeof api>> | null;
-      try {
-        res = await api("GET", "/api/templates");
-      } catch {
-        res = null;
-      }
-      if (!alive) return;
-      if (res === null || res.status === 0) return setState({ phase: "error", message: failureText(null) });
-      if (res.status === 404) return setState({ phase: "unsupported" });
-      const answer = res.status === 200 ? parseTemplates(res.json) : null;
-      setState(answer ? { phase: "ready", answer } : { phase: "error", message: `The host answered ${res.status} and offered nothing to start from.` });
-    })();
-    return () => {
-      alive = false;
-    };
-  }, [attempt]);
-  return { state, reload: useCallback(() => setAttempt((n) => n + 1), []) };
-}
+type Templates = ReturnType<typeof useTemplates>;
 
 /**
  * Asks the host about the folder in a field once the person stops typing, and judges it for what the card does. Facts about
@@ -124,7 +103,8 @@ function useStart(onDone?: () => void) {
   const [phase, setPhase] = useState<"adding" | "opening">("adding");
   const [errors, setErrors] = useState<Partial<Record<Intent, string>>>({});
   const run = useCallback(
-    async (intent: Intent, root: string, opts: { template?: string }) => {
+    /** Resolves to whether the project was made: a caller that keeps what the person typed until it is, clears it only then. */
+    async (intent: Intent, root: string, opts: { template?: string; goal?: string }): Promise<boolean> => {
       setBusy(intent);
       setPhase("adding");
       setErrors({});
@@ -132,7 +112,7 @@ function useStart(onDone?: () => void) {
       if (!res.ok || !res.project) {
         setBusy(null);
         setErrors({ [intent]: failureText(res) });
-        return;
+        return false;
       }
       setPhase("opening");
       const id = res.project.id;
@@ -140,9 +120,12 @@ function useStart(onDone?: () => void) {
       // the strip, which outlives this page; the project is made and registered either way, so the person goes to it.
       await openProject(id);
       setActive(id);
+      // A team that was just made is opened on its next step: the goal if it has none, else describing the team (designer/arrival.ts).
+      if (intent === "new") requestArrival(id, "next-step");
       window.location.hash = hashFor(id, landingView(intent));
       setBusy(null);
       onDone?.();
+      return true;
     },
     [addProject, openProject, setActive, onDone],
   );
@@ -269,15 +252,17 @@ function Unavailable({ state, reload, what }: { state: TemplatesState; reload: (
   return <p className="fr-quiet">This install does not include {what}.</p>;
 }
 
-export function NewProject({ layout, onDone, onPickerChange }: {
+export function NewProject({ layout, templates, onDone, onPickerChange }: {
   layout: "row" | "stack";
+  /** What the host says it can offer: asked by the page around this, which also needs it to say which welcome to show. */
+  templates: Templates;
   /** Called once a project is made and the console has moved to it. */
   onDone?: () => void;
   /** Told when the folder picker opens or closes, so a dialog around this can leave Escape to the picker. */
   onPickerChange?: (open: boolean) => void;
 }): React.JSX.Element {
   const ids = useId();
-  const { state, reload } = useTemplates();
+  const { state, reload } = templates;
   const { hostSpend } = useProjects();
   const start = useStart(onDone);
   const answer = state.phase === "ready" ? state.answer : null;
@@ -307,8 +292,13 @@ export function NewProject({ layout, onDone, onPickerChange }: {
   const newCheck = useFolderVerdict(newPath, "create");
   const existingCheck = useFolderVerdict(existing, "add");
 
-  const demoNeeds = demo && answer ? whatItNeeds(demo, answer.modelAccess, answer.managed, answer.ownKey) : null;
-  const newNeeds = dflt && answer ? whatItNeeds(dflt, answer.modelAccess, answer.managed, answer.ownKey) : null;
+  const hosted = answer?.hosted != null;
+  // A hosted team made before the key is in would be written for the Claude runtime, which a workspace cannot run, and would stay so
+  // after the key is added (a team's models are chosen when it is made). The way in is the key first, on the account page.
+  const keyMissing = answer ? keyIsMissing(answer) : false;
+  const tag = dflt && answer ? modelTag(answer, dflt) : null;
+  const demoNeeds = demo && answer ? whatItNeeds(demo, answer.modelAccess, answer.managed, answer.ownKey, hosted) : null;
+  const newNeeds = dflt && answer ? whatItNeeds(dflt, answer.modelAccess, answer.managed, answer.ownKey, hosted) : null;
   const takes = demo ? whatItTakes(demo) : null;
   const working = (intent: Intent, idle: string): string => (start.busy === intent ? (start.phase === "adding" ? "Creating…" : "Opening…") : idle);
 
@@ -377,8 +367,8 @@ export function NewProject({ layout, onDone, onPickerChange }: {
         id={`${ids}-new`}
         icon="plus"
         title="Create a new mesh"
-        tag={dflt?.needsApiKey ? (answer?.managed ? (answer.ownKey ? "Your model key" : "Models supplied") : answer && answer.modelAccess.length > 0 ? "Model access found" : "Needs model access") : undefined}
-        tagTone={dflt?.needsApiKey ? (answer?.managed || (answer && answer.modelAccess.length > 0) ? "ok" : "warn") : undefined}
+        tag={tag?.text}
+        tagTone={tag?.tone}
         lead={dflt ? whatItIs(dflt) : "The default team, in a folder you choose."}
         actions={
           <>
@@ -386,11 +376,12 @@ export function NewProject({ layout, onDone, onPickerChange }: {
               variant="soft"
               icon="plus"
               extra="fr-go"
-              disabled={!dflt || busy || !newCheck.verdict.canProceed}
+              disabled={!dflt || busy || keyMissing || !newCheck.verdict.canProceed}
               onClick={() => dflt && void start.run("new", newPath, { template: dflt.id })}
             >
               {working("new", "Create the mesh")}
             </Button>
+            {keyMissing && answer?.hosted ? <AccountLink href={answer.hosted.accountUrl}>{HOSTED.keyAction}</AccountLink> : null}
             {start.errors.new ? <p className="fr-error" role="alert"><Icon name="alert" size={14} /><span>{start.errors.new}</span></p> : null}
             {dflt ? <p className="fr-after">{whatHappensNext("new")}</p> : null}
           </>
@@ -494,18 +485,270 @@ function RunWrites(): React.JSX.Element {
 }
 
 /**
+ * A link to the customer's account page, in a new tab so the workspace stays where it is: the model key is added there, and this page
+ * notices when it is in. The address is the host's, already checked to be http or https (`safeHref`).
+ */
+function AccountLink({ href, children }: { href: string; children: React.ReactNode }): React.JSX.Element {
+  return (
+    <a className="fr-link" href={href} target="_blank" rel="noopener noreferrer">
+      {children}
+      <span className="sr-only"> (opens your account page in a new tab)</span>
+    </a>
+  );
+}
+
+/** What was typed and not sent: a long goal is not lost to a reload or a phone that sent the page to the background. */
+const DRAFT_KEY = "curule-welcome-goal";
+const readDraft = (): string => {
+  try {
+    return sessionStorage.getItem(DRAFT_KEY) ?? "";
+  } catch {
+    return "";
+  }
+};
+const writeDraft = (text: string): void => {
+  try {
+    if (text) sessionStorage.setItem(DRAFT_KEY, text);
+    else sessionStorage.removeItem(DRAFT_KEY);
+  } catch {
+    /* a private window: the draft lives only as long as the page */
+  }
+};
+
+/**
+ * What a customer of the hosted service sees first: say what you want done, and a team is made for it. No folder, path, host or
+ * mesh.yaml is in the way (the facts are under Details); a model key that is not in yet is the one thing to do, with the link to
+ * where it is added; the scripted demo is one quiet click away, since it needs no model.
+ */
+function HostedWelcome({ answer, templates }: { answer: TemplatesAnswer; templates: Templates }): React.JSX.Element {
+  const ids = useId();
+  const start = useStart();
+  const { hostSpend } = useProjects();
+  const demo = pickDemo(answer);
+  const dflt = pickDefault(answer);
+  const keyMissing = keyIsMissing(answer);
+  const accountUrl = answer.hosted?.accountUrl ?? "";
+  const busy = start.busy !== null;
+
+  const [goal, setGoalState] = useState(readDraft);
+  const setGoal = (text: string): void => {
+    setGoalState(text);
+    writeDraft(text);
+  };
+  const textId = `${ids}-text`;
+  const draft = goalDraft(goal);
+  // Create is never greyed out for want of a goal: a button that will not say why is a dead end. Pressed with nothing written, it says so
+  // and puts the cursor in the field.
+  const [asked, setAsked] = useState(false);
+  const problem = draft.problem ?? (asked && draft.count === 0 ? HOSTED.goalRequired : null);
+  // The person went to add the key and came back to a page that has noticed: say so, since the card they were looking at is gone.
+  const wasMissing = useRef(keyMissing);
+  const [keyArrived, setKeyArrived] = useState(false);
+  useEffect(() => {
+    if (wasMissing.current && !keyMissing) setKeyArrived(true);
+    wasMissing.current = keyMissing;
+  }, [keyMissing]);
+
+  // The plain facts: where the files go, and what a team needs and costs. `null` means "the folder the host suggested".
+  const [newFolder, setNewFolder] = useState<string | null>(null);
+  const [demoFolder, setDemoFolder] = useState<string | null>(null);
+  const [picker, setPicker] = useState<{ intent: Intent; initial: string } | null>(null);
+  const newPath = newFolder ?? dflt?.suggestedRoot ?? "";
+  const demoPath = demoFolder ?? demo?.suggestedRoot ?? "";
+  const newCheck = useFolderVerdict(newPath, "create");
+  const demoCheck = useFolderVerdict(demoFolder ?? "", "create");
+  const needs = dflt ? whatItNeeds(dflt, answer.modelAccess, answer.managed, answer.ownKey, true) : null;
+  const ceiling = hostSpend?.ceilingUsd ?? null;
+  const working = (intent: Intent, idle: string): string => (start.busy === intent ? (start.phase === "adding" ? "Creating…" : "Opening…") : idle);
+
+  const create = (): void => {
+    if (!dflt || busy || !newCheck.verdict.canProceed) return;
+    if (!draft.ready) {
+      setAsked(true);
+      document.getElementById(textId)?.focus();
+      return;
+    }
+    void start.run("new", newPath, { template: dflt.id, goal: goal.trim() }).then((made) => {
+      if (made) writeDraft("");
+    });
+  };
+  const pick = (example: (typeof GOAL_EXAMPLES)[number]): void => {
+    setGoal(withExample(goal, example));
+    // The person goes on from the sentence: the cursor is at its end, where more can be said.
+    requestAnimationFrame(() => {
+      const el = document.getElementById(textId);
+      if (!(el instanceof HTMLTextAreaElement)) return;
+      el.focus();
+      el.setSelectionRange(el.value.length, el.value.length);
+    });
+  };
+  const canCreate = Boolean(dflt) && !busy && newCheck.verdict.canProceed;
+
+  return (
+    <div className="fr-welcome fr-hosted">
+      <PageHeader title={HOSTED.title} lede={HOSTED.lede} />
+
+      {keyMissing ? (
+        <section className="fr-card fr-key" aria-labelledby={`${ids}-key`}>
+          <header className="fr-card-head">
+            <span className="fr-card-icon warn" aria-hidden="true"><Icon name="alert" size={18} /></span>
+            <div className="fr-card-title">
+              <h3 id={`${ids}-key`}>{HOSTED.keyTitle}</h3>
+            </div>
+          </header>
+          <p className="fr-lead">{KEY_MISSING}</p>
+          <div className="fr-card-acts">
+            <AccountLink href={accountUrl}>{HOSTED.keyAction}</AccountLink>
+            <p className="fr-after">{HOSTED.keyAfter}</p>
+          </div>
+        </section>
+      ) : (
+        <form className="fr-card fr-goal" aria-labelledby={`${ids}-goal`} aria-busy={busy} onSubmit={(e) => { e.preventDefault(); create(); }}>
+          <header className="fr-card-head">
+            <span className="fr-card-icon" aria-hidden="true"><Icon name="spark" size={18} /></span>
+            <div className="fr-card-title">
+              <h3 id={`${ids}-goal`}>{HOSTED.goalTitle}</h3>
+            </div>
+          </header>
+          {keyArrived ? <p className="fr-ok" role="status"><Icon name="check" size={14} /><span>{HOSTED.keyArrived}</span></p> : null}
+          <div className="fr-field">
+            <label htmlFor={textId}>{HOSTED.goalLabel}</label>
+            <TextArea
+              id={textId}
+              rows={4}
+              value={goal}
+              disabled={busy}
+              aria-invalid={problem ? true : undefined}
+              aria-describedby={`${ids}-hint${problem ? ` ${ids}-problem` : ""}`}
+              onChange={(e) => setGoal(e.target.value)}
+              onKeyDown={(e) => {
+                if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
+                  e.preventDefault();
+                  create();
+                }
+              }}
+            />
+            <p id={`${ids}-hint`} className="fr-caption">{HOSTED.goalHint}</p>
+            {problem ? <p id={`${ids}-problem`} className="fr-error" role="alert"><Icon name="alert" size={14} /><span>{problem}</span></p> : null}
+          </div>
+          <div className="fr-examples" role="group" aria-label={HOSTED.examples}>
+            <span className="fr-examples-label" aria-hidden="true">{HOSTED.examples}</span>
+            {GOAL_EXAMPLES.map((e) => (
+              <button key={e.id} type="button" className="fr-chip" disabled={busy} onClick={() => pick(e)}>{e.label}</button>
+            ))}
+          </div>
+          <div className="fr-card-acts">
+            <Button variant="primary" type="submit" icon="plus" extra="fr-go" disabled={!canCreate}>{working("new", HOSTED.create)}</Button>
+            {start.errors.new ? <p className="fr-error" role="alert"><Icon name="alert" size={14} /><span>{start.errors.new}</span></p> : null}
+            <p className="fr-after">{hostedAfter()}</p>
+          </div>
+        </form>
+      )}
+
+      {demo ? (
+        <section className="fr-demo" aria-labelledby={`${ids}-demo`}>
+          <h3 id={`${ids}-demo`} className="sr-only">The demo</h3>
+          <Button variant="soft" icon="play" disabled={busy || (demoFolder !== null && !demoCheck.verdict.canProceed)} onClick={() => void start.run("demo", demoPath, { template: demo.id })}>
+            {working("demo", HOSTED.demo)}
+          </Button>
+          <p className="fr-quiet">{whatItIs(demo)} {whatHappensNext("demo")}</p>
+          {start.errors.demo ? <p className="fr-error" role="alert"><Icon name="alert" size={14} /><span>{start.errors.demo}</span></p> : null}
+        </section>
+      ) : null}
+
+      {templates.state.phase === "ready" ? (
+        <details className="fr-details">
+          <summary><Icon name="chevron-right" size={14} className="chev" />{HOSTED.details}</summary>
+          <div className="fr-details-body">
+            {dflt && needs ? (
+              <>
+                <dl className="fr-facts">
+                  <Fact label="Needs" tone={needs.tone}>{needs.text}</Fact>
+                  <Fact label="Costs">{whatItCosts(dflt, ceiling, answer.managed, answer.ownKey)}</Fact>
+                </dl>
+                <FolderField
+                  id={`${ids}-new-folder`}
+                  label="Folder"
+                  caption={`Creating the team writes ${writesWhat(dflt)} in this folder, on this workspace. Its name becomes the project's name.`}
+                  value={newPath}
+                  onChange={setNewFolder}
+                  onBrowse={() => setPicker({ intent: "new", initial: newPath })}
+                  verdict={newCheck.verdict}
+                  checking={newCheck.checking}
+                  disabled={busy}
+                />
+              </>
+            ) : null}
+            {demo ? (
+              demoFolder === null ? (
+                <div className="fr-folder">
+                  <p className="fr-caption">The demo writes {writesWhat(demo)} in:</p>
+                  <div className="fr-path-row">
+                    <span className="fr-path path-start mono" title={demoPath}><bdi>{demoPath}</bdi></span>
+                    <Button variant="small" disabled={busy} onClick={() => setDemoFolder(demoPath)}>Change folder</Button>
+                  </div>
+                </div>
+              ) : (
+                <FolderField
+                  id={`${ids}-demo-folder`}
+                  label="Demo folder"
+                  caption={`The demo writes ${writesWhat(demo)} in:`}
+                  value={demoFolder}
+                  onChange={setDemoFolder}
+                  onBrowse={() => setPicker({ intent: "demo", initial: demoFolder })}
+                  verdict={demoCheck.verdict}
+                  checking={demoCheck.checking}
+                  disabled={busy}
+                />
+              )
+            ) : null}
+            <RunWrites />
+          </div>
+        </details>
+      ) : null}
+
+      {picker ? (
+        <FolderPickerModal
+          initialPath={picker.initial}
+          title="Choose a folder"
+          onClose={() => setPicker(null)}
+          onChoose={(path) => {
+            if (picker.intent === "demo") setDemoFolder(path);
+            else setNewFolder(path);
+            setPicker(null);
+          }}
+        />
+      ) : null}
+    </div>
+  );
+}
+
+/**
  * The page a fresh host opens on. It replaces "No project open" and a button: three ways to start, each saying what it
  * needs, what it costs and which files it writes where. The shell shows it in place of every project page while the
- * registry is empty.
+ * registry is empty. A host that is a hosted workspace gets HostedWelcome instead, and the page waits for the host to say which it is
+ * rather than showing one welcome and swapping it for the other.
  */
 export function Welcome(): React.JSX.Element {
+  // While the key is missing the host is asked again every few seconds: the customer has gone to add it, and the page should notice.
+  const templates = useTemplates({ keepFresh: true, watchWhile: keyIsMissing });
+  const { state } = templates;
+  if (state.phase === "ready" && state.answer.hosted) return <HostedWelcome answer={state.answer} templates={templates} />;
+  if (state.phase === "loading") {
+    return (
+      <div className="fr-welcome">
+        <PageHeader title="Welcome" />
+        <p className="fr-quiet" role="status">Asking this host what it can offer…</p>
+      </div>
+    );
+  }
   return (
     <div className="fr-welcome">
       <PageHeader
         title="Welcome to Curule"
         lede="This host has no project yet. A project is a folder with a mesh.yaml: a team of agents and the goal they work on. Choose how to start."
       />
-      <NewProject layout="row" />
+      <NewProject layout="row" templates={templates} />
       <div className="fr-aside">
         <RunWrites />
         <p>
@@ -518,6 +761,7 @@ export function Welcome(): React.JSX.Element {
 
 /** The same three ways, over whatever page is open, from the New project button. */
 export function NewProjectDialog({ onClose }: { onClose: () => void }): React.JSX.Element {
+  const templates = useTemplates({ keepFresh: true, watchWhile: keyIsMissing });
   // The folder picker opens above this dialog, and both listen for Escape. While the picker is up, Escape is its.
   const pickerOpen = useRef(false);
   const ref = useDismissable<HTMLDivElement>(true, () => {
@@ -535,7 +779,7 @@ export function NewProjectDialog({ onClose }: { onClose: () => void }): React.JS
           </div>
           <IconButton icon="x" label="Close" onClick={onClose} />
         </div>
-        <NewProject layout="stack" onDone={onClose} onPickerChange={(open) => { pickerOpen.current = open; }} />
+        <NewProject layout="stack" templates={templates} onDone={onClose} onPickerChange={(open) => { pickerOpen.current = open; }} />
         <div className="fr-aside">
           <RunWrites />
         </div>

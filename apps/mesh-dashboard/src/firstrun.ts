@@ -7,6 +7,9 @@
  *   demo      a shipped team on the stub runtime: no API key, no model calls
  *   new       the default team on the Claude runtime, in a folder the person picks
  *   existing  a folder that already holds a mesh.yaml
+ *
+ * Two welcomes: a laptop's host (the three ways side by side, in the words of folders and files) and a Curule Cloud workspace, whose
+ * person has no folders, host or environment to set and wants to say what they want done. The host says which it is (`hosted`).
  */
 import type { View } from "./route";
 import { usd } from "./projectsmodel";
@@ -37,11 +40,30 @@ export interface TemplatesAnswer {
   managed: boolean;
   /** When `managed`: the models are the owner's own key at their own provider, not the service's. */
   ownKey: boolean;
+  /** The host is a Curule Cloud workspace, and this is where its account page is. Null on any other host. */
+  hosted: { accountUrl: string } | null;
 }
 
 const isObject = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
 const str = (v: unknown): string | null => (typeof v === "string" && v.trim() !== "" ? v : null);
 const num = (v: unknown): number | null => (typeof v === "number" && Number.isFinite(v) ? v : null);
+
+/** An address a link may carry: http or https, and nothing else (`javascript:` in an `href` runs). */
+export function safeHref(v: unknown): string | null {
+  const raw = str(v);
+  if (!raw) return null;
+  try {
+    const url = new URL(raw);
+    return url.protocol === "https:" || url.protocol === "http:" ? url.href : null;
+  } catch {
+    return null;
+  }
+}
+
+function readHosted(v: unknown): TemplatesAnswer["hosted"] {
+  const accountUrl = isObject(v) ? safeHref(v.accountUrl) : null;
+  return accountUrl ? { accountUrl } : null;
+}
 
 /**
  * `GET /api/templates` as the page uses it. An entry that is not complete is dropped rather than half-shown, and an answer
@@ -75,8 +97,19 @@ export function parseTemplates(json: unknown): TemplatesAnswer | null {
     modelAccess: Array.isArray(json.modelAccess) ? json.modelAccess.filter((x): x is string => typeof x === "string") : [],
     managed: json.managed === true,
     ownKey: json.managed === true && json.modelSource === "own",
+    hosted: readHosted(json.hosted),
   };
 }
+
+/**
+ * A workspace whose team could not reach a model yet, and whose person is the one who can fix that: nothing supplies models and no key
+ * is set. On a customer's own plan the key is added on the account page and nowhere else, so that is where they are sent; on a laptop's
+ * host the same lack is the existing sentence about ANTHROPIC_API_KEY (`whatItNeeds`), which only its owner can act on.
+ */
+export const keyIsMissing = (a: TemplatesAnswer): boolean => a.hosted !== null && !a.managed && a.modelAccess.length === 0;
+
+/** What a hosted person is told when the key is missing. One sentence, said the same in the welcome, the Designer and the Start dialog. */
+export const KEY_MISSING = "Your team needs a model key to think. Add it on your account page.";
 
 /** The demo is the shipped team that needs no model: found by that property, not by a name that could drift. */
 export const pickDemo = (a: TemplatesAnswer): TemplateOffer | null => a.templates.find((t) => t.kind === "example" && !t.needsApiKey) ?? null;
@@ -104,12 +137,16 @@ export function whatItTakes(o: TemplateOffer): string | null {
   return o.runtime === "stub" ? "A few seconds after you press Start." : null;
 }
 
-/** What it needs from this host. Says what the host has, by the names of the settings. */
-export function whatItNeeds(o: TemplateOffer, modelAccess: readonly string[], managed = false, ownKey = false): { text: string; tone: "ok" | "warn" } {
+/**
+ * What it needs from this host. Says what the host has, by the names of the settings, and for a hosted workspace with none, that the
+ * person's key is added on their account page (they cannot set a workspace's environment).
+ */
+export function whatItNeeds(o: TemplateOffer, modelAccess: readonly string[], managed = false, ownKey = false, hosted = false): { text: string; tone: "ok" | "warn" } {
   if (!o.needsApiKey) return { text: `Nothing. It runs on the ${o.runtime} runtime, so it makes no model calls.`, tone: "ok" };
   if (managed && ownKey) return { text: "Models, on the model key you gave this workspace. Your provider bills you for what a team uses.", tone: "ok" };
   if (managed) return { text: "Models, which this workspace's service supplies. You bring no key.", tone: "ok" };
   if (modelAccess.length > 0) return { text: `Model access, which this host has (${modelAccess.join(", ")}).`, tone: "ok" };
+  if (hosted) return { text: KEY_MISSING, tone: "warn" };
   return {
     text: "Model access, which this host lacks. Set ANTHROPIC_API_KEY, or the settings for Bedrock, Vertex AI or Foundry, in its environment.",
     tone: "warn",
@@ -138,6 +175,41 @@ export function whatHappensNext(intent: Intent): string {
   const page = landingView(intent) === "designer" ? "the Designer" : "the Overview";
   return intent === "demo" ? `Then opens ${page}, where you press Start.` : `Then opens ${page}.`;
 }
+
+/**
+ * The tag on the default team's card: where its models come from, or what is missing. A missing key on a hosted workspace is the
+ * person's own to add, which is not the same thing as a host that lacks settings only its owner can change.
+ */
+export function modelTag(answer: TemplatesAnswer, offer: TemplateOffer): { text: string; tone: "ok" | "warn" } | null {
+  if (!offer.needsApiKey) return null;
+  if (answer.managed) return { text: answer.ownKey ? "Your model key" : "Models supplied", tone: "ok" };
+  if (answer.modelAccess.length > 0) return { text: "Model access found", tone: "ok" };
+  return { text: answer.hosted ? "Needs your model key" : "Needs model access", tone: "warn" };
+}
+
+/**
+ * The words of the hosted welcome's main path. A customer has no folders, host or environment to set and nothing to browse, so none of
+ * those words is here: the plain facts are under Details, which is a click away and still there.
+ */
+export const HOSTED = {
+  title: "Welcome to your workspace",
+  lede: "Tell it what you want done and Curule sets up a team to work on it. Nothing runs until you press Start.",
+  goalTitle: "Start with a goal",
+  goalLabel: "What should your team do?",
+  goalHint: "Say what you want delivered, and how you will know it is done.",
+  goalRequired: "Write what you want your team to do first.",
+  examples: "For example",
+  create: "Create the team",
+  demo: "Try the demo first (no model, no cost)",
+  details: "Details",
+  keyTitle: "Add your model key first",
+  keyAction: "Add your model key",
+  keyAfter: "Come back to this page when it is added. It checks again by itself.",
+  keyArrived: "Your model key is in.",
+} as const;
+
+/** The line under "Create the team". Said from `landingView`, as every card's is, so the sentence and the move cannot part. */
+export const hostedAfter = (): string => `${whatHappensNext("new")} You can change the team there before you start.`;
 
 /** What `GET /api/browse` said about the folder a person typed. */
 export type FolderFacts =

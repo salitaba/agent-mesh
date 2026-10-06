@@ -84,6 +84,8 @@
 .fr-after { margin: 0; font-size: 13px; color: var(--muted); text-align: center; }
 .fr-error { margin: 0; display: flex; gap: var(--s1-5); align-items: flex-start; font-size: 14px; line-height: 1.45; color: var(--bad); }
 .fr-error .icon { flex: none; margin-top: var(--s0); }
+.fr-ok { margin: 0; display: flex; gap: var(--s1-5); align-items: flex-start; font-size: 14px; line-height: 1.45; color: var(--ok); }
+.fr-ok .icon { flex: none; margin-top: var(--s0); }
 .fr-offer { padding: var(--s3); background: var(--panel-2); border: 1px solid var(--line); border-radius: var(--r); display: flex; flex-direction: column; align-items: flex-start; gap: var(--s2); }
 .fr-offer p { margin: 0; font-size: 14px; line-height: 1.5; color: var(--text-dim); }
 
@@ -97,6 +99,43 @@
 .fr-verdict.ok { color: var(--ok); }
 .fr-verdict.warn { color: var(--warn); }
 .fr-verdict.bad { color: var(--bad); }
+
+/* ------------------------------------------------------------------------------------------ the hosted welcome
+   A customer has no folders or host to think about: one column, one thing to do (say what the team is for), the scripted demo as a
+   quiet second way in, and the plain facts under Details. */
+.fr-hosted { max-width: 720px; display: flex; flex-direction: column; gap: var(--s4); }
+.fr-hosted .view-sub { margin-bottom: 0; }
+.fr-goal, .fr-key { gap: var(--s3-5); }
+.fr-card-icon.warn { background: color-mix(in srgb, var(--warn) 13%, transparent); color: var(--warn); }
+.fr-field { display: flex; flex-direction: column; gap: var(--s1-5); }
+.fr-field > label { font: 600 14px/1.35 var(--sans); color: var(--text); }
+.fr-field textarea { box-sizing: border-box; width: 100%; min-height: 112px; resize: vertical; padding: var(--s2-5) var(--s3); font-size: 15px; line-height: 1.5; }
+.fr-field textarea:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.fr-field textarea[aria-invalid="true"] { border-color: var(--bad); }
+.fr-examples { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s2); }
+.fr-examples-label { margin-right: var(--s1); font: var(--tx-label); letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+.fr-chip { display: inline-flex; align-items: center; min-height: 36px; padding: var(--s1) var(--s3); background: var(--panel-2); border: 1px solid var(--line-control); border-radius: 999px; color: var(--text); font: 14px/1.3 var(--sans); cursor: pointer; text-align: left; }
+.fr-chip:hover:not(:disabled) { border-color: var(--accent); }
+.fr-chip:disabled { opacity: .55; cursor: not-allowed; }
+/* The same address a primary button would be, as a link: it leaves the page, so it is one. */
+.fr-link { display: inline-flex; align-items: center; justify-content: center; min-height: 40px; padding: var(--s1-5) var(--s4); background: var(--accent); border: 1px solid transparent; border-radius: var(--r-sm); color: var(--text-on-accent); font: 600 15px var(--sans); text-decoration: none; text-align: center; }
+.fr-link:hover { background: var(--accent-2); }
+.fr-demo { display: flex; flex-direction: column; align-items: flex-start; gap: var(--s2); padding: var(--s1) var(--s1) 0; }
+.fr-demo .fr-quiet { max-width: 62ch; }
+.fr-details { padding-top: var(--s3); border-top: 1px solid var(--line); }
+.fr-details summary { display: inline-flex; align-items: center; gap: var(--s1-5); min-height: 28px; list-style: none; cursor: pointer; color: var(--accent-2); font-size: 14px; }
+.fr-details summary::-webkit-details-marker { display: none; }
+.fr-details summary .icon { transition: transform .12s; }
+.fr-details[open] summary .icon { transform: rotate(90deg); }
+.fr-details-body { display: flex; flex-direction: column; gap: var(--s3); margin-top: var(--s3); }
+.fr-details-body .fr-facts { padding-top: 0; border-top: 0; }
+.fr-details .fr-aside, .fr-details-body > p { margin: 0; font-size: 14px; line-height: 1.55; color: var(--muted); }
+@media (max-width: 560px) {
+  .fr-chip, .fr-link, .fr-details summary { min-height: 44px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .fr-details summary .icon { transition: none; }
+}
 
 /* ------------------------------------------------------------------------------------------ New project dialog */
 .np-dialog { position: fixed; z-index: var(--z-picker); top: 6vh; left: 50%; transform: translateX(-50%); width: min(780px, 94vw); max-height: 88vh; overflow: auto; padding: var(--s5); background: var(--bg-2); border: 1px solid var(--line-strong); border-radius: var(--r-lg); box-shadow: var(--shadow); }

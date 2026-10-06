@@ -2,14 +2,20 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import {
+  HOSTED,
+  KEY_MISSING,
   failureText,
   folderVerdict,
+  hostedAfter,
+  keyIsMissing,
   landingView,
   looksAbsolute,
+  modelTag,
   parseTemplates,
   pickDefault,
   pickDemo,
   readBrowse,
+  safeHref,
   whatItCosts,
   whatItIs,
   whatHappensNext,
@@ -18,6 +24,7 @@ import {
   writesWhat,
   type TemplateOffer,
 } from "../../apps/mesh-dashboard/src/firstrun";
+import { GOAL_EXAMPLES } from "../../apps/mesh-dashboard/src/goal";
 
 const offer = (over: Partial<TemplateOffer> = {}): TemplateOffer => ({
   id: "demo-stub", kind: "example", title: "Demo", goal: "Build and ship a small idempotent payment endpoint.", seats: 7, runtime: "stub",
@@ -217,4 +224,62 @@ test("a failed create or add says what the host said, as a sentence, and what to
   assert.equal(failureText({ status: 502 }), "The host answered 502. Try again.");
   assert.equal(failureText({ status: 0 }), "The host did not answer. Check that it is still running, then try again.");
   assert.equal(failureText(null), "The host did not answer. Check that it is still running, then try again.");
+});
+
+const ONE = [{ id: "x", kind: "example", suggestedRoot: "/x" }];
+const HOSTED_ANSWER = { templates: ONE, hosted: { accountUrl: "https://app.curule.example/account" } };
+
+test("a host that says it is a hosted workspace is read with where its account page is; one that says nothing, or an address a link must not carry, is not", () => {
+  assert.deepEqual(parseTemplates(HOSTED_ANSWER)!.hosted, { accountUrl: "https://app.curule.example/account" });
+  assert.equal(parseTemplates({ templates: ONE, hosted: { accountUrl: "  http://localhost:7870/account " } })!.hosted?.accountUrl, "http://localhost:7870/account");
+  for (const bad of [undefined, null, {}, "yes", true, [], { accountUrl: "" }, { accountUrl: 3 }, { accountUrl: "javascript:alert(1)" }, { accountUrl: "data:text/html,x" }, { accountUrl: "ftp://x/y" }, { accountUrl: "/account" }, { accountUrl: "not a url" }]) {
+    assert.equal(parseTemplates({ templates: ONE, hosted: bad })!.hosted, null, JSON.stringify(bad));
+  }
+  assert.equal(parseTemplates(answer)!.hosted, null, "a laptop's host says nothing of the kind");
+  assert.equal(safeHref("https://a.example/x"), "https://a.example/x");
+  assert.equal(safeHref("JAVASCRIPT:alert(1)"), null);
+});
+
+test("a key is missing only on a hosted workspace that supplies no models and found none; on a laptop's host that lack is the owner's, in their own words", () => {
+  const read = (extra: object) => parseTemplates({ ...HOSTED_ANSWER, ...extra })!;
+  assert.equal(keyIsMissing(read({})), true, "a hosting-only workspace before its key");
+  assert.equal(keyIsMissing(read({ managed: true, modelSource: "own" })), false, "the customer's key is in");
+  assert.equal(keyIsMissing(read({ managed: true })), false, "the service supplies the models");
+  assert.equal(keyIsMissing(read({ modelAccess: ["ANTHROPIC_API_KEY"] })), false, "an operator gave every workspace a key");
+  assert.equal(keyIsMissing(parseTemplates({ templates: ONE })!), false, "a laptop with no key is not sent to an account page it does not have");
+  assert.equal(KEY_MISSING, "Your team needs a model key to think. Add it on your account page.");
+});
+
+test("what a team needs on a hosted workspace with no key is the sentence that sends the person to their account; the laptop's keeps naming the settings", () => {
+  const team = claude();
+  assert.deepEqual(whatItNeeds(team, [], false, false, true), { text: KEY_MISSING, tone: "warn" });
+  assert.equal(whatItNeeds(team, ["ANTHROPIC_API_KEY"], false, false, true).tone, "ok", "a key an operator gave is found first");
+  assert.deepEqual(whatItNeeds(team, [], true, true, true).tone, "ok");
+  assert.match(whatItNeeds(team, [], false, false, false).text, /Set ANTHROPIC_API_KEY/, "unchanged for a host that is not a workspace");
+  assert.deepEqual(whatItNeeds(offer(), [], false, false, true), { text: "Nothing. It runs on the stub runtime, so it makes no model calls.", tone: "ok" }, "the demo needs nothing, key or no key");
+});
+
+test("the tag on the default team says where its models come from or what is missing, and on a workspace the missing key is the person's own to add", () => {
+  const read = (extra: object) => parseTemplates({ templates: [claude()], ...extra })!;
+  const team = claude();
+  assert.deepEqual(modelTag(read({ managed: true }), team), { text: "Models supplied", tone: "ok" });
+  assert.deepEqual(modelTag(read({ managed: true, modelSource: "own" }), team), { text: "Your model key", tone: "ok" });
+  assert.deepEqual(modelTag(read({ modelAccess: ["ANTHROPIC_API_KEY"] }), team), { text: "Model access found", tone: "ok" });
+  assert.deepEqual(modelTag(read({}), team), { text: "Needs model access", tone: "warn" });
+  assert.deepEqual(modelTag(read({ hosted: { accountUrl: "https://app.curule.example/account" } }), team), { text: "Needs your model key", tone: "warn" });
+  assert.equal(modelTag(read({}), offer()), null, "a team that needs no model has no tag about models");
+});
+
+test("the hosted welcome's main path has no folder, path, host, Browse or mesh.yaml in it: a customer has none of those to set", () => {
+  const words = [...Object.entries(HOSTED).filter(([k]) => k !== "details").map(([, v]) => v), hostedAfter(), KEY_MISSING, ...GOAL_EXAMPLES.flatMap((e) => [e.label, e.text])];
+  for (const w of words) assert.doesNotMatch(w, /\b(folders?|paths?|hosts?|browse|mesh\.yaml|director(y|ies)|environment|ANTHROPIC_API_KEY)\b/i, w);
+  assert.equal(HOSTED.title, "Welcome to your workspace");
+  assert.equal(HOSTED.create, "Create the team");
+  assert.match(HOSTED.demo, /^Try the demo first \(no model, no cost\)$/);
+});
+
+test("the line under Create the team follows the move, and says the team can be changed before anything runs", () => {
+  assert.equal(hostedAfter(), "Then opens the Designer. You can change the team there before you start.");
+  assert.equal(hostedAfter().startsWith(whatHappensNext("new")), true, "said from the same place as the card's, so the sentence and the move cannot part");
+  assert.match(HOSTED.lede, /Nothing runs until you press Start\./);
 });
