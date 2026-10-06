@@ -25,7 +25,7 @@
   const NEEDS = {
     home: ["plans", "topups"],
     signup: ["card", "form", "status", "title", "lede", "email", "password", "agree"],
-    login: ["form", "status", "email", "password"],
+    login: ["form", "status", "email", "password", "resend-form", "resend", "resend-wait", "resend-status"],
     verify: ["status", "title", "again", "resend-form", "resend", "resend-wait", "resend-status", "email"],
     forgot: ["form", "status", "email"],
     reset: ["card", "form", "status", "title", "lede", "password"],
@@ -684,7 +684,10 @@
       const address = email.value.trim();
       const r = await call("POST", "/api/signup", { email: address, password: password.value });
       if (!r.ok) {
-        say(status, "bad", r.error.message);
+        // A refusal that is about a field puts the cursor there: that is where the next try starts.
+        if (r.error.code === "invalid_email") invalid(email, status, r.error.message);
+        else if (r.error.code === "weak_password") invalid(password, status, r.error.message);
+        else say(status, "bad", r.error.message);
         return;
       }
       const card = $("card");
@@ -715,6 +718,7 @@
     const status = $("status");
     const email = $("email");
     const password = $("password");
+    let wired = false;
     focusFirst(email);
     onSubmit($("form"), status, async () => {
       say(status, "", "");
@@ -727,6 +731,15 @@
       say(status, "bad", r.error.message);
       password.value = "";
       password.focus();
+      // The service says the same for every way a sign-in can fail, so it cannot say that an address was never confirmed; the page offers
+      // the way out after any refusal of the email and password, to everyone, and so says nothing about anyone.
+      if (r.error.code === "invalid_credentials") {
+        if (!wired) {
+          wired = true;
+          resender($("resend-form"), $("resend"), $("resend-status"), $("resend-wait"), () => email.value.trim() || null);
+        }
+        $("resend-form").hidden = false;
+      }
     });
   }
 
@@ -780,9 +793,17 @@
     const password = $("password");
     const token = new URLSearchParams(location.search).get("token");
     const askAgain = () => el("p", null, el("a", { class: "btn", href: "/forgot" }, "Ask for a new link"));
+    // A link that cannot be used: the heading says so, the form that has no use is put away, and what there is to do is what is left.
+    const dead = (text) => {
+      retitle("That link did not work", "");
+      say(status, "bad", text);
+      $("form").hidden = true;
+      const again = askAgain();
+      $("card").append(again);
+      return again.querySelector("a");
+    };
     if (!token) {
-      say(status, "bad", "This link is incomplete. Open the link in the email again, or ask for a new one.");
-      $("card").append(askAgain());
+      dead("This link is incomplete. Open the link in the email again, or ask for a new one.");
       return;
     }
     // The form is hidden in the markup, so that nobody sees one that has no link to go with it.
@@ -793,13 +814,18 @@
       if (password.value.length < 10) return invalid(password, status, "Choose a password of at least 10 characters.");
       const r = await call("POST", "/api/reset", { token, password: password.value });
       if (!r.ok) {
-        say(status, "bad", r.error.message);
-        if (r.error.code === "invalid_token") $("card").append(askAgain());
+        if (r.error.code === "invalid_token") dead(r.error.message).focus();
+        else if (r.error.code === "weak_password") invalid(password, status, r.error.message);
+        else say(status, "bad", r.error.message);
         return;
       }
       history.replaceState(null, "", "/reset");
       retitle("Password changed", "");
-      $("card").replaceChildren(el("div", { class: "note note-ok", role: "status" }, "Your password is changed. Every device is signed out."), el("p", null, el("a", { class: "btn btn-primary", href: "/login" }, "Sign in")));
+      const card = $("card");
+      card.replaceChildren(el("div", { class: "note note-ok", role: "status" }, "Your password is changed. Every device is signed out."), el("p", null, el("a", { class: "btn btn-primary", href: "/login" }, "Sign in")));
+      // The form that had the cursor is gone: the cursor goes to what happened, as it does when a link is sent.
+      card.setAttribute("tabindex", "-1");
+      card.focus();
     });
   }
 
@@ -1694,7 +1720,10 @@
       const r = await call("POST", "/api/password", { current: current.value, next: next.value });
       if (signInAgain(r)) return;
       if (!r.ok) {
-        say(status, "bad", r.error.message);
+        // The refusal that is about a field puts the cursor in it.
+        if (r.error.code === "invalid_credentials") invalid(current, status, r.error.message);
+        else if (r.error.code === "weak_password") invalid(next, status, r.error.message);
+        else say(status, "bad", r.error.message);
         return;
       }
       current.value = "";

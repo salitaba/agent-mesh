@@ -64,8 +64,9 @@ code { font-family: var(--mono); font-size: .875em; background: var(--code); bor
 .bar nav a:hover, .bar nav button:hover { color: var(--ink); }
 .bar nav a[aria-current="page"] { color: var(--ink); box-shadow: inset 0 -2px 0 var(--accent); border-radius: 0; }
 .site-footer { margin-top: 64px; padding: 24px 0 32px; border-top: 1px solid var(--line); color: var(--muted); font-size: .875rem; }
-.site-footer .wrap { display: flex; flex-wrap: wrap; gap: 8px 20px; }
-.site-footer a { color: var(--muted); }
+.site-footer .wrap { display: flex; flex-wrap: wrap; align-items: center; gap: 0 20px; }
+/* A finger has to hit these: the link is as tall as a button, though it is a word. */
+.site-footer a { display: inline-flex; align-items: center; justify-content: center; min-width: 44px; min-height: 44px; color: var(--muted); }
 
 /* ---------------------------------------------------------------- buttons and fields */
 .btn { display: inline-flex; align-items: center; justify-content: center; gap: .5em; min-height: 44px; padding: 0 20px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); color: var(--ink); font: 600 .9375rem/1.2 var(--font); text-align: center; text-decoration: none; cursor: pointer; }
@@ -87,9 +88,12 @@ input:hover, select:hover { border-color: var(--muted); }
 .secret input { padding-right: 72px; }
 .reveal { position: absolute; right: 5px; top: 50%; min-width: 56px; min-height: 40px; padding: 0 12px; transform: translateY(-50%); border: 0; border-radius: 8px; background: none; color: var(--accent); font: 600 .875rem/1 var(--font); cursor: pointer; }
 .reveal:hover { background: var(--code); }
+@media (max-width: 720px) { .reveal { min-height: 44px; } }
 input[aria-invalid="true"] { border-color: var(--bad); }
 .check { display: flex; align-items: flex-start; gap: 10px; margin-bottom: 18px; font-size: .9375rem; }
-.check input { flex: none; width: 20px; height: 20px; margin-top: 3px; }
+.check input { flex: none; width: 20px; height: 20px; margin-top: 12px; }
+/* The sentence is what a finger hits to tick the box, so it is as tall as a button. */
+.check label { display: block; min-height: 44px; padding: 9px 0; }
 
 /* ---------------------------------------------------------------- messages */
 .note { display: block; margin: 0 0 18px; padding: 12px 16px; border: 1px solid var(--line); border-left-width: 4px; border-radius: 10px; background: var(--panel); }
@@ -105,8 +109,11 @@ input[aria-invalid="true"] { border-color: var(--bad); }
 .narrow .card { margin-top: 20px; }
 .card { padding: clamp(20px, 4vw, 32px); border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel); box-shadow: var(--lift); }
 .aside { margin-top: 20px; color: var(--muted); font-size: .9375rem; }
+/* A link in a line of its own is a target: its hit area is taller than its text, without moving the lines around it. */
+.aside a { display: inline-block; padding: 12px 2px; margin: -12px 0; }
 /* The page that says a link was sent: what to do when it does not come. */
 .resend { display: grid; gap: 12px; margin: 20px 0 0; }
+.card form + .resend { margin-top: 24px; padding-top: 20px; border-top: 1px solid var(--line); }
 .resend .note, .resend p { margin: 0; }
 #resend-wait:empty { display: none; }
 .card .causes-h { margin: 24px 0 8px; font-size: 1rem; }

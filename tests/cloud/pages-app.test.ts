@@ -295,6 +295,11 @@ test("sign-up shows what the service says when it refuses, and lets the person t
   assert.equal(v.text("status"), "That password is too easy to guess.");
   assert.equal(v.$("status").className, "note note-bad");
   assert.ok(v.buttons("form").every((b) => !b.disabled), "the button is back");
+  assert.equal(v.doc.activeElement, v.$("password"), "a refusal that is about the password puts the cursor in it");
+  assert.equal(v.$("password").getAttribute("aria-invalid"), "true");
+  w.answers.set("POST /api/signup", failure(400, "invalid_email", "Enter an email address."));
+  await v.send(v.$("form"));
+  assert.equal(v.doc.activeElement, v.$("email"), "and one that is about the address puts it there");
   w.answers.set("POST /api/signup", failure(429, "rate_limited", "Too many attempts. Wait a minute and try again."));
   await v.send(v.$("form"));
   assert.equal(v.text("status"), "Too many attempts. Wait a minute and try again.");
@@ -403,9 +408,13 @@ test("choosing a new password: the form is not there without a link, and with on
   assert.equal(none.shows(none.$("form")), false, "a form with no link to go with it is not shown");
   assert.equal(none.text("status"), "This link is incomplete. Open the link in the email again, or ask for a new one.");
   assert.equal(none.link("card", "Ask for a new link").getAttribute("href"), "/forgot");
+  assert.equal(none.text("title"), "That link did not work", "the heading says what the page is: a link that cannot be used is not \"Choose a new password\"");
+  assert.equal(none.doc.title, "That link did not work – Curule Cloud");
+  assert.equal(none.shows(none.$("lede")), false, "and the line about a link that works once goes with the form");
 
   w.answers.set("POST /api/reset", { json: { ok: true } });
   const v = await visit("reset", { routes: w.routes, search: "?token=t0k3n" });
+  assert.equal(v.text("title"), "Choose a new password");
   assert.equal(v.shows(v.$("form")), true);
   assert.equal(v.text("status"), "");
   v.type("password", "short");
@@ -417,6 +426,8 @@ test("choosing a new password: the form is not there without a link, and with on
   assert.deepEqual(v.history, ["/reset"]);
   assert.equal(v.text("card"), "Your password is changed. Every device is signed out. Sign in");
   assert.equal(v.link("card", "Sign in").getAttribute("href"), "/login");
+  assert.equal(v.doc.activeElement, v.$("card"), "the form that had the cursor is gone: the cursor goes to what happened");
+  assert.equal(v.$("card").getAttribute("tabindex"), "-1");
 });
 
 test("a reset link that has been used offers a new one; a password that is too weak does not, because the link is fine", async () => {
@@ -428,14 +439,22 @@ test("a reset link that has been used offers a new one; a password that is too w
   assert.equal(v.text("status"), "That link is not valid, or it has expired. Ask for a new one.");
   assert.equal(v.link("card", "Ask for a new link").getAttribute("href"), "/forgot");
   assert.deepEqual(v.history, [], "the page keeps the link in the address until it has been used");
+  assert.equal(v.text("title"), "That link did not work", "the heading says so now");
+  assert.equal(v.shows(v.$("form")), false, "a form that can do nothing with that link is put away");
+  assert.equal(v.doc.activeElement, v.link("card", "Ask for a new link"), "and the cursor is on what there is to do");
 
   const weak = world((x) => (x.signedIn = false));
   weak.answers.set("POST /api/reset", failure(400, "weak_password", "That password is too easy to guess."));
   const u = await visit("reset", { routes: weak.routes, search: "?token=fresh" });
   u.type("password", "password123456");
-  await u.send(u.$("form"));
+  u.click(u.button("form", "Save password"));
+  await u.idle();
   assert.equal(u.text("status"), "That password is too easy to guess.");
+  assert.equal(u.doc.activeElement, u.$("password"), "the cursor is in the field to choose another, though it was on the button that was pressed");
+  assert.equal(u.$("password").getAttribute("aria-invalid"), "true");
   assert.equal(u.doc.querySelectorAll("a").filter((a) => a.textContent === "Ask for a new link").length, 0);
+  assert.equal(u.text("title"), "Choose a new password", "the link is fine, so the page is as it was");
+  assert.equal(u.shows(u.$("form")), true);
 });
 
 test("the page for a wrong address offers a visitor the plans and the way in, and a customer their account", async () => {
@@ -486,9 +505,7 @@ test("a page's heading and the tab's title say what the page is now: a link that
   assert.equal(reset.doc.title, "Password changed – Curule Cloud");
 });
 
-test("the sign-in page says that the right password sends the link again, and the page that says the link was sent does not promise what that denies", async () => {
-  const login = fs.readFileSync(`${PAGES_DIR}/login.html`, "utf8");
-  assert.match(login, /signing in with your password sends the link again/);
+test("the page that says the link was sent does not send a person to sign in to have it sent again: it has a button for that", async () => {
   const w = world((x) => (x.signedIn = false));
   w.answers.set("POST /api/signup", { status: 202, json: { ok: true, message: "Check your email for a link to confirm your address." } });
   const v = await visit("signup", { routes: w.routes, manualTimers: true });
@@ -496,7 +513,9 @@ test("the sign-in page says that the right password sends the link again, and th
   v.type("password", "correct horse battery staple");
   v.check("agree");
   await v.send(v.$("form"));
-  assert.doesNotMatch(v.text("card"), /Sign in with your email and password/, "what to do is a button, and the usual causes: the sign-in page's way is its own");
+  assert.doesNotMatch(v.text("card"), /Sign in with your email and password/);
+  const login = fs.readFileSync(`${PAGES_DIR}/login.html`, "utf8");
+  assert.doesNotMatch(login, /signing in with your password sends the link again/, "nor does the sign-in page: it offers the way after a refusal, which does not depend on a password being right");
 });
 
 test("a password field has Show and Hide that only a script can give, and a password that was shown is hidden again once it is sent", async () => {
@@ -1259,8 +1278,13 @@ test("changing the password sends both, says it is done, and empties the fields;
   v.type("next", "a much better password");
   await v.send(v.$("password-form"));
   assert.equal(v.text("password-status"), "The current password is not right.");
+  assert.equal(v.doc.activeElement, v.$("current"), "the cursor is in the field that is wrong");
   assert.deepEqual(v.navigations, [], "a 403 for the wrong password is not a signed-out session");
   assert.equal(v.$("current").value, "old", "the fields are kept for another try");
+  w.answers.set("POST /api/password", failure(400, "weak_password", "That password is too easy to guess."));
+  await v.send(v.$("password-form"));
+  assert.equal(v.doc.activeElement, v.$("next"), "and for a new password that is too weak, in that one");
+  w.answers.set("POST /api/password", failure(403, "invalid_credentials", "The current password is not right."));
 
   w.answers.set("POST /api/password", { json: { ok: true } });
   v.type("current", "the right one");

@@ -170,3 +170,44 @@ test("a link with no token in it, and a link that worked, are as they were: the 
   assert.equal(none.$("again").hidden, false, "a link with no token is a link that did not work, and the person can ask for another");
   assert.equal(none.text("status"), "This link is incomplete. Open the link in the email again.");
 });
+
+test("the sign-in page offers the confirmation link again after a refusal of the email and password, to everyone, and after nothing else", async () => {
+  const w = world((x) => (x.signedIn = false));
+  w.answers.set("POST /api/login", failure(401, "invalid_credentials", "That email and password do not match an account."));
+  w.answers.set("POST /api/verify/resend", ASKED);
+  const v = await visit("login", { routes: w.routes, manualTimers: true });
+  assert.equal(v.$("resend-form").hidden, true, "a person who has just come has not been refused, and is not shown it");
+  v.type("email", " ada@example.com ");
+  v.type("password", "a wrong password");
+  await v.send(v.$("form"));
+  v.type("password", "another wrong password");
+  await v.send(v.$("form"));
+  assert.equal(v.text("status"), "That email and password do not match an account.", "the service says the same for every way it can fail, and so does the page");
+  assert.equal(v.doc.activeElement, v.$("password"), "and the cursor is in the field to try again");
+  assert.equal(v.shows(v.$("resend-form")), true);
+  assert.equal(v.text("resend-form"), "Not confirmed your address yet? We can send the link again. Send the confirmation link again");
+
+  v.click(v.$("resend"));
+  await v.idle();
+  assert.deepEqual(v.to("POST", "/api/verify/resend"), [{ method: "POST", path: "/api/verify/resend", body: { email: "ada@example.com" } }]);
+  assert.equal(v.text("resend-status"), "If that address is waiting to be confirmed, a new link is on its way.");
+  assert.equal(v.text("resend-wait"), "You can ask for another in 60 seconds.");
+  v.click(v.$("resend"));
+  await v.idle();
+  assert.equal(v.to("POST", "/api/verify/resend").length, 1, "not again within the minute");
+  await v.advance(60_000);
+  v.type("email", "bob@example.com");
+  v.click(v.$("resend"));
+  await v.idle();
+  assert.equal(v.to("POST", "/api/verify/resend")[1]!.body && (v.to("POST", "/api/verify/resend")[1]!.body as { email: string }).email, "bob@example.com", "the address in the field now is the one it is sent to");
+  assert.equal(v.to("POST", "/api/login").length, 2);
+
+  const limited = world((x) => (x.signedIn = false));
+  limited.answers.set("POST /api/login", failure(429, "rate_limited", "Too many attempts. Wait a minute and try again."));
+  const l = await visit("login", { routes: limited.routes });
+  l.type("email", "ada@example.com");
+  l.type("password", "a wrong password");
+  await l.send(l.$("form"));
+  assert.equal(l.text("status"), "Too many attempts. Wait a minute and try again.");
+  assert.equal(l.$("resend-form").hidden, true, "a refusal that is not of the email and password is not the occasion");
+});

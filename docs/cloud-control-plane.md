@@ -570,9 +570,14 @@ error. The colours and the type are the site's.
   (`data-busy` in the markup: Signing in, Creating account, Sending, Saving, Changing) and is itself again afterwards; a password
   field has Show and Hide, which the markup carries hidden, so a browser that runs no script shows no control that does nothing, and
   a password that was shown is hidden again when it is sent; the heading and the tab's title follow what the page has become (a sent
-  link is "Check your email", a failed check "That link did not work", a changed password "Password changed"); and on a device with
-  a mouse the cursor starts in the first field, while a finger's page is left alone, because a keyboard that opens by itself covers
-  the page it opened for.
+  link is "Check your email", a link that cannot be used (to confirm an address or to choose a password) "That link did not work", a
+  changed password "Password changed"); and on a device with a mouse the cursor starts in the first field, while a finger's page is
+  left alone, because a keyboard that opens by itself covers the page it opened for. After a change the cursor is never left
+  nowhere: a refusal that is about a field puts it in that field, a control that is replaced hands it to what took its place, and a
+  page that says something happened takes it. The sign-in page, after a refusal of the email and password (which the service says
+  in one way for every case, so the page cannot tell an address that was never confirmed), offers the confirmation link again to
+  everyone. What a finger has to hit is 44 pixels tall on a phone: buttons, the footer's links, Show and Hide, the sentence of a tick
+  box and a link in a line of its own; only links inside a sentence are as tall as the sentence.
 - **What a page says about a period is the service's own setting.** How long a session or a link lasts, how long workspaces keep
   running after a payment fails and how long they are kept after a subscription ends are options of the control plane;
   `GET /api/plans` returns them as `policy`, the pages fill them in (`data-policy`), and a test fails if a page states one as a

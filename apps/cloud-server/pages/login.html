@@ -49,8 +49,14 @@
         <a class="btn" href="/forgot">Forgot your password?</a>
       </div>
     </form>
+    <form id="resend-form" class="resend" novalidate hidden>
+      <p class="muted small">Not confirmed your address yet? We can send the link again.</p>
+      <div class="btn-row"><button id="resend" class="btn btn-small" type="submit" data-busy="Sending">Send the confirmation link again</button></div>
+      <div id="resend-status" class="note" role="status" aria-live="polite"></div>
+      <p id="resend-wait" class="muted small"></p>
+    </form>
   </div>
-  <p class="aside">New here? <a href="/signup">Create an account</a>. If you have not confirmed your address yet, signing in with your password sends the link again.</p>
+  <p class="aside">New here? <a href="/signup">Create an account</a>.</p>
 </div>
 </main>
 

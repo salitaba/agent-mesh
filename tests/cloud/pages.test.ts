@@ -289,6 +289,26 @@ test("the colours are the site's, and every text colour clears WCAG AA on the ba
   }
 });
 
+test("what a finger has to hit is as tall as a button on a phone: the footer's links, the buttons, the Show of a password, the sentence of a tick box, a link in a line of its own", () => {
+  const css = read(path.join(ASSETS, "app.css"));
+  /** The declarations of the rule for exactly this selector, written as the stylesheet writes it: on its own, or inside the media query that is named. */
+  const rule = (selector: string, within = ""): string => {
+    const written = `${within ? `${within} { ` : ""}${selector} {`;
+    const at = css.indexOf(written);
+    assert.ok(at >= 0, `the stylesheet has a rule for ${selector}${within ? ` in ${within}` : ""}`);
+    return css.slice(at, css.indexOf("}", at));
+  };
+  assert.match(rule(".btn"), /min-height: 44px/, "a button is 44 pixels tall");
+  assert.match(rule(".btn-small", "@media (max-width: 720px)"), /min-height: 44px/, "and so is a small one on a phone");
+  assert.match(rule(".site-footer a"), /min-height: 44px/, "the footer's links are words with the reach of a button");
+  assert.match(rule(".site-footer a"), /min-width: 44px/);
+  assert.match(rule(".reveal", "@media (max-width: 720px)"), /min-height: 44px/, "Show and Hide on a password");
+  assert.match(rule(".check label"), /min-height: 44px/, "a tick box is ticked by hitting its sentence");
+  assert.match(rule(".aside a"), /padding: 12px/, "a link in a line of its own has a hit area taller than its text");
+  assert.match(rule(".aside a"), /margin: -12px 0/, "without moving the lines around it");
+  assert.match(rule(".ws .ws-auto .check"), /min-height: 44px/, "and so is the offer to open a workspace when it is ready");
+});
+
 test("no page states a period or a count the service could change: those are filled in from its settings", () => {
   const number = /\b\d+\s*(?:days?|hours?|minutes?|weeks?|months?)\b|\b(?:one|two|three|four|five|six|seven|ten|twelve|fourteen|twenty|thirty|sixty|ninety)[\s-]+(?:days?|hours?|minutes?|weeks?)\b/i;
   const withoutPolicy = (n: FakeNode): string[] => (n.isText ? [n.textContent] : n.attrs.has("data-policy") || n.className.split(/\s+/).includes("owner-term") || n.tag === "script" || n.tag === "noscript" ? [] : n.children.flatMap(withoutPolicy));
