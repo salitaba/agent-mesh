@@ -574,12 +574,13 @@ function HostedWelcome({ answer, templates }: { answer: TemplatesAnswer; templat
   };
   const pick = (example: (typeof GOAL_EXAMPLES)[number]): void => {
     setGoal(withExample(goal, example));
-    // The person goes on from the sentence: the cursor is at its end, where more can be said.
+    // The person goes on from the sentence: the field has the focus at once (a key pressed now goes into it, not onto the chip), and the
+    // cursor is at the end of the new text, where more can be said, as soon as it is there.
+    const field = document.getElementById(textId);
+    if (field instanceof HTMLTextAreaElement) field.focus();
     requestAnimationFrame(() => {
       const el = document.getElementById(textId);
-      if (!(el instanceof HTMLTextAreaElement)) return;
-      el.focus();
-      el.setSelectionRange(el.value.length, el.value.length);
+      if (el instanceof HTMLTextAreaElement) el.setSelectionRange(el.value.length, el.value.length);
     });
   };
   const canCreate = Boolean(dflt) && !busy && newCheck.verdict.canProceed;
