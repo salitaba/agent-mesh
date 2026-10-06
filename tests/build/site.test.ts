@@ -375,3 +375,23 @@ test("a table or a command that goes on past its box shows a shadow at the edge 
     for (const row of m[0].matchAll(/<tbody>([\s\S]*?)<\/tbody>/g)) for (const tr of row[1]!.matchAll(/<tr>([\s\S]*?)<\/tr>/g)) assert.match(tr[1]!, /^<th scope="row">/, "every row starts with its own header, the column that stays");
   }
 });
+
+test("a card that a link points at is marked once the link is followed, by a second line and not by colour alone", () => {
+  const css = fs.readFileSync(path.join(SITE, "assets", "site.css"), "utf8");
+  const kinds = ["card", "doc-card", "plan"];
+  assert.match(css, /\n\.card:target, \.doc-card:target, \.plan:target \{ border-color: var\(--accent\); box-shadow: inset 0 0 0 1px var\(--accent\); \}/, "inside the border: the card does not move");
+  assert.match(/@media \(forced-colors: active\) \{[\s\S]*?\n\}/.exec(css)![0], /\.card:target, \.doc-card:target, \.plan:target \{ outline: 2px solid Highlight;/, "a forced-colour mode drops the shadow; an outline stays");
+  // The cards links do point at (the contact page's three, from the security, pricing and documentation pages) are of those kinds.
+  let cards = 0;
+  for (const p of pages) {
+    for (const m of p.markup.matchAll(/\bhref="([^"#]*)#([\w-]+)"/g)) {
+      const target = m[1] === "" ? p : pages.find((q) => q.rel === fileOf(m[1]!, p));
+      const element = target && new RegExp(`<(\\w+)\\b[^>]*\\sid="${m[2]}"[^>]*>`).exec(target.markup);
+      if (!element || !/^article$/.test(element[1]!)) continue;
+      cards++;
+      const classes = /\sclass="([^"]*)"/.exec(element[0])?.[1]?.split(/\s+/) ?? [];
+      assert.ok(classes.some((c) => kinds.includes(c)), `${p.rel}: #${m[2]} is a card the stylesheet does not mark: ${element[0]}`);
+    }
+  }
+  assert.ok(cards >= 3, `links point at cards (${cards})`);
+});
