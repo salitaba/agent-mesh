@@ -57,6 +57,20 @@ const CONTACT_BODY = `
 <p><a data-mail="security" href="#security">TODO(owner): security address</a></p>
 <p>Published by <span data-company>TODO(owner): company name</span>.</p>`;
 
+/** The switched markup of a page while Curule Cloud is not open, in the shapes the pages use, and the same once it is. */
+const SWITCHED_CLOSED = `
+<a class="signin" href="#" data-cloud="login" hidden>Sign in</a>
+<a class="btn btn-primary" href="#" data-cloud="signup" hidden>Get started</a>
+<a class="btn btn-primary" href="#try" data-selfhost-only>Try the demo</a>
+<p data-selfhost-only>Not today.</p>
+<p data-cloud-only hidden>Yes: that is <a href="#" data-cloud="home" hidden>Curule Cloud</a>.</p>`;
+const SWITCHED_OPEN = `
+<a class="signin" href="https://app.curule.dev/login" data-cloud="login">Sign in</a>
+<a class="btn btn-primary" href="https://app.curule.dev/signup" data-cloud="signup">Get started</a>
+<a class="btn btn-primary" href="#try" data-selfhost-only hidden>Try the demo</a>
+<p data-selfhost-only hidden>Not today.</p>
+<p data-cloud-only>Yes: that is <a href="https://app.curule.dev/" data-cloud="home">Curule Cloud</a>.</p>`;
+
 const NOT_FOUND = `<!doctype html>
 <html lang="en">
 <head>
@@ -78,6 +92,11 @@ var APP_URL = "#"; // TODO(owner): where "Sign in" goes, for example https://mes
 var CLOUD_URL = ""; // Curule Cloud is not open: the pages say Curule is software you run, and carry no sign-in or sign-up link
 var CONTACT_HREF = "#"; // TODO(owner): mailto: or a contact form for "Talk to us" and the paid plans
 var IMAGE_RELEASED = false;
+(function () {
+  if (CLOUD_URL) {
+    var CLOUD_PATH = { home: "/", login: "/login", signup: "/signup", terms: "/terms", privacy: "/privacy" };
+  }
+})();
 `;
 
 const TEMPLATE_POLICY = `# Security policy
@@ -124,6 +143,15 @@ function templateRepo(): string {
   write(dir, "site/assets/site.js", TEMPLATE_SCRIPT);
   write(dir, "SECURITY.md", TEMPLATE_POLICY);
   write(dir, "LICENSE", TEMPLATE_LICENCE);
+  return dir;
+}
+
+/** A site whose home page, a page in a folder and the page for a missing address carry the markup that depends on Curule Cloud. */
+function switchedRepo(): string {
+  const dir = templateRepo();
+  write(dir, "site/index.html", templatePage(SWITCHED_CLOSED));
+  write(dir, "site/pricing/index.html", templatePage(SWITCHED_CLOSED));
+  write(dir, "site/404.html", NOT_FOUND.replace("<h1>Not here</h1>", `<h1>Not here</h1>${SWITCHED_CLOSED}`));
   return dir;
 }
 
@@ -257,6 +285,65 @@ test("the address of Curule Cloud is written where the script keeps it, taken ou
     assert.match(r.err, /--cloud-url ".*" is not an https address \(https:\/\/app\.example\.com\/\), or none while Curule Cloud is not open/, bad);
     assert.deepEqual(snapshot(fresh), before, `'${bad}': nothing was written`);
   }
+});
+
+test("the address of Curule Cloud also puts every page in that state, and none takes every page back exactly as it was", () => {
+  const dir = switchedRepo();
+  const args = (cloud: string): string[] => ["curule.dev", "--contact", "hello@curule.dev", "--cloud-url", cloud, "--today", "2026-10-03"];
+  assert.equal(run(dir, args("https://app.curule.dev")).status, 0);
+  for (const rel of ["site/index.html", "site/pricing/index.html", "site/404.html"]) {
+    assert.ok(read(dir, rel).includes(SWITCHED_OPEN), `${rel}: what is for Curule Cloud shown, what says it is not there hidden, and its links given their addresses`);
+  }
+  const open = snapshot(dir);
+  assert.equal(run(dir, args("https://app.curule.dev")).status, 0);
+  assert.deepEqual(snapshot(dir), open, "twice is once");
+  assert.equal(run(dir, args("none")).status, 0);
+  for (const rel of ["site/index.html", "site/pricing/index.html", "site/404.html"]) assert.ok(read(dir, rel).includes(SWITCHED_CLOSED), `${rel}: taken back exactly`);
+  assert.equal(run(dir, args("https://app.curule.dev/")).status, 0);
+  for (const rel of ["site/index.html", "site/pricing/index.html", "site/404.html"]) assert.equal(read(dir, rel), open[rel], `${rel}: opened again it is what it was, whatever the address ends in`);
+});
+
+test("a run that is not about Curule Cloud puts the pages in the state the script already says, so a page edited by hand cannot disagree with it", () => {
+  const dir = switchedRepo();
+  const args = ["curule.dev", "--contact", "hello@curule.dev", "--today", "2026-10-03"];
+  assert.equal(run(dir, [...args, "--cloud-url", "https://app.curule.dev"]).status, 0);
+  const page = path.join(dir, "site", "index.html");
+  fs.writeFileSync(page, fs.readFileSync(page, "utf8").replace(SWITCHED_OPEN, `${SWITCHED_CLOSED}\n<p data-cloud-only hidden>a sentence added later, written in the closed state</p>`), "utf8");
+  assert.equal(run(dir, args).status, 0);
+  assert.ok(read(dir, "site/index.html").includes(SWITCHED_OPEN), "the page that was written back in the closed state is open again");
+  assert.match(read(dir, "site/index.html"), /<p data-cloud-only>a sentence added later, written in the closed state<\/p>/, "and so is what was added to it");
+  assert.match(read(dir, "site/assets/site.js"), /^var CLOUD_URL = "https:\/\/app\.curule\.dev";/m, "the address was not touched");
+  const closed = switchedRepo();
+  assert.equal(run(closed, args).status, 0);
+  assert.ok(read(closed, "site/index.html").includes(SWITCHED_CLOSED), "and with the service closed, as it always was");
+});
+
+test("an address with no page to send a link to is refused by name, and nothing is written", () => {
+  const dir = switchedRepo();
+  const abs = path.join(dir, "site", "assets", "site.js");
+  fs.writeFileSync(abs, fs.readFileSync(abs, "utf8").replace(/\(function \(\) \{[\s\S]*\}\)\(\);\n/, ""), "utf8");
+  const before = snapshot(dir);
+  const r = run(dir, ["curule.dev", "--contact", "hello@curule.dev", "--cloud-url", "https://app.curule.dev", "--today", "2026-10-03"]);
+  assert.equal(r.status, 2, r.out + r.err);
+  assert.match(r.err, /site\/assets\/site\.js: .*CLOUD_PATH/);
+  assert.deepEqual(snapshot(dir), before, "half-applied");
+});
+
+test("--check stops a page that says Curule Cloud is open while the script says it is not, or the reverse, and a run puts it right", () => {
+  const dir = switchedRepo();
+  const args = FULL;
+  assert.equal(run(dir, args).status, 0);
+  assert.equal(run(dir, ["--check"]).status, 0, "closed pages and a closed script agree");
+  assert.equal(run(dir, [...args, "--cloud-url", "https://app.curule.dev"]).status, 0);
+  assert.equal(run(dir, ["--check"]).status, 0, "so do open ones");
+  const script = path.join(dir, "site", "assets", "site.js");
+  fs.writeFileSync(script, fs.readFileSync(script, "utf8").replace(/var CLOUD_URL = "[^"]*";/, 'var CLOUD_URL = "";'), "utf8");
+  const stale = run(dir, ["--check"]);
+  assert.equal(stale.status, 1, "the script was closed by hand and the pages were not written again");
+  for (const rel of ["site/index.html", "site/pricing/index.html", "site/404.html"]) assert.match(stale.out, new RegExp(`${rel.replace(/[./]/g, "\\$&")}: written for the other state of Curule Cloud than CLOUD_URL says`), rel);
+  assert.equal(run(dir, args).status, 0);
+  assert.equal(run(dir, ["--check"]).status, 0, "and a run puts the pages in the state the script says");
+  assert.ok(read(dir, "site/index.html").includes(SWITCHED_CLOSED));
 });
 
 test("a script that has lost its CLOUD_URL line is refused by name when the address is given, and nothing is written", () => {

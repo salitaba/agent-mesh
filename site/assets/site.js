@@ -65,23 +65,23 @@ var IMAGE_NAME = "ghcr.io/salitaba/curule";
       if (/^https?:/.test(APP_URL)) a.rel = "noopener noreferrer";
     });
   }
-  // Curule Cloud, once it is open: the links into it are set here, and the sentences that say it is not offered give way to the
-  // ones that say it is. Nothing is fetched: a visitor who follows "Sign in" lands on the account pages, which send someone who is
-  // already signed in on to their account.
-  if (CLOUD_URL) {
-    var cloud = CLOUD_URL.replace(/\/+$/, "");
-    var CLOUD_PATH = { home: "/", login: "/login", signup: "/signup", terms: "/terms", privacy: "/privacy" };
-    all("[data-cloud]").forEach(function (a) {
-      var path = CLOUD_PATH[a.getAttribute("data-cloud")];
-      if (path === undefined) return;
-      a.href = cloud + path;
-      a.hidden = false;
-    });
-    all("[data-cloud-only]").forEach(function (node) { node.hidden = false; });
-    all("[data-selfhost-only]").forEach(function (node) { node.hidden = true; });
-    // Two sign-in links would ask a visitor which one is theirs: the account is what the site offers.
-    all("[data-app]").forEach(function (a) { a.hidden = true; });
-  }
+  // Curule Cloud: while it is open the links into it have their addresses and the sentences that say it is not offered give way
+  // to the ones that say it is, and while it is not, the reverse. The pages are written in this state already (scripts/set-domain.mjs
+  // does it when CLOUD_URL is set, so that nothing moves after the first paint and a page with no script says the same), so for a
+  // page that is right this changes nothing; it puts right one that is not. Nothing is fetched: a visitor who follows "Sign in"
+  // lands on the account pages, which send someone who is already signed in on to their account.
+  var cloud = CLOUD_URL.replace(/\/+$/, "");
+  var CLOUD_PATH = { home: "/", login: "/login", signup: "/signup", terms: "/terms", privacy: "/privacy" };
+  all("[data-cloud]").forEach(function (a) {
+    var path = CLOUD_PATH[a.getAttribute("data-cloud")];
+    if (path === undefined) return;
+    a.href = CLOUD_URL ? cloud + path : "#";
+    a.hidden = !CLOUD_URL;
+  });
+  all("[data-cloud-only]").forEach(function (node) { node.hidden = !CLOUD_URL; });
+  all("[data-selfhost-only]").forEach(function (node) { node.hidden = !!CLOUD_URL; });
+  // Two sign-in links would ask a visitor which one is theirs: the account is what the site offers.
+  if (CLOUD_URL) all("[data-app]").forEach(function (a) { a.hidden = true; });
   if (/^mailto:/.test(CONTACT_HREF)) {
     all("[data-contact]").forEach(function (a) {
       var subject = a.getAttribute("data-subject");

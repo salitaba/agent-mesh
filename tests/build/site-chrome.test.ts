@@ -81,6 +81,36 @@ test("the links are written the way each page's depth needs, and the page you ar
   }
 });
 
+test("the header is written in the state Curule Cloud is in, which the shared script says, and a site with no script, or a closed one, is as it was", () => {
+  const dir = smallSite();
+  assert.equal(run(dir).status, 0);
+  const closed = Object.fromEntries(["index.html", "pricing/index.html", "404.html"].map((rel) => [rel, read(dir, rel)]));
+  const script = (url: string): string => `var CLOUD_URL = "${url}";\n(function () {\n  var CLOUD_PATH = { home: "/", login: "/login", signup: "/signup", terms: "/terms", privacy: "/privacy" };\n})();\n`;
+  fs.mkdirSync(path.join(dir, "site", "assets"), { recursive: true });
+  write(dir, "assets/site.js", script("https://app.curule.dev/"));
+  const stale = run(dir, "--check");
+  assert.equal(stale.status, 1, "a page written for a closed site is out of date once the script says it is open");
+  assert.match(stale.err, /out of date: index\.html, docs\/index\.html, pricing\/index\.html, 404\.html/);
+  assert.equal(run(dir).status, 0);
+  for (const rel of ["index.html", "pricing/index.html", "404.html"]) {
+    const html = read(dir, rel);
+    assert.equal((html.match(/<a class="signin" href="https:\/\/app\.curule\.dev\/login" data-cloud="login">Sign in<\/a>/g) ?? []).length, 1, `${rel}: Sign in in the bar, with its address`);
+    assert.equal((html.match(/<a href="https:\/\/app\.curule\.dev\/login" data-cloud="login">Sign in<\/a>/g) ?? []).length, 1, `${rel}: and in the phone menu`);
+    assert.equal((html.match(/<a class="btn btn-primary" href="https:\/\/app\.curule\.dev\/signup" data-cloud="signup">Get started<\/a>/g) ?? []).length, 1, `${rel}: Get started`);
+    assert.match(html, /<a class="btn btn-primary" href="[^"]*#try" data-selfhost-only hidden>Try the demo<\/a>/, `${rel}: the demo button gives its place to Get started`);
+    assert.match(html, /<a [^>]*data-app hidden>Sign in<\/a>/, `${rel}: the dashboard's own link is the script's business, and stays hidden`);
+  }
+  assert.equal(run(dir, "--check").status, 0, "and that is what the script now says");
+  write(dir, "assets/site.js", script(""));
+  assert.equal(run(dir, "--check").status, 1);
+  assert.equal(run(dir).status, 0);
+  for (const [rel, html] of Object.entries(closed)) assert.equal(read(dir, rel), html, `${rel}: closed again, exactly as it was`);
+  write(dir, "assets/site.js", 'var CLOUD_URL = "https://app.curule.dev";\n');
+  const refused = run(dir);
+  assert.equal(refused.status, 2, "an address with no page to send a link to is refused, as a page lacking its markers is");
+  assert.match(refused.err, /assets\/site\.js: .*CLOUD_PATH/);
+});
+
 test("a page whose header was edited by hand is reported, and the script puts it right and touches nothing else", () => {
   const dir = smallSite();
   assert.equal(run(dir).status, 0);

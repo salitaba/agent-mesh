@@ -18,12 +18,17 @@
  * The footer's company and contact line is the owner's (scripts/set-domain.mjs writes it). It is carried over from the
  * page as it is, so running this after the domain has been applied does not put the placeholder back.
  *
+ * The header is written in the state Curule Cloud is in, which the shared script says (CLOUD_URL in site/assets/site.js): Sign in
+ * and Get started with their addresses and no demo button once it is open, as scripts/set-domain.mjs writes the rest of each page
+ * (scripts/site-cloud-state.mjs), so that a page needs the script to say neither of them.
+ *
  * To add a page: create site/<name>/index.html with the two marker pairs, add it to PAGE_LINKS below if it should be in
  * the navigation, and run this.
  */
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
+import { cloudConfigOf, cloudState } from "./site-cloud-state.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 
@@ -175,10 +180,13 @@ export function pagesOf(siteDir) {
   return pages;
 }
 
-/** `text` with both blocks as they should be, or an error naming what the page lacks. */
-export function applyChrome(text, page) {
+/** Curule Cloud as it is while it is not open: what a site that has no script says. */
+const CLOSED = { url: "", paths: {} };
+
+/** `text` with both blocks as they should be (in the state of Curule Cloud that `cloud` says), or an error naming what the page lacks. */
+export function applyChrome(text, page, cloud = CLOSED) {
   let out = text;
-  const blocks = { "chrome-header": header(page), "chrome-footer": null };
+  const blocks = { "chrome-header": cloudState(header(page), cloud), "chrome-footer": null };
   for (const name of Object.keys(blocks)) {
     const { start, end } = fence(name);
     const a = out.indexOf(start);
@@ -187,7 +195,7 @@ export function applyChrome(text, page) {
     let body = blocks[name];
     if (name === "chrome-footer") {
       const inside = out.slice(a + start.length, b);
-      body = footer(page, CONTACT_SPAN.exec(inside)?.[0] ?? CONTACT_PLACEHOLDER);
+      body = cloudState(footer(page, CONTACT_SPAN.exec(inside)?.[0] ?? CONTACT_PLACEHOLDER), cloud);
     }
     out = `${out.slice(0, a + start.length)}\n${body}\n${out.slice(b)}`;
   }
@@ -205,6 +213,16 @@ function main() {
     console.error(`site-chrome: no pages under ${siteDir}`);
     process.exit(2);
   }
+  let cloud = CLOSED;
+  const script = path.join(siteDir, "assets", "site.js");
+  if (fs.existsSync(script)) {
+    try {
+      cloud = cloudConfigOf(fs.readFileSync(script, "utf8"));
+    } catch (e) {
+      console.error(`site-chrome: assets/site.js: ${e.message}`);
+      process.exit(2);
+    }
+  }
   // Every page is computed before any is written, so a page that lacks its markers stops the run with nothing changed.
   const writes = [];
   for (const page of pages) {
@@ -212,7 +230,7 @@ function main() {
     const before = fs.readFileSync(file, "utf8");
     let after;
     try {
-      after = applyChrome(before, page);
+      after = applyChrome(before, page, cloud);
     } catch (e) {
       console.error(`site-chrome: ${e.message}`);
       process.exit(2);

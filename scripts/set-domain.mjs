@@ -6,7 +6,8 @@
  *   node scripts/set-domain.mjs <domain> --contact <email> [--security <email>] [--sales <email>] [--support <email>]
  *                               [--company "<name>"] [--app-url <https address>|none] [--cloud-url <https address>|none] [--docs-base github]
  *   node scripts/set-domain.mjs <domain> ... --dry-run      say what would change, write nothing
- *   node scripts/set-domain.mjs --check                     list what is still marked TODO(owner); exit 1 while any is
+ *   node scripts/set-domain.mjs --check                     list what is still marked TODO(owner), and any page written for the
+ *                                                           other state of Curule Cloud than the script says; exit 1 while any is
  *
  * It writes, from the domain (for example `curule.dev`) and the addresses you pass:
  *
@@ -21,6 +22,10 @@
  *                              the link: --app-url), CLOUD_URL (the address of Curule Cloud, once it is open: the pages then
  *                              offer "Sign in" and "Get started" and say it is also run for you; none while it is not:
  *                              --cloud-url) and the documents' base (--docs-base github: keep them in the repository)
+ *   every page of the site     and the same state in the markup: what is for Curule Cloud shown, what says it is not there
+ *                              hidden, and its links given their addresses (the reverse for none), so that a page is right
+ *                              before the script runs and without it (scripts/site-cloud-state.mjs). A run given no --cloud-url
+ *                              puts the pages in the state the script's CLOUD_URL already says.
  *   SECURITY.md                the reporting address (--security)
  *   site/CNAME                 the custom domain, for the hosts that read it from the site (an Actions publish to GitHub Pages
  *                              takes it from the repository's Pages settings and ignores this file)
@@ -40,6 +45,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
+import { cloudConfigOf, cloudState } from "./site-cloud-state.mjs";
 
 const USAGE =
   'usage: node scripts/set-domain.mjs <domain> --contact <email> [--security <email>] [--sales <email>] [--support <email>] [--company "<name>"] [--app-url <https address>|none] [--cloud-url <https address>|none] [--docs-base github] [--dry-run] [--today YYYY-MM-DD] [--root <dir>]\n' +
@@ -221,6 +227,21 @@ function check(root) {
   for (const rel of ["site/CNAME", "site/robots.txt", "site/sitemap.xml"]) {
     if (!fs.existsSync(path.join(root, rel))) lines.push(`${rel}: not written yet (node scripts/set-domain.mjs <domain> ...)`);
   }
+  // A page that says Curule Cloud is open while the script says it is not (or the reverse) would be published as it is: the pages
+  // are written in the state the script says, and a visitor with no script reads them as written.
+  const script = path.join(root, "site", SCRIPT);
+  if (fs.existsSync(script)) {
+    let cloud;
+    try {
+      cloud = cloudConfigOf(fs.readFileSync(script, "utf8"));
+    } catch (e) {
+      refuse(`site/${SCRIPT}: ${e.message}`);
+    }
+    for (const rel of walk(path.join(root, "site")).filter((f) => f.endsWith(".html"))) {
+      const text = fs.readFileSync(path.join(root, "site", rel), "utf8");
+      if (cloudState(text, cloud) !== text) lines.push(`site/${rel}: written for the other state of Curule Cloud than CLOUD_URL says (node scripts/set-domain.mjs <domain> ... writes it)`);
+    }
+  }
   const licence = path.join(root, "LICENSE");
   const pointsAtRepo = fs.existsSync(licence) && /contact the Licensor through https:\/\/github\.com\//.test(fs.readFileSync(licence, "utf8").replace(/\s+/g, " "));
   if (lines.length === 0) console.log("set-domain: nothing is marked TODO(owner), and the domain files are written.");
@@ -295,13 +316,22 @@ function main() {
   // The home page first, then the others in the order of their folders.
   const pages = [...files.filter((f) => f === "index.html"), ...files.filter((f) => f !== "index.html" && isPage(f))];
   // Every edit is computed before anything is written, so a page that is not the shape this expects stops the whole run.
+  // The pages are written in the state of Curule Cloud that the script will say, whether or not this run changed it: a run made
+  // for another reason does not leave the pages saying one thing and the script another.
+  const script = applyToScript(fs.readFileSync(path.join(siteDir, SCRIPT), "utf8"), o);
+  let cloud;
+  try {
+    cloud = cloudConfigOf(script);
+  } catch (e) {
+    refuse(`site/${SCRIPT}: ${e.message}`);
+  }
   const writes = new Map();
   for (const rel of files) {
     if (!/\.(html|js)$/.test(rel)) continue;
     const text = fs.readFileSync(path.join(siteDir, rel), "utf8");
-    if (isPage(rel)) writes.set(`site/${rel}`, applyToPage(text, rel, o));
-    else if (rel === "404.html") writes.set(`site/${rel}`, applyOwnerText(text, `site/${rel}`, o, { required: true }));
-    else if (rel === SCRIPT) writes.set(`site/${rel}`, applyToScript(text, o));
+    if (isPage(rel)) writes.set(`site/${rel}`, cloudState(applyToPage(text, rel, o), cloud));
+    else if (rel === "404.html") writes.set(`site/${rel}`, cloudState(applyOwnerText(text, `site/${rel}`, o, { required: true }), cloud));
+    else if (rel === SCRIPT) writes.set(`site/${rel}`, script);
   }
   writes.set("SECURITY.md", applyToSecurity(security, o));
   for (const [rel, text] of Object.entries(generatedFiles(o, security, pages))) writes.set(rel, text);

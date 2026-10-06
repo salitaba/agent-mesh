@@ -5,6 +5,7 @@
  */
 import * as fs from "fs";
 import * as path from "path";
+import { pathToFileURL } from "url";
 
 export const ROOT = path.resolve(__dirname, "..", "..", "..");
 export const SITE = path.join(ROOT, "site");
@@ -83,6 +84,13 @@ export function walk(dir: string, rel = ""): string[] {
   }
   return out.sort();
 }
+
+/**
+ * A module of scripts/, which are ES modules. The tests are compiled to CommonJS, which would turn an import() into a require(), so
+ * the import is made from a function the compiler does not see into.
+ */
+export const loadScript = <T>(name: string): Promise<T> =>
+  (new Function("address", "return import(address)") as (address: string) => Promise<T>)(pathToFileURL(path.join(ROOT, "scripts", name)).href);
 
 /** The pixel size of a PNG or a JPEG, read from its header. */
 export function imageSize(file: string): { width: number; height: number } {

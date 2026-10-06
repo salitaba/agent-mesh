@@ -151,8 +151,10 @@ test("the home page says what it is, and the 'Try it' commands are the ones that
   const home = page(pages, "index.html");
   assert.match(home.html, /<h1>A team of AI agents, run like an organization\.<\/h1>/, "the tagline, exactly");
   for (const id of ["why", "how", "product", "try", "security", "pricing", "faq"]) assert.match(home.html, new RegExp(`<section[^>]*\\sid="${id}"`), `section #${id}`);
-  assert.equal((home.html.match(/<details(?: data-selfhost-only)?>/g) ?? []).length, 10, "the questions are native <details>, and the home page answers the ten it lists");
-  assert.equal((home.html.match(/<details data-cloud-only hidden>/g) ?? []).length, 2, "and the two that say Curule is not hosted and has no checkout have the answers that say otherwise, for the day Curule Cloud is open");
+  // Each state shows ten questions. Two of them are asked in both states and answered differently, so the page holds twelve.
+  assert.equal((home.html.match(/<details(?: data-(?:selfhost|cloud)-only(?: hidden)?)?>/g) ?? []).length, 12, "the questions are native <details>, and the home page answers the ten it lists in each state");
+  assert.equal((home.html.match(/<details data-cloud-only(?: hidden)?>/g) ?? []).length, 2, "and the two that say Curule is not hosted and has no checkout have the answers that say otherwise, for the day Curule Cloud is open");
+  assert.equal((home.html.match(/<details data-selfhost-only(?: hidden)?>/g) ?? []).length, 2, "and each of those two has its answer for a site that is not");
   assert.equal((home.html.match(/<li class="tile">/g) ?? []).length, 6, "six views of the console");
   assert.equal((home.html.match(/class="tab-input"/g) ?? []).length, 3, "three views in the product frame");
   for (const heading of ["Mission control", "Live events", "Per-turn ledger", "Team designer", "Cost and budgets", "Approvals"]) assert.ok(home.copy.includes(heading), heading);

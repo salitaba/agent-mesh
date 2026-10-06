@@ -36,9 +36,9 @@
     </nav>
     <div class="bar-actions">
       <a class="signin" href="#" data-app hidden>Sign in</a>
-      <a class="signin" href="#" data-cloud="login" hidden>Sign in</a>
-      <a class="btn btn-primary" href="#" data-cloud="signup" hidden>Get started</a>
-      <a class="btn btn-primary" href="../#try" data-selfhost-only>Try the demo</a>
+      <a class="signin" href="https://app.curule.dev/login" data-cloud="login">Sign in</a>
+      <a class="btn btn-primary" href="https://app.curule.dev/signup" data-cloud="signup">Get started</a>
+      <a class="btn btn-primary" href="../#try" data-selfhost-only hidden>Try the demo</a>
       <details class="menu">
         <summary><span class="menu-icon" aria-hidden="true"></span><span class="menu-label">Menu</span></summary>
         <div class="menu-panel">
@@ -48,7 +48,7 @@
             <a href="../docs/">Docs</a>
             <a href="../security/">Security</a>
             <a href="#" data-app hidden>Sign in</a>
-            <a href="#" data-cloud="login" hidden>Sign in</a>
+            <a href="https://app.curule.dev/login" data-cloud="login">Sign in</a>
           </nav>
         </div>
       </details>
@@ -77,12 +77,12 @@
   </ul>
 </nav>
 
-<section class="section" id="cloud" data-cloud-only hidden>
+<section class="section" id="cloud" data-cloud-only>
   <div class="wrap">
     <div class="card">
       <h2>Rather not run it yourself?</h2>
       <p class="mt-s">Curule Cloud runs a workspace for you. You pay a flat monthly plan for the hosting; you bring your own model key and pay your provider directly, because we do not resell model usage. The plans and their prices are on the sign-up page, because they are kept in one place. The plans below are licences for the software you run yourself.</p>
-      <p class="btn-row mt-s"><a class="btn btn-primary" href="#" data-cloud="home" hidden>See the Curule Cloud plans</a><a class="btn" href="#" data-cloud="signup" hidden>Get started</a></p>
+      <p class="btn-row mt-s"><a class="btn btn-primary" href="https://app.curule.dev/" data-cloud="home">See the Curule Cloud plans</a><a class="btn" href="https://app.curule.dev/signup" data-cloud="signup">Get started</a></p>
     </div>
   </div>
 </section>
@@ -237,8 +237,8 @@
     <h3 class="mt-xl">What you are not paying for</h3>
     <ul class="rows mt-s">
       <li><b>Model usage.</b><span>The agents run on credentials that belong to you, and your provider bills you for them, with your own discounts and rate limits. We do not resell it and we do not add a margin to it.</span></li>
-      <li data-selfhost-only><b>A hosted service.</b><span>Curule is software you run, on your own infrastructure. We cannot see, start or stop anything on it.</span></li>
-      <li data-cloud-only hidden><b>A hosted service.</b><span>A licence is for software you run, on your own infrastructure; we cannot see, start or stop anything on it. Curule Cloud, where we run it for you, is priced separately.</span></li>
+      <li data-selfhost-only hidden><b>A hosted service.</b><span>Curule is software you run, on your own infrastructure. We cannot see, start or stop anything on it.</span></li>
+      <li data-cloud-only><b>A hosted service.</b><span>A licence is for software you run, on your own infrastructure; we cannot see, start or stop anything on it. Curule Cloud, where we run it for you, is priced separately.</span></li>
       <li><b>Anything on the roadmap.</b><span>A feature is listed as planned until it exists and is tested, and it is never sold as included.</span></li>
     </ul>
   </div>
@@ -287,8 +287,8 @@
     <div class="section-head">
       <p class="eyebrow">How licences work</p>
       <h2 class="title">A key by email, checked on your machine.</h2>
-      <p class="lede" data-selfhost-only>There is no checkout, no account and no billing system on this site. A paid plan starts with an email, and the licence key is issued by hand.</p>
-      <p class="lede" data-cloud-only hidden>A licence for software you run starts with an email, and the key is issued by hand: this site has no checkout or billing for it. Curule Cloud has its own sign-up and billing.</p>
+      <p class="lede" data-selfhost-only hidden>There is no checkout, no account and no billing system on this site. A paid plan starts with an email, and the licence key is issued by hand.</p>
+      <p class="lede" data-cloud-only>A licence for software you run starts with an email, and the key is issued by hand: this site has no checkout or billing for it. Curule Cloud has its own sign-up and billing.</p>
     </div>
     <ol class="try">
       <li>
@@ -330,10 +330,10 @@
       <details><summary>Does the price include the model?</summary><div class="answer"><p>No. The agents run on model credentials you own (any OpenAI-compatible provider, the Anthropic API, Bedrock, Vertex or Foundry), and your provider bills you for the model. The calculator above shows the two figures separately, and the model figure is an estimate from one measured mission.</p></div></details>
       <details><summary>What happens if we go over a limit?</summary><div class="answer"><p>By default you are told and nothing is refused. Running beyond the Community plan&rsquo;s limits in production is what a paid plan licenses; without one it is outside the source licence, whatever the runtime lets you do.</p></div></details>
       <details><summary>Can the price change under us?</summary><div class="answer"><p>A licence carries its plan, its limits and its expiry, so a change to the list price takes effect at renewal, when a new licence is issued.</p></div></details>
-      <details data-selfhost-only><summary>How do we buy?</summary><div class="answer"><p>Write to us: see <a href="#licences">how licences work</a> above. There is no checkout, and we agree the terms with you before we issue a key.</p></div></details>
-      <details data-cloud-only hidden><summary>How do we buy?</summary><div class="answer"><p>For a licence, write to us: see <a href="#licences">how licences work</a> above. There is no checkout for it, and we agree the terms with you before we issue a key. For Curule Cloud, <a href="#" data-cloud="signup" hidden>create an account</a> and choose a plan there.</p></div></details>
-      <details data-selfhost-only><summary>Can you host it for us?</summary><div class="answer"><p>Not today. It is software you run on your own infrastructure, with your own provider credentials.</p></div></details>
-      <details data-cloud-only hidden><summary>Can you host it for us?</summary><div class="answer"><p>Yes: that is <a href="#" data-cloud="home" hidden>Curule Cloud</a>, priced separately from these licences. A licence is for software you run on your own infrastructure, with your own provider credentials.</p></div></details>
+      <details data-selfhost-only hidden><summary>How do we buy?</summary><div class="answer"><p>Write to us: see <a href="#licences">how licences work</a> above. There is no checkout, and we agree the terms with you before we issue a key.</p></div></details>
+      <details data-cloud-only><summary>How do we buy?</summary><div class="answer"><p>For a licence, write to us: see <a href="#licences">how licences work</a> above. There is no checkout for it, and we agree the terms with you before we issue a key. For Curule Cloud, <a href="https://app.curule.dev/signup" data-cloud="signup">create an account</a> and choose a plan there.</p></div></details>
+      <details data-selfhost-only hidden><summary>Can you host it for us?</summary><div class="answer"><p>Not today. It is software you run on your own infrastructure, with your own provider credentials.</p></div></details>
+      <details data-cloud-only><summary>Can you host it for us?</summary><div class="answer"><p>Yes: that is <a href="https://app.curule.dev/" data-cloud="home">Curule Cloud</a>, priced separately from these licences. A licence is for software you run on your own infrastructure, with your own provider credentials.</p></div></details>
     </div>
   </div>
 </section>

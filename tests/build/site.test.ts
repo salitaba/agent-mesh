@@ -32,13 +32,20 @@ function withoutBlock(css: string, opening: string): string {
   return css.slice(0, start);
 }
 
-/** Every address a page's markup points at: src, href, action and the list in srcset. The canonical link names the page itself. */
+/** The links into Curule Cloud: <a data-cloud="login"> and the like. */
+const CLOUD_LINK = /<a\b[^>]*\sdata-cloud="([^"]*)"[^>]*>/g;
+
+/**
+ * Every address a page's markup points at: src, href, action and the list in srcset. The canonical link names the page itself,
+ * and the links into Curule Cloud are looked at on their own (below): they are the one kind of link that may leave the site.
+ */
 function references(p: Page): string[] {
   // Comments and the inside of scripts are not markup a browser follows; a script's own src is.
   const markup = p.html
     .replace(/<!--[\s\S]*?-->/g, "")
     .replace(/(<script\b[^>]*>)[\s\S]*?(<\/script>)/g, "$1$2")
-    .replace(/<link rel="canonical" href="[^"]*">/g, "");
+    .replace(/<link rel="canonical" href="[^"]*">/g, "")
+    .replace(CLOUD_LINK, "");
   const out = [...markup.matchAll(/\b(?:src|href|action|poster)="([^"]*)"/g)].map((m) => m[1]!);
   for (const m of markup.matchAll(/\bsrcset="([^"]*)"/g)) out.push(...m[1]!.split(",").map((c) => c.trim().split(/\s+/)[0]!).filter(Boolean));
   return out;
@@ -106,6 +113,24 @@ test("every file a page references exists, and nothing is loaded from another ho
     assert.ok(!/@import|url\(\s*["']?(https?:)?\/\//i.test(css), `${f}: no remote CSS`);
     assert.ok(!/@font-face/.test(css), `${f}: no font is downloaded`);
   }
+});
+
+test("the only address of another site in a page's markup is a link into Curule Cloud, to the page of the account service its kind goes to", () => {
+  const script = fs.readFileSync(path.join(SITE, "assets", "site.js"), "utf8");
+  const cloud = /^var CLOUD_URL = "([^"]*)";/m.exec(script)![1]!.replace(/\/+$/, "");
+  const paths = Object.fromEntries([.../var CLOUD_PATH = \{([^}]*)\}/.exec(script)![1]!.matchAll(/(\w+): "([^"]*)"/g)].map((m) => [m[1], m[2]]));
+  let links = 0;
+  for (const p of pages) {
+    for (const m of p.markup.matchAll(CLOUD_LINK)) {
+      links++;
+      const href = /\shref="([^"]*)"/.exec(m[0])?.[1];
+      // Written by scripts/set-domain.mjs from the script's own address, so that a page needs no script to send a visitor there: it
+      // is a link the visitor follows, and it is not fetched by the page. While the service is closed it goes nowhere, and is hidden.
+      assert.equal(href, cloud === "" ? "#" : `${cloud}${paths[m[1]!]}`, `${p.rel}: ${m[0]}`);
+      assert.equal(/\shidden\b/.test(m[0]), cloud === "", `${p.rel}: a link into Curule Cloud is shown exactly while it is open: ${m[0]}`);
+    }
+  }
+  assert.ok(links >= 10, `the pages have links into Curule Cloud (${links})`);
 });
 
 test("every address with a #fragment names an element that is there", () => {

@@ -4,17 +4,18 @@ import * as fs from "fs";
 import * as path from "path";
 import * as vm from "node:vm";
 import { parsePage, type FakeDocument, type FakeNode } from "../cloud/pages-support";
-import { ROOT, SITE, page, sitePages } from "./site-pages";
+import { ROOT, SITE, loadScript, page, sitePages } from "./site-pages";
 
 /**
  * The way from the site into Curule Cloud: "Sign in" and "Get started" in every page's header, the home page's calls to action,
  * the pricing page's strip, and the sentences that say Curule is software you run and is not offered as a hosted service, which
- * give way to the ones that say it is. All of it is off until the service is open (`CLOUD_URL` in the shared script), and the pages
- * ship with it off: until the day there is something to sign in to, no page may mention it, and no page may say it is not there once
- * there is.
+ * give way to the ones that say it is. All of it is off until the service is open (`CLOUD_URL` in the shared script): until the day
+ * there is something to sign in to, no page may mention it, and no page may say it is not there once there is.
  *
- * The script is run unchanged, in the small DOM the account pages' tests use, on each page's own markup, with the address set the way
- * `scripts/set-domain.mjs --cloud-url` sets it.
+ * Which state a page is in is written into its markup, in the state `CLOUD_URL` says (scripts/set-domain.mjs, through
+ * scripts/site-cloud-state.mjs), so that it is right before the script runs and without it. The script is run unchanged, in the
+ * small DOM the account pages' tests use, on each page's own markup, with the address set to each state in turn: it must leave a
+ * page that is right as it is, and put one that is not right, and the two must say the same thing.
  */
 
 const SCRIPT = fs.readFileSync(path.join(SITE, "assets", "site.js"), "utf8");
@@ -52,6 +53,17 @@ function visibleText(doc: FakeDocument): string {
 }
 
 const REL = pages.map((p) => p.rel);
+
+interface Config {
+  url: string;
+  paths: Record<string, string>;
+}
+interface CloudState {
+  cloudConfigOf(script: string): Config;
+  cloudState(html: string, config: Config): string;
+}
+/** The elements whose state depends on whether Curule Cloud is open. */
+const SWITCHED = "[data-cloud], [data-cloud-only], [data-selfhost-only]";
 
 test("the pages are closed when the address is empty: no page mentions Curule Cloud, and nothing is linked", () => {
   // The committed script carries whatever address set-domain last wrote. Curule Cloud is open at https://app.curule.dev since
@@ -183,6 +195,64 @@ test("every element that gives way when Curule Cloud opens has its other half on
     // The header's demo button has no counterpart in the markup: the header's Get started takes its place.
     const counterparts = only.filter((n) => !(n.tag === "a" && n.textContent === "Try the demo" && n.parent?.className === "bar-actions"));
     assert.ok(counterparts.length <= cloud.length, `${p.rel}: ${counterparts.length} sentences about software you run, ${cloud.length} about Curule Cloud`);
-    for (const n of cloud) assert.ok(n.hidden, `${p.rel}: a Curule Cloud element starts hidden`);
   }
+});
+
+test("the committed pages are written in the state their script says, so each is right before any script runs", async () => {
+  const { cloudConfigOf, cloudState } = await loadScript<CloudState>("site-cloud-state.mjs");
+  const config = cloudConfigOf(SCRIPT);
+  for (const p of pages) {
+    assert.equal(cloudState(p.html, config), p.html, `${p.rel} says something other than CLOUD_URL in site/assets/site.js: write it again with \`npm run site:domain -- <the domain and the other arguments you used> --cloud-url ${config.url || "none"}\``);
+  }
+  const open = asFile("index.html");
+  const bar = open.querySelector(".bar-actions")!;
+  assert.deepEqual(
+    bar.querySelectorAll("[data-cloud], [data-selfhost-only]").map((a) => [a.textContent, shown(a)]),
+    [["Sign in", config.url !== ""], ["Get started", config.url !== ""], ["Try the demo", config.url === ""], ["Sign in", config.url !== ""]],
+    "the header's links, as the markup has them: in the bar, and in the phone menu",
+  );
+});
+
+test("the script and the build say the same thing: in each state, a page as the build writes it is the page as the script leaves it", async () => {
+  const { cloudConfigOf, cloudState } = await loadScript<CloudState>("site-cloud-state.mjs");
+  const paths = cloudConfigOf(SCRIPT).paths;
+  for (const [state, url] of [["closed", ""], ["open", APP]] as const) {
+    for (const p of pages) {
+      const built = parsePage(cloudState(p.html, { url, paths })).querySelectorAll(SWITCHED);
+      const ran = visit(p.rel, url).querySelectorAll(SWITCHED);
+      assert.ok(built.length >= 4 && built.length === ran.length, `${p.rel}: the same elements are switched (${built.length}, ${ran.length})`);
+      built.forEach((n, i) => {
+        const same = ran[i]!;
+        assert.equal(n.hidden, same.hidden, `${p.rel} (${state}): <${n.tag} ${[...n.attrs.keys()].join(" ")}> is hidden in one and not the other`);
+        if (n.hasAttribute("data-cloud")) assert.equal(n.href, same.href, `${p.rel} (${state}): where ${n.textContent} goes`);
+      });
+    }
+  }
+});
+
+test("a visitor with no script reads the page in the state the site is in: Curule Cloud's links with their addresses, and nothing that says it is not there", async () => {
+  const { cloudConfigOf, cloudState } = await loadScript<CloudState>("site-cloud-state.mjs");
+  const paths = cloudConfigOf(SCRIPT).paths;
+  const said = ["not offered as a hosted service", "We do not run it for you", "Not today", "There is no checkout and no account", "no billing system on this site. A paid plan", "There is no checkout, and we agree"];
+  for (const p of pages) {
+    const open = parsePage(cloudState(p.html, { url: APP, paths }));
+    const text = visibleText(open);
+    for (const phrase of said) assert.ok(!text.includes(phrase), `${p.rel}: with no script, the open site still says "${phrase}"`);
+    const bar = open.querySelector(".bar-actions")!;
+    assert.deepEqual(
+      bar.querySelectorAll("[data-cloud]").filter(shown).map((a) => [a.textContent, a.href]),
+      [["Sign in", `${APP}/login`], ["Get started", `${APP}/signup`], ["Sign in", `${APP}/login`]],
+      `${p.rel}: Sign in and Get started, with their addresses, in the header of a page that has no script (and Sign in again in the phone menu)`,
+    );
+    assert.equal(shown(open.querySelectorAll("[data-selfhost-only]").find((a) => a.textContent === "Try the demo")!), false, `${p.rel}: the demo gives its place to Get started`);
+    for (const a of open.querySelectorAll("[data-cloud]").filter(shown)) assert.ok(a.href.startsWith(`${APP}/`), `${p.rel}: ${a.textContent} goes to the account pages`);
+
+    const closed = parsePage(cloudState(p.html, { url: "", paths }));
+    assert.ok(!/Curule Cloud|Get started/.test(visibleText(closed)), `${p.rel}: with no script, the closed site says nothing of what is not there`);
+    assert.deepEqual(closed.querySelectorAll("[data-cloud]").filter(shown), [], `${p.rel}: and shows no link into it`);
+  }
+  assert.match(visibleText(parsePage(cloudState(page(pages, "index.html").html, { url: "", paths }))), /Not today\. It is software you run, one instance per team/);
+  const hosting = parsePage(cloudState(page(pages, "index.html").html, { url: APP, paths })).querySelectorAll("details").filter((d) => shown(d) && d.querySelector("summary")!.textContent === "Can you host it for us?");
+  assert.equal(hosting.length, 1);
+  assert.match(hosting[0]!.textContent, /^Can you host it for us\?Yes: that is Curule Cloud\./, "a search engine and a link preview read the answer for the site that is open");
 });

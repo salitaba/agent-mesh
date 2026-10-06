@@ -62,7 +62,7 @@ The constants at the top of `assets/site.js` are the whole of the site's configu
 | `DOCS_BASE` | where the documents are published; the repository, until a documentation site exists | `site:domain --docs-base github`, or by hand for another site (and its test) |
 | `REPO_URL` | the repository: the "Source code" link, and the address the "Try it" commands clone | by hand |
 | `APP_URL` | where "Sign in" goes (the address of your own dashboard); `""` removes the link | `site:domain --app-url <https address>` or `none` |
-| `CLOUD_URL` | the address of Curule Cloud, once it is open: the pages then offer "Sign in" and "Get started" and say Curule is also run for you; `""` while it is not | `site:domain --cloud-url <https address>` or `none` |
+| `CLOUD_URL` | the address of Curule Cloud, once it is open: the pages then offer "Sign in" and "Get started" and say Curule is also run for you; `""` while it is not. The pages are written in the state it says | `site:domain --cloud-url <https address>` or `none` |
 | `CONTACT_HREF` | the `mailto:` the "Talk to us" and plan buttons use; without it they go to the contact page | `site:domain --contact` |
 | `IMAGE_RELEASED` | `false` until the first release has published the container image; then the "Try it" steps also show the pull-and-run command | by hand, on the day of the release |
 
@@ -73,21 +73,25 @@ which is what `README.md` says works today.
 ## The way into Curule Cloud
 
 The site is static and the hosted service is not on it: the account pages (sign-up, sign-in, plans, the account, the dashboard)
-are the app's, on the app's own address. The way from one to the other is `CLOUD_URL`, and it ships empty, because until the app
-is running there is nothing to sign in to and a page must not offer it.
+are the app's, on the app's own address. The way from one to the other is `CLOUD_URL`.
 
 | `CLOUD_URL` | What a visitor sees |
 |---|---|
-| `""` (as shipped) | Curule as software you run. No page mentions Curule Cloud, sign-in or sign-up; the header's one button is "Try the demo"; the FAQ says it is not offered as a hosted service. |
-| `"https://app.curule.dev"` | "Sign in" and "Get started" in every page's header (and "Sign in" in the phone menu); the home page leads with "Get started" and says Curule is also run for you; the pricing page has a strip that sends a visitor to the app's plans, and says the plans on the page are licences for the software you run yourself; the sentences that said it is not offered give way to the ones that say it is. |
+| `"https://app.curule.dev"` (as shipped) | "Sign in" and "Get started" in every page's header (and "Sign in" in the phone menu); the home page leads with "Get started" and says Curule is also run for you; the pricing page has a strip that sends a visitor to the app's plans, and says the plans on the page are licences for the software you run yourself; the sentences that said it is not offered give way to the ones that say it is. |
+| `""` | Curule as software you run. No page mentions Curule Cloud, sign-in or sign-up; the header's one button is "Try the demo"; the FAQ says it is not offered as a hosted service. |
 
-The pages carry both versions, and the shared script chooses: `data-selfhost-only` is what is shown while the service is not open,
-`data-cloud-only` is what is shown once it is, and `data-cloud="login|signup|home|terms|privacy"` is a link to that page of the app.
-Both halves of every pair are in the markup and the script only hides the one that does not apply, so **a visitor without a script
-sees the pages as they ship**, the self-hosted version, and a link into the app never has an address in the markup (the script
-sets it from `CLOUD_URL`, as it does the dashboard's). A visitor who follows "Sign in" while already signed in is sent on to their
-account by the app's sign-in page, so it is never a dead end. The prices of Curule Cloud's plans are not copied into the site:
-they are kept in the app, and a test fails if a page writes one.
+The pages carry both versions of every sentence that depends on it: `data-selfhost-only` is what is shown while the service is not
+open, `data-cloud-only` is what is shown once it is, and `data-cloud="login|signup|home|terms|privacy"` is a link to that page of
+the app. **The state is written into the pages, not chosen in the browser.** `scripts/set-domain.mjs` does it to every page
+(through `scripts/site-cloud-state.mjs`: it shows what is for the state, hides what is not, and gives the links their addresses),
+and `scripts/site-chrome.mjs` writes the shared header in the same state. A page is therefore right on its first paint, so nothing
+moves while it loads (the pricing page used to jump by 0.34 on a phone while the script switched its Cloud card on), and a visitor
+with no script, a search engine and a link preview read the half that is true. The shared script applies the same rule when it
+runs, in both directions: for a page that is right it changes nothing, and it puts right one that is not. The links into the app
+are the one kind of address of another site that a page carries (a link a visitor follows, never something the page fetches);
+`tests/build/site.test.ts` pins each to `CLOUD_URL` and `CLOUD_PATH`, so they cannot go anywhere else. A visitor who follows "Sign
+in" while already signed in is sent on to their account by the app's sign-in page, so it is never a dead end. The prices of Curule
+Cloud's plans are not copied into the site: they are kept in the app, and a test fails if a page writes one.
 
 The switch is one command, run on the day the app is reachable, and then the site is published again:
 
@@ -95,9 +99,11 @@ The switch is one command, run on the day the app is reachable, and then the sit
 npm run site:domain -- curule.dev --contact hello@curule.dev --cloud-url https://app.curule.dev
 ```
 
-`--cloud-url none` puts it back. `tests/build/site-cloud.test.ts` runs the shared script against every page, once closed and once
-open, and pins both: nothing about Curule Cloud is visible or linked while it is closed, and no sentence that says it is not
-offered survives when it is open.
+`--cloud-url none` puts it back, exactly as it was. Any run of the command puts the pages in the state the script says, so after
+editing a page by hand (a new `data-cloud-only` block, say, which you can write with or without `hidden`) run it again with the
+arguments you used. `npm run site:check` and `tests/build/site-cloud.test.ts` fail while a page says the other state than
+`CLOUD_URL`, and that test runs the shared script against every page in both states and pins both: nothing about Curule Cloud is
+visible or linked while it is closed, and no sentence that says it is not offered survives when it is open.
 
 ## Where the numbers come from
 
@@ -164,9 +170,10 @@ site written out in the test, and once against the repository's own files:
 
 - Every page: `og:image` and `twitter:image` as absolute addresses (a link preview needs them; a crawler does not resolve a
   relative one), a canonical link and `og:url` that name the page's own address, and the footer's company and contact.
-  `404.html` gets the footer and nothing else: a page that is not found has no address of its own.
+  `404.html` gets the footer (and the Curule Cloud state) and nothing else: a page that is not found has no address of its own.
 - `contact/index.html`: the sales, support and security addresses and the company line.
 - `assets/site.js`: `CONTACT_HREF`, `APP_URL`, `CLOUD_URL`, and, with `--docs-base github`, the decision that the documents stay in the repository.
+- Every page, `404.html` too: the state of Curule Cloud that `CLOUD_URL` says, as [the way into Curule Cloud](#the-way-into-curule-cloud) describes.
 - `SECURITY.md`: the reporting address (`--security`).
 - `CNAME`, `robots.txt`, `sitemap.xml` (every page, not the one that is not found), and `security.txt` (RFC 9116, also at
   `.well-known/security.txt`, which is where the RFC looks first; a host that drops dotfiles still serves the other copy).
