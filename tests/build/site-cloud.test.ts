@@ -53,10 +53,12 @@ function visibleText(doc: FakeDocument): string {
 
 const REL = pages.map((p) => p.rel);
 
-test("the pages ship with Curule Cloud closed: the address is empty, and no page mentions it, with the script or without", () => {
-  assert.match(SCRIPT, /^var CLOUD_URL = "";/m, "it is switched on by set-domain on the day the service is open, and not before");
+test("the pages are closed when the address is empty: no page mentions Curule Cloud, and nothing is linked", () => {
+  // The committed script carries whatever address set-domain last wrote. Curule Cloud is open at https://app.curule.dev since
+  // 2026-10-06, so the script holds it; "closed" is what the pages do when the address is empty, which is tried here by passing "".
+  assert.match(SCRIPT, /^var CLOUD_URL = "(|https:\/\/[^"]+)";/m, "an empty address (closed) or the app's https address (open), nothing else");
   for (const rel of REL) {
-    for (const doc of [asFile(rel), visit(rel, "")]) {
+    for (const doc of [visit(rel, "")]) {
       for (const node of doc.querySelectorAll("[data-cloud], [data-cloud-only]")) assert.equal(shown(node), false, `${rel}: <${node.tag} ${[...node.attrs.keys()].join(" ")}> is hidden while it is not open`);
       for (const node of doc.querySelectorAll("[data-selfhost-only]")) assert.equal(shown(node), true, `${rel}: what says it is software you run is shown`);
       assert.ok(!/Curule Cloud|Get started/.test(visibleText(doc)), `${rel}: a visitor is told of nothing that is not there`);

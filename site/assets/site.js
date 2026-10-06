@@ -8,7 +8,7 @@ var DOCS_BASE = "https://github.com/salitaba/agent-mesh/blob/main/docs/";
 // The repository the source is in: the "Source code" links, and the address the "Try it" commands clone.
 var REPO_URL = "https://github.com/salitaba/agent-mesh";
 var APP_URL = ""; // No hosted dashboard: the "Sign in" link is removed
-var CLOUD_URL = ""; // Curule Cloud is not open: the pages say Curule is software you run, and carry no sign-in or sign-up link
+var CLOUD_URL = "https://app.curule.dev"; // Curule Cloud's address: the pages offer "Sign in" and "Get started", and say Curule is also run for you
 var CONTACT_HREF = "mailto:ali79taba@gmail.com"; // "Talk to us" and the paid plans
 // Off until the first release tag has published the image to ghcr.io: a command that pulls it fails until then. Switch it to
 // true on the day of the release and the "Try it" steps also show the pull-and-run path.
