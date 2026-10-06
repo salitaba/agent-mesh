@@ -123,9 +123,9 @@ test("the header and the front page: a visitor is offered the way in, a customer
 
   const cards = v.$("plans").querySelectorAll("article");
   assert.equal(cards.length, 2);
-  assert.equal(v.text(cards[0]!), "Team $149.00 per month $20.00 of model usage each month 1 workspace Model tiers: fast, balanced Get started");
-  assert.equal(v.text(cards[1]!), "Business $599.00 per month For a team that runs several projects. $100.00 of model usage each month 3 workspaces Get started");
-  assert.equal(v.link(cards[0]!, "Get started").getAttribute("href"), "/signup");
+  assert.equal(v.text(cards[0]!), "Team $149.00 per month $20.00 of model usage each month 1 workspace Model tiers: fast, balanced Start with Team");
+  assert.equal(v.text(cards[1]!), "Business $599.00 per month For a team that runs several projects. $100.00 of model usage each month 3 workspaces Start with Business");
+  assert.equal(v.link(cards[0]!, "Start with Team").getAttribute("href"), "/signup");
   assert.equal(v.text("topups"), "Add credit at any time, from $5.00 to $1,000.00 at once. Each $1.00 adds $1.00 of usage, and credit does not expire.");
   const policy = v.doc.querySelectorAll("[data-policy]").map((n) => `${n.dataset.policy}=${n.textContent}`);
   assert.deepEqual(policy, ["graceDays=3 days", "retentionDays=30 days"], "the periods on the page are the service's settings");
@@ -141,7 +141,12 @@ test("a front page for someone who is signed in marks their plan and points the 
   assert.equal(cards[0]!.className, "plan current");
   assert.match(v.text(cards[0]!), /^Team Your plan /);
   assert.equal(v.buttons(cards[0]!).length + cards[0]!.querySelectorAll("a").length, 0, "the plan a person is on is not offered to them again");
-  assert.equal(v.link(cards[1]!, "Choose in your account").getAttribute("href"), "/account#plan-h");
+  assert.equal(v.link(cards[1]!, "Choose Business").getAttribute("href"), "/account#plan-h");
+  assert.equal(v.link(cards[1]!, "Choose Business").className, "btn", "a customer who has a plan is shown the others as a way to change, which is not the main thing");
+
+  const none = await visit("home", { routes: world().routes });
+  const open = none.$("plans").querySelectorAll("article");
+  assert.deepEqual(open.map((c) => none.link(c, `Choose ${c.querySelector("h3")!.textContent}`).className), ["btn btn-primary", "btn btn-primary"], "and one who has none is taken to choose, which is");
 });
 
 test("the policy numbers a page states are changed with the service's settings, with the unit in the singular when it is one", async () => {
@@ -1345,7 +1350,7 @@ test("the front page of a hosting-only service says the customer brings a key an
   const v = await visit("home", { routes: w.routes });
   const cards = v.$("plans").querySelectorAll("article");
   assert.equal(cards.length, 1);
-  assert.equal(v.text(cards[0]!), "Hosting $49.00 per month One workspace. Bring your own model key. Your own model key; you pay your provider directly 1 workspace Get started");
+  assert.equal(v.text(cards[0]!), "Hosting $49.00 per month One workspace. Bring your own model key. Your own model key; you pay your provider directly 1 workspace Start with Hosting");
   assert.equal(v.text("topups"), "Curule does not resell model usage. You bring your own model key and pay your provider directly.");
   assert.doesNotMatch(v.text("topups"), /Add credit/);
 });
@@ -1373,8 +1378,45 @@ test("what the front page says about model usage is shown for a service that sel
   assert.match(down.text("main"), /Hosting, not tokens/, "when the plans cannot be read the page says what it was written to say");
   for (const html of ["index.html"]) {
     const page = fs.readFileSync(`${PAGES_DIR}/${html}`, "utf8");
-    assert.equal((page.match(/data-hosting-only/g) ?? []).length, 4, "the four places that speak of model usage are marked");
+    assert.equal((page.match(/data-hosting-only/g) ?? []).length, 5, "the five places that speak of model usage are marked: the line under the heading, two of the facts, the third step of how it works, and one of the billing facts");
+    assert.equal((page.match(/data-usage-sold/g) ?? []).length, 1, "and the one place that says what a service that sells credit does in its place");
   }
+});
+
+test("the front page says how it works in four steps, in order, from what the service does, and the third is as the service sells", async () => {
+  const hostingOnly = world((x) => {
+    x.signedIn = false;
+    x.plans = { json: HOSTING_PLANS };
+  });
+  const steps = (v: Visit) => v.$("main").querySelector("ol.how")!.querySelectorAll("li");
+  const h = await visit("home", { routes: hostingOnly.routes });
+  assert.equal(h.text(h.$("how-h")), "How it works");
+  assert.equal(h.$("main").querySelector("ol.how")!.getAttribute("role"), "list", "a list that is drawn with no bullets is still a list, to every screen reader");
+  assert.equal(h.$("main").querySelector("ol.how")!.parent!.getAttribute("aria-labelledby"), "how-h", "and it is a region named by its heading");
+  assert.deepEqual(steps(h).map((li) => h.text(li)), [
+    "Sign up An email and a password. We send a link to confirm your address.",
+    "Pick a plan A flat price for hosting your workspace, paid on the payment provider's page.",
+    "Make a workspace One click starts your own Curule host. You give it your model key once it has started.",
+    "Describe your team and start Open the workspace in your browser, describe the team you want, and start a mission.",
+  ]);
+
+  const sells = await visit("home", { routes: world((x) => (x.signedIn = false)).routes });
+  assert.equal(sells.text(steps(sells)[2]!), "Make a workspace One click starts your own Curule host, with the service's models ready to use. Each plan lists the usage it includes.");
+  assert.deepEqual(steps(sells).map((li) => sells.text(li.querySelector("strong")!)), ["Sign up", "Pick a plan", "Make a workspace", "Describe your team and start"]);
+
+  const unknown = await visit("home", { routes: world((x) => { x.signedIn = false; x.plans = failure(503, "unavailable", "The plans are not available just now."); }).routes });
+  assert.match(unknown.text(steps(unknown)[2]!), /You give it your model key once it has started\./, "when the plans cannot be read the page says what it was written to say, which is what a page with no script says too");
+  assert.doesNotMatch(unknown.text(steps(unknown)[2]!), /service's models/);
+});
+
+test("each plan card has one action and it names the plan, and what a plan has is a list a person reads at a glance", async () => {
+  const v = await visit("home", { routes: world((x) => (x.signedIn = false)).routes });
+  const cards = v.$("plans").querySelectorAll("article");
+  const actions = cards.map((c) => [...c.querySelectorAll("a"), ...c.querySelectorAll("button")].map((a) => v.text(a)));
+  assert.deepEqual(actions, [["Start with Team"], ["Start with Business"]], "one each, and not two buttons that both say Get started");
+  assert.deepEqual(cards.map((c) => c.querySelector("a")!.className), ["btn btn-primary", "btn btn-primary"], "and it is the card's main action");
+  assert.deepEqual(cards.map((c) => c.querySelectorAll("li").length), [3, 2], "what a plan has, a line each: usage, workspaces and, where there are some, tiers");
+  assert.deepEqual(cards.map((c) => c.querySelectorAll("ul").length), [1, 1]);
 });
 
 test("a workspace with no key says so and asks for a provider, a model and a key; an Anthropic key needs no address", async () => {

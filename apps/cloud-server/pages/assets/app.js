@@ -593,8 +593,12 @@
     // What the page says about model usage is true of a service that sells none. One that sells credit says what its plans include,
     // and says nothing that its own plans contradict.
     for (const node of doc.querySelectorAll("[data-hosting-only]")) node.hidden = topups !== null;
+    // What a service that sells credit says in its place is hidden until the plans say that it does, so that a page that cannot read them says what it was written to say.
+    for (const node of doc.querySelectorAll("[data-usage-sold]")) node.hidden = topups === null;
     const subscription = me ? me.subscription : null;
-    const action = me ? () => el("a", { class: "btn", href: "/account#plan-h" }, "Choose in your account") : () => el("a", { class: "btn btn-primary", href: "/signup" }, "Get started");
+    // One action to a card, and it says which plan it is for: a row of buttons that all say "Get started" is a row of the same button. A customer with no plan is
+    // taken to choose one; one who has a plan is shown the others as a way to change, which is not the main thing.
+    const action = me ? (plan) => el("a", { class: holdsPlan(subscription) ? "btn" : "btn btn-primary", href: "/account#plan-h" }, `Choose ${plan.title}`) : (plan) => el("a", { class: "btn btn-primary", href: "/signup" }, `Start with ${plan.title}`);
     box.replaceChildren(...r.data.plans.map((plan) => planCard(plan, currency, { subscription, action })));
     $("topups").textContent = topups ? topupLine(topups, currency) : NO_USAGE_SOLD;
   }

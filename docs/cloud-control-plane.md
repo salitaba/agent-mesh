@@ -525,8 +525,12 @@ payment's own reference.
 
 ## The account pages
 
-`apps/cloud-server/pages` is what a customer sees: the front page (the plans, what a top-up buys, how billing works), sign up, sign
-in, the page the confirmation link opens, forgot and reset, the account, the terms and the privacy notice. They are plain HTML,
+`apps/cloud-server/pages` is what a customer sees: the front page (how it works in four steps, the plans, what a top-up buys, how
+billing works), sign up, sign in, the page the confirmation link opens, forgot and reset, the account, the terms and the privacy
+notice. The front page's words about model usage are written for a service that sells hosting only, which is what it says when it
+cannot read the plans or runs no script (`data-hosting-only`); once the plans say that credit is sold, they give way to what a
+service that sells it says (`data-usage-sold`). Each plan is a card with what it has as a ticked list and one action that names the
+plan. The pages are plain HTML,
 one stylesheet and one script, with no build step and nothing loaded from another address. The control plane serves them at
 fixed paths (`/`, `/signup`, `/login`, `/verify`, `/forgot`, `/reset`, `/account`, `/terms`, `/privacy`) and the assets by
 name; a path that is not on that list is never looked for on the disk. A browser that follows a wrong address (it asks for HTML) is
