@@ -20,6 +20,7 @@ import { holdsForProject, isHostView, serverKind, showsSection } from "./navmode
 import ChatDock, { ChatDockButton } from "./designer/ChatDock";
 import { useAuthOptional } from "./auth";
 import { LicenseBanner } from "./license";
+import { AttentionEffects } from "./attentioneffects";
 
 // Single source of truth for nav order, sidebar key hints and the 1-9 key map: the badge and the keydown handler are
 // both derived from this list, so they cannot drift apart. Four groups, in the order a person asks the questions: how is
@@ -791,6 +792,7 @@ export function Shell({ viewNode }: { viewNode: React.ReactNode }): React.JSX.El
         </>
       )}
       <ChatDock open={chatOpen} onClose={() => setChatOpen(false)} />
+      <AttentionEffects projectId={mesh.projectId} projectName={projectName} />
       <div id="toasts" aria-live="polite">
         {toasts.map((t) => (
           <div key={t.id} className={`toast ${t.kind}`}>

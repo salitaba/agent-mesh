@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { budgetName, eventToast, pageShowing, toastLife } from "../../apps/mesh-dashboard/src/toasttext";
+import { budgetName, decisionTitles, eventToast, pageShowing, stoppedBecause, toastLife } from "../../apps/mesh-dashboard/src/toasttext";
 
 /**
  * The corner notices used to be the event's own fields in lower case: "escalation opened: budget_exhausted (by explorer)", "budget
@@ -95,4 +95,26 @@ test("a notice is gone in a few seconds, a failure a little later, and one with 
     const ratio = toastLife(kind, true) / toastLife("ok", false);
     assert.ok(ratio >= 1.8 && ratio <= 2.5, `Undo stays about twice as long as a plain notice (${kind}: ${ratio.toFixed(2)})`);
   }
+});
+
+test("a decision is named by the title its card leads with, so a notice and the page say the same thing", () => {
+  const cards = [
+    { id: "esc-1", reason: "budget_exhausted", raisedBy: "budget-manager", conflictKey: "budget:mission:goal-1", status: "OPEN" },
+    { id: "esc-2", reason: "stalemate", raisedBy: "stall-watchdog", status: "OPEN" },
+  ];
+  const titles = decisionTitles(cards, { status: { budgets: [], goal: { id: "goal-1" } }, parked: false });
+  assert.equal(titles.length, 2);
+  assert.match(titles[0]!, /ran out of tokens/i);
+  assert.match(titles[1]!, /stalemate/i);
+  assert.deepEqual(decisionTitles([], { status: {}, parked: false }), []);
+});
+
+test("why a failed mission stopped is the card's sentence, from the event that ended it, and nothing when the log does not say", () => {
+  const failed = (reason?: string) => [{ type: "message.sent" }, { type: "goal.failed", payload: reason ? { reason } : {} }];
+  assert.equal(stoppedBecause(failed("wall_clock_exceeded"), "FAILED"), "Mission ran out of time. The run exceeded its configured wall-clock limit.");
+  assert.equal(stoppedBecause(failed(), "FAILED"), null, "no reason recorded: no sentence rather than a guess");
+  assert.equal(stoppedBecause(failed("something_new"), "FAILED"), null, "a reason nobody has phrased is not read aloud");
+  assert.equal(stoppedBecause([{ type: "message.sent" }], "FAILED"), null, "the ending event is not in the buffer");
+  // A mission that failed, was reopened and is failing again must not be explained by the old failure.
+  assert.equal(stoppedBecause(failed("wall_clock_exceeded"), "COMPLETED"), null);
 });

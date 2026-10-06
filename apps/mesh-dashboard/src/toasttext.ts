@@ -6,8 +6,8 @@
  * words the cards use (`verdictText`), and say what is held: a decision that holds the mission is not the same news as one that holds a
  * seat. A budget running out is not announced twice: the decision it raises already says so.
  */
-import { verdictText } from "../../../packages/protocol/src/catalog";
-import { holdsOf, type EscalationLike } from "./escalation-card";
+import { terminalMissionVerdict, verdictText } from "../../../packages/protocol/src/catalog";
+import { escalationText, holdsOf, type EscalationLike } from "./escalation-card";
 import type { View } from "./route";
 
 export type ToastKind = "ok" | "warn" | "bad";
@@ -65,6 +65,23 @@ export function eventToast(e: { type: string; payload?: unknown }): ToastText | 
     default:
       return null;
   }
+}
+
+/**
+ * What each card is about, in the words the card leads with (the Needs you page, the Overview's note and the notice all say it the
+ * same way). The caller passes the open decisions that hold something, in the order it wants them read.
+ */
+export function decisionTitles(cards: readonly EscalationLike[], ctx: { status: unknown; parked: boolean }): string[] {
+  return cards.map((e) => escalationText(e, { status: ctx.status, parked: ctx.parked, phrase: verdictText }).title);
+}
+
+/**
+ * Why a failed mission stopped, from the log, in the card's words: "Mission ran out of tokens. <what that means>". Null when the
+ * log does not say (the event is not in the buffer, or carries a reason nobody has phrased): a sentence is better absent than guessed.
+ */
+export function stoppedBecause(events: readonly { type: string; payload?: unknown }[], goalStatus: string): string | null {
+  const v = terminalMissionVerdict(events, goalStatus);
+  return v ? `${v.title}. ${v.summary}` : null;
 }
 
 /**
