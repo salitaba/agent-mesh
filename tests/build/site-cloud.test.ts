@@ -106,7 +106,7 @@ test("when it is open, the home page leads with Get started, says Curule is also
   const home = visit("index.html", APP);
   const text = visibleText(home);
   assert.match(text, /A team of AI agents, run like an organization\./, "the tagline does not move");
-  assert.match(text, /open a workspace on Curule Cloud, where we run it and supply the models/);
+  assert.match(text, /open a workspace on Curule Cloud, where we run it and you bring your own model key/);
   assert.match(text, /Yours to run, or ours/);
   const hero = home.querySelector(".hero")!;
   const buttons = hero.querySelectorAll(".btn").filter((b) => shown(b));

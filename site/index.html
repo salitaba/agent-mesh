@@ -64,7 +64,7 @@
     <p class="eyebrow">A runtime for persistent AI organizations</p>
     <h1>A team of AI agents, run like an organization.</h1>
     <p class="lede" data-selfhost-only>Curule runs role-based agents (a product manager, an architect, developers, QA, security) on your own infrastructure. The runtime enforces who may approve what, every action is recorded and replayable, and the model is billed to you by your own provider.</p>
-    <p class="lede" data-cloud-only hidden>Curule runs role-based agents (a product manager, an architect, developers, QA, security) as one organization. The runtime enforces who may approve what, and every action is recorded and replayable. Run it on your own infrastructure with your own model credentials, or open a workspace on Curule Cloud, where we run it and supply the models.</p>
+    <p class="lede" data-cloud-only hidden>Curule runs role-based agents (a product manager, an architect, developers, QA, security) as one organization. The runtime enforces who may approve what, and every action is recorded and replayable. Run it on your own infrastructure with your own model credentials, or open a workspace on Curule Cloud, where we run it and you bring your own model key.</p>
     <div class="btn-row" data-selfhost-only>
       <a class="btn btn-primary btn-lg" href="#try">Try the demo</a>
       <a class="btn btn-lg" href="pricing/">See pricing</a>
@@ -74,11 +74,11 @@
       <a class="btn btn-primary btn-lg" href="#" data-cloud="signup" hidden>Get started</a>
       <a class="btn btn-lg" href="pricing/">See pricing</a>
     </div>
-    <p class="small muted mt-s" data-cloud-only hidden>Curule Cloud is paid by plan and by usage. To run it yourself, <a href="#try">try the demo</a>: a scripted team on your own machine, with no API key and no account.</p>
+    <p class="small muted mt-s" data-cloud-only hidden>Curule Cloud is a flat monthly plan for hosting; the models are billed to you by your own provider. To run it yourself, <a href="#try">try the demo</a>: a scripted team on your own machine, with no API key and no account.</p>
 
     <ul class="facts" aria-label="What is true of it">
       <li data-selfhost-only><strong>Self-hosted</strong><span>One container per team, on your infrastructure and with your model credentials.</span></li>
-      <li data-cloud-only hidden><strong>Yours to run, or ours</strong><span>One container per team on your infrastructure with your own model credentials, or a workspace on Curule Cloud, where we run it and supply the models.</span></li>
+      <li data-cloud-only hidden><strong>Yours to run, or ours</strong><span>One container per team on your infrastructure with your own model credentials, or a workspace on Curule Cloud, where we run it and you bring your own model key.</span></li>
       <li><strong>Nothing phones home</strong><span>No telemetry, no analytics, no update check, no licence server.</span></li>
       <li><strong>Free to start</strong><span>The Community plan: one open project, up to eight agents, no licence key.</span></li>
       <li><strong>Source-available</strong><span>Business Source License 1.1. Each version becomes Apache 2.0 four years after it is published.</span></li>
@@ -293,7 +293,7 @@ docker build -t curule .</code></pre></div>
       <details><summary>What happens when a licence expires?</summary><div class="answer"><p>Nothing stops and nothing is lost. The plan&rsquo;s limits stay in force for a grace period (14 days by default); after it the instance is on the free plan. We cannot disable anything remotely, and your data is yours.</p></div></details>
       <details><summary>Can it run without internet access?</summary><div class="answer"><p>Yes. A licence is verified on your machine. The agents need a route to your model provider, which can be a private endpoint.</p></div></details>
       <details data-selfhost-only><summary>Can you host it for us?</summary><div class="answer"><p>Not today. It is software you run, one instance per team; the repository has a Compose file, a Helm chart and a provisioning script for that.</p></div></details>
-      <details data-cloud-only hidden><summary>Can you host it for us?</summary><div class="answer"><p>Yes: that is <a href="#" data-cloud="home" hidden>Curule Cloud</a>. You sign up, pick a plan and open a workspace in your browser. We run the servers and supply the models, and you pay for the plan and for what the models cost, which your account shows call by call. The self-hosted product is unchanged: one instance per team, on your own infrastructure.</p></div></details>
+      <details data-cloud-only hidden><summary>Can you host it for us?</summary><div class="answer"><p>Yes: that is <a href="#" data-cloud="home" hidden>Curule Cloud</a>. You sign up, pick a plan and open a workspace in your browser. We run the servers; you bring your own model key and pay your provider directly, because we do not resell model usage. The self-hosted product is unchanged: one instance per team, on your own infrastructure.</p></div></details>
       <details><summary>Does it work with models other than Claude?</summary><div class="answer"><p>Yes. The native runtime calls the model itself through OpenAI-compatible chat completions or the Anthropic Messages API, so it works with providers and local model servers that offer either, and <code>curule providers check</code> proves a provider and a model before a mission runs. A model has to be able to call tools. Everything measured on this site ran on Claude Haiku through Claude Code; we have not measured the quality of other models and do not claim it is equivalent.</p></div></details>
       <details><summary>How reliable are the results?</summary><div class="answer"><p>We have measured one mission class: five agents built a small library in 31 minutes for $5.52 of model usage, and an independent check scored it 99.6%. One run is not a rate, and a mesh may do worse than a single agent on some work. Try it on your own task in a pilot.</p></div></details>
     </div>
