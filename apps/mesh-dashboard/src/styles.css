@@ -837,6 +837,8 @@ label.chk { flex-direction: row; align-items: center; gap: var(--s1-5); font: 13
 code { font: 13px var(--mono); background: var(--panel-2); border: 1px solid var(--line); border-radius: 4px; padding: 0 6px; }
 kbd { font: 11px var(--mono); border: 1px solid var(--line-strong); border-bottom-width: 2px; border-radius: 4px; padding: 1px 6px; background: var(--panel-2); }
 .help table td { padding: var(--s1) var(--s3) var(--s1) 0; }
+/* A key and its alternative stay on one line: "⌘K / Ctrl K" broke across two. */
+.help table td:first-child, .help kbd { white-space: nowrap; }
 .help p { max-width: 56ch; }
 
 ::-webkit-scrollbar { width: 10px; height: 10px; }

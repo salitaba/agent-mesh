@@ -134,10 +134,13 @@ function Help(): React.JSX.Element {
         </tbody>
       </table>
       <h2>About</h2>
+      {/* The buttons named here are the ones the console shows: the parked Overview's is Start mission, and Continue once the
+          mission has run (mission.ts); Approve or reject is in the ⋯ menu. */}
       <p className="muted">Every screen is a projection of the append-only event log.
-        Message and Approve act as the <code>human</code> seat; the designer validates
+        Message and Approve or reject act as the <code>human</code> seat; the designer validates
         configs server-side with the same engine as <code>curule validate</code>.
-        Tip: <code>curule console &lt;file&gt;</code> opens this console parked: nothing runs on its own until you press Continue.</p>
+        Tip: <code>curule console &lt;mesh.yaml&gt;</code> opens this console parked: nothing runs on its own until you press Start
+        mission (Continue, on a mission that has run before).</p>
     </div>
   );
 }
