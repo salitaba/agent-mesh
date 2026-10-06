@@ -187,6 +187,18 @@ test("the home page's way in is two cards while Curule Cloud is open and one whi
   assert.match(open[1]!.textContent, /Nothing for the Community plan: one open project, up to eight agents, no licence key\. A paid licence lifts the limits\./);
 });
 
+test("when it is open, the security answers on the home page and on the security page say they are about the software you run yourself, and where Curule Cloud differs", () => {
+  const home = visit("index.html", APP).getElementById("security")!;
+  const notice = home.querySelectorAll(".notice").filter((n) => shown(n));
+  assert.equal(notice.length, 1);
+  assert.match(notice[0]!.textContent, /^These answers are about the software you run yourself\. On Curule Cloud we run it for you, which changes what leaves your environment: the security page says how\.$/);
+  assert.equal(notice[0]!.querySelector("a")!.href, "security/#glance", "and goes to the page that says how");
+  const page = visit("security/index.html", APP).getElementById("glance")!;
+  assert.match(page.querySelectorAll(".notice").filter((n) => shown(n)).map((n) => n.textContent).join(""), /On Curule Cloud we run it for you, so what leaves your environment is different there/);
+  assert.equal(page.querySelector(".notice a")!.href, `${APP}/privacy`, "where what Curule Cloud keeps, and who else receives it, is written");
+  for (const doc of [visit("index.html", ""), visit("security/index.html", "")]) assert.ok(!/Curule Cloud/.test(visibleTextOf(doc.getElementById("main")!)), "while it is closed neither says a word of it");
+});
+
 test("the documentation page's card for Curule Cloud, and its entry in the map, are there while it is open and gone while it is not", () => {
   for (const [state, url, goals, groups] of [
     ["open", APP, ["Run the demo", "Deploy it", "Describe a team and its rules", "Use Curule Cloud"], true],
