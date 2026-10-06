@@ -15,6 +15,8 @@ button.linklike:hover { text-decoration: underline; }
 .ms-chat-msg.assistant { background: var(--sunken); border: 1px solid var(--line); color: var(--text-dim); }
 .ms-chat-who { display: block; font: var(--tx-label); text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin-bottom: var(--s1); }
 .ms-chat-problems { margin: var(--s1-5) 0 0; padding-left: 18px; color: var(--warn); font-size: 13px; }
+/* A fact about an answer (it proposed nothing), not a fault in it. */
+.ms-chat-note { margin: var(--s1-5) 0 0; font-size: 13px; color: var(--muted); }
 .ms-chat-review { display: flex; flex-direction: column; gap: var(--s1-5); margin-top: var(--s2); }
 .ms-chat-actions { display: flex; align-items: center; gap: var(--s2); flex-wrap: wrap; margin-top: var(--s1-5); }
 .ms-chat-kbd { margin-left: auto; font-size: 12px; }

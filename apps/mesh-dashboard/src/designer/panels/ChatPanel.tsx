@@ -13,7 +13,7 @@ import { Button, Input, TextArea } from "../../components";
 import { useMesh } from "../../store";
 import { useHostFacts } from "../../hostfacts";
 import { KEY_MISSING, keyIsMissing } from "../../firstrun";
-import { ASSISTANT_ASK, STARTERS, assistantTrouble, readableProblem } from "../assistant-text";
+import { ASSISTANT_ASK, STARTERS, assistantTrouble, readProblem } from "../assistant-text";
 import { clearChat, getSnapshot, markApplied, sendMessage, setReview, setShowThinking, subscribe } from "../chatStore";
 import { getDraftSnapshot, type DraftState } from "../storage";
 import { list as listCommands, setPendingProposal } from "../../commands";
@@ -198,9 +198,14 @@ export default function ChatPanel(): React.JSX.Element {
               ) : null}
               {e.content}
               {e.role === "assistant" && e.problems?.length ? (
-                <ul className="ms-chat-problems">
-                  {e.problems.map((p) => <li key={p}>{readableProblem(p)}</li>)}
-                </ul>
+                <>
+                  {e.problems.map(readProblem).filter((p) => !p.fault).map((p) => <p key={p.text} className="ms-chat-note">{p.text}</p>)}
+                  {e.problems.map(readProblem).some((p) => p.fault) ? (
+                    <ul className="ms-chat-problems">
+                      {e.problems.map(readProblem).filter((p) => p.fault).map((p) => <li key={p.text}>{p.text}</li>)}
+                    </ul>
+                  ) : null}
+                </>
               ) : null}
               {e.role === "assistant" && cards > 0 ? (
                 <div className="ms-chat-review">

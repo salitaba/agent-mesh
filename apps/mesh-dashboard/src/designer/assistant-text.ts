@@ -86,13 +86,15 @@ export function assistantTrouble(raw: string, ctx: { hosted: { accountUrl: strin
 
 /**
  * A problem the host attached to an answer, as a person reads it. The host's words stay what is sent back to the designer on the next
- * turn (it reads them to fix its answer); this is only what is shown. An answer with no proposal is not a fault: the designer may just
- * have replied in words.
+ * turn (it reads them to fix its answer); this is only what is shown. An answer with no proposal is not a fault, only a fact about the
+ * answer: the designer may just have replied in words, so it is a note and not a problem.
  */
-export function readableProblem(problem: string): string {
-  if (/no parseable whole-config block or patch/i.test(problem)) return "This answer proposes no change to your draft.";
-  if (/used a patch, but there is no current draft/i.test(problem)) return "The designer answered with a change it could not apply, because there is no draft to apply it to. Ask again.";
+export function readProblem(problem: string): { text: string; fault: boolean } {
+  if (/no parseable whole-config block or patch/i.test(problem)) return { text: "This answer proposes no change to your draft.", fault: false };
+  if (/used a patch, but there is no current draft/i.test(problem)) {
+    return { text: "The designer answered with a change it could not apply, because there is no draft to apply it to. Ask again.", fault: true };
+  }
   const patch = /^the patch could not be applied: (.*)$/i.exec(problem);
-  if (patch) return `The designer's change could not be applied to your draft: ${sentence(patch[1]!.trim())} Ask again.`;
-  return problem;
+  if (patch) return { text: `The designer's change could not be applied to your draft: ${sentence(patch[1]!.trim())} Ask again.`, fault: true };
+  return { text: problem, fault: true };
 }

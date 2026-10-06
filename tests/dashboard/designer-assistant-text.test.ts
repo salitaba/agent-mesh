@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { ASSISTANT_ASK, STARTERS, assistantTrouble, plainReason, readableProblem } from "../../apps/mesh-dashboard/src/designer/assistant-text";
+import { ASSISTANT_ASK, STARTERS, assistantTrouble, plainReason, readProblem } from "../../apps/mesh-dashboard/src/designer/assistant-text";
 import { KEY_MISSING } from "../../apps/mesh-dashboard/src/firstrun";
 
 /**
@@ -74,11 +74,13 @@ test("a body the console cut at 200 characters is read as text, and one with a r
   assert.equal(plainReason(`{"unrelated":1}`), `{"unrelated":1}`);
 });
 
-test("what the host says about an answer is shown as a person reads it, and an answer with no proposal is not called a failure", () => {
-  assert.equal(readableProblem("the reply contained no parseable whole-config block or patch"), "This answer proposes no change to your draft.");
-  assert.match(readableProblem("the reply used a patch, but there is no current draft to apply it to — send the complete config instead"), /could not apply, because there is no draft/);
-  assert.equal(readableProblem("the patch could not be applied: path /agents/x does not exist"), "The designer's change could not be applied to your draft: path /agents/x does not exist. Ask again.");
-  assert.equal(readableProblem("/agents/pm/role: must NOT have fewer than 1 characters"), "/agents/pm/role: must NOT have fewer than 1 characters", "a config error is the checks' own sentence, and stays it");
+test("what the host says about an answer is shown as a person reads it, and an answer with no proposal is a note, not a failure", () => {
+  assert.deepEqual(readProblem("the reply contained no parseable whole-config block or patch"), { text: "This answer proposes no change to your draft.", fault: false });
+  const noDraft = readProblem("the reply used a patch, but there is no current draft to apply it to — send the complete config instead");
+  assert.equal(noDraft.fault, true);
+  assert.match(noDraft.text, /could not apply, because there is no draft/);
+  assert.deepEqual(readProblem("the patch could not be applied: path /agents/x does not exist"), { text: "The designer's change could not be applied to your draft: path /agents/x does not exist. Ask again.", fault: true });
+  assert.deepEqual(readProblem("/agents/pm/role: must NOT have fewer than 1 characters"), { text: "/agents/pm/role: must NOT have fewer than 1 characters", fault: true }, "a config error is the checks' own sentence, and stays it");
 });
 
 test("the dock starts with a question and two ways to begin, each a sentence to send, none a promise", () => {
