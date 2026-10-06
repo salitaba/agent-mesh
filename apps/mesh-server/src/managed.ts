@@ -17,21 +17,62 @@ export const GATEWAY_URL_ENV = "CURULE_GATEWAY_URL";
 export const GATEWAY_KEY_ENV = "CURULE_GATEWAY_KEY";
 export const GATEWAY_MODEL_ENV = "CURULE_GATEWAY_MODEL";
 
+/**
+ * The other way a hosted workspace gets its models: the customer's own key, on a plan that sells hosting only. The host is started with
+ * `CURULE_MODEL_PROVIDER` (`anthropic` or `openai-compatible`), `CURULE_MODEL_NAME`, `CURULE_MODEL_KEY`, and for an openai-compatible
+ * provider `CURULE_MODEL_BASE_URL`. The same rules hold as for the gateway's key: it is read from the environment by name, never written
+ * into mesh.yaml, and removed from every seat's shell. The service resells nothing through it.
+ */
+export const MODEL_PROVIDER_ENV = "CURULE_MODEL_PROVIDER";
+export const MODEL_NAME_ENV = "CURULE_MODEL_NAME";
+export const MODEL_KEY_ENV = "CURULE_MODEL_KEY";
+export const MODEL_BASE_URL_ENV = "CURULE_MODEL_BASE_URL";
+
 /** The name the gateway goes by in a mesh's providers, and so the first half of the model every seat uses: `curule/balanced`. */
 export const MANAGED_PROVIDER = "curule";
 export const DEFAULT_TIER = "balanced";
 
 export interface ManagedModels {
-  /** The gateway, up to and including its version segment. */
-  baseUrl: string;
+  /** Where the models come from: the service's gateway, or the customer's own key at their provider. */
+  source: "gateway" | "own";
+  /** The wire format of the provider. The gateway speaks the OpenAI-compatible one. */
+  kind: "openai-compatible" | "anthropic";
+  /** The provider's address, up to and including its version segment. Absent for Anthropic, which is called at its own. */
+  baseUrl?: string;
   /** The variable the key is read from. The value is not here. */
   keyEnv: string;
-  /** The tier a seat uses when it names no model. */
+  /** The tier a seat uses when it names no model (for the customer's own key, the model they named). */
   tier: string;
+}
+
+const OWN_MODEL = /^[A-Za-z0-9][A-Za-z0-9._:/@+-]{0,127}$/;
+
+/** The customer's own key and where it goes, when the host was given one. */
+function ownModels(env: NodeJS.ProcessEnv): ManagedModels | undefined {
+  const key = (env[MODEL_KEY_ENV] ?? "").trim();
+  const kind = (env[MODEL_PROVIDER_ENV] ?? "").trim();
+  const model = (env[MODEL_NAME_ENV] ?? "").trim();
+  if (key === "" || !OWN_MODEL.test(model)) return undefined;
+  if (kind === "anthropic") return { source: "own", kind, keyEnv: MODEL_KEY_ENV, tier: model };
+  if (kind !== "openai-compatible") return undefined;
+  const base = (env[MODEL_BASE_URL_ENV] ?? "").trim();
+  try {
+    // A key is only sent over https: the control plane checks it, and this host does not trust that to be the only line.
+    if (new URL(base).protocol !== "https:") return undefined;
+  } catch {
+    return undefined;
+  }
+  return { source: "own", kind, baseUrl: base.replace(/\/+$/, ""), keyEnv: MODEL_KEY_ENV, tier: model };
 }
 
 /** The managed models this host was given, or undefined when it holds both the address and the key of none. */
 export function managedModels(env: NodeJS.ProcessEnv = process.env): ManagedModels | undefined {
+  const gateway = gatewayModels(env);
+  if (gateway) return gateway;
+  return ownModels(env);
+}
+
+function gatewayModels(env: NodeJS.ProcessEnv): ManagedModels | undefined {
   const url = (env[GATEWAY_URL_ENV] ?? "").trim();
   const key = (env[GATEWAY_KEY_ENV] ?? "").trim();
   if (url === "" || key === "") return undefined;
@@ -42,7 +83,7 @@ export function managedModels(env: NodeJS.ProcessEnv = process.env): ManagedMode
     return undefined;
   }
   const tier = (env[GATEWAY_MODEL_ENV] ?? "").trim();
-  return { baseUrl: url.replace(/\/+$/, ""), keyEnv: GATEWAY_KEY_ENV, tier: /^[A-Za-z0-9._-]{1,64}$/.test(tier) ? tier : DEFAULT_TIER };
+  return { source: "gateway", kind: "openai-compatible", baseUrl: url.replace(/\/+$/, ""), keyEnv: GATEWAY_KEY_ENV, tier: /^[A-Za-z0-9._-]{1,64}$/.test(tier) ? tier : DEFAULT_TIER };
 }
 
 /**
@@ -74,6 +115,6 @@ export function rewriteForManagedModels(text: string, managed: ManagedModels): {
   if (inherits) doc.setIn(["mesh", "runtime", "default"], "native");
   doc.setIn(["mesh", "runtime", "model"], `${MANAGED_PROVIDER}/${managed.tier}`);
   doc.setIn(["mesh", "runtime", "designer"], "native");
-  doc.setIn(["mesh", "runtime", "providers"], doc.createNode({ [MANAGED_PROVIDER]: { kind: "openai-compatible", base_url: managed.baseUrl, api_key_env: managed.keyEnv } }));
+  doc.setIn(["mesh", "runtime", "providers"], doc.createNode({ [MANAGED_PROVIDER]: { kind: managed.kind, ...(managed.baseUrl ? { base_url: managed.baseUrl } : {}), api_key_env: managed.keyEnv } }));
   return { text: String(doc), changed: true };
 }

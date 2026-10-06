@@ -8,18 +8,20 @@ import * as fs from "fs";
 import * as http from "http";
 import * as os from "os";
 import * as path from "path";
+import { shellEnv } from "../../packages/runtime-native/src/index";
 import { startHostServer, type HostHandle } from "../../apps/mesh-server/src/host";
 import { DEFAULT_TIER, managedModels, rewriteForManagedModels, type ManagedModels } from "../../apps/mesh-server/src/managed";
+import { nativeRuntimeOptions } from "../../apps/mesh-server/src/native";
 import { findShippedRoot, defaultMeshTemplate, resolveConfig, scaffoldExample } from "../../packages/config/src/index";
 
 const SHIPPED = findShippedRoot(__dirname)!;
-const MANAGED: ManagedModels = { baseUrl: "https://gateway.example/v1", keyEnv: "CURULE_GATEWAY_KEY", tier: "balanced" };
+const MANAGED: ManagedModels = { source: "gateway", kind: "openai-compatible", baseUrl: "https://gateway.example/v1", keyEnv: "CURULE_GATEWAY_KEY", tier: "balanced" };
 const SECRET_KEY = "ck_live_this-is-the-workspaces-secret-key";
 
 // ---- what makes a host managed ----
 
 test("a host is managed when it holds both the gateway's address and a key for it, and what it reads of them is the address and the name of the key's variable", () => {
-  assert.deepEqual(managedModels({ CURULE_GATEWAY_URL: "https://gateway.example/v1", CURULE_GATEWAY_KEY: SECRET_KEY }), { baseUrl: "https://gateway.example/v1", keyEnv: "CURULE_GATEWAY_KEY", tier: "balanced" });
+  assert.deepEqual(managedModels({ CURULE_GATEWAY_URL: "https://gateway.example/v1", CURULE_GATEWAY_KEY: SECRET_KEY }), { source: "gateway", kind: "openai-compatible", baseUrl: "https://gateway.example/v1", keyEnv: "CURULE_GATEWAY_KEY", tier: "balanced" });
   assert.ok(!JSON.stringify(managedModels({ CURULE_GATEWAY_URL: "https://gateway.example/v1", CURULE_GATEWAY_KEY: SECRET_KEY })).includes(SECRET_KEY), "the key is not in what is read");
   assert.equal(managedModels({ CURULE_GATEWAY_URL: "https://gateway.example/v1" }), undefined, "an address with no key");
   assert.equal(managedModels({ CURULE_GATEWAY_KEY: SECRET_KEY }), undefined, "a key with no address");
@@ -258,4 +260,63 @@ test("on a host that is not managed the same requests write the team on the Clau
     assert.match(text, /runtime: claude/);
     assert.ok(!/curule\/|CURULE_GATEWAY/.test(text));
   });
+});
+
+// ---- the customer's own key (a hosting-only plan) ----
+
+const OWN_KEY = "sk-own-this-is-the-customers-secret-key";
+const OWN_ENV = { CURULE_MODEL_PROVIDER: "openai-compatible", CURULE_MODEL_NAME: "openai/gpt-4o", CURULE_MODEL_BASE_URL: "https://openrouter.ai/api/v1/", CURULE_MODEL_KEY: OWN_KEY };
+
+test("a host is given the customer's own key by provider, model, address and key, and what it reads names the key's variable and never holds the key", () => {
+  const own = managedModels(OWN_ENV)!;
+  assert.deepEqual(own, { source: "own", kind: "openai-compatible", baseUrl: "https://openrouter.ai/api/v1", keyEnv: "CURULE_MODEL_KEY", tier: "openai/gpt-4o" });
+  assert.ok(!JSON.stringify(own).includes(OWN_KEY));
+  assert.deepEqual(managedModels({ CURULE_MODEL_PROVIDER: "anthropic", CURULE_MODEL_NAME: "claude-sonnet-4-5", CURULE_MODEL_KEY: OWN_KEY }), { source: "own", kind: "anthropic", keyEnv: "CURULE_MODEL_KEY", tier: "claude-sonnet-4-5" });
+  for (const broken of [{ CURULE_MODEL_KEY: " " }, { CURULE_MODEL_PROVIDER: "other" }, { CURULE_MODEL_NAME: "has space" }, { CURULE_MODEL_BASE_URL: "http://openrouter.ai/api/v1" }, { CURULE_MODEL_BASE_URL: "" }]) {
+    assert.equal(managedModels({ ...OWN_ENV, ...broken }), undefined, JSON.stringify(broken));
+  }
+  assert.equal(managedModels({ ...OWN_ENV, CURULE_MODEL_PROVIDER: "anthropic", CURULE_MODEL_BASE_URL: "" })?.baseUrl, undefined, "Anthropic is called at its own address, whatever else is set");
+});
+
+test("a host with the service's gateway and a customer's key uses the gateway: the plan decides, and a host is given one of the two", () => {
+  assert.equal(managedModels({ ...OWN_ENV, CURULE_GATEWAY_URL: "https://gateway.example/v1", CURULE_GATEWAY_KEY: SECRET_KEY })!.source, "gateway");
+});
+
+test("the default team becomes a team on the customer's own provider: the key is named by its variable and written nowhere", () => {
+  const own = managedModels(OWN_ENV)!;
+  const { text } = rewriteForManagedModels(defaultMeshTemplate("Shop", "shop", "claude"), own);
+  assert.match(text, /model: curule\/openai\/gpt-4o/);
+  assert.match(text, /curule:\n\s+kind: openai-compatible\n\s+base_url: https:\/\/openrouter\.ai\/api\/v1\n\s+api_key_env: CURULE_MODEL_KEY/);
+  assert.ok(!text.includes(OWN_KEY));
+  const anthropic = rewriteForManagedModels(defaultMeshTemplate("Shop", "shop", "claude"), managedModels({ CURULE_MODEL_PROVIDER: "anthropic", CURULE_MODEL_NAME: "claude-sonnet-4-5", CURULE_MODEL_KEY: OWN_KEY })!).text;
+  assert.match(anthropic, /curule:\n\s+kind: anthropic\n\s+api_key_env: CURULE_MODEL_KEY/);
+  assert.ok(!/base_url/.test(anthropic.slice(anthropic.indexOf("providers"))), "no address is written for Anthropic");
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "own-default-"));
+  try {
+    fs.writeFileSync(path.join(dir, "mesh.yaml"), text);
+    fs.mkdirSync(path.join(dir, "roles"));
+    fs.writeFileSync(path.join(dir, "roles", "architect.md"), "# architect\n");
+    const config = resolveConfig(path.join(dir, "mesh.yaml"));
+    assert.equal(config.defaultModel, "curule/openai/gpt-4o");
+    assert.deepEqual(config.native!.providers.curule, { kind: "openai-compatible", baseUrl: "https://openrouter.ai/api/v1", apiKeyEnv: "CURULE_MODEL_KEY" });
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("the customer's own key is read by the runtime from its variable, and that variable is one a seat's shell is stripped of", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "own-shell-"));
+  try {
+    fs.writeFileSync(path.join(dir, "mesh.yaml"), rewriteForManagedModels(defaultMeshTemplate("Shop", "shop", "claude"), managedModels(OWN_ENV)!).text);
+    fs.mkdirSync(path.join(dir, "roles"));
+    fs.writeFileSync(path.join(dir, "roles", "architect.md"), "# architect\n");
+    const options = nativeRuntimeOptions(resolveConfig(path.join(dir, "mesh.yaml")), { env: OWN_ENV, notice: () => undefined, warn: () => undefined, onRotate: () => undefined });
+    assert.equal(options.providers.curule!.apiKey, OWN_KEY, "the runtime has the key, to call the provider");
+    assert.equal(options.providers.curule!.keyEnv, "CURULE_MODEL_KEY");
+    const seatShell = shellEnv({ ...OWN_ENV, PATH: "/usr/bin" }, "inherit", Object.values(options.providers).flatMap((p) => (p.keyEnv ? [p.keyEnv] : [])));
+    assert.ok(!("CURULE_MODEL_KEY" in seatShell), "the seat's shell does not have the key");
+    assert.ok(!Object.values(seatShell).includes(OWN_KEY));
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });

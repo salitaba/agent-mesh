@@ -62,6 +62,10 @@ export const DOCTOR_SETTINGS: readonly DoctorSetting[] = [
   { name: "CURULE_GATEWAY_URL", kind: "text" },
   { name: "CURULE_GATEWAY_KEY", kind: "secret" },
   { name: "CURULE_GATEWAY_MODEL", kind: "text" },
+  { name: "CURULE_MODEL_PROVIDER", kind: "text" },
+  { name: "CURULE_MODEL_NAME", kind: "text" },
+  { name: "CURULE_MODEL_BASE_URL", kind: "text" },
+  { name: "CURULE_MODEL_KEY", kind: "secret" },
   { name: "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC", kind: "flag" },
 ];
 
@@ -407,6 +411,7 @@ export async function buildDoctorReport(positional: string[], flags: Record<stri
     return m.truthy ? v === "1" || v.toLowerCase() === "true" : v !== "";
   });
   if ((env.CURULE_GATEWAY_URL ?? "").trim() && (env.CURULE_GATEWAY_KEY ?? "").trim()) add("info", "This host is given its models by a gateway (CURULE_GATEWAY_URL and CURULE_GATEWAY_KEY are set). Teams made on it run on the native runtime and need no key of yours.", "docs/runtime-native.md#hosted-workspaces");
+  if ((env.CURULE_MODEL_KEY ?? "").trim()) add("info", "This host is given its owner's own model key (CURULE_MODEL_KEY, with CURULE_MODEL_PROVIDER and CURULE_MODEL_NAME). Teams made on it run on the native runtime on that key, and the provider bills its owner directly.", "docs/runtime-native.md#hosted-workspaces");
   if ((env.CLAUDE_CODE_OAUTH_TOKEN ?? "").trim()) add("warn", "A Claude subscription sign-in is set (CLAUDE_CODE_OAUTH_TOKEN). Anthropic's terms for products built on the SDK ask for an API key or cloud-provider credentials instead.", "docs/operations.md#the-agents-model-access");
   if ((env.CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC ?? "").trim() === "") add("info", "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC is not set, so the Claude Code binary may send telemetry and error reports. The image sets it to 1.", "docs/operations.md#the-agents-model-access");
 

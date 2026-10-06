@@ -66,6 +66,8 @@ export interface TemplatesView {
    * made here runs on those models, the person brings no key, and what it uses is charged to their balance.
    */
   managed: boolean;
+  /** When {@link managed}: whether the models are the service's gateway, or the owner's own key at their own provider (a hosting-only plan). */
+  modelSource?: "gateway" | "own";
 }
 
 export type NewProjectResult =
@@ -131,7 +133,8 @@ export function modelAccessFound(env: NodeJS.ProcessEnv = process.env): string[]
 export function templatesView(deps: NewProjectDeps): TemplatesView {
   const env = deps.env ?? process.env;
   const taken = new Set(deps.registry.list().map((r) => r.id));
-  const managed = managedModels(env) !== undefined;
+  const models = managedModels(env);
+  const managed = models !== undefined;
   return {
     // On managed models a team that would have run on the Claude runtime runs on the native one, and says so.
     templates: describeTemplates(deps.shippedRoot).map((t) => ({ ...t, ...(managed && t.runtime === "claude" ? { runtime: "native" } : {}), suggestedRoot: suggestRoot(t, taken, env) })),
@@ -139,6 +142,7 @@ export function templatesView(deps: NewProjectDeps): TemplatesView {
     confined: projectRoots(env).length > 0,
     modelAccess: modelAccessFound(env),
     managed,
+    ...(models ? { modelSource: models.source } : {}),
   };
 }
 

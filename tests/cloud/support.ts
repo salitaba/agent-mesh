@@ -1,3 +1,6 @@
+import * as fs from "node:fs";
+import * as os from "node:os";
+import * as path from "node:path";
 import {
   AdminApi,
   type Gateway,
@@ -9,6 +12,7 @@ import {
   MemoryControlStore,
   MemoryMailer,
   ManualBilling,
+  ModelKeyStore,
   parseCatalogue,
   type BillingEvent,
   type BillingProvider,
@@ -37,6 +41,12 @@ export const CATALOGUE = {
 };
 
 export const catalogue = (): Catalogue => parseCatalogue(CATALOGUE);
+
+/** A service that sells hosting only: one plan, no model usage, no top-ups, and no gateway behind it. */
+export const HOSTING_CATALOGUE = {
+  currency: "USD",
+  plans: { hosting: { title: "Hosting", licence_plan: "team", price_minor: 4_900, period: "month", workspaces: 1, byok: true, provider_price_id: "price_hosting" } },
+};
 
 /** A provisioner that does what the test says and remembers everything it was asked. */
 export class FakeProvisioner implements Provisioner {
@@ -126,6 +136,8 @@ export interface Plane {
   account(email?: string, password?: string): Promise<{ accountId: string; email: string; password: string; sessionToken: string }>;
   /** Make an account paid for a plan, as a payment would. */
   subscribe(accountId: string, plan?: string, ref?: string): Promise<void>;
+  /** Where customers' model keys are kept, on a hosting-only service. */
+  keysFile: string;
 }
 
 export interface PlaneOptions {
@@ -134,6 +146,8 @@ export interface PlaneOptions {
   accounts?: ControlPlaneOptions["accounts"];
   start?: string;
   noSigner?: boolean;
+  /** A service that sells hosting only: the plans are {@link HOSTING_CATALOGUE}, there is no gateway, and customers' model keys are kept in a folder of their own. */
+  hostingOnly?: boolean;
 }
 
 export async function plane(options: PlaneOptions = {}): Promise<Plane> {
@@ -146,18 +160,20 @@ export async function plane(options: PlaneOptions = {}): Promise<Plane> {
   g.clock.set(new Date(clock.now).toISOString());
   const gateway = new InProcessGatewayAdmin(new AdminApi(g.gateway));
   const { privateKeyPem, publicKey } = generateLicenseKeyPair();
+  const keysFile = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "curule-keys-")), "model-keys.json");
   const p = new ControlPlane({
     log,
-    catalogue: catalogue(),
+    catalogue: options.hostingOnly ? parseCatalogue(HOSTING_CATALOGUE) : catalogue(),
     billing: options.billing ?? new ManualBilling({ payUrl: (ref) => `https://app.example.com/pay?ref=${ref}` }),
-    gateway,
+    ...(options.hostingOnly ? {} : { gateway }),
+    modelKeys: new ModelKeyStore({ file: keysFile, secret: SECRET, clock: () => new Date(clock.now) }),
     mailer,
     appUrl: "https://app.example.com",
     workspaces: {
       provisioner,
       secret: SECRET,
       workspaceDomain: "ws.example.com",
-      gatewayUrl: "http://gateway.internal:8080/v1",
+      ...(options.hostingOnly ? {} : { gatewayUrl: "http://gateway.internal:8080/v1" }),
       ...(options.noSigner ? {} : { signer: { kid: "k1", privateKey: privateKeyPem } }),
       waitReady: async () => undefined,
       ...options.workspaces,
@@ -176,6 +192,7 @@ export async function plane(options: PlaneOptions = {}): Promise<Plane> {
     gatewayCore: g.gateway,
     clock,
     keys: { kid: "k1", publicKey, privateKeyPem },
+    keysFile,
     async account(email = `user${Math.floor(Math.random() * 1e9)}@example.com`, password = "correct horse battery staple") {
       await p.accounts.signup(email, password);
       const mail = mailer.sent.filter((m) => m.to === email && m.kind === "verify").at(-1)!;
@@ -184,7 +201,7 @@ export async function plane(options: PlaneOptions = {}): Promise<Plane> {
       return { accountId: session.account.accountId, email, password, sessionToken: session.sessionToken };
     },
     async subscribe(accountId, plan = "team", ref = `inv_${Math.random().toString(36).slice(2)}`) {
-      await p.billing.apply({ type: "payment.succeeded", ref, purpose: "subscription", accountId, plan, amountMinor: 14_900, currency: "USD", at: new Date(clock.now).toISOString() });
+      await p.billing.apply({ type: "payment.succeeded", ref, purpose: "subscription", accountId, plan: options.hostingOnly && plan === "team" ? "hosting" : plan, amountMinor: options.hostingOnly ? 4_900 : 14_900, currency: "USD", at: new Date(clock.now).toISOString() });
     },
   };
   return out;

@@ -307,8 +307,8 @@ export function NewProject({ layout, onDone, onPickerChange }: {
   const newCheck = useFolderVerdict(newPath, "create");
   const existingCheck = useFolderVerdict(existing, "add");
 
-  const demoNeeds = demo && answer ? whatItNeeds(demo, answer.modelAccess, answer.managed) : null;
-  const newNeeds = dflt && answer ? whatItNeeds(dflt, answer.modelAccess, answer.managed) : null;
+  const demoNeeds = demo && answer ? whatItNeeds(demo, answer.modelAccess, answer.managed, answer.ownKey) : null;
+  const newNeeds = dflt && answer ? whatItNeeds(dflt, answer.modelAccess, answer.managed, answer.ownKey) : null;
   const takes = demo ? whatItTakes(demo) : null;
   const working = (intent: Intent, idle: string): string => (start.busy === intent ? (start.phase === "adding" ? "Creating…" : "Opening…") : idle);
 
@@ -342,7 +342,7 @@ export function NewProject({ layout, onDone, onPickerChange }: {
           <>
             <dl className="fr-facts">
               <Fact label="Needs" tone={demoNeeds.tone}>{demoNeeds.text}</Fact>
-              <Fact label="Costs">{whatItCosts(demo, ceiling, answer?.managed)}</Fact>
+              <Fact label="Costs">{whatItCosts(demo, ceiling, answer?.managed, answer?.ownKey)}</Fact>
               {takes ? <Fact label="Takes">{takes}</Fact> : null}
             </dl>
             {demoFolder === null ? (
@@ -377,7 +377,7 @@ export function NewProject({ layout, onDone, onPickerChange }: {
         id={`${ids}-new`}
         icon="plus"
         title="Create a new mesh"
-        tag={dflt?.needsApiKey ? (answer?.managed ? "Models supplied" : answer && answer.modelAccess.length > 0 ? "Model access found" : "Needs model access") : undefined}
+        tag={dflt?.needsApiKey ? (answer?.managed ? (answer.ownKey ? "Your model key" : "Models supplied") : answer && answer.modelAccess.length > 0 ? "Model access found" : "Needs model access") : undefined}
         tagTone={dflt?.needsApiKey ? (answer?.managed || (answer && answer.modelAccess.length > 0) ? "ok" : "warn") : undefined}
         lead={dflt ? whatItIs(dflt) : "The default team, in a folder you choose."}
         actions={
@@ -400,7 +400,7 @@ export function NewProject({ layout, onDone, onPickerChange }: {
           <>
             <dl className="fr-facts">
               <Fact label="Needs" tone={newNeeds.tone}>{newNeeds.text}</Fact>
-              <Fact label="Costs">{whatItCosts(dflt, ceiling, answer?.managed)}</Fact>
+              <Fact label="Costs">{whatItCosts(dflt, ceiling, answer?.managed, answer?.ownKey)}</Fact>
             </dl>
             <FolderField
               id={`${ids}-new-folder`}
