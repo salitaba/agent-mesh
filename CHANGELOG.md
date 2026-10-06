@@ -17,6 +17,38 @@ sections 1 to 24) are described there, run by run.
   `CURULE_MODEL_NAME`, `CURULE_MODEL_BASE_URL` and `CURULE_MODEL_KEY` ([docs/runtime-native.md](docs/runtime-native.md#hosted-workspaces)).
 - Known gap: one test of the account page's script (tests/cloud/pages-app.test.ts) is skipped, with a TODO, because it ran away.
 
+### Changed: what a person reads and presses
+
+A pass over every page a person meets: the console, the account pages and the marketing site. Nothing here changes an API, an
+event type or what a number means.
+
+- **The console says what happened.** An event's line names who did what ("pm joined the team as product-manager", "developer
+  saved a note: architecture", "criterion architecture-approved met") instead of repeating its own label. One function
+  (`eventLine` in `eventmodel.ts`) decides it, so Overview's *Just happened*, the Events list and its detail, the agent
+  drawer and the step drawer read the same. A drawer prints no kernel code (`THINKING → IDLE`) or bare id where a word or a name
+  exists, a kernel notice carries one warning mark, and a count agrees with its noun at one ("1 approval").
+- **A parked team says it is ready.** A seat that has not run reads "Ready" (or "Never ran" once the mission is over), not
+  "Starting up", and the badge, the Graph and the card agree. What shipped shows a file's place in the product repository, not
+  where the mesh stores it, and the Help panel names the button a parked console really shows (**Start mission**).
+- **The scheduler's note is singular at one.** A wake for one waiting message says "1 message waiting in your mailbox."
+  (it said "1 messages"). The two tests that pinned the old sentence were updated.
+- **Controls do what a person expects.** In the command palette the top row is the best match (label starts with the
+  words, then a word in the label, then the label, then keywords) and a mouse resting over the list no longer picks the row
+  that Enter runs. Notices no longer cover the button the person is about to press (on a phone they sit under the top bar),
+  and none repeats the page in front of them. The Message panel addresses seats with a tap and names each kind of message
+  in words, and the feeds' hold button says **Pause updates** so it is not read as the mission's own Pause.
+- **A failed read is not an empty answer.** The Designer used to open the Triad template, with "No mesh.yaml was found", on a
+  project that was only starting or stopped, and never read again; saving would have written a new file over the person's mesh.
+  A project that is not running is now a failed load with Retry, and the page reads the file when the project is up. While a
+  project starts, the Overview shows dashes and "Loading this page…" instead of stating "no checks" and "Could not load recent
+  work", and no view area is left blank.
+- **The account pages.** Each page's heading says what it is now ("Check your email", "Password changed"); a password can be
+  shown; the button says what it is doing while it works; the first field is focused on a device with a pointer (not on a phone,
+  where the keyboard would cover the page); a person who did not get the sign-up email is told how to have it sent again. The
+  top-up field names its currency. The front page says what the service sells: a hosting-only plan no longer promises
+  model usage it does not sell. The terms and the privacy notice have a margin on a phone, and an address the service does
+  not have shows a page (with a way back), not a line of JSON.
+
 ### Changed: read this before upgrading a deployment
 
 - **The product is called Curule** (it was Agent Mesh). The command is `curule`; `mesh` stays installed as the same
