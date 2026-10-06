@@ -27,6 +27,7 @@ import { ToolButton, CloseButton } from "./ui";
 import { diffMesh, savePayload } from "./diff";
 import { addSeat, duplicateSeat, hasWire, isPlaceholderRole, removeSeat, renameSeat, seatIds, setWire, toggleContact, toggleGrant, toggleStart, wiresOf } from "./edits";
 import { labels as historyLabels, record, redo as redoStep, undo as undoStep, emptyHistory } from "./history";
+import { readConfigAnswer, type ConfigAnswer } from "./load";
 import { locateIssue, type Where } from "./locate";
 import { deepCopy, densure, goalIsPlaceholder, TEMPLATES, type Template } from "./model";
 import { draftStatus, lagOf, type FollowUp } from "./save";
@@ -37,6 +38,9 @@ import "./designer.css";
 
 /** Debounced after each edit: re-validate, persist draft + node layout. */
 const SAVE_DELAY_MS = 550;
+
+/** How often a project that is not running is asked again for its mesh.yaml. */
+const LOAD_RETRY_MS = 3000;
 
 /** The Designer's own collapse points, the same values as the CSS media queries (the breakpoint ladder: 1280 and 760). */
 const COMPACT = "(max-width: 1280px)";
@@ -105,7 +109,7 @@ export default function Designer(): React.JSX.Element {
   const [guideOff, setGuideOff] = useState(guideHidden);
   const [reveal, setReveal] = useState<Reveal | null>(null);
   const [ctxOpen, setCtxOpen] = useState(false);
-  const [loadError, setLoadError] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<{ text: string; waiting: boolean } | null>(null);
   const [loadTick, setLoadTick] = useState(0);
 
   const checksBtnRef = useRef<HTMLButtonElement | null>(null);
@@ -247,7 +251,6 @@ export default function Designer(): React.JSX.Element {
         void validate();
         return;
       }
-      setLoadError(null);
       const applyModel = (raw: any, filePath: string | null) => {
         const model = deepCopy(raw);
         densure(model);
@@ -261,18 +264,19 @@ export default function Designer(): React.JSX.Element {
         if (filePath !== null) patch.runningPath = filePath;
         commitDraft(patch);
       };
-      let file: any = null;
-      let filePath = "";
-      let failed: string | null = null;
+      let answer: ConfigAnswer;
       try {
-        const { json, timeout } = await client.api("GET", "/config");
-        if (timeout) failed = "The server did not answer in time.";
-        else if (json?.raw) { file = json.raw; filePath = json.filePath || ""; }
+        answer = readConfigAnswer(await client.api("GET", "/config"));
       } catch (err) {
-        failed = err instanceof Error && err.message ? err.message : "The server did not answer.";
+        answer = { kind: "error", text: err instanceof Error && err.message ? err.message : "The server did not answer.", waiting: false };
       }
       if (dead) return;
-      if (failed) { setLoadError(failed); return; }
+      // Kept up while a retry is in flight rather than cleared first, so a project that stays down does not flash the page or
+      // announce the same alert again every few seconds.
+      if (answer.kind === "error") { setLoadError({ text: answer.text, waiting: answer.waiting }); return; }
+      setLoadError(null);
+      const file: any = answer.kind === "file" ? answer.raw : null;
+      const filePath = answer.kind === "file" ? answer.filePath : "";
       const stored = readStored();
       // A browser draft beats the file only when it differs from it.
       if (stored && file && diffMesh(stored.model, file).length > 0) {
@@ -306,6 +310,14 @@ export default function Designer(): React.JSX.Element {
       cmdRef.current = NO_COMMANDS;
     };
   }, [client, validate, loadTick]);
+
+  // A project that is not running has no file to give yet. Ask again every few seconds, so the page opens on the file as soon as the
+  // project is up, without anyone pressing Try again. Only for that answer: a server fault is not retried behind the person's back.
+  useEffect(() => {
+    if (!loadError?.waiting) return;
+    const t = setTimeout(() => setLoadTick((n) => n + 1), LOAD_RETRY_MS);
+    return () => clearTimeout(t);
+  }, [loadError]);
 
   // A draft that survived a visit to another view is the baseline for the next edit's undo step.
   useEffect(() => {
@@ -526,10 +538,11 @@ export default function Designer(): React.JSX.Element {
 
   const reloadFromFile = async (): Promise<void> => {
     try {
-      const { json } = await client.api("GET", "/config");
-      if (!json?.raw) { toast("Nothing to reload", "The server did not return a mesh.yaml.", "bad"); return; }
+      const answer = readConfigAnswer(await client.api("GET", "/config"));
+      if (answer.kind === "error") { toast("Could not reload", answer.text, "bad"); return; }
+      if (answer.kind === "none") { toast("Nothing to reload", "The server has no mesh.yaml for this project.", "bad"); return; }
       if (!(await okToReplace("mesh.yaml as it is on disk"))) return;
-      replaceDraft(json.raw, "Reloaded mesh.yaml", { file: { raw: json.raw, path: json.filePath || "" } });
+      replaceDraft(answer.raw, "Reloaded mesh.yaml", { file: { raw: answer.raw, path: answer.filePath } });
       clearStored();
       toast("Draft discarded", "The draft is mesh.yaml as it is on disk.", "ok", { label: "Undo", run: () => cmdRef.current.undo() });
     } catch (err) {
@@ -659,7 +672,11 @@ export default function Designer(): React.JSX.Element {
     return (
       <div className="ms">
         <PageHeader title="Designer" lede="Design the team: seats, who may message whom, tools, budgets and policy." />
-        <ErrorState what="mesh.yaml" detail={`${loadError} Your unsaved draft, if you had one, is kept in this browser.`} onRetry={() => setLoadTick((n) => n + 1)} />
+        <ErrorState
+          what="mesh.yaml"
+          detail={`${loadError.text}${loadError.waiting ? " This page reads it as soon as the project is running." : ""} Your unsaved draft, if you had one, is kept in this browser.`}
+          onRetry={() => { setLoadError(null); setLoadTick((n) => n + 1); }}
+        />
       </div>
     );
   }
