@@ -26,7 +26,7 @@
     home: ["plans", "topups"],
     signup: ["card", "form", "status", "title", "lede", "email", "password", "agree"],
     login: ["form", "status", "email", "password"],
-    verify: ["status", "title", "again"],
+    verify: ["status", "title", "again", "resend-form", "resend", "resend-wait", "resend-status", "email"],
     forgot: ["form", "status", "email"],
     reset: ["card", "form", "status", "title", "lede", "password"],
     account: ["who", "notice", "stage", "stage-steps", "stage-title", "stage-text", "stage-actions", "stage-live", "workspaces-panel", "workspaces", "create-slot", "create-box", "create", "workspace-name", "create-note", "plan-panel", "plan-h", "plan-status", "plan", "balance-panel", "usage-panel", "figures", "topup", "topup-amount", "topup-unit", "topup-hint", "topup-status", "topup-options", "usage", "password-form", "password-status", "current", "next"],
@@ -425,13 +425,14 @@
     let busy = false;
     node.addEventListener("submit", async (event) => {
       event.preventDefault();
-      if (busy) return;
+      // A button that has a word for it says so, so that a slow answer does not look like a button that did nothing.
+      const main = node.querySelector("[data-busy]");
+      // A form whose main button is held (it says so, as one that must wait does) is not sent.
+      if (busy || (main && isHeld(main))) return;
       busy = true;
       const focused = doc.activeElement && node.contains(doc.activeElement) ? doc.activeElement : null;
       const buttons = [...node.querySelectorAll("button")];
       for (const b of buttons) b.disabled = true;
-      // A button that has a word for it says so, so that a slow answer does not look like a button that did nothing.
-      const main = node.querySelector("[data-busy]");
       const label = main ? main.textContent : "";
       if (main) main.textContent = main.dataset.busy;
       node.setAttribute("aria-busy", "true");
@@ -598,6 +599,52 @@
     $("topups").textContent = topups ? topupLine(topups, currency) : NO_USAGE_SOLD;
   }
 
+  // ---- the confirmation link, asked for again ----
+
+  /** How long the page waits before it lets a person ask again, which it says: a minute. */
+  const RESEND_WAIT = 60;
+  /** What the sign-up page passes to itself across a reload, in the tab and once: the address that was typed, so that a typo can be put right and not typed again. */
+  const SIGNUP_ADDRESS = "curule:signup-address";
+
+  /**
+   * Asking for the link again, on the page that sent it (`addressOf` gives the address it was sent to) or on the page for a link that did
+   * not work (the person types one). The service answers the same for every address, so what is said is what it said, and no more.
+   * A minute passes before the next ask. That is shown as text that counts down, which is not a live region (it would be read out at every
+   * second); what is read out is the answer, and that the wait is over. The page holds the wait as the service holds its own limit.
+   */
+  function resender(form, press, status, wait, addressOf) {
+    let left = 0;
+    const tick = () => {
+      left -= 1;
+      if (left > 0) {
+        wait.textContent = `You can ask for another in ${plural(left, "second")}.`;
+        setTimeout(tick, 1000);
+        return;
+      }
+      wait.textContent = "";
+      hold(press, false);
+      say(status, "", "You can ask for another email now.");
+    };
+    const startWait = () => {
+      left = RESEND_WAIT + 1;
+      hold(press, true);
+      tick();
+    };
+    onSubmit(form, status, async () => {
+      const to = addressOf();
+      if (to === null) return;
+      say(status, "", "");
+      const r = await call("POST", "/api/verify/resend", { email: to });
+      if (!r.ok) {
+        say(status, "bad", r.error.message);
+        return;
+      }
+      say(status, "ok", r.data.message);
+      startWait();
+    });
+    return { startWait };
+  }
+
   // ---- signing up and in ----
 
   function checkEmailAndPassword(email, password, status, o = {}) {
@@ -615,6 +662,10 @@
     const status = $("status");
     const email = $("email");
     const password = $("password");
+    // A person who came back to put a typo right finds the address there: it is read once and forgotten.
+    const before = store.get(SIGNUP_ADDRESS);
+    store.remove(SIGNUP_ADDRESS);
+    if (before) email.value = before;
     focusFirst(email);
     onSubmit($("form"), status, async () => {
       say(status, "", "");
@@ -632,11 +683,19 @@
       }
       const card = $("card");
       retitle("Check your email", "");
+      const press = button("Resend the email", { type: "submit", id: "resend", attrs: { "data-busy": "Sending" } });
+      const wait = el("p", { id: "resend-wait", class: "muted small" });
+      const answer = el("div", { id: "resend-status", class: "note", role: "status", "aria-live": "polite" });
+      const again = el("form", { id: "resend-form", class: "resend", novalidate: true }, el("div", { class: "btn-row" }, press, el("a", { id: "another", class: "btn", href: "/signup", onclick: () => store.set(SIGNUP_ADDRESS, address) }, "Use another address")), answer, wait);
       card.replaceChildren(
         el("div", { class: "note note-ok", role: "status" }, r.data.message),
         el("p", null, "We sent the link to ", el("strong", null, address), ". It works once, and the email says when it expires."),
-        el("p", { class: "muted small" }, "It can take a minute. Look in your spam folder if it has not come. Still nothing? Sign in with your email and password, and we send the link again. To use another address, ", el("a", { href: "/signup" }, "start again"), "."),
+        again,
+        el("h2", { class: "causes-h" }, "If it does not come"),
+        el("ul", { class: "causes muted small" }, el("li", null, "It can take a few minutes. Look in your spam or junk folder too."), el("li", null, "Check the address above for a typo. If it is wrong, use another address.")),
       );
+      // The email has just gone: the first minute is already a wait.
+      resender(again, press, answer, wait, () => address).startWait();
       card.setAttribute("tabindex", "-1");
       card.focus();
     });
@@ -672,6 +731,15 @@
       retitle("That link did not work", "");
       say(status, "bad", text);
       $("again").hidden = false;
+      const email = $("email");
+      const answer = $("resend-status");
+      resender($("resend-form"), $("resend"), answer, $("resend-wait"), () => {
+        const to = email.value.trim();
+        if (to) return to;
+        invalid(email, answer, "Enter your email address.");
+        return null;
+      });
+      focusFirst(email);
     };
     if (!token) {
       failed("This link is incomplete. Open the link in the email again.");

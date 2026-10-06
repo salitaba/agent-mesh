@@ -105,6 +105,15 @@ input[aria-invalid="true"] { border-color: var(--bad); }
 .narrow .card { margin-top: 20px; }
 .card { padding: clamp(20px, 4vw, 32px); border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel); box-shadow: var(--lift); }
 .aside { margin-top: 20px; color: var(--muted); font-size: .9375rem; }
+/* The page that says a link was sent: what to do when it does not come. */
+.resend { display: grid; gap: 12px; margin: 20px 0 0; }
+.resend .note, .resend p { margin: 0; }
+#resend-wait:empty { display: none; }
+.card .causes-h { margin: 24px 0 8px; font-size: 1rem; }
+.causes { display: grid; gap: 6px; padding-left: 1.25rem; margin: 0; }
+#again form { display: grid; gap: 14px; margin-top: 4px; }
+#again form .field { margin: 0; }
+#again form p, #again form .note { margin: 0; }
 
 /* ---------------------------------------------------------------- the front page */
 .hero { padding: clamp(40px, 8vw, 88px) 0 clamp(24px, 4vw, 40px); }

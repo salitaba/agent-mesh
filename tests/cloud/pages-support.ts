@@ -314,6 +314,8 @@ export interface VisitOptions {
   script?: (source: string) => string;
   /** What the person points with: a mouse (`fine`) or a finger (`coarse`). Left out, the browser has no `matchMedia` at all. */
   pointer?: "fine" | "coarse";
+  /** The page's timers are the test's: nothing waits for them, and none runs until `advance` says that time has passed. */
+  manualTimers?: boolean;
 }
 
 const tick = (): Promise<void> => new Promise((resolve) => setImmediate(resolve));
@@ -330,6 +332,9 @@ export class Visit {
   readonly violations: string[] = [];
   readonly windowListeners = new Map<string, Listener[]>();
   private inflight = 0;
+  private readonly timers: Array<{ id: number; at: number; fn: () => void }> = [];
+  private virtualNow = 0;
+  private timerIds = 0;
   location: { search: string; pathname: string; assign(url: string): void; replace(url: string): void; reload(): void };
 
   constructor(
@@ -378,8 +383,18 @@ export class Visit {
       console: { error: (...a: unknown[]) => void self.consoleErrors.push(a.map(String).join(" ")), log: () => undefined, warn: () => undefined },
       // The pages wait seconds between looks; a test waits for the same looks, a few milliseconds apart. A look that is still
       // pending when a test ends does not keep the process alive.
-      setTimeout: (fn: () => void, ms: number) => setTimeout(fn, ms >= 1000 ? 8 : ms).unref(),
-      clearTimeout,
+      setTimeout: (fn: () => void, ms: number) => {
+        if (!self.options.manualTimers) return setTimeout(fn, ms >= 1000 ? 8 : ms).unref();
+        const id = ++self.timerIds;
+        self.timers.push({ id, at: self.virtualNow + ms, fn });
+        return id;
+      },
+      clearTimeout: (id: unknown) => {
+        if (!self.options.manualTimers) return clearTimeout(id as NodeJS.Timeout);
+        const at = self.timers.findIndex((t) => t.id === id);
+        if (at >= 0) self.timers.splice(at, 1);
+        return undefined;
+      },
       Intl,
       URL,
       URLSearchParams,
@@ -422,6 +437,21 @@ export class Visit {
       quiet = this.inflight === 0 ? quiet + 1 : 0;
     }
     if (this.violations.length > 0) throw new Error(this.violations.join("; "));
+  }
+
+  /** With manual timers: this much time passes, and each timer that falls due runs in its turn, the page being given time to finish what each starts. */
+  async advance(ms: number): Promise<void> {
+    const end = this.virtualNow + ms;
+    for (;;) {
+      this.timers.sort((a, b) => a.at - b.at || a.id - b.id);
+      const next = this.timers[0];
+      if (!next || next.at > end) break;
+      this.timers.shift();
+      this.virtualNow = next.at;
+      next.fn();
+      await this.idle();
+    }
+    this.virtualNow = end;
   }
 
   /** Wait for something to become true: a page that polls gets there on its own. */

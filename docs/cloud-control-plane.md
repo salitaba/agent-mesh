@@ -47,7 +47,9 @@ interface so that a database can replace it when one process is no longer enough
 with a new one, and the difference is in the mail that only the owner of the address reads. A sign-in that fails gives one
 answer, in the same words, after the same work, whether the address is unknown, the password is wrong, the account is stopped
 or the address was never confirmed (in that last case the confirmation link is sent again). A reset is asked for the same way
-whether or not there is an account.
+whether or not there is an account, and so is a new confirmation link (`POST /api/verify/resend`): the same 202 and the same
+words for an address with no account, one that is waiting to be confirmed, one that is confirmed and one that was stopped, and
+mail only to the one that is waiting. Links sent before it keep working until they expire.
 
 ## Plans and credit
 
@@ -433,8 +435,9 @@ What is done about a failure depends on whose it is:
 | Any other refusal (a 4xx to the recipient, a refusal of DATA or of the message) | This message, for now | This message is tried again after a wait that doubles; the others are not held back |
 
 The waits are 30 seconds, doubling to 15 minutes. A message that has not been delivered after 24 hours is set aside, because the
-link in it has expired. A customer whose confirmation link was set aside asks for another by signing up again, or by signing
-in with the right password; one whose reset link was set aside asks for the reset again.
+link in it has expired. A customer whose confirmation link was set aside asks for another with Resend the email on the page that
+says it was sent, or Send a new link on the page for a link that did not work (or signs in with the right password); one whose
+reset link was set aside asks for the reset again.
 
 *What the operator sees.* `GET /owner/health` has `mail`: how many messages are queued, how many were set aside and are in `failed/`,
 when the oldest was queued, and what the last failed try said until a delivery works. `ok` is false while the oldest message has
@@ -472,6 +475,7 @@ header and a preflight is not answered.
 | `GET /api/session` | | Who the browser is signed in as: `{account}` with the plan and the workspaces, or `{account: null}`. It is what every page asks to draw its header, so it reads no balance, and it is not a 401 for a visitor. |
 | `POST /api/signup` `{email, password}` | | Always 202 with the same words, for an address that has an account and one that has not. The difference is in the mail. |
 | `POST /api/verify` `{token}` | | Confirms the address from a mailed link, once, and signs the person in. |
+| `POST /api/verify/resend` `{email}` | | Always 202 with the same words: "If that address is waiting to be confirmed, a new link is on its way." A new confirmation link goes to an address that signed up and has not confirmed it, and to no other (not to a confirmed address, a stopped account or an address with no account). It is limited as a sign-up is, on the same counters. |
 | `POST /api/login` `{email, password}` | | Signs in. Every way it can fail is one answer, the same in status, body and headers. |
 | `POST /api/logout` | | Ends the session and clears the cookie. |
 | `POST /api/forgot` `{email}` | | Always 202. Mail goes only to an address with a confirmed account. |
@@ -506,6 +510,8 @@ process: they brake guessing and mail, and are not a record.
 | Everything else, from one address | 600 a minute |
 | What costs something (checkout, portal, usage, workspaces, a password change), per session | 60 an hour |
 
+A new confirmation link counts as a sign-up on both of those counters, so asking again cannot reach an address with more mail in an
+hour than signing up could; the pages add a wait of a minute between two asks, which they say and hold themselves.
 An email is limited as it will be read, so another case or a space buys nothing. A sign-up or reset that sent no mail (a
 mistyped address, a weak password) is not counted, and a limit says how long to wait in a `Retry-After` header and in words.
 A sign-in that works clears the count for its email, and so does a completed password reset, because a link that came to the
@@ -549,6 +555,11 @@ error. The colours and the type are the site's.
   page, and the account is where it returns to: what the account looked like before leaving is kept in the tab, so a payment that
   was applied while the person was away is said to have arrived, and one that has not been is waited for for a minute and then
   said to be on its way. The balance is shown rounded down.
+- **"Check your email" helps.** It names the address the link went to, offers Resend the email (a wait of a minute starts when the
+  email goes, shown as text that counts down and not read out at every second; what is read out is the service's answer and that
+  the wait is over) and Use another address (which hands the address that was typed back to the sign-up page, once, in the tab,
+  so that a typo is put right and not typed again), and says what usually goes wrong. The page for a link that did not work
+  offers the same for an address the person gives.
 - **They help the person at them, and only with a script.** The main button of a form says what it is doing while the call is out
   (`data-busy` in the markup: Signing in, Creating account, Sending, Saving, Changing) and is itself again afterwards; a password
   field has Show and Hide, which the markup carries hidden, so a browser that runs no script shows no control that does nothing, and

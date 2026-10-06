@@ -119,6 +119,24 @@ export class Accounts {
     }
   }
 
+  /**
+   * Another confirmation link for an address that signed up and has not confirmed it. The same answer, after the same checks, for every
+   * address and every account: mail goes only to an account that exists, is not confirmed and is not disabled, which is the one a person
+   * is waiting for; nothing is sent to a confirmed address (whose owner did not ask), and nothing says which of these it was. Links
+   * already sent keep working until they expire, as when a sign-in sends one again.
+   */
+  async resendVerification(rawEmail: unknown): Promise<void> {
+    let email: string;
+    try {
+      email = this.normaliseEmail(rawEmail);
+    } catch {
+      return;
+    }
+    const id = this.state.byEmail.get(email);
+    const account = id ? this.state.accounts.get(id) : undefined;
+    if (account && account.verifiedAt === undefined && account.disabledAt === undefined) await this.issue(account.accountId, email, "verify");
+  }
+
   private async openSession(account: Account, meta: { ip?: string; userAgent?: string }): Promise<SessionResult> {
     const token = `s_${this.newToken()}`;
     const expiresAt = new Date(this.clock().getTime() + this.policy.sessionDays * 86_400_000).toISOString();

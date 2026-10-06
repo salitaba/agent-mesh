@@ -32,8 +32,17 @@
   <div class="card">
     <div id="status" class="note" role="status" aria-live="polite">Checking the link.</div>
     <div id="again" hidden>
-      <p>A link works once and expires after <span data-policy="verificationHours">24 hours</span>. To get a new one, sign in with your email and password and we send it again.</p>
-      <div class="btn-row"><a class="btn btn-primary" href="/login">Sign in</a><a class="btn" href="/signup">Create an account</a></div>
+      <p>A link works once and expires after <span data-policy="verificationHours">24 hours</span>. Enter your address and we send a new one, if it is waiting to be confirmed.</p>
+      <form id="resend-form" novalidate>
+        <div class="field">
+          <label for="email">Email</label>
+          <input id="email" name="email" type="email" autocomplete="email" inputmode="email" required>
+        </div>
+        <div class="btn-row"><button id="resend" class="btn btn-primary" type="submit" data-busy="Sending">Send a new link</button></div>
+        <div id="resend-status" class="note" role="status" aria-live="polite"></div>
+        <p id="resend-wait" class="muted small"></p>
+      </form>
+      <p class="aside">Already confirmed? <a href="/login">Sign in</a>. New here? <a href="/signup">Create an account</a>.</p>
     </div>
   </div>
 </div>

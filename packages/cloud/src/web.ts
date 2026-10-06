@@ -215,6 +215,7 @@ export class ControlWeb {
     { method: "GET", pattern: /^\/api\/plans$/, run: async () => this.plans() },
     { method: "POST", pattern: /^\/api\/signup$/, run: (req) => this.signup(req) },
     { method: "POST", pattern: /^\/api\/verify$/, run: (req) => this.verify(req) },
+    { method: "POST", pattern: /^\/api\/verify\/resend$/, run: (req) => this.resendVerification(req) },
     { method: "POST", pattern: /^\/api\/login$/, run: (req) => this.login(req) },
     { method: "POST", pattern: /^\/api\/logout$/, run: (req, _m, who) => this.logout(req, who) },
     { method: "POST", pattern: /^\/api\/forgot$/, run: (req) => this.forgot(req) },
@@ -303,6 +304,19 @@ export class ControlWeb {
     this.limit("tokenIp", req.ip);
     const session = await this.o.plane.accounts.verify(body.token, { ip: req.ip, userAgent: first(req.headers["user-agent"]) ?? "" });
     return this.json(200, { account: this.o.plane.view(session.account) }, { "set-cookie": this.sessionCookie(session.sessionToken) });
+  }
+
+  /**
+   * A new confirmation link for an address that is waiting for one. It answers the same for every address, an account that does not exist,
+   * one that is confirmed and one that is waiting alike, and is limited as the sign-up it repeats is: the same counters, so that sending it
+   * again cannot reach an address with more mail in an hour than signing up could, and a refusal for too many is the same for every address.
+   */
+  private async resendVerification(req: WebRequest): Promise<WebResponse> {
+    const body = this.readJson(req);
+    this.limit("signupIp", req.ip);
+    if (typeof body.email === "string") this.limit("signupEmail", body.email.trim().toLowerCase());
+    await this.o.plane.accounts.resendVerification(body.email);
+    return this.json(202, { ok: true, message: "If that address is waiting to be confirmed, a new link is on its way." });
   }
 
   private async login(req: WebRequest): Promise<WebResponse> {

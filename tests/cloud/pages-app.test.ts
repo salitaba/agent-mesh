@@ -265,7 +265,7 @@ test("sign-up says what is missing before it asks anything, and puts the cursor 
 test("sign-up sends the address as typed (trimmed) and the password as typed, once, and then says where the link went", async () => {
   const w = world((x) => (x.signedIn = false));
   w.answers.set("POST /api/signup", { status: 202, json: { ok: true, message: "Check your email for a link to confirm your address." } });
-  const v = await visit("signup", { routes: w.routes });
+  const v = await visit("signup", { routes: w.routes, manualTimers: true });
   v.type("email", "  Ada@Example.com ");
   v.type("password", " a password with edges ");
   v.check("agree");
@@ -273,8 +273,8 @@ test("sign-up sends the address as typed (trimmed) and the password as typed, on
   v.submit(v.$("form"));
   await v.idle();
   assert.deepEqual(v.to("POST", "/api/signup"), [{ method: "POST", path: "/api/signup", body: { email: "Ada@Example.com", password: " a password with edges " } }], "a second submit while the first is out is not a second request");
-  assert.equal(v.text("card"), "Check your email for a link to confirm your address. We sent the link to Ada@Example.com. It works once, and the email says when it expires. It can take a minute. Look in your spam folder if it has not come. Still nothing? Sign in with your email and password, and we send the link again. To use another address, start again.");
-  assert.equal(v.link("card", "start again").getAttribute("href"), "/signup");
+  assert.equal(v.text("card"), "Check your email for a link to confirm your address. We sent the link to Ada@Example.com. It works once, and the email says when it expires. Resend the email Use another address You can ask for another in 60 seconds. If it does not come It can take a few minutes. Look in your spam or junk folder too. Check the address above for a typo. If it is wrong, use another address.");
+  assert.equal(v.link("card", "Use another address").getAttribute("href"), "/signup");
   assert.equal(v.doc.activeElement, v.$("card"), "focus moves to what happened");
   assert.deepEqual(v.navigations, []);
 });
@@ -481,17 +481,17 @@ test("a page's heading and the tab's title say what the page is now: a link that
   assert.equal(reset.doc.title, "Password changed – Curule Cloud");
 });
 
-test("the sent-link page says what to do when it does not come, which is true of the sign-in page: the right password sends it again", async () => {
+test("the sign-in page says that the right password sends the link again, and the page that says the link was sent does not promise what that denies", async () => {
+  const login = fs.readFileSync(`${PAGES_DIR}/login.html`, "utf8");
+  assert.match(login, /signing in with your password sends the link again/);
   const w = world((x) => (x.signedIn = false));
   w.answers.set("POST /api/signup", { status: 202, json: { ok: true, message: "Check your email for a link to confirm your address." } });
-  const v = await visit("signup", { routes: w.routes });
+  const v = await visit("signup", { routes: w.routes, manualTimers: true });
   v.type("email", "ada@example.com");
   v.type("password", "correct horse battery staple");
   v.check("agree");
   await v.send(v.$("form"));
-  assert.match(v.text("card"), /Still nothing\? Sign in with your email and password, and we send the link again\./);
-  const login = fs.readFileSync(`${PAGES_DIR}/login.html`, "utf8");
-  assert.match(login, /signing in with your password sends the link again/, "the sign-in page says the same, so the one does not promise what the other denies");
+  assert.doesNotMatch(v.text("card"), /Sign in with your email and password/, "what to do is a button, and the usual causes: the sign-in page's way is its own");
 });
 
 test("a password field has Show and Hide that only a script can give, and a password that was shown is hidden again once it is sent", async () => {
