@@ -30,6 +30,8 @@ interface WorkspaceView {
   status: string;
   statusReason?: string;
   host: string;
+  /** Present on a hosting-only plan's workspace: where its models come from. */
+  models?: { source: "own"; key: null | { provider: string; model: string; baseUrl?: string; setAt: string } };
 }
 type Subscription = null | { plan: string; title: string; status: string; periodEnd?: string; pastDueSince?: string };
 
@@ -1142,4 +1144,181 @@ test("no page logs an error to the console in the ordinary cases", async () => {
   }
   const out = world((x) => (x.signedIn = false));
   for (const page of ["home", "signup", "login", "forgot", "terms", "privacy"]) assert.deepEqual((await visit(page, { routes: out.routes })).consoleErrors, [], page);
+});
+
+// ---- the customer's own model key ----
+
+const HOSTING_PLANS = { currency: "USD", plans: [{ id: "hosting", title: "Hosting", priceMinor: 4_900, period: "month", includedUsageMicros: 0, workspaces: 1, byok: true, summary: "One workspace. Bring your own model key." }], topups: null, policy: PLANS.policy };
+const HOSTING_SUB: Subscription = { plan: "hosting", title: "Hosting", status: "active", periodEnd: "2026-11-05T12:00:00.000Z" };
+const SECRET = "sk-ant-api03-typed-into-the-page-0001";
+const NOW = "2026-10-05T12:00:00.000Z";
+const KEPT = { provider: "anthropic", model: "claude-sonnet-4-5", setAt: NOW };
+
+/** A hosting-only service: no balance, no usage, no top-ups, and a workspace whose models are the customer's own key. */
+const hosting = (models: WorkspaceView["models"] = { source: "own", key: null }, over: Partial<WorkspaceView> = {}): World =>
+  world((x) => {
+    x.subscription = HOSTING_SUB;
+    x.plans = { json: HOSTING_PLANS };
+    x.balance = null;
+    x.workspaces = [workspace({ workspaceId: "ws_1", name: "Research", plan: "hosting", models, ...over })];
+  });
+
+test("the account page of a hosting-only service says the key stays with the workspace and nothing is resold, and has no balance, credit or usage to show", async () => {
+  const w = hosting();
+  const v = await visit("account", { routes: w.routes });
+  assert.equal(v.shows(v.$("models-panel")), true);
+  assert.match(v.text("models-panel"), /Your key stays with your workspace; Curule does not resell model usage; you pay your provider directly\./);
+  assert.equal(v.shows(v.$("balance-panel")), false, "no balance is kept");
+  assert.equal(v.shows(v.$("usage-panel")), false);
+  assert.equal(v.to("GET", "/api/usage").length, 0, "and the page does not ask for usage the service does not have");
+  assert.equal(v.text("topup-options"), "");
+  assert.match(v.text("plan"), /Hosting Active Paid until/, "the plan the account is on is shown, and there is no other to change to");
+});
+
+test("a service that sells usage shows no model key panel, and still shows the balance and the usage", async () => {
+  const w = world((x) => {
+    paid(x);
+    x.workspaces = [workspace()];
+  });
+  const v = await visit("account", { routes: w.routes });
+  assert.equal(v.shows(v.$("models-panel")), false);
+  assert.equal(v.shows(v.$("balance-panel")), true);
+  assert.equal(v.shows(v.$("usage-panel")), true);
+  assert.equal(v.to("GET", "/api/usage").length, 1);
+});
+
+test("the front page of a hosting-only service says the customer brings a key and pays their provider, lists the plan as hosting, and offers no credit", async () => {
+  const w = world((x) => {
+    x.signedIn = false;
+    x.plans = { json: HOSTING_PLANS };
+  });
+  const v = await visit("home", { routes: w.routes });
+  const cards = v.$("plans").querySelectorAll("article");
+  assert.equal(cards.length, 1);
+  assert.equal(v.text(cards[0]!), "Hosting $49.00 per month One workspace. Bring your own model key. Your own model key; you pay your provider directly 1 workspace Get started");
+  assert.equal(v.text("topups"), "Curule does not resell model usage. You bring your own model key and pay your provider directly.");
+  assert.doesNotMatch(v.text("topups"), /Add credit/);
+});
+
+test("a workspace with no key says so and asks for a provider, a model and a key; an Anthropic key needs no address", async () => {
+  const w = hosting();
+  const v = await visit("account", { routes: w.routes });
+  const row = v.$("model-keys").querySelectorAll("li")[0]!;
+  assert.match(v.text(row), /Research No key yet Until you give it a key, a team in this workspace has no model to run on\./);
+  assert.equal(v.shows(v.$("key-base-ws_1")), false, "Anthropic is called at its own address");
+  assert.equal(v.$("key-secret-ws_1").getAttribute("type"), "password", "the key is typed into a field that shows nothing");
+  assert.equal(v.$("key-secret-ws_1").getAttribute("autocomplete"), "off");
+  assert.equal(v.labels("model-keys").join("|"), "Save key");
+  assert.match(v.text(row), /Paste it here once\. It is never shown again/);
+});
+
+test("saving a key sends the provider, model and key once, empties the field whatever the answer, and says what happened without the key in it", async () => {
+  const w = hosting();
+  w.answers.set("POST /api/workspaces/ws_1/model-key", () => {
+    w.workspaces = [workspace({ plan: "hosting", models: { source: "own", key: KEPT } })];
+    return { json: { workspace: w.workspaces[0] } };
+  });
+  const v = await visit("account", { routes: w.routes });
+  v.type("key-model-ws_1", "claude-sonnet-4-5");
+  v.type("key-secret-ws_1", `  ${SECRET} `);
+  await v.send(v.$("key-form-ws_1"));
+  const sent = v.to("POST", "/api/workspaces/ws_1/model-key");
+  assert.equal(sent.length, 1);
+  assert.deepEqual(sent[0]!.body, { provider: "anthropic", model: "claude-sonnet-4-5", key: SECRET });
+  assert.match(v.text("notice"), /The key for Research is kept, and the workspace was started again with it\./);
+  const row = v.$("model-keys").querySelectorAll("li")[0]!;
+  assert.match(v.text(row), /Research Key kept Anthropic, model claude-sonnet-4-5\. Set .*The key itself is never shown again\./);
+  assert.equal(v.labels("model-keys").join("|"), "Replace key|Delete key");
+  assert.ok(!v.doc.root.descendants().some((n) => n.textContent.includes(SECRET) || n.value === SECRET || [...n.attrs.values()].some((a) => a.includes(SECRET))), "the key is nowhere in the page once it is sent");
+  assert.equal(v.$("key-secret-ws_1").value, "");
+});
+
+test("an openai-compatible provider asks for its address, which must be https, and sends it with the key", async () => {
+  const w = hosting();
+  w.answers.set("POST /api/workspaces/ws_1/model-key", () => ({ json: { workspace: w.workspaces[0] } }));
+  const v = await visit("account", { routes: w.routes });
+  v.type("key-provider-ws_1", "openai-compatible");
+  assert.equal(v.shows(v.$("key-base-ws_1")), true);
+  v.type("key-model-ws_1", "openai/gpt-4o");
+  v.type("key-secret-ws_1", SECRET);
+  v.type("key-base-ws_1", "http://openrouter.ai/api/v1");
+  await v.send(v.$("key-form-ws_1"));
+  assert.equal(v.to("POST", "/api/workspaces/ws_1/model-key").length, 0, "nothing is sent over http");
+  assert.equal(v.text("key-note-ws_1"), "Give your provider's address, starting with https://.");
+  assert.equal(v.$("key-base-ws_1").getAttribute("aria-invalid"), "true");
+  v.type("key-base-ws_1", "https://openrouter.ai/api/v1");
+  await v.send(v.$("key-form-ws_1"));
+  assert.deepEqual(v.to("POST", "/api/workspaces/ws_1/model-key")[0]!.body, { provider: "openai-compatible", model: "openai/gpt-4o", key: SECRET, baseUrl: "https://openrouter.ai/api/v1" });
+});
+
+test("a key that is missing, short or has spaces in it is said before anything is sent, and the cursor goes to the field", async () => {
+  const v = await visit("account", { routes: hosting().routes });
+  await v.send(v.$("key-form-ws_1"));
+  assert.equal(v.text("key-note-ws_1"), "Name the model your teams should run on, as your provider names it.");
+  assert.equal(v.$("key-model-ws_1").getAttribute("aria-invalid"), "true");
+  v.type("key-model-ws_1", "claude-sonnet-4-5");
+  for (const bad of ["", "short", "has a space in it"]) {
+    v.type("key-secret-ws_1", bad);
+    await v.send(v.$("key-form-ws_1"));
+    assert.equal(v.text("key-note-ws_1"), "Paste the whole key, with no spaces.", JSON.stringify(bad));
+  }
+  assert.equal(v.to("POST", "/api/workspaces/ws_1/model-key").length, 0);
+});
+
+test("a key the service refuses is said in the service's words, without the key, and the field is empty again", async () => {
+  const w = hosting();
+  w.answers.set("POST /api/workspaces/ws_1/model-key", failure(400, "invalid_base_url", "That address is on this machine or a private network. Give your provider's public https address."));
+  const v = await visit("account", { routes: w.routes });
+  v.type("key-model-ws_1", "m");
+  v.type("key-secret-ws_1", SECRET);
+  await v.send(v.$("key-form-ws_1"));
+  assert.equal(v.text("key-note-ws_1"), "That address is on this machine or a private network. Give your provider's public https address.");
+  assert.equal(v.$("key-secret-ws_1").value, "", "a refused key is not kept in the page either");
+  assert.equal(v.labels("model-keys").join("|"), "Save key", "and the buttons are back");
+});
+
+test("deleting a key is one request, says what it means, and leaves the workspace with no key", async () => {
+  const w = hosting({ source: "own", key: KEPT });
+  w.answers.set("POST /api/workspaces/ws_1/model-key/delete", () => {
+    w.workspaces = [workspace({ plan: "hosting", models: { source: "own", key: null } })];
+    return { json: { workspace: w.workspaces[0] } };
+  });
+  const v = await visit("account", { routes: w.routes });
+  assert.match(v.text(v.$("model-keys").querySelectorAll("li")[0]!), /Key kept Anthropic, model claude-sonnet-4-5/);
+  v.click(v.button("model-keys", "Delete key"));
+  await v.idle();
+  assert.equal(v.to("POST", "/api/workspaces/ws_1/model-key/delete").length, 1);
+  assert.match(v.text("notice"), /The key for Research is deleted\. A team in it has no model to run on until you give it another\./);
+  assert.match(v.text(v.$("model-keys").querySelectorAll("li")[0]!), /No key yet/);
+});
+
+// SKIPPED on the owner's decision (2026-10-06): this test runs away with memory (more than 6 GB within seconds, which got the
+// process, and twice the whole gateway, killed by the out-of-memory killer). The cause is not found: it may be the page's
+// polling loop (watch() in app.js) or the harness's fake timers (setTimeout >= 1000 ms becomes 8 ms in pages-support.ts).
+// TODO: find the loop, fix the page or the harness, and turn this back into `test(`. Until then the behaviour it pins
+// (a starting workspace takes no key yet; a re-look does not empty a field being typed in) is NOT covered.
+test.skip("a workspace that has not started takes no key yet, and a page that looks again does not empty a field somebody is typing in", async () => {
+  const starting = await visit("account", { routes: hosting({ source: "own", key: null }, { status: "provisioning" }).routes });
+  assert.match(starting.text("model-keys"), /You can set its key once the workspace has started\./);
+  assert.equal(starting.doc.root.descendants().filter((n) => n.tag === "form" && n.id.startsWith("key-form")).length, 0);
+
+  // A second workspace is still starting, so the page asks again every few seconds; the first one's row is as it was.
+  const w = hosting();
+  w.workspaces.push(workspace({ workspaceId: "ws_2", name: "Second", plan: "hosting", status: "provisioning", host: "second.ws.example.com", models: { source: "own", key: null } }));
+  const v = await visit("account", { routes: w.routes });
+  v.type("key-model-ws_1", "claude-sonnet-4-5");
+  v.type("key-secret-ws_1", SECRET);
+  const form = v.$("key-form-ws_1");
+  const looks = v.to("GET", "/api/me").length;
+  await v.until("the page to look at the account again", () => v.to("GET", "/api/me").length >= looks + 2);
+  await v.idle();
+  assert.equal(v.$("key-form-ws_1"), form, "the form was not drawn again");
+  assert.equal(v.$("key-secret-ws_1").value, SECRET, "and what was typed is still there");
+});
+
+test("the script knows no way to read a key back: every call to a key route is a POST, and no key is put in the browser's storage", () => {
+  const source = fs.readFileSync(SCRIPT, "utf8");
+  const calls = [...source.matchAll(/call\("(\w+)", path\(w, "(model-key[^"]*)"/g)].map((m) => `${m[1]} ${m[2]}`).sort();
+  assert.deepEqual(calls, ["POST model-key", "POST model-key/delete"]);
+  assert.doesNotMatch(source, /store\.set\([^)]*(?:key|typed|secret)/i, "the page's storage holds the account's look before a payment, and a key is not given to it");
 });

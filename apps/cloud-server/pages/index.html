@@ -29,7 +29,7 @@
 <div class="wrap">
   <section class="hero" aria-labelledby="top">
     <h1 id="top">Run a mesh without running a server.</h1>
-    <p class="lede">Curule Cloud is the runtime, run for you. Sign up, pick a plan and open a workspace in your browser: the same dashboard and the same agents as the self-hosted product, on servers we operate and on models we supply. You install nothing, rent nothing and bring no API key.</p>
+    <p class="lede">Curule Cloud is the runtime, run for you. Sign up, pick a plan and open a workspace in your browser: the same dashboard and the same agents as the self-hosted product, on servers we operate. You install nothing and rent nothing. You bring your own model key, and you pay your model provider directly.</p>
     <div class="btn-row">
       <a class="btn btn-primary" href="/signup" data-when="out">Create an account</a>
       <a class="btn" href="/login" data-when="out">Sign in</a>
@@ -39,8 +39,8 @@
   <noscript><p class="note note-warn">This page needs JavaScript to talk to your account. Nothing on it is loaded from another site.</p></noscript>
   <ul class="facts">
     <li><strong>A workspace of your own</strong><span>One isolated host with its own projects, event log and files. Deleting a workspace deletes them.</span></li>
-    <li><strong>Models, without keys</strong><span>Your agents call models through our gateway, with a key that belongs to that workspace alone. You choose a tier; which provider answers is our business and can change without you touching a setting.</span></li>
-    <li><strong>A balance, in money</strong><span>A plan includes usage each period and you can add credit. You see what each call cost. When the balance runs out, calls are refused and the mesh pauses with one notice that says why.</span></li>
+    <li><strong>Your own model key</strong><span>Your agents call the model provider you choose, with a key you give your workspace and nobody can read back. Anthropic, or any provider that speaks the OpenAI chat format: OpenRouter, OpenAI, DeepSeek, Gemini's compatible endpoint.</span></li>
+    <li><strong>Hosting, not tokens</strong><span>Curule does not resell model usage and keeps no balance for it. What a team uses is billed to you by your provider, on your own account, at your provider's prices.</span></li>
     <li><strong>Your record is yours</strong><span>It is the same append-only event log a self-hosted install writes, so a mission can be replayed and its record read anywhere.</span></li>
   </ul>
   <section class="section" aria-labelledby="plans-h">
@@ -51,8 +51,8 @@
   <section class="section" aria-labelledby="billing-h">
     <h2 id="billing-h">How billing works</h2>
     <ul class="facts">
-      <li><strong>Each period</strong><span>A plan's payment replaces the usage it includes. It is not added to what was left.</span></li>
-      <li><strong>Credit you add</strong><span>It does not expire, and it is spent after the plan's included usage.</span></li>
+      <li><strong>Each period</strong><span>A plan's payment is for hosting your workspace for one period: its servers, its storage and the limits of the plan.</span></li>
+      <li><strong>Model usage</strong><span>It is not part of the payment. Your model provider bills you for it directly.</span></li>
       <li><strong>If a payment fails</strong><span>Your workspaces keep running for <span data-policy="graceDays">3 days</span> and are then stopped, not deleted. A payment that arrives before then puts everything back.</span></li>
       <li><strong>If you cancel</strong><span>Your workspaces stop, and they are deleted <span data-policy="retentionDays">30 days</span> later.</span></li>
     </ul>

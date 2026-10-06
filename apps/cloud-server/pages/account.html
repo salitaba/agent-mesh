@@ -47,13 +47,20 @@
     <p id="create-note" class="muted small"></p>
   </section>
 
+  <section class="panel" id="models-panel" aria-labelledby="models-h" hidden>
+    <h2 id="models-h">Model key</h2>
+    <p>Your key stays with your workspace; Curule does not resell model usage; you pay your provider directly.</p>
+    <p class="muted small">Each workspace runs its teams on one key that you bring, from Anthropic or from any provider that speaks the OpenAI chat format. A key is only ever sent to the workspace it is for, and nobody can read it back, including you.</p>
+    <ul class="rows" id="model-keys"></ul>
+  </section>
+
   <section class="panel" aria-labelledby="plan-h">
     <h2 id="plan-h">Plan</h2>
     <div id="plan-status" class="note" role="status" aria-live="polite"></div>
     <div id="plan"></div>
   </section>
 
-  <section class="panel" aria-labelledby="balance-h">
+  <section class="panel" id="balance-panel" aria-labelledby="balance-h">
     <h2 id="balance-h">Balance</h2>
     <dl class="figures" id="figures"></dl>
     <div id="topup-status" class="note" role="status" aria-live="polite"></div>
@@ -68,7 +75,7 @@
     <p id="topup-hint" class="muted small"></p>
   </section>
 
-  <section class="panel" aria-labelledby="usage-h">
+  <section class="panel" id="usage-panel" aria-labelledby="usage-h">
     <h2 id="usage-h">Usage</h2>
     <p class="muted small">What each call was charged, by day and by workspace. It is what your balance was debited, and nothing else.</p>
     <div id="usage"></div>

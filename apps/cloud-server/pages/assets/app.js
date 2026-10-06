@@ -29,7 +29,7 @@
     verify: ["status", "again"],
     forgot: ["form", "status", "email"],
     reset: ["card", "form", "status", "password"],
-    account: ["who", "notice", "workspaces", "create", "workspace-name", "create-note", "plan-status", "plan", "figures", "topup", "topup-amount", "topup-hint", "topup-status", "topup-options", "usage", "password-form", "password-status", "current", "next"],
+    account: ["who", "notice", "workspaces", "create", "workspace-name", "create-note", "models-panel", "model-keys", "plan-status", "plan", "balance-panel", "usage-panel", "figures", "topup", "topup-amount", "topup-hint", "topup-status", "topup-options", "usage", "password-form", "password-status", "current", "next"],
     terms: [],
     privacy: [],
   };
@@ -142,7 +142,8 @@
 
   /** What a plan includes, one fact to a line. */
   function planFacts(plan, currency) {
-    const facts = [`${usageMoney(plan.includedUsageMicros, currency)} of model usage each ${plan.period}`, plural(plan.workspaces, "workspace")];
+    // A hosting-only plan sells no model usage: the customer's own key is what the workspace runs on.
+    const facts = plan.byok ? ["Your own model key; you pay your provider directly", plural(plan.workspaces, "workspace")] : [`${usageMoney(plan.includedUsageMicros, currency)} of model usage each ${plan.period}`, plural(plan.workspaces, "workspace")];
     if (Array.isArray(plan.tiers) && plan.tiers.length > 0) facts.push(`Model tiers: ${plan.tiers.join(", ")}`);
     return facts;
   }
@@ -337,6 +338,9 @@
     );
   }
 
+  /** What the front page says where there is no credit to add: this service sells hosting, and the customer's own key pays for models. */
+  const NO_USAGE_SOLD = "Curule does not resell model usage. You bring your own model key and pay your provider directly.";
+
   function topupLine(topups, currency) {
     const d = digitsOf(currency);
     const rate = (topups.usageMicrosPerMinor * 10 ** d) / 1e6;
@@ -357,7 +361,7 @@
     const subscription = me ? me.subscription : null;
     const action = me ? () => el("a", { class: "btn", href: "/account#plan-h" }, "Choose in your account") : () => el("a", { class: "btn btn-primary", href: "/signup" }, "Get started");
     box.replaceChildren(...r.data.plans.map((plan) => planCard(plan, currency, { subscription, action })));
-    $("topups").textContent = topupLine(topups, currency);
+    $("topups").textContent = topups ? topupLine(topups, currency) : NO_USAGE_SOLD;
   }
 
   // ---- signing up and in ----
@@ -536,6 +540,9 @@
       topups: null,
       policy: null,
       busy: new Set(),
+      keyBusy: new Set(),
+      drafts: new Map(),
+      modelRows: "",
       notes: new Map(),
       confirming: null,
       typed: "",
@@ -555,6 +562,8 @@
     }
 
     const account = () => state.me.account;
+    // A service that sells no model usage has no balance to show, no credit to add and no usage to report.
+    const usageSold = () => !(state.plansKnown && state.topups === null);
     const subscription = () => account().subscription;
     const standing = () => {
       const sub = subscription();
@@ -774,6 +783,121 @@
       }, 3000);
     }
 
+    // -- the customer's own model key --
+
+    const PROVIDER_NAMES = { anthropic: "Anthropic", "openai-compatible": "OpenAI-compatible" };
+    const canKey = (w) => w.status === "running" || w.status === "suspended";
+
+    /**
+     * One workspace's key. The page can send a key and can say that one is kept, for which provider and model; it can never show one,
+     * because the service never sends one back. What was typed is cleared from the field as soon as it has been sent.
+     */
+    function modelKeyRow(w) {
+      const id = w.workspaceId;
+      const kept = w.models.key;
+      const draft = state.drafts.get(id) || { provider: kept ? kept.provider : "anthropic", model: kept ? kept.model : "", baseUrl: kept && kept.baseUrl ? kept.baseUrl : "" };
+      state.drafts.set(id, draft);
+      const note = el("p", { id: `key-note-${id}`, class: "muted small", role: "status" });
+      const head = el("div", { class: "row-head" }, el("strong", null, w.name), el("span", { class: kept ? "badge badge-ok" : "badge" }, kept ? "Key kept" : "No key yet"));
+      const facts = kept
+        ? el("p", { class: "muted small" }, `${PROVIDER_NAMES[kept.provider] || kept.provider}, model ${kept.model}${kept.baseUrl ? `, at ${kept.baseUrl}` : ""}. Set ${when(kept.setAt)}. The key itself is never shown again.`)
+        : el("p", { class: "muted small" }, "Until you give it a key, a team in this workspace has no model to run on.");
+      if (!canKey(w)) return el("li", { class: "row" }, head, facts, el("p", { class: "muted small" }, "You can set its key once the workspace has started."));
+
+      const provider = el("select", { id: `key-provider-${id}`, name: "provider" }, Object.entries(PROVIDER_NAMES).map(([value, label]) => el("option", { value, selected: value === draft.provider }, label)));
+      provider.value = draft.provider;
+      const model = el("input", { id: `key-model-${id}`, name: "model", type: "text", autocomplete: "off", spellcheck: "false", value: draft.model, maxlength: 128 });
+      const base = el("input", { id: `key-base-${id}`, name: "baseUrl", type: "text", inputmode: "url", autocomplete: "off", spellcheck: "false", value: draft.baseUrl, placeholder: "https://openrouter.ai/api/v1" });
+      // autocomplete off and a password field: the browser neither fills in nor offers to remember a secret that is not a sign-in.
+      const key = el("input", { id: `key-secret-${id}`, name: "key", type: "password", autocomplete: "off", spellcheck: "false", maxlength: 512 });
+      const baseField = el("div", { class: "field" }, el("label", { for: base.id }, "Provider address"), base, el("span", { class: "hint" }, "Starts with https://, and is your provider's public address. OpenRouter, OpenAI, DeepSeek and Gemini's compatible endpoint all work."));
+      const chosen = () => provider.value || draft.provider;
+      const sync = () => {
+        draft.provider = chosen();
+        baseField.hidden = draft.provider !== "openai-compatible";
+      };
+      sync();
+      for (const type of ["input", "change"]) provider.addEventListener(type, sync);
+      model.addEventListener("input", () => (draft.model = model.value));
+      base.addEventListener("input", () => (draft.baseUrl = base.value));
+      const save = button(kept ? "Replace key" : "Save key", { type: "submit", kind: "primary", id: `key-save-${id}` });
+      const buttons = [save];
+      if (kept) buttons.push(button("Delete key", { id: `key-delete-${id}`, kind: "danger", onclick: () => removeKey(w, note, buttons) }));
+
+      const form = el(
+        "form",
+        {
+          id: `key-form-${id}`,
+          novalidate: true,
+          onsubmit: async (event) => {
+            event.preventDefault();
+            if (state.keyBusy.has(id)) return;
+            const kind = chosen();
+            const typed = key.value.trim();
+            say(note, "", "");
+            if (!draft.model.trim()) return invalid(model, note, "Name the model your teams should run on, as your provider names it.");
+            if (kind === "openai-compatible" && !/^https:\/\//i.test(draft.baseUrl.trim())) return invalid(base, note, "Give your provider's address, starting with https://.");
+            if (typed.length < 8 || /\s/.test(typed)) return invalid(key, note, "Paste the whole key, with no spaces.");
+            state.keyBusy.add(id);
+            for (const b of buttons) b.disabled = true;
+            say(note, "", "Keeping it, and starting the workspace again with it.");
+            const body = { provider: kind, model: draft.model.trim(), key: typed, ...(kind === "openai-compatible" ? { baseUrl: draft.baseUrl.trim() } : {}) };
+            const r = await call("POST", path(w, "model-key"), body);
+            // Whatever came of it, the page does not hold the key any longer.
+            key.value = "";
+            state.keyBusy.delete(id);
+            for (const b of buttons) b.disabled = false;
+            if (signInAgain(r)) return;
+            if (!r.ok) {
+              say(note, "bad", r.error.message);
+              return;
+            }
+            flash("ok", `The key for ${w.name} is kept, and the workspace was started again with it.`);
+            if (!(await refresh())) renderModelKeys(true);
+          },
+        },
+        el("div", { class: "field" }, el("label", { for: provider.id }, "Provider"), provider),
+        el("div", { class: "field" }, el("label", { for: model.id }, "Model"), model, el("span", { class: "hint" }, "As your provider names it, like claude-sonnet-4-5 or openai/gpt-4o.")),
+        baseField,
+        el("div", { class: "field" }, el("label", { for: key.id }, kept ? "New key" : "Key"), key, el("span", { class: "hint" }, "Paste it here once. It is never shown again, by this page or by anything else of ours.")),
+        el("div", { class: "btn-row" }, buttons),
+        el("p", { class: "muted small" }, "Saving or deleting a key starts the workspace's host again, which ends a turn that is running. Its files are kept."),
+      );
+      return el("li", { class: "row" }, head, facts, form, note);
+    }
+
+    async function removeKey(w, note, buttons) {
+      if (state.keyBusy.has(w.workspaceId)) return;
+      state.keyBusy.add(w.workspaceId);
+      for (const b of buttons) b.disabled = true;
+      say(note, "", "Deleting it, and starting the workspace again without it.");
+      const r = await call("POST", path(w, "model-key/delete"));
+      state.keyBusy.delete(w.workspaceId);
+      for (const b of buttons) b.disabled = false;
+      if (signInAgain(r)) return;
+      if (!r.ok) {
+        say(note, "bad", r.error.message);
+        return;
+      }
+      state.drafts.delete(w.workspaceId);
+      flash("ok", `The key for ${w.name} is deleted. A team in it has no model to run on until you give it another.`);
+      if (!(await refresh())) renderModelKeys(true);
+    }
+
+    /** Drawn again only when what it shows changed: a page that looks again while a workspace starts must not empty a field somebody is typing in. */
+    function renderModelKeys(force) {
+      const mine = account().workspaces.filter((w) => w.models);
+      const panel = $("models-panel");
+      panel.hidden = mine.length === 0;
+      const shape = JSON.stringify(mine.map((w) => [w.workspaceId, w.name, w.status, w.models.key]));
+      
+      state.modelRows = shape;
+      const list = $("model-keys");
+      const focused = doc.activeElement && list.contains(doc.activeElement) ? doc.activeElement.id : "";
+      list.replaceChildren(...mine.map(modelKeyRow));
+      restoreFocus(focused);
+    }
+
     // -- plan --
 
     function renderPlan() {
@@ -888,6 +1012,7 @@
     }
 
     async function loadUsage() {
+      if (!usageSold()) return;
       const box = $("usage");
       box.replaceChildren(el("p", { class: "muted" }, "Loading."));
       const r = await call("GET", "/api/usage");
@@ -918,7 +1043,10 @@
       $("who").textContent = `Signed in as ${account().email}`;
       renderNotice();
       renderWorkspaces();
+      renderModelKeys(false);
       renderPlan();
+      $("balance-panel").hidden = !usageSold();
+      $("usage-panel").hidden = !usageSold();
       renderBalance();
       watch();
     }
