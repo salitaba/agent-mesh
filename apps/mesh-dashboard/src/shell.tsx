@@ -7,7 +7,7 @@ import { CloseX, MessageDrawer, ApprovalDrawer, StepDrawer, AgentDrawer } from "
 // agree with every other dialog about what "focusable" means.
 import { Banner, Button, EmptyState, IconButton, Menu, Wordmark, focusables, isTopTrap, pushTrap, type MenuItem } from "./components";
 import { Icon, type IconName } from "./icons";
-import { documentTitle, type MissionAction } from "./mission";
+import { barActionIsHere, documentTitle, type MissionAction } from "./mission";
 import { useMission } from "./useMission";
 import { useMissionActions } from "./useMissionActions";
 import { useToolRequests } from "./inbox";
@@ -731,14 +731,14 @@ export function Shell({ viewNode }: { viewNode: React.ReactNode }): React.JSX.El
           </div>
           <div className="top-actions">
             {/* The Overview's hero carries this same action, so the bar does not repeat it there. */}
-            {primary && view !== "overview" ? (
+            {primary && view !== "overview" && !barActionIsHere(primary.action, view, inboxView) ? (
               <Button id={`btn-${primary.action}`} variant={primary.action === "pause" ? "soft" : "primary"} icon={ACTION_ICON[primary.action]} title={primary.hint} onClick={() => runAction(primary.action)}>
                 {primary.label}
               </Button>
             ) : null}
             {/* Anything waiting on the operator stays one click away from every page, whatever the mission is doing. When the
                 primary action is already "review" it is that button, so this one stands down. */}
-            {inbox > 0 && primary?.action !== "review" ? (
+            {inbox > 0 && primary?.action !== "review" && view !== inboxView ? (
               <Button id="btn-inbox" variant="soft" icon="inbox" title={`${inbox} waiting on you`} onClick={() => setView(inboxView)}>
                 <span className="act-lbl">Needs you</span><b className="count">{inbox}</b>
               </Button>

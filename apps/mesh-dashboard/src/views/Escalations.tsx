@@ -3,6 +3,7 @@ import { ago } from "../format";
 import { useMesh } from "../store";
 import { Banner, Button, EmptyState, ErrorState, IconButton, PageHeader, TabPanel, Tabs } from "../components";
 import { Icon } from "../icons";
+import { useMedia } from "../useMedia";
 import { useMission } from "../useMission";
 import { useMissionActions } from "../useMissionActions";
 import { useToolApprovals } from "../useToolApprovals";
@@ -17,11 +18,15 @@ import "./inbox.css";
 /** How many answered cards the Done list shows before it says there are older ones. */
 const DONE_SHOWN = 10;
 
+/** Mirrors the phone tier in styles.css (the ladder's 620). */
+const PHONE = "(max-width: 620px)";
+
 /**
  * An answer given in this visit. The newest one says whether the mission moved, read from the mission's own state, so it
  * follows the top bar's chip; the older ones only say what was sent, since the state they would repeat is the same.
  */
 function AnsweredRow({ a, latest, onDismiss }: { a: Answered; latest: boolean; onDismiss: () => void }): React.JSX.Element {
+  const { setView } = useMesh();
   const { facts, state } = useMission();
   const actions = useMissionActions();
   const ref = useRef<HTMLLIElement | null>(null);
@@ -42,6 +47,8 @@ function AnsweredRow({ a, latest, onDismiss }: { a: Answered; latest: boolean; o
           <p className={`ib-outcome ${o.tone}`} role="status">
             {o.text}
             {o.action && primary ? <> <Button variant="small" onClick={() => actions.run(primary.action, { inboxView: "escalations" })}>{primary.label}</Button></> : null}
+            {/* Nothing more is asked of them here, and the way back to the mission is behind the menu on a phone: it is offered where the answer was sent. */}
+            {!(o.action && primary) && state.phase !== "needs-you" ? <> <Button variant="small" onClick={() => setView("overview")}>Back to the Overview</Button></> : null}
           </p>
         ) : null}
       </div>
@@ -64,6 +71,9 @@ export default function Inbox(): React.JSX.Element {
   const actions = useMissionActions();
   const d = useDecisions();
   const tools = useToolApprovals(client, 3000);
+  // On a phone the person has come to answer a decision, and a switch for being told next time is not what they should scroll past
+  // to reach it: it goes after the page's content there, and under the title everywhere else. The top bar's menu has it on every page.
+  const phone = useMedia(PHONE);
 
   const tab = tabOfView(view);
   const counts = inboxCounts(d.list, tools.seats);
@@ -78,7 +88,7 @@ export default function Inbox(): React.JSX.Element {
   return (
     <div className="ib">
       <PageHeader title="Needs you" status={<span className={`mission-chip ${summary.tone}`}>{summary.label}</span>} lede={summary.line} />
-      <NotifyRow />
+      {phone ? null : <NotifyRow />}
       <Tabs
         idPrefix="inbox" label="What is waiting on you" value={tab}
         tabs={inboxTabs(counts).map((t) => ({ id: t.id, label: t.label, hint: t.hint, badge: t.badge, badgeHot: t.hot }))}
@@ -153,6 +163,7 @@ export default function Inbox(): React.JSX.Element {
           </>
         )}
       </TabPanel>
+      {phone ? <NotifyRow atEnd /> : null}
     </div>
   );
 }

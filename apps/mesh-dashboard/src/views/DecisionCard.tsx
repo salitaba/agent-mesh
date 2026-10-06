@@ -80,7 +80,8 @@ function TextAnswer({ e, plan, busy, otherBusy, suggestion, onSend, children }: 
       }}
     >
       <label className="dc-label" htmlFor={`dc-${id}-text`}>{plan.text?.label}</label>
-      <Input id={`dc-${id}-text`} value={text} onChange={(ev) => write(ev.currentTarget.value)} placeholder={plan.text?.placeholder} disabled={busy} aria-required={required} />
+      {/* The phone keyboard's Enter key says Send: the button under the field is the one the keyboard covers. */}
+      <Input id={`dc-${id}-text`} value={text} onChange={(ev) => write(ev.currentTarget.value)} placeholder={plan.text?.placeholder} disabled={busy} aria-required={required} enterKeyHint="send" />
       <div className="dc-acts">
         <Button variant="primary" type="submit" disabled={blocked}>{busy ? "Sending…" : label}</Button>
         {/* A suggestion is something you choose: it is never pre-typed, so sending always needs a deliberate act. */}

@@ -11,6 +11,7 @@
 import { RUNNING } from "./format";
 import { holdsOf } from "./escalation-card";
 import { goalIsSet, startNeedsGoal } from "./goal";
+import type { View } from "./route";
 
 export type MissionPhase =
   | "loading"
@@ -307,6 +308,21 @@ function describePhase(f: MissionFacts): Omit<MissionState, "next"> & { next?: N
     headline: f.working > 0 ? `${plural(f.working, "agent")} working.` : "A turn is in flight.",
     primary: PAUSE,
   };
+}
+
+/**
+ * Whether a bar button goes to the page the person is already on. "Review decisions" on the Needs you page was a button that took
+ * them where they were, and on a phone it cost a row of the header above the very card they came to answer. The bar's buttons that
+ * only navigate stand down on the page they point at; the ones that act on the mission never do.
+ */
+export function barActionIsHere(action: MissionAction, view: View, inboxView: View): boolean {
+  switch (action) {
+    case "review": return view === inboxView;
+    case "settings": return view === "hostsettings";
+    case "agents": return view === "agents";
+    case "designer": return view === "designer";
+    default: return false;
+  }
 }
 
 /**

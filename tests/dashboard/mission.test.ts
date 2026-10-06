@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { describeMission, documentTitle, factsFromStatus, type MissionFacts } from "../../apps/mesh-dashboard/src/mission";
+import { barActionIsHere, describeMission, documentTitle, factsFromStatus, type MissionFacts } from "../../apps/mesh-dashboard/src/mission";
 
 /**
  * The console used to say three different things about one mission: the top bar read PARKED beside a goal that said "done",
@@ -260,4 +260,20 @@ test("the tab title leads with the count of decisions and says what is true of t
   assert.equal(documentTitle({ phaseLabel: "Running", decisions: 0, project: "Payments" }), "Running · Payments — Curule");
   assert.equal(documentTitle({ phaseLabel: null, decisions: 0, project: null }), "Curule");
   assert.equal(documentTitle({ phaseLabel: null, decisions: 1, project: null }), "(1) Curule");
+});
+
+test("a bar button that only goes to a page stands down on that page; one that acts on the mission never does", () => {
+  // "Review decisions" on the Needs you page took the person where they already were, above the card they came to answer.
+  assert.equal(barActionIsHere("review", "escalations", "escalations"), true);
+  assert.equal(barActionIsHere("review", "gates", "gates"), true, "tool requests only: the review button goes to the tool section");
+  assert.equal(barActionIsHere("review", "gates", "escalations"), false, "on the tool section with decisions waiting, it is the way to them");
+  assert.equal(barActionIsHere("review", "overview", "escalations"), false);
+  assert.equal(barActionIsHere("settings", "hostsettings", "escalations"), true);
+  assert.equal(barActionIsHere("settings", "cost", "escalations"), false);
+  assert.equal(barActionIsHere("agents", "agents", "escalations"), true);
+  assert.equal(barActionIsHere("designer", "designer", "escalations"), true);
+  assert.equal(barActionIsHere("agents", "steps", "escalations"), false);
+  for (const action of ["start", "pause", "resume", "reopen"] as const) {
+    for (const view of ["overview", "escalations", "gates", "agents", "designer", "hostsettings", "events"] as const) assert.equal(barActionIsHere(action, view, "escalations"), false, `${action} on ${view}`);
+  }
 });

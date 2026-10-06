@@ -26,10 +26,10 @@ export function useNotify(): { view: NotifyView; press: () => void } {
 }
 
 /** A quiet line on the Needs you page: the button, and in one line what it does and what it does not. */
-export function NotifyRow(): React.JSX.Element {
+export function NotifyRow({ atEnd }: { atEnd?: boolean }): React.JSX.Element {
   const { view, press } = useNotify();
   return (
-    <div className="ib-notify">
+    <div className={`ib-notify${atEnd ? " end" : ""}`}>
       {view.press ? <Button variant="small" icon="bell" title={view.hint} aria-describedby="ib-notify-note" onClick={press}>{view.label}</Button> : null}
       <p className="ib-notify-note" id="ib-notify-note">{view.note}</p>
     </div>

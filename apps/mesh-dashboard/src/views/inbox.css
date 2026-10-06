@@ -10,6 +10,7 @@
 
 /* The switch for desktop notifications: one quiet line under the page's title, the button and what it does and does not do. */
 .ib-notify { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s1-5) var(--s3); margin: calc(var(--s1) * -1) 0 0; }
+.ib-notify.end { margin-top: var(--s2); padding-top: var(--s3); border-top: 1px solid var(--line); }
 .ib-notify-note { flex: 1 1 280px; min-width: 0; margin: 0; font-size: 13px; color: var(--text-dim); max-width: 80ch; }
 
 /* ---------- a decision ---------- */
@@ -99,6 +100,12 @@
   .ib-notify > button { min-height: 44px; }
   .dc { padding: var(--s3-5); }
   .dc-acts > button.primary { flex: 1 1 100%; justify-content: center; }
+  /* Answering is done with a thumb: the field, the buttons around it and the tabs above are touch targets, and the field is 16px so
+     that a phone does not zoom the page when it takes focus. */
+  .dc-answer input.txt, .dc-row input.txt { min-height: 44px; font-size: 16px; }
+  .dc-acts > button.small, .dc-row > button.small, .dc-refs button.small, .dc-supports button.small, .ib-outcome button.small { min-height: 44px; }
+  .ib .tabs .tab-btn { min-height: 44px; }
+  .dc-tech > summary, .ib-done > summary { display: flex; align-items: center; min-height: 44px; }
   .dc-skip { margin-left: 0; }
   .ib-answered { grid-template-columns: auto minmax(0, 1fr); }
   .ib-answered .icon-btn { grid-column: 2; justify-self: start; }
