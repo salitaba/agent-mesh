@@ -407,6 +407,15 @@ hr { border: 0; border-top: 1px solid var(--line); margin: 0; }
 .doc-list .path { color: var(--muted); font: .8125rem/1.4 var(--mono); overflow-wrap: anywhere; }
 .doc-list .about { color: var(--muted); font-size: .875rem; }
 .doc-list .head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+/* The filter (shown by the shared script): the last document a filter leaves in a group closes it, as the last one does. */
+.doc-list li:nth-last-child(1 of :not([hidden])) { border-bottom: 0; padding-bottom: 0; }
+.doc-filter { display: grid; gap: 6px; max-width: 32rem; }
+.doc-filter label { font-size: .9375rem; font-weight: 600; }
+.doc-filter input { width: 100%; min-height: 48px; padding: 0 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); color: var(--ink); font: 1rem var(--font); -webkit-appearance: none; appearance: none; }
+.doc-filter input:hover { border-color: var(--muted); }
+.doc-filter .hint, .doc-filter .count { margin: 0; color: var(--muted); font-size: .875rem; }
+.doc-none { padding: 24px; border: 1px dashed var(--muted); border-radius: var(--radius); }
+.doc-none q { overflow-wrap: anywhere; }
 
 .group { margin: 40px 0 12px; color: var(--muted); font-size: .8125rem; font-weight: 650; letter-spacing: .1em; text-transform: uppercase; }
 .group:first-child { margin-top: 0; }

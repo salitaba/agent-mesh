@@ -14,13 +14,13 @@ python3 -m http.server --directory site 8080      # then open http://127.0.0.1:8
 |---|---|---|
 | `index.html` | `/` | The tagline and what Curule is, a product frame (overview, events, designer), why it is not a group chat, how a mission goes, a tour of the console in six views, the commands that run the demo today, security in brief, the plans in a line, and the questions |
 | `pricing/index.html` | `/pricing/` | The plans with the Annual/Monthly choice, the comparison table, what a plan pays for, a calculator, how licences work, and questions |
-| `docs/index.html` | `/docs/` | A map of the documents in the repository: what each is for, and whether it is reference, a guide, short, or a log |
+| `docs/index.html` | `/docs/` | A map of the documents in the repository: what each is for, and whether it is reference, a guide, short, or a log, with a filter over them |
 | `security/index.html` | `/security/` | What it protects, what leaves your environment, what it does not do, a hardening checklist, assurance, and how to report a problem |
 | `contact/index.html` | `/contact/` | Who to write to for sales, support and security, and what to put in the message |
 | `legal/index.html` | `/legal/` | The source licence in plain words, privacy (this site collects nothing), and the terms |
 | `404.html` | any address that is not found | A short page with links; written with addresses from the root, because a host shows it at the address that was not found |
 | `assets/site.css` | | The one stylesheet: the brand's colours under the names the pages use, the system fonts, and every component |
-| `assets/site.js` | | Sets the links that leave the site, the copy buttons on the commands, the phone menu, the On this page bar of the long pages, and Back to top; nothing else |
+| `assets/site.js` | | Sets the links that leave the site, the copy buttons on the commands, the phone menu, the On this page bar of the long pages, Back to top, and the documentation page's filter; nothing else |
 | `assets/pricing.js` | | The calculator on the pricing page |
 | `assets/shots/` | | The product screenshots, under stable names (see below) |
 | `assets/favicon.svg`, `apple-touch-icon.png`, `social-card.png` | | Copies of the files in [`brand/`](../brand/README.md); a test fails if one stops matching the kit |
@@ -41,6 +41,11 @@ Once a reader is two screens down any page, a *Back to top* button shows in the 
 end of `<main>`: it stays at the bottom of the window while the content is in view and rests above the footer at the end, so it
 never covers the footer's links. It jumps under reduced motion, and it moves the focus to the top of the content, so the keyboard
 carries on from there. It is not printed, and without a script it is not there.
+
+The documentation page has a filter over its documents ("Filter the documents"). It is in the markup, hidden, and the script shows
+it: what is typed keeps the documents that have every word somewhere in their title, description, label (Guide, Reference, Short,
+Log), path or group, hides a group that has none left, and says how many are left in a polite live region after a pause in the
+typing. When nothing matches it says so, with a button that clears the filter; Escape clears it too. It reads only the page.
 
 ## No request leaves the site, and the pages say so
 

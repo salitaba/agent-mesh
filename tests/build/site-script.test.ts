@@ -19,6 +19,7 @@ const pages = sitePages();
 
 interface Pure {
   readingAt(tops: number[], line: number): number;
+  docMatches(text: string, query: string): boolean;
 }
 
 /** The script's pure parts, as it exports them when it is loaded as a module (in a browser nothing is exported). */
@@ -336,4 +337,133 @@ test("a window that cannot be scrolled by the script gets no Back to top button,
     vm.runInNewContext(SCRIPT, { document: doc, navigator: {}, window: { setTimeout, clearTimeout } }, { filename: "site.js" });
     assert.equal(doc.querySelectorAll(".to-top").length, 0, p.rel);
   }
+});
+
+// ---------------------------------------------------------------- the documentation page's filter
+
+test("a document matches when every word typed is in its text, in any case and order, with a curly apostrophe typed straight", () => {
+  const { docMatches } = pure();
+  const text = "Security questionnaire Short Answers to the questions a buyer\u2019s security team usually asks. docs/commercial/security-questionnaire.md Security What it protects";
+  assert.equal(docMatches(text, ""), true, "nothing typed keeps everything");
+  assert.equal(docMatches(text, "   "), true);
+  assert.equal(docMatches(text, "QUESTIONNAIRE"), true);
+  assert.equal(docMatches(text, "security   short"), true, "any space between the words");
+  assert.equal(docMatches(text, "short security"), true, "in any order");
+  assert.equal(docMatches(text, "buyer's"), true, "an apostrophe typed straight finds a curly one");
+  assert.equal(docMatches(text, "commercial/security-q"), true, "a piece of a path");
+  assert.equal(docMatches(text, "ques"), true, "a piece of a word");
+  assert.equal(docMatches(text, "security guide"), false, "every word has to be there");
+});
+
+interface Filtered {
+  doc: FakeDocument;
+  field: FakeNode;
+  type: (value: string) => void;
+  key: (key: string) => boolean;
+  shown: () => string[];
+  groups: () => number;
+  count: () => string;
+  runTimers: () => void;
+}
+
+/** An event as the browser hands it to a listener. */
+const event = (target: FakeNode, extra: Record<string, unknown> = {}) => ({ type: "", target, currentTarget: target, defaultPrevented: false, preventDefault() { this.defaultPrevented = true; }, ...extra });
+
+/** The documentation page with the script run on it. Its timers wait until the test runs them, as a pause in the typing would. */
+function docsPage(): Filtered {
+  const doc = parsePage(page(pages, "docs/index.html").html);
+  const timers: Array<() => void> = [];
+  vm.runInNewContext(SCRIPT, { document: doc, navigator: {}, window: { setTimeout: (fn: () => void) => timers.push(fn), clearTimeout: () => undefined } }, { filename: "site.js" });
+  const field = doc.getElementById("doc-filter-input")!;
+  const visible = (n: FakeNode): boolean => {
+    for (let x: FakeNode | null = n; x; x = x.parent) if (x.hidden) return false;
+    return true;
+  };
+  return {
+    doc,
+    field,
+    type: (value) => {
+      field.value = value;
+      for (const fn of field.listeners.get("input") ?? []) fn(event(field));
+    },
+    key: (key) => {
+      const e = event(field, { key });
+      for (const fn of field.listeners.get("keydown") ?? []) fn(e);
+      return e.defaultPrevented;
+    },
+    shown: () => doc.querySelectorAll(".doc-list li").filter(visible).map((li) => li.querySelector("a")!.textContent),
+    groups: () => doc.querySelectorAll(".doc-card").filter(visible).length,
+    count: () => doc.getElementById("doc-filter-count")!.textContent,
+    runTimers: () => timers.splice(0).forEach((fn) => fn()),
+  };
+}
+
+test("the filter is not on the page without a script, and with one it is there, with how many documents there are", () => {
+  const html = page(pages, "docs/index.html").html;
+  assert.match(html, /<div class="doc-filter[^"]*" id="doc-filter" hidden>/, "hidden until the script has wired it");
+  assert.match(html, /<div class="doc-none[^"]*" id="doc-filter-none" hidden>/);
+  assert.match(html, /<label for="doc-filter-input">Filter the documents<\/label>/, "a field with a label that says what it does");
+  assert.match(html, /<p class="count" id="doc-filter-count" role="status"><\/p>/, "and a polite live region for the count");
+  const r = docsPage();
+  const all = r.doc.querySelectorAll(".doc-list li").length;
+  assert.ok(all >= 14);
+  assert.equal(r.doc.getElementById("doc-filter")!.hidden, false);
+  assert.equal(r.doc.getElementById("doc-filter-none")!.hidden, true);
+  assert.equal(r.count(), `All ${all} documents`);
+  assert.equal(r.shown().length, all);
+});
+
+test("typing keeps the documents with every word, hides a group with none left, and says how many after a pause", () => {
+  const r = docsPage();
+  const all = r.doc.querySelectorAll(".doc-list li");
+  const guides = all.filter((li) => li.getAttribute("data-kind") === "guide").map((li) => li.querySelector("a")!.textContent);
+  r.type("Guide");
+  assert.deepEqual(r.shown(), guides, "the label is part of what is matched: Guide keeps the guides, and only them");
+  assert.ok(r.groups() < r.doc.querySelectorAll(".doc-card").length, "a group with no guide is hidden");
+  assert.equal(r.count(), `All ${all.length} documents`, "the count waits for a pause in the typing");
+  r.runTimers();
+  assert.equal(r.count(), `${guides.length} of ${all.length} documents`);
+  r.type("guide deploy");
+  assert.deepEqual(r.shown(), ["Try it in a minute", "Deploying Curule"]);
+  r.type("concepts");
+  assert.deepEqual(r.shown(), ["Architecture"], "a group's name finds its documents");
+  r.type("SECURITY.md");
+  assert.deepEqual(r.shown(), ["Security", "Security policy"], "a path, in any case: SECURITY.md and docs/commercial/security.md");
+  r.type("commercial/security.md");
+  assert.deepEqual(r.shown(), ["Security"]);
+  assert.equal(r.doc.getElementById("doc-filter-none")!.hidden, true);
+});
+
+test("when nothing matches the page says so, names what was typed, and Clear the filter brings everything back to the field", () => {
+  const r = docsPage();
+  const all = r.doc.querySelectorAll(".doc-list li").length;
+  r.type("  kubernetes   operator ");
+  r.runTimers();
+  assert.deepEqual(r.shown(), []);
+  assert.equal(r.groups(), 0);
+  const none = r.doc.getElementById("doc-filter-none")!;
+  assert.equal(none.hidden, false);
+  assert.equal(r.doc.getElementById("doc-filter-said")!.textContent, "kubernetes   operator");
+  assert.equal(r.count(), `0 of ${all} documents`);
+  const clear = r.doc.getElementById("doc-filter-clear")!;
+  assert.equal(clear.tag, "button");
+  for (const fn of clear.listeners.get("click") ?? []) fn(event(clear));
+  r.runTimers();
+  assert.equal(r.field.value, "");
+  assert.equal(r.shown().length, all);
+  assert.equal(none.hidden, true);
+  assert.equal(r.count(), `All ${all} documents`);
+  assert.ok(r.doc.activeElement === r.field, "the focus goes back to the field");
+});
+
+test("Escape clears what is typed, and is left alone when there is nothing to clear", () => {
+  const r = docsPage();
+  const all = r.doc.querySelectorAll(".doc-list li").length;
+  r.type("reference");
+  assert.ok(r.shown().length < all);
+  assert.equal(r.key("Escape"), true, "taken by the field");
+  assert.equal(r.field.value, "");
+  assert.equal(r.shown().length, all);
+  assert.equal(r.key("Escape"), false, "an empty field lets Escape through");
+  assert.equal(r.key("a"), false);
 });

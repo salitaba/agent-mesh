@@ -84,6 +84,17 @@
     <p class="notice neutral mt-l"><b>Each title opens the document on GitHub.</b> The path under it is where the file is in the repository, if you would rather read it in a copy of your own.</p>
     <noscript><p class="notice mt-s">With JavaScript off the titles do not open anything: the path under each one is where the file is.</p></noscript>
 
+    <div class="doc-filter mt-l" id="doc-filter" hidden>
+      <label for="doc-filter-input">Filter the documents</label>
+      <input id="doc-filter-input" type="search" autocomplete="off" spellcheck="false" aria-describedby="doc-filter-hint">
+      <p class="hint" id="doc-filter-hint">Words from a title, what it is for, a label such as Guide, or a path.</p>
+      <p class="count" id="doc-filter-count" role="status"></p>
+    </div>
+    <div class="doc-none mt-l" id="doc-filter-none" hidden>
+      <p><b>No document matches <q id="doc-filter-said"></q>.</b> Try fewer words, or a label such as Guide or Reference.</p>
+      <p><button class="btn" type="button" id="doc-filter-clear">Clear the filter</button></p>
+    </div>
+
     <div class="doc-grid mt-xl">
       <article class="doc-card" id="quickstart">
         <h2>Quickstart</h2>

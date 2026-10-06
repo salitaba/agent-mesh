@@ -24,8 +24,18 @@ var IMAGE_NAME = "ghcr.io/salitaba/curule";
     return at;
   };
 
+  // Text as a reader compares it: in lower case, with curly apostrophes straight, and any run of space as one.
+  var plain = function (text) { return String(text).toLowerCase().replace(/[\u2018\u2019]/g, "'").replace(/\s+/g, " "); };
+  var words = function (query) { return plain(query).split(" ").filter(Boolean); };
+  // A document matches a filter when every word typed is somewhere in its text (its title, what it is for, its label, its path
+  // and the group it is in), as a whole word or a piece of one. Nothing typed matches everything.
+  var docMatches = function (text, query) {
+    var hay = plain(text);
+    return words(query).every(function (word) { return hay.indexOf(word) >= 0; });
+  };
+
   // The pure parts, for the tests, when the file is loaded as a module; in a browser nothing is exported.
-  if (typeof module === "object" && module !== null && typeof module.exports === "object") module.exports = { readingAt: readingAt };
+  if (typeof module === "object" && module !== null && typeof module.exports === "object") module.exports = { readingAt: readingAt, docMatches: docMatches };
   if (typeof document === "undefined") return;
 
   var all = function (selector) { return Array.prototype.slice.call(document.querySelectorAll(selector)); };
@@ -230,6 +240,61 @@ var IMAGE_NAME = "ghcr.io/salitaba/curule";
       main.focus({ preventScroll: true });
     });
     look();
+  }
+
+  // The documentation page's filter: what is typed keeps the documents that have every word, hides a group with none left, and
+  // says how many are left, after a pause in the typing so that a screen reader is not read every keystroke. It works on the page
+  // as it is and asks nothing of anyone. Without a script the field is not there and every document is shown.
+  var filter = document.getElementById("doc-filter");
+  if (filter) {
+    var field = document.getElementById("doc-filter-input");
+    var count = document.getElementById("doc-filter-count");
+    var none = document.getElementById("doc-filter-none");
+    var said = document.getElementById("doc-filter-said");
+    var groups = all(".doc-card").map(function (card) {
+      var name = card.querySelector("h2");
+      var about = card.querySelector("p");
+      var group = (name ? name.textContent : "") + " " + (about ? about.textContent : "");
+      return { card: card, docs: within(card, ".doc-list li").map(function (li) { return { node: li, text: li.textContent + " " + group }; }) };
+    });
+    var total = groups.reduce(function (n, g) { return n + g.docs.length; }, 0);
+    var saying = 0;
+    var tell = function (shown, filtering) { count.textContent = filtering ? shown + " of " + total + " documents" : "All " + total + " documents"; };
+    var apply = function () {
+      var query = field.value;
+      var shown = 0;
+      groups.forEach(function (g) {
+        var left = 0;
+        g.docs.forEach(function (doc) {
+          var match = docMatches(doc.text, query);
+          doc.node.hidden = !match;
+          if (match) left++;
+        });
+        g.card.hidden = left === 0;
+        shown += left;
+      });
+      var filtering = words(query).length > 0;
+      none.hidden = shown > 0;
+      said.textContent = query.trim();
+      window.clearTimeout(saying);
+      saying = window.setTimeout(function () { tell(shown, filtering); }, 400);
+    };
+    var clear = function () {
+      field.value = "";
+      apply();
+    };
+    field.addEventListener("input", apply);
+    field.addEventListener("keydown", function (event) {
+      if (event.key !== "Escape" || !field.value) return;
+      event.preventDefault();
+      clear();
+    });
+    document.getElementById("doc-filter-clear").addEventListener("click", function () {
+      clear();
+      field.focus();
+    });
+    tell(total, false);
+    filter.hidden = false;
   }
 
   // The phone menu closes when a link in it is followed (on the same page) and on Escape.
