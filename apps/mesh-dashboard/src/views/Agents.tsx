@@ -173,7 +173,7 @@ function AgentRows(p: RowsProps): React.JSX.Element {
   return (
     <table className="tbl dense ag-table">
       <thead>
-        <tr><th scope="col">Agent</th><th scope="col">State</th><th scope="col" className="ag-t-now">Now</th><th scope="col" className="num">Tokens</th><th scope="col"><span className="sr-only">Controls</span></th></tr>
+        <tr><th scope="col" className="ag-t-who">Agent</th><th scope="col" className="ag-t-state">State</th><th scope="col" className="ag-t-now">Now</th><th scope="col" className="num ag-t-tok">Tokens</th><th scope="col" className="ag-t-act"><span className="sr-only">Controls</span></th></tr>
       </thead>
       <tbody>
         {p.rows.map((a) => {
@@ -182,7 +182,7 @@ function AgentRows(p: RowsProps): React.JSX.Element {
           const tone = budget ? budgetTone(budget.ratio) : "ok";
           return (
             <tr key={a.id} className="clickable" data-agent={a.id} data-group={p.groupOf(a.id)} data-life={a.lifecycle} onClick={() => p.onOpen(a.id)}>
-              <td>
+              <td className="ag-t-who">
                 <span className="ag-who">
                   <AgentAvatar id={a.id} color={agentColor(a.role)} size="sm" />
                   <span>
@@ -191,16 +191,18 @@ function AgentRows(p: RowsProps): React.JSX.Element {
                   </span>
                 </span>
               </td>
-              <td><SeatPill a={a} run={seat.run} stalled={seat.stalled} setting={p.setting} /></td>
-              <td className="ag-t-now"><span className={`agent-detail${seat.doing ? " mono" : ""}`}><b>{seat.text.headline}</b> {seat.text.detail}</span></td>
-              <td className="num">
+              <td className="ag-t-state"><SeatPill a={a} run={seat.run} stalled={seat.stalled} setting={p.setting} /></td>
+              <td className="ag-t-now">
+                <span className="agent-state"><b>{seat.text.headline}</b><span className={`agent-detail${seat.doing ? " mono" : ""}`} title={seat.text.detail}>{seat.text.detail}</span></span>
+              </td>
+              <td className="num ag-t-tok">
                 <b>{fmt(a.tokens ?? 0)}</b>
                 {budget ? <Progress value={budget.used} max={budget.limit} label={`${a.id}'s own token budget`} tone={tone === "ok" ? undefined : tone} valueText={`${fmt(budget.used)} of ${fmt(budget.limit)} tokens`} /> : null}
               </td>
-              <td>
+              <td className="ag-t-act">
                 <span className="agent-controls">
                   {seat.controls.map((c) => (
-                    <Button key={c.id} variant="small" data-act={c.id} data-id={a.id} title={c.title} onClick={(e) => { e.stopPropagation(); p.onControl(a, c); }}>{c.label}</Button>
+                    <Button key={c.id} variant="ghost" data-act={c.id} data-id={a.id} title={c.title} onClick={(e) => { e.stopPropagation(); p.onControl(a, c); }}>{c.label}</Button>
                   ))}
                 </span>
               </td>

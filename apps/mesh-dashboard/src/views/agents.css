@@ -20,6 +20,7 @@
 .agent-card[data-group="working"] { border-color: color-mix(in srgb, var(--ok) 38%, var(--line)); background-image: linear-gradient(to bottom, color-mix(in srgb, var(--ok) 8%, transparent), transparent 96px); box-shadow: var(--k-hl), var(--k-shadow-2); }
 .agent-card[data-group="working"] .avatar { position: relative; box-shadow: 0 0 0 2px var(--panel), 0 0 0 3.5px var(--ok); }
 .agent-card[data-group="help"] { border-color: color-mix(in srgb, var(--bad) 35%, var(--line)); box-shadow: inset 3px 0 0 var(--bad), var(--k-hl), var(--k-shadow-1); }
+.agent-card[data-group="help"] .avatar { box-shadow: 0 0 0 2px var(--panel), 0 0 0 3.5px var(--bad); }
 .agent-card[data-group="paused"] { border-style: dashed; border-color: var(--line-control); }
 /* A finished seat recedes: the quieter ground, no shadow, its name a step down. It still opens, and it lifts like any card when it is pointed at. */
 .agent-card[data-life="COMPLETED"] { background: var(--panel-2); box-shadow: none; }
@@ -73,17 +74,22 @@
 
 /* ---- the same seats as rows ---- */
 
-.ag-table { background: var(--panel); border: 1px solid var(--line); border-radius: var(--r-lg); overflow: hidden; }
+.ag-table { table-layout: fixed; background: var(--panel); border: 1px solid var(--line); border-radius: var(--r-lg); overflow: hidden; }
+/* Fixed columns, so the tables of the groups stack with their columns in one line. */
+.ag-t-who { width: 25%; }
+.ag-t-state { width: 120px; }
+.ag-t-tok { width: 140px; }
+.ag-t-act { width: 190px; }
+.ag-table.tbl.dense td { vertical-align: middle; }
 .ag-table tr[data-group="working"] td:first-child { box-shadow: inset 3px 0 0 var(--ok); }
 .ag-table tr[data-group="help"] td:first-child { box-shadow: inset 3px 0 0 var(--bad); }
 .ag-table tr[data-life="COMPLETED"] td { color: var(--text-dim); }
 .ag-who { display: flex; align-items: center; gap: var(--s2-5); min-width: 0; }
 .ag-who > span { min-width: 0; }
-.ag-t-now { width: 40%; }
-.ag-t-now .agent-detail { -webkit-line-clamp: 1; line-clamp: 1; }
+.ag-t-now .agent-detail { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ag-table td.num b { display: block; font-weight: 600; }
 .ag-table td.num .prog { margin-top: var(--s1); min-width: 72px; }
-.ag-table .agent-controls { justify-content: flex-end; flex-wrap: nowrap; }
+.ag-table .agent-controls { justify-content: flex-end; flex-wrap: nowrap; gap: var(--s1); }
 
 /* ---- loading ---- */
 
@@ -91,7 +97,24 @@
 
 @media (max-width: 900px) {
   .ag-t-now { display: none; }
+  .ag-t-who { width: auto; }
+  .ag-t-act { width: 170px; }
 }
+/* On a phone a row is a small card of its own: who and how it is, what it is doing, then its figure and its controls. */
 @media (max-width: 620px) {
-  .ag-table .agent-controls { flex-wrap: wrap; justify-content: flex-start; }
+  .ag-table.tbl.dense, .ag-table.tbl.dense tbody { display: block; }
+  .ag-table.tbl.dense thead { display: none; }
+  .ag-table.tbl.dense tr { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: var(--s1-5) var(--s3); padding: var(--s3) var(--s4); border-top: 1px solid var(--line); }
+  .ag-table.tbl.dense tr:first-child { border-top: 0; }
+  .ag-table.tbl.dense td { display: block; width: auto; padding: 0; border: 0; background: none; }
+  .ag-table.tbl.dense tr.clickable:hover td { background: none; }
+  .ag-table.tbl.dense tr[data-group="working"] td:first-child, .ag-table.tbl.dense tr[data-group="help"] td:first-child { box-shadow: none; }
+  .ag-table.tbl.dense tr[data-group="working"] { box-shadow: inset 3px 0 0 var(--ok); }
+  .ag-table.tbl.dense tr[data-group="help"] { box-shadow: inset 3px 0 0 var(--bad); }
+  .ag-table.tbl.dense .ag-t-now { display: block; grid-column: 1 / -1; order: 2; }
+  .ag-table.tbl.dense .ag-t-tok { order: 3; display: flex; align-items: baseline; gap: var(--s2); text-align: left; }
+  .ag-table.tbl.dense .ag-t-tok b { display: inline; }
+  .ag-table.tbl.dense .ag-t-tok .prog { flex: 1 1 auto; margin-top: 0; }
+  .ag-table.tbl.dense .ag-t-act { order: 4; }
+  .ag-table .agent-controls { flex-wrap: wrap; justify-content: flex-end; }
 }
