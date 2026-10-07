@@ -261,6 +261,7 @@ await step(page, "signing out, then in, then changing the password and resetting
   await page.fill("#password", PASSWORD);
   await page.click("button[type=submit]");
   await page.waitForURL(/\/account$/);
+  await page.click("#settings-panel summary");
   await page.fill("#current", PASSWORD);
   await page.fill("#next", NEXT_PASSWORD);
   await page.click("#password-form button[type=submit]");
