@@ -338,6 +338,7 @@ body[data-page="home"] main{background:var(--k-glow) top / 100% 520px no-repeat}
 .ws-key form{display:grid;gap:14px;max-width:34rem}
 .key-line{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px}
 .confirm{display:grid;gap:10px;padding:16px;border-radius:var(--k-r-md)}
+.confirm input{max-width:28rem}
 .confirm .btn-danger{border-color:transparent;background:var(--k-bad);color:var(--k-on-accent)}
 .confirm .btn-danger[disabled]{background:var(--k-bad)}
 .inline-form{display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end;max-width:30rem}
@@ -369,7 +370,6 @@ body[data-page="home"] main{background:var(--k-glow) top / 100% 520px no-repeat}
 /* Tables read down; an edge shows where one scrolls. */
 .table-wrap{overflow-x:auto;scrollbar-width:thin;background:linear-gradient(to right,var(--k-surface),transparent) 0 0 / 24px 100% no-repeat local,linear-gradient(to left,var(--k-surface),transparent) 100% 0 / 24px 100% no-repeat local,linear-gradient(to right,color-mix(in srgb,var(--k-ink) 12%,transparent),transparent) 0 0 / 10px 100% no-repeat,linear-gradient(to left,color-mix(in srgb,var(--k-ink) 12%,transparent),transparent) 100% 0 / 10px 100% no-repeat,var(--k-surface)}
 .table-wrap + .table-wrap{margin-top:20px}
-.table-wrap:focus-visible{outline-offset:2px}
 table{width:100%;border-collapse:collapse;font-size:.875rem}
 caption{padding:14px 16px;color:var(--k-ink);font-weight:600;text-align:left}
 th,td{height:48px;padding:0 16px;border-top:1px solid var(--k-line);text-align:left;white-space:nowrap}
