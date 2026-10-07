@@ -232,8 +232,9 @@ test("every link goes to a page or an anchor that exists, whether it is written 
   for (const p of pages()) {
     for (const n of p.all.filter((x) => x.tag === "a")) {
       const href = attr(n, "href");
-      if (href === "#main") assert.ok(idsOf(p.all).includes("main"));
-      else if (href === "#") assert.ok(n.attrs.has("data-contact") && n.hidden, `${p.name}: only the hidden contact link goes nowhere`);
+      if (href === "#") assert.ok(n.attrs.has("data-contact") && n.hidden, `${p.name}: only the hidden contact link goes nowhere`);
+      // A link to a place on its own page names an element that is there.
+      else if (href.startsWith("#")) assert.ok(idsOf(p.all).includes(href.slice(1)), `${p.name}: ${href} names an element that is not there`);
       else check(href, p.name);
     }
   }

@@ -228,7 +228,7 @@ test("each stage is said on the page: its title and sentence, the steps while a 
   assert.ok(s.v.doc.getElementById("stage-steps")!.querySelectorAll("span").filter((n) => n.className === "num").every((n) => n.getAttribute("aria-hidden") === "true"), "and the numbers are for the eye: the words say it all");
   assert.equal(s.v.$("stage-steps").getAttribute("aria-label"), "Where you are");
 
-  assert.equal(s.v.$("stage").getAttribute("aria-labelledby"), "stage-title", "the card is a region named by what it says");
+  assert.deepEqual([s.v.$("stage").getAttribute("role"), s.v.$("stage").getAttribute("aria-labelledby")], ["group", "stage-title"], "the card is a group named by what it says, and not a landmark: with no plan it says what the plan section below says, and two landmarks of one name are one too many");
   assert.equal(s.v.$("stage-title").getAttribute("tabindex"), "-1", "its title can be given the cursor, and is not a stop of the tab key");
   const live = s.v.$("stage-live");
   assert.deepEqual([live.getAttribute("role"), live.getAttribute("aria-live"), live.className], ["status", "polite", "sr"], "what it says when it changes is announced politely, to a screen reader and to nobody else");
