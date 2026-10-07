@@ -125,6 +125,31 @@ contrast every text pair needs in both themes. The brand's own seven colours are
 the kit adds what a dense tool and a long page need around them (a step down from a card, a well, the blue as text, the
 shadows).
 
+The look the three surfaces share is called Ledger: authority, precision and calm, as in a ruled book kept by someone careful.
+What that means in practice, so that a page can be checked against it:
+
+- **Hierarchy first.** Every screen has one thing to look at first, then a second, then the rest; size, weight, colour and space
+  carry the rank. A wall of equally weighted cards is a defect.
+- **Depth means something.** Elevation has five steps: a card at rest, a card that can be pressed, what floats (a menu, a toast, a
+  tooltip), a dialog or a drawer, and the product's frame on the site. Text that is only text stays flat. In the dark scheme depth is
+  a lighter surface and a faint lit top edge, not a shadow.
+- **Type carries the page.** Headings are tight and balanced. Every number is tabular and set in the text font, at weight 650, never
+  in monospace; monospace is for code, ids and paths. A small label in capitals has one tracking.
+- **Colour is scarce.** Neutrals, the one blue for action, focus and selection, and a status colour only for a status, always with
+  a dot or an icon so that colour is never the only cue. A tint is `color-mix` of a token, not a new value.
+- **Shape is a short list.** Radii of 6, 10, 14 and 20 px and a pill; a hairline for an edge; a field's edge is the darker line that
+  meets 3:1.
+- **Motion is optional and short.** 120 ms for a press, 180 ms for a menu or a tooltip, 300 ms for a panel or an arrival, on one
+  curve. Nothing loops except a working indicator, and all of it stops for a person who asked for stillness; a page is whole without it.
+- **Every control has every state**: hover, pressed, focus, disabled and, where it can wait, busy. A target is 44 px on a phone.
+  Windows High Contrast keeps ticks, switches, focus and status dots.
+- **Empty, loading and error are designed.** A skeleton has the shape of what is coming; an empty state says what is missing and
+  offers the next move; an error says what to do.
+
+Each surface says how it draws these in its own place: the site in [`site/README.md`](../site/README.md#how-it-is-drawn), the
+account pages in [the control plane's notes](cloud-control-plane.md#the-account-pages) and the console in
+[`design-spec.md`](design-spec.md).
+
 ## Type
 
 The system's own fonts, nothing downloaded: `system-ui, -apple-system, "Segoe UI", Roboto, sans-serif` for text and

@@ -537,7 +537,8 @@ name; a path that is not on that list is never looked for on the disk. A page is
 asked about each time (`Cache-Control: no-cache` and an `ETag`, answered `304` with no body while it has not changed), so that
 after the service is upgraded a customer is never given the new page with the old script or stylesheet. A browser that follows a
 wrong address (it asks for HTML) is shown `404.html` with the status 404, and a program, or any address under `/api`, `/owner` or
-`/webhooks`, still gets the JSON error. The colours and the type are the site's.
+`/webhooks`, still gets the JSON error. The colours, the type, the shadows and the shapes are the UI kit's ([docs/brand.md](brand.md#the-ui-kit)):
+the stylesheet carries the generated kit block, and a test fails on a colour written outside it or a token that is not defined.
 
 - **They are written for the policy they are served under**: `default-src 'self'`, `script-src 'self'`, `style-src 'self'`,
   `frame-ancestors 'none'`. No inline script, no inline style, no handler attribute, no address of another site. A test reads
@@ -553,7 +554,7 @@ wrong address (it asks for HTML) is shown `404.html` with the status 404, and a 
   there is one, each as a card (its state and a sentence on why and what can be done, Open, Pause or Resume, Delete behind More
   and away from Open with its name typed, and its address as a quiet detail); the plan is shown once, with the others behind
   Change plan; the balance, what a top-up buys and the usage by day and by workspace (as what was charged) are shown only for a
-  plan that sells model usage; the password is a setting at the end. On a plan that sells hosting only each card also holds its
+  plan that sells model usage; the password and the rest are Settings, closed until a person opens them. On a plan that sells hosting only each card also holds its
   model key: which is kept (Replace key and Remove key), or that there is none, with the form open. A workspace that is stopped
   because a payment is missing has no Resume, which the service would refuse; it is started when the payment comes. A workspace
   that is starting offers "Open it when it is ready", off until the person ticks it: the page then opens it as soon as it is
@@ -563,6 +564,17 @@ wrong address (it asks for HTML) is shown `404.html` with the status 404, and a 
   was applied while the person was away is said to have arrived, and one that has not been is waited for for a minute and then
   said to be on its way. A checkout that was cancelled says that nothing was charged and that what there was is as it was (or,
   with no plan yet, to choose one when ready). The balance is shown rounded down.
+- **The layout is the kit's, and says nothing the service does not.** The sign-in family (sign up, sign in, forgot, reset) is a form
+  beside a quiet panel from 900 px wide: three short statements, each one the front page or the terms already makes. A new
+  password gets a bar that says only that it has the ten characters the service asks for, not how strong anyone thinks it is. The
+  account opens on the card above, then three tiles (workspaces, plan, balance), then a list of its sections that stays under the
+  header and marks the one in view (`aria-current="location"`). A workspace shows its state, the one action large, its address as a
+  band with Copy (where the browser can copy) and, while it starts, a bar of three steps. The plan is ticks. The balance is a large
+  figure with a bar for what is left of the plan's included usage and a row of top-up amounts. Usage is a table with a bar for each
+  day, or a sentence that there is nothing to show yet. Settings are closed. While the account is being read the page shows a
+  skeleton of its own shape, so that nothing jumps when the answer arrives. A page arrives once, and a bar fills, for a person who
+  allows motion; Windows High Contrast keeps ticks, status dots and icons; every target is 44 pixels on a phone; the stylesheet is
+  held to 40 KB by a test.
 - **"Check your email" helps.** It names the address the link went to, offers Resend the email (a wait of a minute starts when the
   email goes, shown as text that counts down and not read out at every second; what is read out is the service's answer and that
   the wait is over) and Use another address (which hands the address that was typed back to the sign-up page, once, in the tab,
@@ -595,8 +607,11 @@ wrong address (it asks for HTML) is shown `404.html` with the status 404, and a 
   the list at the top of the script) and the absence of anything inline.
 - **How they are tested.** The files by `tests/cloud/pages.test.ts`: what is in the folder and what serves it, the policy, the
   markup the script needs, every link and every call the script makes, the colours and their contrast, and the numbers. The script
-  by `tests/cloud/pages-app.test.ts` and `tests/cloud/pages-stage.test.ts` (the stage of an account, what the card says, and what is
-  shown), which run it unchanged on the real files in a small DOM with a service that answers as each test says. And in a real
+  by `tests/cloud/pages-app.test.ts`, `tests/cloud/pages-stage.test.ts` (the stage of an account, what the card says, and what is
+  shown) and `tests/cloud/pages-dashboard.test.ts` (the tiles, the section list, Settings, the skeleton, the allowance meter, the bar for
+  each day, the empty usage state, the steps of a starting workspace and Copy), which run it unchanged on the real files in a small
+  DOM with a service that answers as each test says. `pages.test.ts` also pins the kit, the contrast of every pair, the size of every
+  target, forced colours, reduced motion, the stylesheet's budget and a name of sixty letters. And in a real
   browser, at three widths and in both colour schemes, with an accessibility scan, against a control plane started for the purpose;
   that pass is not part of `npm test`.
 

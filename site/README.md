@@ -19,8 +19,8 @@ python3 -m http.server --directory site 8080      # then open http://127.0.0.1:8
 | `contact/index.html` | `/contact/` | Which address is for what, in three rows (the place the links to sales, support and security land, each with a copy button that the script adds), and what to put in the message |
 | `legal/index.html` | `/legal/` | The source licence in plain words, privacy (this site collects nothing), and the terms |
 | `404.html` | any address that is not found | A short list of the pages a person was probably looking for, each with what it is for (and the account, while Curule Cloud is open), and the way home; written with addresses from the root, because a host shows it at the address that was not found |
-| `assets/site.css` | | The one stylesheet: the brand's colours under the names the pages use, the system fonts, and every component |
-| `assets/site.js` | | Sets the links that leave the site, the copy buttons on the commands, the phone menu, the On this page bar of the long pages, Back to top, and the documentation page's filter; nothing else |
+| `assets/site.css` | | The one stylesheet: the generated UI kit block, the brand's colours under the names the pages use, the system fonts, and every component |
+| `assets/site.js` | | Sets the links that leave the site, the copy buttons on the commands, the phone menu, the header's line and blur once the page has moved, the arrival of what is below the first screen, the On this page bar of the long pages, Back to top, and the documentation page's filter; nothing else |
 | `assets/pricing.js` | | The calculator on the pricing page |
 | `assets/shots/` | | The product screenshots, under stable names (see below) |
 | `assets/favicon.svg`, `apple-touch-icon.png`, `social-card.png` | | Copies of the files in [`brand/`](../brand/README.md); a test fails if one stops matching the kit |
@@ -70,6 +70,34 @@ of the map, so its filter leaves them alone. The page also has a filter over its
 it: what is typed keeps the documents that have every word somewhere in their title, description, label (Guide, Reference, Short,
 Log), path or group, hides a group that has none left, and says how many are left in a polite live region after a pause in the
 typing. When nothing matches it says so, with a button that clears the filter; Escape clears it too. It reads only the page.
+
+## How it is drawn
+
+The stylesheet is built on the UI kit ([docs/brand.md](../docs/brand.md#the-ui-kit)): its generated block gives the colour roles, the
+five steps of elevation, the radii, the tracking that goes with each size of type and the motion, and the rest of `assets/site.css`
+uses them by name. What is particular to the site:
+
+- **Depth.** A card at rest sits on the first step of elevation with a lit top edge, so that in the dark scheme it is a lighter
+  surface and not a shadow that is not there. A card that can be pressed rises a pixel and takes the second step; the product's frame
+  on the home page is the fifth. Text that is only text stays flat.
+- **Figures.** Every number that is compared (the prices, the limits, the estimate, the plan table) is tabular and in the text font,
+  not in monospace.
+- **Two controls with a thumb.** The home page's product tabs and the pricing page's Annual/Monthly switch are radio inputs and CSS:
+  the thumb that slides under the chosen one is a pseudo-element moved by `--n` steps, so they work without a script.
+- **Drawings.** An icon is a 24-unit drawing shown at 20 px with a 1.8-unit stroke (a test holds the attributes to the rules). The
+  drawings on the four reasons, the three steps and the places to start are decoration: `aria-hidden`, no words in them, no
+  `style`, and no two cards of a group share one. The glyph of a notice is made with gradients, so that no `data:` address is needed
+  under the pages' policy.
+- **Rows that line up.** A plan card and a "Start here" card are `subgrid` rows (`grid-row: span N`), so that title, price, limits,
+  what is included and the button sit at one height across a row; a browser without subgrid shows plain cards.
+- **Grounds.** A page alternates the paper with a slightly different paper (`--band`) and has one deep ground (`--deep`), the closing
+  band. An inner page's heading sits on the same ruled paper as the home page's first screen, fainter.
+- **Arrival.** The stylesheet hides nothing. For a visitor who has not asked for reduced motion the script marks the pieces *below the
+  first screen* (`.rv`), and each rises 8 px and appears once as it comes into view, the children of a group 50 ms apart up to five.
+  If the script never runs, or the visitor asked for stillness, nothing was ever hidden. Print overrides all of it, and a button
+  prints as black text in a black line.
+- **The header** is part of the page at rest, on the first screen's glow. Once the page has moved the script gives it a line and a
+  blur and pins it; with no script it scrolls away and nothing flashes.
 
 ## No request leaves the site, and the pages say so
 
