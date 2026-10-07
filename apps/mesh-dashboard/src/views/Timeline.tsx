@@ -1,6 +1,6 @@
 import { localDateTime, opsSummary, plainReason, zoneLabel } from "../format";
 import { sinceText } from "../feed";
-import { AgentAvatar, IconTile, OutcomePill, agentColor, useNow } from "../components";
+import { AgentAvatar, IconTile, OutcomePill, Skeleton, agentColor, useNow } from "../components";
 import { EventSummary, evSeverity } from "../events";
 import type { NameOf } from "../eventmodel";
 import { eventLook } from "../overview-model";
@@ -54,5 +54,20 @@ export function EventTimeline({ events, nameOf, onOpen }: { events: TimelineEven
         );
       })}
     </ul>
+  );
+}
+
+/** What a timeline will be while it is read: the same rows, a mark and two lines of text each, so the page does not jump when they arrive. */
+export function TimelineSkeleton({ label, rows = 3 }: { label: string; rows?: number }): React.JSX.Element {
+  return (
+    <div className="tl-skel" role="status" aria-busy="true">
+      <span className="sr-only">{label}</span>
+      {Array.from({ length: rows }, (_, i) => (
+        <div key={i} className="tl-row" aria-hidden="true">
+          <span className="tl-mark"><Skeleton w={28} h={28} /></span>
+          <span className="tl-main"><Skeleton w={`${62 - i * 9}%`} h={14} /><Skeleton w={`${34 + i * 6}%`} h={11} /></span>
+        </div>
+      ))}
+    </div>
   );
 }

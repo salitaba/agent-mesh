@@ -21,7 +21,7 @@ import { MissionHero } from "./MissionHero";
 import { Panel } from "./Panel";
 import { ReplayDrawer } from "./ReplayDrawer";
 import { Shipped } from "./Shipped";
-import { EventTimeline, WorkTimeline } from "./Timeline";
+import { EventTimeline, TimelineSkeleton, WorkTimeline } from "./Timeline";
 import "./overview.css";
 
 /** How many of the newest events the page asks for when its buffer stops short of the log. */
@@ -270,7 +270,7 @@ export default function Overview(): React.JSX.Element {
             <WorkTimeline steps={steps.slice(0, 5)} roleOf={roleOf} onOpen={(t) => openDrawer(<StepDrawer turnId={t} steps={steps} />)} />
           ) : stepsLoaded ? (
             <p className="ov-empty">No work yet.</p>
-          ) : <p className="ov-empty">Loading recent work.</p>}
+          ) : <TimelineSkeleton label="Loading recent work." />}
         </Panel>
         <GoalChecks goal={goal} arts={arts} openArt={openArt} />
         <Panel
@@ -284,7 +284,7 @@ export default function Overview(): React.JSX.Element {
               event can actually be read, and arriving there with it selected keeps the stream in view. */}
           {timeline.length ? (
             <EventTimeline events={timeline.slice(-8).reverse()} nameOf={nameOf} onOpen={(s) => openDetail("event", String(s), "events")} />
-          ) : <p className="ov-empty">No events yet.</p>}
+          ) : sseState === "connecting" ? <TimelineSkeleton label="Loading the latest events." rows={4} /> : <p className="ov-empty">No events yet.</p>}
         </Panel>
       </div>
     </div>
