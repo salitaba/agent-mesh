@@ -7,7 +7,7 @@
  */
 import React, { useState } from "react";
 import "../projects.css";
-import { Button, ErrorState, PageHeader, useNow } from "../components";
+import { Button, CopyButton, ErrorState, IconTile, PageHeader, Pill, Progress, Skeleton, Stat, useNow } from "../components";
 import { fmt, localDateTime } from "../format";
 import { Icon } from "../icons";
 import { NewProjectDialog, Welcome } from "../newproject";
@@ -16,6 +16,7 @@ import { hashFor } from "../route";
 import { useMesh } from "../store";
 import { WhatTheHostSaid, readOrder } from "../tabs";
 import { formatRss } from "../tabmodel";
+import { budgetTone } from "../cost";
 import { cardActions, cardState, displayNames, failureDetail, groupProjects, hostSummary, lastOpened, usd, type GroupKey } from "../projectsmodel";
 
 type Doing = "opening" | "closing" | "restarting" | "removing";
@@ -49,52 +50,62 @@ function Card({ project, label, groupKey, now, parkedByHost, doing, locked, head
   return (
     <li className="pj-card" data-group={groupKey} data-state={state.key}>
       <div className="pj-head">
+        <IconTile icon="folder" tone={state.tone === "ok" ? undefined : state.tone} />
         <Heading className="pj-name" id={nameId} title={label}>{label}</Heading>
-        <span className={`pj-chip ${state.tone}`} data-state={state.key} title={state.sentence}>
-          <Icon name={state.icon} size={14} />
-          {state.label}
+        <span title={state.sentence}>
+          <Pill tone={state.tone === "neutral" ? "neutral" : state.tone} dot={false}>
+            <Icon name={state.icon} size={12} />
+            <span data-state={state.key} className="pj-state">{state.label}</span>
+          </Pill>
         </span>
       </div>
       <p className="pj-path">
-        <Icon name="folder" size={14} />
         <span className="path-start mono" title={project.root}><bdi>{project.root}</bdi></span>
+        <CopyButton compact text={project.root} what="the folder's path" />
       </p>
       <dl className="pj-facts">
-        <dt>Last opened</dt>
-        <dd title={project.lastOpenedAt ? localDateTime(project.lastOpenedAt) : undefined}>{lastOpened(project.lastOpenedAt, now)}</dd>
+        <div>
+          <dt>Last opened</dt>
+          <dd title={project.lastOpenedAt ? localDateTime(project.lastOpenedAt) : undefined}>{lastOpened(project.lastOpenedAt, now)}</dd>
+        </div>
         {state.mode ? (
-          <>
+          <div>
             <dt>Mission</dt>
             <dd>{state.mode === "parked" ? "Parked: nothing runs until it is started" : "Live"}</dd>
-          </>
+          </div>
         ) : null}
         {project.spend ? (
           <>
-            <dt>Spend</dt>
-            <dd title="Estimated at list prices since this project's process last started. The provider's invoice is the bill.">
-              {usd(project.spend.usd)} <small>estimated, {fmt(project.spend.tokens)} tokens</small>
-            </dd>
-            <dt>Turns</dt>
-            <dd>{project.spend.runningTurns} running</dd>
+            <div>
+              <dt>Spend</dt>
+              <dd title="Estimated at list prices since this project's process last started. The provider's invoice is the bill.">
+                {usd(project.spend.usd)} <small>estimated, {fmt(project.spend.tokens)} tokens</small>
+              </dd>
+            </div>
+            <div>
+              <dt>Turns</dt>
+              <dd>{project.spend.runningTurns} running</dd>
+            </div>
           </>
         ) : null}
         {rss ? (
-          <>
+          <div>
             <dt>Memory</dt>
             <dd>{rss}</dd>
-          </>
+          </div>
         ) : null}
       </dl>
       {say ? <p className="pj-problem">{state.sentence}</p> : null}
       {problem ? <WhatTheHostSaid text={problem} /> : null}
       <div className="pj-acts">
         <div className="pj-acts-main">
-          {acts.open ? <Button variant={acts.primary === "open" ? "primary" : "small"} disabled={off} aria-describedby={nameId} onClick={onOpen}>{doing === "opening" ? DOING_LABEL.opening : "Open"}</Button> : null}
-          {acts.goTo ? <Button variant={acts.primary === "goTo" ? "primary" : "small"} icon="chevron-right" disabled={off} aria-describedby={nameId} onClick={onGo}>Go to project</Button> : null}
-          {acts.restart ? <Button variant={acts.primary === "restart" ? "primary" : "small"} icon="refresh" disabled={off} aria-describedby={nameId} onClick={onRestart}>{doing === "restarting" ? DOING_LABEL.restarting : "Restart"}</Button> : null}
-          {acts.close ? <Button variant="small" icon="x" disabled={off} aria-describedby={nameId} onClick={onClose}>{doing === "closing" ? DOING_LABEL.closing : "Close"}</Button> : null}
+          {acts.open ? <Button variant={acts.primary === "open" ? "primary" : "soft"} disabled={off} aria-describedby={nameId} onClick={onOpen}>{doing === "opening" ? DOING_LABEL.opening : "Open"}</Button> : null}
+          {acts.goTo ? <Button variant={acts.primary === "goTo" ? "primary" : "soft"} icon="chevron-right" disabled={off} aria-describedby={nameId} onClick={onGo}>Go to project</Button> : null}
+          {acts.restart ? <Button variant={acts.primary === "restart" ? "primary" : "soft"} icon="refresh" disabled={off} aria-describedby={nameId} onClick={onRestart}>{doing === "restarting" ? DOING_LABEL.restarting : "Restart"}</Button> : null}
+          {acts.close ? <Button variant="soft" icon="x" disabled={off} aria-describedby={nameId} onClick={onClose}>{doing === "closing" ? DOING_LABEL.closing : "Close"}</Button> : null}
         </div>
-        <Button variant="small" danger icon="trash" disabled={off} aria-describedby={nameId} title="Forget this project on this host. Its files are not touched." onClick={onRemove}>
+        {/* Forgetting a project is the one act here that cannot be taken back with a click, so it is a quiet red line and not a button as loud as the others. */}
+        <Button variant="linklike" extra="pj-remove" disabled={off} aria-describedby={nameId} title="Forget this project on this host. Its files are not touched." onClick={onRemove}>
           {doing === "removing" ? DOING_LABEL.removing : "Remove from host…"}
         </Button>
       </div>
@@ -104,11 +115,16 @@ function Card({ project, label, groupKey, now, parkedByHost, doing, locked, head
 
 function Loading(): React.JSX.Element {
   return (
-    <div role="status">
+    <div role="status" aria-busy="true">
       <span className="sr-only">Loading projects…</span>
       <ul className="pj-grid" aria-hidden="true">
         {[0, 1, 2].map((i) => (
-          <li key={i} className="pj-card pj-skel"><i /><i /><i /></li>
+          <li key={i} className="pj-card">
+            <div className="pj-head"><Skeleton w={40} h={40} /><Skeleton w="50%" h={16} /></div>
+            <Skeleton w="85%" h={22} />
+            <Skeleton w="100%" h={44} />
+            <Skeleton w="45%" h={36} />
+          </li>
         ))}
       </ul>
     </div>
@@ -182,22 +198,24 @@ export default function Projects(): React.JSX.Element {
             <Loading />
           ) : (
             <>
-              <dl className="pj-summary" aria-label="This host at a glance">
-                <div className="pj-stat"><dt>Projects</dt><dd>{summary.total}</dd></div>
-                <div className="pj-stat"><dt>Open</dt><dd>{summary.open}</dd></div>
-                {summary.attention > 0 ? <div className="pj-stat attn"><dt>Need attention</dt><dd>{summary.attention}</dd></div> : null}
-                <div className="pj-stat"><dt>Turns running</dt><dd>{summary.runningTurns}</dd></div>
-                <div className="pj-stat" title="Open projects only, estimated at list prices since each last started. The provider's invoice is the bill.">
-                  <dt>Estimated spend</dt>
-                  <dd>
-                    {summary.usd === null ? <small>not reported</small> : usd(summary.usd)}
-                    {summary.usd !== null && summary.ceilingUsd !== null ? <small> of {usd(summary.ceilingUsd)} ceiling</small> : null}
-                  </dd>
+              <div className="card stat-strip pj-kpis" role="group" aria-label="This host at a glance">
+                <div className="stat-cell"><Stat label="Projects" value={summary.total} /></div>
+                <div className="stat-cell"><Stat label="Open" value={summary.open} /></div>
+                {summary.attention > 0 ? <div className="stat-cell"><Stat label="Need attention" value={summary.attention} tone="bad" /></div> : null}
+                <div className="stat-cell"><Stat label="Turns running" value={summary.runningTurns} /></div>
+                <div className="stat-cell" title="Open projects only, estimated at list prices since each last started. The provider's invoice is the bill.">
+                  {summary.usd === null ? (
+                    <Stat label="Estimated spend" value="Not reported" size="sm" />
+                  ) : (
+                    <Stat label="Estimated spend" value={usd(summary.usd)} unit={summary.ceilingUsd !== null ? `of ${usd(summary.ceilingUsd)} ceiling` : undefined}>
+                      {summary.ceilingUsd !== null && summary.ceilingUsd > 0 ? (() => { const r = summary.usd / summary.ceilingUsd; const t = budgetTone(r); return <Progress value={summary.usd} max={summary.ceilingUsd} label="Estimated spend against the host's ceiling" tone={t === "ok" ? undefined : t} valueText={`${usd(summary.usd)} of ${usd(summary.ceilingUsd)}`} />; })() : null}
+                    </Stat>
+                  )}
                 </div>
-              </dl>
+              </div>
               {groups.map((g) => (
                 <section key={g.key} className="pj-group" aria-labelledby={headings ? `pj-g-${g.key}` : undefined}>
-                  {headings ? <h3 className="group-h" id={`pj-g-${g.key}`}>{g.label} ({g.items.length})</h3> : null}
+                  {headings ? <h3 className="group-h" id={`pj-g-${g.key}`}>{g.label} <Pill tone="neutral" dot={false}>{g.items.length}</Pill></h3> : null}
                   <ul className="pj-grid">
                     {g.items.map((p) => (
                       <Card
