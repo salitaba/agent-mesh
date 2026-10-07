@@ -1,14 +1,13 @@
 import { useState } from "react";
 import { ago, fmt, fmtBudget } from "../format";
-import { Button, Input } from "../components";
+import { AgentAvatar, Button, IconTile, Input, Pill, Progress, agentColor } from "../components";
 import { Icon } from "../icons";
 import { AgentDrawer, ArtifactDrawer } from "../drawers";
 import { useMesh } from "../store";
 import {
-  answerPlan, capTarget, cardKind, escAgents, escalationText, holdsOf, openSupports, plainTaskOf, resolveArtifactId, shortArt, stuckInfoOf,
+  answerPlan, capTarget, cardKind, escAgents, escalationText, holdsOf, ifLeftAlone, openSupports, plainTaskOf, resolveArtifactId, shortArt, stuckInfoOf,
   raisedByLabel, type AnswerPlan, type BudgetInfo, type EscalationLike,
 } from "../escalation-card";
-import { Bar } from "./Meter";
 import { draftGet, draftSet, type Decisions } from "./useDecisions";
 import "./inbox.css";
 
@@ -41,9 +40,9 @@ function BudgetMeter({ b }: { b: BudgetInfo }): React.JSX.Element {
     <div className="dc-meter">
       <div className="dc-meter-line">
         <span><b>{fmtBudget(consumed, b.unit)}</b> <span className="muted">of {fmtBudget(limit, b.unit)}{unitWord}</span></span>
-        <span className="muted">{over > 0 ? `over by ${b.unit === "minutes" ? fmtBudget(over, b.unit) : fmt(over)}` : `${pct}%`}</span>
+        <span className={over > 0 ? "over" : "muted"}>{over > 0 ? `over by ${b.unit === "minutes" ? fmtBudget(over, b.unit) : fmt(over)}` : `${pct}%`}</span>
       </div>
-      <Bar value={consumed} max={limit || 1} label={b.agent ? `${b.agent}'s budget spent` : "Budget spent"} tone="bad" />
+      <Progress value={consumed} max={limit || 1} label={b.agent ? `${b.agent}'s budget spent` : "Budget spent"} tone="bad" size="lg" />
     </div>
   );
 }
@@ -83,7 +82,7 @@ function TextAnswer({ e, plan, busy, otherBusy, suggestion, onSend, children }: 
       {/* The phone keyboard's Enter key says Send: the button under the field is the one the keyboard covers. */}
       <Input id={`dc-${id}-text`} value={text} onChange={(ev) => write(ev.currentTarget.value)} placeholder={plan.text?.placeholder} disabled={busy} aria-required={required} enterKeyHint="send" />
       <div className="dc-acts">
-        <Button variant="primary" type="submit" disabled={blocked}>{busy ? "Sending…" : label}</Button>
+        <Button variant="primary" size="lg" type="submit" disabled={blocked}>{busy ? "Sending…" : label}</Button>
         {/* A suggestion is something you choose: it is never pre-typed, so sending always needs a deliberate act. */}
         {suggestion && text !== suggestion ? <Button variant="small" title="Fill the box with the suggested answer. You can still edit it." disabled={busy} onClick={() => write(suggestion)}>Use the suggested answer</Button> : null}
         {children}
@@ -117,7 +116,7 @@ function BudgetAnswer({ e, plan, budget, busy, otherBusy, raiseBusy, onRaise, on
       <div className="dc-acts">
         {plan.raise ? (
           <>
-            <Button variant="primary" type="submit" icon="plus" disabled={off}>{raiseBusy ? "Raising…" : plan.primary.label}</Button>
+            <Button variant="primary" size="lg" type="submit" icon="plus" disabled={off}>{raiseBusy ? "Raising…" : plan.primary.label}</Button>
             <Button variant="small" disabled={off} onClick={() => onRaise(key, plan.raise!.doubleLimit, note, true)}>{plan.raise.doubleLabel}</Button>
             <Button variant="small" aria-expanded={custom} disabled={off} onClick={() => setCustom(!custom)}>Set a limit</Button>
           </>
@@ -151,7 +150,7 @@ function CeilingAnswer({ e, plan, busy, otherBusy, onSettings, onSend }: AnswerP
   return (
     <form className="respond-form dc-answer" data-id={id} id={`respond-form-${id}`} onSubmit={(ev) => { ev.preventDefault(); if (!off) onSend(note.trim() || "ceiling raised"); }}>
       <div className="dc-acts">
-        <Button variant="primary" icon="sliders" onClick={onSettings}>{plan.primary.label}</Button>
+        <Button variant="primary" size="lg" icon="sliders" onClick={onSettings}>{plan.primary.label}</Button>
       </div>
       <label className="dc-label" htmlFor={`dc-${id}-note`}>{plan.text?.label}</label>
       <Input id={`dc-${id}-note`} value={note} onChange={(ev) => write(ev.currentTarget.value)} placeholder={plan.text?.placeholder} disabled={busy} />
@@ -222,26 +221,30 @@ export function DecisionCard({ e, status, list, msgs, artIndex, decisions: d }: 
   return (
     <article className={`dc ${tone}`} data-esc={id} aria-labelledby={`dc-${id}-t`}>
       <header className="dc-head">
-        <span className={`dc-ico ${tone}`}><Icon name={kind === "notice" ? "info" : "alert"} size={18} /></span>
+        <IconTile icon={kind === "notice" ? "info" : "alert"} tone={tone === "info" ? "info" : tone} />
         <div className="dc-titles">
           <h4 id={`dc-${id}-t`}>{text.title}</h4>
           <p className="dc-meta">
-            <span className={`dc-holds ${holds.scope}`} title={holds.scope === "mission" ? "The mission is halted until this is answered." : holds.scope === "seat" ? "Only this seat is parked. The rest of the mesh keeps working." : "The mission carries on whether or not this is answered."}>
+            <Pill tone={tone === "info" ? "info" : tone} dot={false}>
               {holds.scope === "mission" ? "Holds the mission" : holds.scope === "seat" ? `Holds ${holds.seat}` : "Notice: holds nothing"}
-            </span>
+            </Pill>
             <span>{stuck?.age ? stuck.age : `Raised by ${who} ${ago(e.createdAt)}`}</span>
           </p>
         </div>
       </header>
+      <p className="dc-left"><Icon name={holds.scope === "nothing" ? "info" : "pause"} size={14} />{ifLeftAlone(holds)}</p>
 
       {showWhat ? <p className="dc-what">{text.what}</p> : null}
       {budget && (budget.consumed || budget.limit) ? <BudgetMeter b={budget} /> : null}
 
       {stuck && kind === "stuck" ? (
         <div className="dc-ask">
-          <p><b>{stuck.askerId || "Someone"}</b> is waiting for <b>{stuck.agentId || "an agent"}</b> to answer:</p>
-          <p className="dc-ask-what">{stuck.requestLabel.slice(0, 280)}</p>
-          <EvidenceRefs uris={requestFiles} artIndex={artIndex} />
+          {stuck.askerId ? <AgentAvatar id={stuck.askerId} color={agentColor(String((status?.agents || []).find((a: any) => a.id === stuck.askerId)?.role ?? ""))} size="sm" /> : null}
+          <div>
+            <p><b>{stuck.askerId || "Someone"}</b> is waiting for <b>{stuck.agentId || "an agent"}</b> to answer:</p>
+            <p className="dc-ask-what">{stuck.requestLabel.slice(0, 280)}</p>
+            <EvidenceRefs uris={requestFiles} artIndex={artIndex} />
+          </div>
         </div>
       ) : null}
 
@@ -300,7 +303,7 @@ export function DecisionCard({ e, status, list, msgs, artIndex, decisions: d }: 
       {kind === "cap" && budget ? (
         <div className="respond-form dc-answer" data-id={id} id={`respond-form-${id}`}>
           <div className="dc-acts">
-            <Button variant="primary" icon="plus" data-cap-raise={budget.configCap} disabled={busy || otherBusy || raiseBusy} onClick={() => void d.raiseCap(e, text.title, budget)}>{raiseBusy ? "Raising…" : plan.primary.label}</Button>
+            <Button variant="primary" size="lg" icon="plus" data-cap-raise={budget.configCap} disabled={busy || otherBusy || raiseBusy} onClick={() => void d.raiseCap(e, text.title, budget)}>{raiseBusy ? "Raising…" : plan.primary.label}</Button>
           </div>
           <p className="dc-cons">{plan.consequence}</p>
         </div>
@@ -309,9 +312,9 @@ export function DecisionCard({ e, status, list, msgs, artIndex, decisions: d }: 
         <CeilingAnswer e={e} plan={plan} busy={busy} otherBusy={otherBusy} onSettings={() => setView("hostsettings")} onSend={(t) => void d.respond(e, text.title, t)} />
       ) : null}
 
-      <details className="esc-raw dc-tech">
+      <details className="disc dc-tech">
         <summary>Technical details</summary>
-        <pre>{JSON.stringify({ id, reason: e.reason, raisedBy: e.raisedBy, conflictKey: e.conflictKey, detail: e.detail }, null, 2).slice(0, 2000)}</pre>
+        <pre className="code">{JSON.stringify({ id, reason: e.reason, raisedBy: e.raisedBy, conflictKey: e.conflictKey, detail: e.detail }, null, 2).slice(0, 2000)}</pre>
         <div className="dc-acts">
           <Button variant="small" icon="copy" onClick={() => void d.copyId(id)}>Copy id</Button>
           <Button variant="small" onClick={() => { setEvSearch(id); setEvFilter(""); setView("events"); }}>Related events</Button>

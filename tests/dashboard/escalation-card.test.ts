@@ -14,6 +14,7 @@ import {
   escalationText,
   holdsLine,
   holdsOf,
+  ifLeftAlone,
   isSystemRaiser,
   openSupports,
   raisedByLabel,
@@ -409,4 +410,13 @@ test("a derived card links only to the requests it summarises that are still ope
   const bySupports = esc({ id: "sum", reason: "stalemate", supports: ["c", "b"], detail: { openDeadlockEscalations: [{ id: "a" }] } });
   assert.deepEqual(openSupports(bySupports, list).map((s) => s.id), ["c"], "the card's own supports field outranks the detail");
   assert.deepEqual(openSupports(esc({ reason: "stalemate" }), list), []);
+});
+
+test("what happens if a card is left alone is said under its title, for each thing a card can hold", () => {
+  assert.equal(ifLeftAlone({ scope: "mission" }), "The mission is halted until this is answered.");
+  assert.equal(ifLeftAlone({ scope: "seat", seat: "dev" }), "Only this seat is parked. The rest of the mesh keeps working.");
+  assert.equal(ifLeftAlone({ scope: "nothing" }), "The mission carries on whether or not this is answered.");
+  // The sentence follows what the card holds: a halting card and a notice never say the same thing.
+  assert.notEqual(ifLeftAlone(holdsOf(esc())), ifLeftAlone(holdsOf(esc({ advisory: true }))));
+  assert.equal(ifLeftAlone(holdsOf(esc({ advisory: true }))), "The mission carries on whether or not this is answered.");
 });

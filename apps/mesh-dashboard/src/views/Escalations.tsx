@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef } from "react";
 import { ago } from "../format";
 import { useMesh } from "../store";
-import { Banner, Button, EmptyState, ErrorState, IconButton, PageHeader, TabPanel, Tabs } from "../components";
+import { Banner, Button, EmptyState, ErrorState, IconButton, IconTile, PageHeader, Pill, Skeleton, TabPanel, Tabs } from "../components";
 import { Icon } from "../icons";
 import { useMedia } from "../useMedia";
 import { useMission } from "../useMission";
@@ -39,7 +39,7 @@ function AnsweredRow({ a, latest, onDismiss }: { a: Answered; latest: boolean; o
   const primary = state.primary;
   return (
     <li ref={ref} tabIndex={-1} className="ib-answered" data-answered={a.id}>
-      <span className="dc-ico ok"><Icon name="check" size={16} /></span>
+      <IconTile icon="check" tone="ok" size="sm" />
       <div className="ib-answered-body">
         <b>{a.title}</b>
         <p className="ib-sent" title={a.text}>{a.text}</p>
@@ -108,12 +108,21 @@ export default function Inbox(): React.JSX.Element {
             {d.load === "error" && !d.list.length ? (
               <ErrorState what="the decision queue" detail={`${d.loadErr ?? "The server did not answer."} There may be decisions waiting that this page cannot show.`} onRetry={d.retry} />
             ) : null}
-            {d.load === "loading" && !d.list.length ? <p className="ov-empty" role="status">Loading decisions.</p> : null}
+            {d.load === "loading" && !d.list.length ? (
+              <div className="dc dc-skel" role="status" aria-busy="true">
+                <span className="sr-only">Loading decisions.</span>
+                <div className="dc-head" aria-hidden="true"><Skeleton w={40} h={40} /><div className="dc-titles"><Skeleton w="45%" h={18} /><Skeleton w="30%" h={22} /></div></div>
+                <Skeleton w="90%" h={14} />
+                <Skeleton w="100%" h={36} />
+              </div>
+            ) : null}
 
             {d.load === "ready" && counts.decisions === 0 && !d.answered.length && !serverDown ? (
-              <EmptyState icon="inbox" title="No decisions are waiting">
-                A decision appears here when the team needs an answer from you: a budget runs out, the agents cannot agree, a seat stops, or an agent asks you something.
-              </EmptyState>
+              <div className="card ib-empty">
+                <EmptyState icon="inbox" title="No decisions are waiting" action={<Button variant="soft" icon="overview" onClick={() => setView("overview")}>Back to the Overview</Button>}>
+                  A decision appears here when the team needs an answer from you: a budget runs out, the agents cannot agree, a seat stops, or an agent asks you something.
+                </EmptyState>
+              </div>
             ) : null}
 
             {d.answered.length ? (
@@ -127,21 +136,21 @@ export default function Inbox(): React.JSX.Element {
 
             {ordered.blocking.length ? (
               <section className="ib-section" aria-labelledby="ib-blocking-h">
-                <h3 className="group-h" id="ib-blocking-h">Decisions ({ordered.blocking.length})</h3>
+                <h3 className="group-h" id="ib-blocking-h">Decisions <Pill tone="neutral" dot={false}>{ordered.blocking.length}</Pill></h3>
                 {ordered.blocking.map((e) => <DecisionCard key={String(e.id)} e={e} status={status} list={d.list} msgs={d.msgs} artIndex={d.artIndex} decisions={d} />)}
               </section>
             ) : null}
 
             {ordered.notices.length ? (
               <section className="ib-section" aria-labelledby="ib-notices-h">
-                <h3 className="group-h" id="ib-notices-h">Notices ({ordered.notices.length})</h3>
+                <h3 className="group-h" id="ib-notices-h">Notices <Pill tone="neutral" dot={false}>{ordered.notices.length}</Pill></h3>
                 <p className="ib-hint">These hold nothing. The mission carries on whether or not you answer.</p>
                 {ordered.notices.map((e) => <DecisionCard key={String(e.id)} e={e} status={status} list={d.list} msgs={d.msgs} artIndex={d.artIndex} decisions={d} />)}
               </section>
             ) : null}
 
             {done.length ? (
-              <details className="esc-raw ib-done">
+              <details className="disc ib-done">
                 <summary>Done ({done.length})</summary>
                 <ul>
                   {done.slice(0, DONE_SHOWN).map((e) => {
