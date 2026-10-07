@@ -401,6 +401,10 @@ test("the stylesheet is held to its budget, and whatever it moves it stills for 
   const used = [...css.matchAll(/[\s;{]animation:\s*([\w-]+)/g)].map((m) => m[1]!);
   assert.ok(used.length > 0 && defined.size > 0, "the stylesheet animates something (the spinners, the skeleton, the pulse of a workspace that is starting)");
   for (const name of used) assert.ok(defined.has(name), `${name} is animated and defined nowhere`);
+  // A page arrives once, and holds what it is afterwards (no fill: a transform kept after the move would make the page a containing block for what is fixed in it).
+  const arrival = cssRules(css).find((r) => r.selectors.includes("main > .wrap") && declared(r, "animation") !== undefined);
+  assert.ok(arrival, "the content of every page arrives");
+  assert.match(declared(arrival, "animation") ?? "", /^rise [^ ]+ [^ ]+$/, "with the rise, once, over a time and an ease and no more");
 
   // ... and a visitor who asked their system for less motion gets none of it: the animations end where they start, the transitions are instant,
   // and a jump to a section is a jump. `!important`, because the rules it overrides are more specific than a bare `*`.
