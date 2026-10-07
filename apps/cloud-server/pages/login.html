@@ -26,37 +26,47 @@
 
 <main id="main" tabindex="-1">
 
-<div class="narrow">
-  <h1>Sign in</h1>
-  <p class="lede">To your Curule Cloud account.</p>
-  <noscript><p class="note note-warn">This page needs JavaScript to talk to your account. Nothing on it is loaded from another site.</p></noscript>
-  <div class="card">
-    <form id="form" novalidate>
-      <div id="status" class="note" role="status" aria-live="polite"></div>
-      <div class="field">
-        <label for="email">Email</label>
-        <input id="email" name="email" type="email" autocomplete="email" inputmode="email" required>
-      </div>
-      <div class="field">
-        <label for="password">Password</label>
-        <div class="secret">
-          <input id="password" name="password" type="password" autocomplete="current-password" required>
-          <button class="reveal" type="button" data-reveal="password" aria-controls="password" aria-label="Show password" hidden>Show</button>
+<div class="wrap auth">
+  <div class="auth-main">
+    <h1>Sign in</h1>
+    <p class="lede">To your Curule Cloud account.</p>
+    <noscript><p class="note note-warn">This page needs JavaScript to talk to your account. Nothing on it is loaded from another site.</p></noscript>
+    <div class="card">
+      <form id="form" novalidate>
+        <div id="status" class="note" role="status" aria-live="polite"></div>
+        <div class="field">
+          <label for="email">Email</label>
+          <input id="email" name="email" type="email" autocomplete="email" inputmode="email" required>
         </div>
-      </div>
-      <div class="btn-row">
-        <button class="btn btn-primary" type="submit" data-busy="Signing in">Sign in</button>
-        <a class="btn" href="/forgot">Forgot your password?</a>
-      </div>
-    </form>
-    <form id="resend-form" class="resend" novalidate hidden>
-      <p class="muted small">Not confirmed your address yet? We can send the link again.</p>
-      <div class="btn-row"><button id="resend" class="btn btn-small" type="submit" data-busy="Sending">Send the confirmation link again</button></div>
-      <div id="resend-status" class="note" role="status" aria-live="polite"></div>
-      <p id="resend-wait" class="muted small"></p>
-    </form>
+        <div class="field">
+          <label for="password">Password</label>
+          <div class="secret">
+            <input id="password" name="password" type="password" autocomplete="current-password" required>
+            <button class="reveal" type="button" data-reveal="password" aria-controls="password" aria-label="Show password" hidden>Show</button>
+          </div>
+        </div>
+        <div class="btn-row">
+          <button class="btn btn-primary" type="submit" data-busy="Signing in">Sign in</button>
+          <a class="btn btn-ghost" href="/forgot">Forgot your password?</a>
+        </div>
+      </form>
+      <form id="resend-form" class="resend" novalidate hidden>
+        <p class="muted small">Not confirmed your address yet? We can send the link again.</p>
+        <div class="btn-row"><button id="resend" class="btn btn-small" type="submit" data-busy="Sending">Send the confirmation link again</button></div>
+        <div id="resend-status" class="note" role="status" aria-live="polite"></div>
+        <p id="resend-wait" class="muted small"></p>
+      </form>
+    </div>
+    <p class="aside">New here? <a href="/signup">Create an account</a>.</p>
   </div>
-  <p class="aside">New here? <a href="/signup">Create an account</a>.</p>
+  <div class="auth-side">
+    <svg class="auth-mark" viewBox="0 0 64 64" aria-hidden="true" focusable="false"><path class="ink" d="M48.72 15.65A22 22 0 1 0 48.72 48.35" fill="none" stroke-width="9.2" stroke-linecap="round"/><circle class="seat" cx="48.72" cy="15.65" r="8"/></svg>
+    <ul class="auth-points" role="list">
+      <li><strong>A workspace of your own</strong><span>One isolated host with its own projects, event log and files.</span></li>
+      <li><strong>Your record is yours</strong><span>The same append-only event log a self-hosted install writes, so a mission can be replayed.</span></li>
+      <li><strong>Pause or delete</strong><span>A paused workspace keeps its files. Deleting one deletes its data.</span></li>
+    </ul>
+  </div>
 </div>
 </main>
 

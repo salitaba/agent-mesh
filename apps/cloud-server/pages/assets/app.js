@@ -151,6 +151,11 @@
   /** A subscription that still holds a plan. One that has ended is a plan that can be chosen again. */
   const holdsPlan = (sub) => Boolean(sub) && sub.status !== "ended";
 
+  /** How far a new password is towards the length it must have: the characters so far (no more than the length asked for) and whether that is enough. It says nothing of how good the password is. */
+  function lengthProgress(length, need) {
+    return { value: Math.min(length, need), done: length >= need };
+  }
+
   const POLICY_UNITS = { graceDays: "day", retentionDays: "day", sessionDays: "day", idleDays: "day", verificationHours: "hour", resetHours: "hour" };
 
   /** What a plan includes, one fact to a line. */
@@ -326,7 +331,7 @@
     return JSON.stringify([sub && [sub.plan, sub.status, sub.periodEnd], b && [b.balance.included, b.balance.purchased]]);
   }
 
-  const exported = { NEEDS, plural, digitsOf, bareAmount, money, usageMoney, balanceMoney, count, when, dayLabel, parseAmount, nextPath, outsideUrl, reasonText, planFacts, fingerprint, isStarting, holdsPlan, canKey, lacksKey, isByok, stepsOf, stageOf, nextStepOf, sectionsOf, resumable, workspaceSays, STATES, POLICY_UNITS };
+  const exported = { NEEDS, lengthProgress, plural, digitsOf, bareAmount, money, usageMoney, balanceMoney, count, when, dayLabel, parseAmount, nextPath, outsideUrl, reasonText, planFacts, fingerprint, isStarting, holdsPlan, canKey, lacksKey, isByok, stepsOf, stageOf, nextStepOf, sectionsOf, resumable, workspaceSays, STATES, POLICY_UNITS };
   if (typeof module === "object" && module !== null && typeof module.exports === "object") module.exports = exported;
   if (typeof document === "undefined") return;
 
@@ -368,6 +373,8 @@
   function say(node, kind, text) {
     node.className = kind ? `note note-${kind}` : "note";
     node.textContent = text || "";
+    // A status that was drawn as a wait (the page that checks a link) is not waiting for anything once it has said something.
+    node.removeAttribute("aria-busy");
   }
 
   /** The quiet line under a form, which turns into a note when there is something to say. */
@@ -484,6 +491,33 @@
   function hideSecret(button) {
     const set = secrets.get(button);
     if (set) set(false);
+  }
+
+  const lengths = new Map();
+
+  /**
+   * The meter under a new password shows how many of the characters asked for are there, and nothing else: length against the minimum the field
+   * states is a fact, and how good a password is cannot be told from how it looks. It is for the eye (the hint says the same in words).
+   */
+  function wireLength(meter) {
+    const input = $(meter.dataset.len);
+    if (!input) return;
+    const need = Number(input.getAttribute("minlength")) || 10;
+    meter.setAttribute("max", String(need));
+    const sync = () => {
+      const { value, done } = lengthProgress(input.value.length, need);
+      meter.setAttribute("value", String(value));
+      if (done) meter.setAttribute("data-done", "");
+      else meter.removeAttribute("data-done");
+    };
+    lengths.set(input, sync);
+    input.addEventListener("input", sync);
+  }
+
+  /** A field the page emptied itself says so to its meter: no input event is fired for that. */
+  function syncLength(input) {
+    const sync = lengths.get(input);
+    if (sync) sync();
   }
 
   /** The page's heading and the tab's title say what the page is now: a link that was sent is no longer "Create your account". */
@@ -704,8 +738,9 @@
       const press = button("Resend the email", { type: "submit", id: "resend", attrs: { "data-busy": "Sending" } });
       const wait = el("p", { id: "resend-wait", class: "muted small" });
       const answer = el("div", { id: "resend-status", class: "note", role: "status", "aria-live": "polite" });
-      const again = el("form", { id: "resend-form", class: "resend", novalidate: true }, el("div", { class: "btn-row" }, press, el("a", { id: "another", class: "btn", href: "/signup", onclick: () => store.set(SIGNUP_ADDRESS, address) }, "Use another address")), answer, wait);
+      const again = el("form", { id: "resend-form", class: "resend", novalidate: true }, el("div", { class: "btn-row" }, press, el("a", { id: "another", class: "btn btn-ghost", href: "/signup", onclick: () => store.set(SIGNUP_ADDRESS, address) }, "Use another address")), answer, wait);
       card.replaceChildren(
+        el("div", { class: "tile tile-mail", "aria-hidden": "true" }),
         el("div", { class: "note note-ok", role: "status" }, r.data.message),
         el("p", null, "We sent the link to ", el("strong", null, address), ". It works once, and the email says when it expires."),
         again,
@@ -1737,6 +1772,7 @@
       }
       current.value = "";
       next.value = "";
+      syncLength(next);
       say(status, "ok", "Your password is changed. Every other device is signed out.");
     });
 
@@ -1810,6 +1846,7 @@
       if (event.target && event.target.removeAttribute) event.target.removeAttribute("aria-invalid");
     });
     for (const button of doc.querySelectorAll("[data-reveal]")) wireSecret(button);
+    for (const meter of doc.querySelectorAll("[data-len]")) wireLength(meter);
     const asked = call("GET", "/api/session");
     const polite = paintPolicy();
     const reply = await asked;

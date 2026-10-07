@@ -26,33 +26,44 @@
 
 <main id="main" tabindex="-1">
 
-<div class="narrow">
-  <h1 id="title">Create your account</h1>
-  <p class="lede" id="lede">We send a link to confirm your address. Nothing else is needed to start.</p>
-  <noscript><p class="note note-warn">This page needs JavaScript to talk to your account. Nothing on it is loaded from another site.</p></noscript>
-  <div class="card" id="card">
-    <form id="form" novalidate>
-      <div id="status" class="note" role="status" aria-live="polite"></div>
-      <div class="field">
-        <label for="email">Email</label>
-        <input id="email" name="email" type="email" autocomplete="email" inputmode="email" required>
-      </div>
-      <div class="field">
-        <label for="password">Password</label>
-        <div class="secret">
-          <input id="password" name="password" type="password" autocomplete="new-password" required minlength="10" aria-describedby="password-hint">
-          <button class="reveal" type="button" data-reveal="password" aria-controls="password" aria-label="Show password" hidden>Show</button>
+<div class="wrap auth">
+  <div class="auth-main">
+    <h1 id="title">Create your account</h1>
+    <p class="lede" id="lede">We send a link to confirm your address. Nothing else is needed to start.</p>
+    <noscript><p class="note note-warn">This page needs JavaScript to talk to your account. Nothing on it is loaded from another site.</p></noscript>
+    <div class="card" id="card">
+      <form id="form" novalidate>
+        <div id="status" class="note" role="status" aria-live="polite"></div>
+        <div class="field">
+          <label for="email">Email</label>
+          <input id="email" name="email" type="email" autocomplete="email" inputmode="email" required>
         </div>
-        <span id="password-hint" class="hint">At least 10 characters. A few words in a row is a good password.</span>
-      </div>
-      <div class="check">
-        <input id="agree" name="agree" type="checkbox" required>
-        <label for="agree">I agree to the <a href="/terms">Terms</a> and have read the <a href="/privacy">Privacy notice</a>.</label>
-      </div>
-      <button class="btn btn-primary" type="submit" data-busy="Creating account">Create account</button>
-    </form>
+        <div class="field">
+          <label for="password">Password</label>
+          <div class="secret">
+            <input id="password" name="password" type="password" autocomplete="new-password" required minlength="10" aria-describedby="password-hint">
+            <button class="reveal" type="button" data-reveal="password" aria-controls="password" aria-label="Show password" hidden>Show</button>
+          </div>
+          <meter class="len" data-len="password" min="0" max="10" value="0" aria-hidden="true"></meter>
+          <span id="password-hint" class="hint">At least 10 characters. A few words in a row is a good password.</span>
+        </div>
+        <div class="check">
+          <input id="agree" name="agree" type="checkbox" required>
+          <label for="agree">I agree to the <a href="/terms">Terms</a> and have read the <a href="/privacy">Privacy notice</a>.</label>
+        </div>
+        <button class="btn btn-primary" type="submit" data-busy="Creating account">Create account</button>
+      </form>
+    </div>
+    <p class="aside">Already have an account? <a href="/login">Sign in</a></p>
   </div>
-  <p class="aside">Already have an account? <a href="/login">Sign in</a></p>
+  <div class="auth-side">
+    <svg class="auth-mark" viewBox="0 0 64 64" aria-hidden="true" focusable="false"><path class="ink" d="M48.72 15.65A22 22 0 1 0 48.72 48.35" fill="none" stroke-width="9.2" stroke-linecap="round"/><circle class="seat" cx="48.72" cy="15.65" r="8"/></svg>
+    <ul class="auth-points" role="list">
+      <li><strong>A workspace of your own</strong><span>One isolated host with its own projects, event log and files.</span></li>
+      <li><strong>Your record is yours</strong><span>The same append-only event log a self-hosted install writes, so a mission can be replayed.</span></li>
+      <li><strong>Pause or delete</strong><span>A paused workspace keeps its files. Deleting one deletes its data.</span></li>
+    </ul>
+  </div>
 </div>
 </main>
 

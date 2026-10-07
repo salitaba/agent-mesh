@@ -26,24 +26,34 @@
 
 <main id="main" tabindex="-1">
 
-<div class="narrow">
-  <h1 id="title">Confirming your address</h1>
-  <noscript><p class="note note-warn">This page needs JavaScript to talk to your account. Nothing on it is loaded from another site.</p></noscript>
-  <div class="card">
-    <div id="status" class="note" role="status" aria-live="polite">Checking the link.</div>
-    <div id="again" hidden>
-      <p>A link works once and expires after <span data-policy="verificationHours">24 hours</span>. Enter your address and we send a new one, if it is waiting to be confirmed.</p>
-      <form id="resend-form" novalidate>
-        <div class="field">
-          <label for="email">Email</label>
-          <input id="email" name="email" type="email" autocomplete="email" inputmode="email" required>
-        </div>
-        <div class="btn-row"><button id="resend" class="btn btn-primary" type="submit" data-busy="Sending">Send a new link</button></div>
-        <div id="resend-status" class="note" role="status" aria-live="polite"></div>
-        <p id="resend-wait" class="muted small"></p>
-      </form>
-      <p class="aside">Already confirmed? <a href="/login">Sign in</a>. New here? <a href="/signup">Create an account</a>.</p>
+<div class="wrap auth">
+  <div class="auth-main">
+    <h1 id="title">Confirming your address</h1>
+    <noscript><p class="note note-warn">This page needs JavaScript to talk to your account. Nothing on it is loaded from another site.</p></noscript>
+    <div class="card">
+      <div id="status" class="note" role="status" aria-live="polite" aria-busy="true">Checking the link.</div>
+      <div id="again" hidden>
+        <p>A link works once and expires after <span data-policy="verificationHours">24 hours</span>. Enter your address and we send a new one, if it is waiting to be confirmed.</p>
+        <form id="resend-form" novalidate>
+          <div class="field">
+            <label for="email">Email</label>
+            <input id="email" name="email" type="email" autocomplete="email" inputmode="email" required>
+          </div>
+          <div class="btn-row"><button id="resend" class="btn btn-primary" type="submit" data-busy="Sending">Send a new link</button></div>
+          <div id="resend-status" class="note" role="status" aria-live="polite"></div>
+          <p id="resend-wait" class="muted small"></p>
+        </form>
+        <p class="aside">Already confirmed? <a href="/login">Sign in</a>. New here? <a href="/signup">Create an account</a>.</p>
+      </div>
     </div>
+  </div>
+  <div class="auth-side">
+    <svg class="auth-mark" viewBox="0 0 64 64" aria-hidden="true" focusable="false"><path class="ink" d="M48.72 15.65A22 22 0 1 0 48.72 48.35" fill="none" stroke-width="9.2" stroke-linecap="round"/><circle class="seat" cx="48.72" cy="15.65" r="8"/></svg>
+    <ul class="auth-points" role="list">
+      <li><strong>A workspace of your own</strong><span>One isolated host with its own projects, event log and files.</span></li>
+      <li><strong>Your record is yours</strong><span>The same append-only event log a self-hosted install writes, so a mission can be replayed.</span></li>
+      <li><strong>Pause or delete</strong><span>A paused workspace keeps its files. Deleting one deletes its data.</span></li>
+    </ul>
   </div>
 </div>
 </main>

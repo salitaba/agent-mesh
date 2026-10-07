@@ -566,6 +566,51 @@ test("a password field has Show and Hide that only a script can give, and a pass
   }
 });
 
+test("a new password shows how far it is towards the length asked for, in steps, and says nothing of how good it is", async () => {
+  const h = helpers();
+  assert.deepEqual(h.lengthProgress(0, 10), { value: 0, done: false });
+  assert.deepEqual(h.lengthProgress(9, 10), { value: 9, done: false });
+  assert.deepEqual(h.lengthProgress(10, 10), { value: 10, done: true });
+  assert.deepEqual(h.lengthProgress(40, 10), { value: 10, done: true }, "a longer one has no more of it to show");
+  for (const [page, search] of [["signup", ""], ["reset", "?token=t0k3n"]] as const) {
+    const v = await visit(page, { routes: world((x) => (x.signedIn = false)).routes, search });
+    const meter = v.doc.querySelector("meter")!;
+    assert.deepEqual([meter.getAttribute("max"), meter.getAttribute("value"), meter.getAttribute("aria-hidden")], ["10", "0", "true"], `${page}: it is for the eye: the hint says the same in words`);
+    assert.equal(meter.getAttribute("data-len"), "password");
+    v.type("password", "abcd");
+    assert.deepEqual([meter.getAttribute("value"), meter.hasAttribute("data-done")], ["4", false], page);
+    v.type("password", "correct horse");
+    assert.deepEqual([meter.getAttribute("value"), meter.hasAttribute("data-done")], ["10", true], `${page}: full, and marked so`);
+    v.type("password", "short one");
+    assert.deepEqual([meter.getAttribute("value"), meter.hasAttribute("data-done")], ["9", false], `${page}: and not once it is shortened`);
+  }
+});
+
+test("the page that says the link was sent has an icon for what it is, which is for the eye and says nothing", async () => {
+  const { v } = await (async () => {
+    const w = world((x) => (x.signedIn = false));
+    w.answers.set("POST /api/signup", { status: 202, json: { ok: true, message: "Check your email for a link to confirm your address." } });
+    const page = await visit("signup", { routes: w.routes, manualTimers: true });
+    page.type("email", "ada@example.com");
+    page.type("password", "correct horse battery staple");
+    page.check("agree");
+    await page.send(page.$("form"));
+    return { v: page };
+  })();
+  const tile = v.$("card").querySelector(".tile")!;
+  assert.deepEqual([tile.getAttribute("aria-hidden"), tile.textContent], ["true", ""]);
+  assert.equal(v.$("card").children[0], tile, "and it comes first");
+  assert.equal(v.link("card", "Use another address").className, "btn btn-ghost", "the way back is quieter than the button that sends the link again");
+});
+
+test("a status that was drawn as a wait stops waiting once it has said something", async () => {
+  assert.match(fs.readFileSync(`${PAGES_DIR}/verify.html`, "utf8"), /id="status"[^>]*aria-busy="true"[^>]*>Checking the link\./, "the page that checks a link says so, and is drawn as a wait");
+  const w = world((x) => (x.signedIn = false));
+  w.answers.set("POST /api/verify", failure(400, "invalid_token", "That link is not valid, or it has expired. Ask for a new one."));
+  const v = await visit("verify", { routes: w.routes, search: "?token=old" });
+  assert.equal(v.$("status").getAttribute("aria-busy"), null);
+});
+
 test("a button that was pressed has the cursor again when its call is done, unless the page put it somewhere on purpose", async () => {
   const w = world((x) => (x.signedIn = false));
   w.answers.set("POST /api/forgot", { status: 202, json: { ok: true, message: "If that address has an account, a link to choose a new password is on its way." } });

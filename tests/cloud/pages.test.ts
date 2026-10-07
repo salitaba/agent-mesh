@@ -261,6 +261,34 @@ test("every call the script makes is to a route the API has, with the method it 
   assert.ok(source.includes("response = await fetch(path, {"), "and it is of the address call() was given, which is one of those above");
 });
 
+// ---- the sign-in pages ----
+
+/** What the panel beside the form says, in the words of the pages that already say it (the front page's facts, the terms, the account's workspace card). */
+const PANEL: Array<[string, string]> = [
+  ["A workspace of your own", "One isolated host with its own projects, event log and files."],
+  ["Your record is yours", "The same append-only event log a self-hosted install writes, so a mission can be replayed."],
+  ["Pause or delete", "A paused workspace keeps its files. Deleting one deletes its data."],
+];
+
+test("the sign-in pages are one shell: the form first, and beside it the same three things the product says of itself, each of them said elsewhere already", () => {
+  for (const name of ["signup", "login", "forgot", "reset", "verify"]) {
+    const { all } = pages().find((p) => p.name === name)!;
+    const shell = all.find((n) => n.className === "wrap auth")!;
+    assert.ok(shell, `${name} has the shell`);
+    const [main, side] = shell.children.filter((n) => !n.isText);
+    assert.deepEqual([main!.className, side!.className], ["auth-main", "auth-side"], `${name}: the form's column comes first, so it is first to a keyboard and to a reader of the page`);
+    assert.ok(main!.querySelector("h1") && main!.descendants().some((n) => n.tag === "form"), `${name}: the heading and the form are in it`);
+    assert.deepEqual(side!.querySelectorAll("li").map((li) => [li.querySelector("strong")!.textContent, li.querySelector("span")!.textContent]), PANEL, `${name}: the panel says the same three things`);
+    assert.equal(attr(side!.querySelector("svg")!, "aria-hidden"), "true", `${name}: the mark is for the eye`);
+  }
+  // Nothing in the panel is new: each is a sentence, or the two halves of one, that a page already has.
+  const textOf = (file: string): string => read(path.join(PAGES_DIR, file)).replace(/<[^>]+>/g, " ").replace(/\s+/g, " ");
+  assert.match(textOf("index.html"), /One isolated host with its own projects, event log and files\./);
+  assert.match(textOf("index.html"), /same append-only event log a self-hosted install writes, so a mission can be replayed/);
+  assert.match(textOf("terms.html"), /Deleting a workspace deletes its data\./);
+  assert.match(read(SCRIPT), /Its files are kept\./, "what the account says of a paused workspace");
+});
+
 // ---- what the pages say ----
 
 test("the stylesheet is drawn from the kit: it carries the kit's block, writes no colour of its own, and uses no token that nothing defines", () => {
