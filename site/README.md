@@ -305,15 +305,15 @@ file's real size is not the size its page says, when a file is under no page, an
 | File | View | Size, in pixels |
 |---|---|---|
 | `shot-overview-light.jpg`, `shot-overview-dark.jpg` | Overview of the finished demo mission: the Delivered card and the What shipped cards | 1440 × 900, the whole window |
-| `shot-events-light.jpg`, `shot-events-dark.jpg` | Events with the Messages chip selected, newest first, with a refused line in view | 1440 × 900, the whole window |
+| `shot-events-light.jpg`, `shot-events-dark.jpg` | Events with Messages selected, newest first, with an alert line at the top and a refused message in view | 1440 × 900, the whole window |
 | `shot-designer-light.jpg`, `shot-designer-dark.jpg` | Designer, the demo team's graph and the save bar | 1440 × 900, the whole window |
-| `shot-tile-overview.jpg` | Overview: the Delivered card with its four figures | 720 × 450, the view's own content |
-| `shot-tile-events.jpg` | Events with the Messages chip selected: the search box, the filter chips and the first rows | 720 × 450, the view's own content |
-| `shot-tile-steps.jpg` | Steps with the timeline folded: rows of agent turns, with one that produced and one that was refused | 720 × 450, the view's own content |
-| `shot-tile-designer.jpg` | Designer: the seats and the arrows between them | 720 × 450, the graph |
+| `shot-tile-overview.jpg` | Overview: the Delivered card with its goal and actions, and its four figures (checks, ran for, tokens, agents) | 720 × 450, the view's own content, taken at 0.83 scale (see below) |
+| `shot-tile-events.jpg` | Events with Messages selected: the search box, the filters, the folded routine events and the first rows | 720 × 450, the view's own content |
+| `shot-tile-steps.jpg` | Steps with the timeline folded (*Who was busy, when*): the filter chips and the rows of agent turns, one with a refused decision | 720 × 450, the view's own content |
+| `shot-tile-designer.jpg` | Designer: the seats and the arrows between them, the product manager selected | 720 × 450, the canvas, cut from a 1440 × 900 window |
 | `shot-tile-cost.jpg` | Cost, scrolled to the By agent card: the bars, tokens, share and each seat's own budget | 720 × 450, the view's own content |
 | `shot-tile-approvals.jpg` | The Approve or reject panel (More actions, Approve or reject) | 720 × 450, the panel and a little of the page behind it |
-| `shot-graph.jpg` | Graph: who talked to whom, with its legend | 1100 × 560, the graph and the legend |
+| `shot-graph.jpg` | Graph: who talked to whom, with its legend | 1139 × 606, the inside of the graph card (6 pixels in from its edge, clear of its rounded corners), legend included |
 
 A light picture and its dark twin must be the same size, so that the page does not move when the visitor's colour scheme changes.
 They show the scripted demo, which makes no model calls, and the pages say so beside them.
@@ -322,7 +322,10 @@ To retake them without Docker: scaffold the demo project into a scratch folder (
 it under a scratch `MESH_HOME` (`curule project add <dir>`), start `curule host --home <scratch>`, open it in a browser window
 of the size above, start the mission, wait for *Delivered*, and capture each view in the light colour scheme and in the
 dark one (the dashboard's *theme* button). The 720 × 450 pictures are crops of the view's own content (a 960 pixel wide window
-shows all of it) taken without the sidebar. Save JPEGs at quality about 80. In the Designer, the path shown at the bottom is the
+shows all of it) taken without the sidebar; the Overview one needs a window about 1100 pixels wide to put its four figures in one
+row, so it is taken from such a window at a scale of 0.83, which makes the 868 × 542 pixel view exactly 720 × 450. Save JPEGs at
+quality about 80. The pages describe each picture in its `alt` text and say only what is in the picture, so read them again when a
+picture is retaken: a figure that moves, or a control that is renamed, is a sentence that has to follow. In the Designer, the path shown at the bottom is the
 scratch folder's: replace it with `/data/projects/demo-stub/mesh.yaml`, which is what the container the pages tell people to run
 shows. `npm run demo:capture` does the same for the GIF in the README and needs Chrome (`CHROME=/path/to/chrome`) and an ffmpeg
 that can write GIFs.

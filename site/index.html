@@ -105,7 +105,7 @@
             <figure class="pane">
               <picture>
                 <source media="(prefers-color-scheme: dark)" srcset="assets/shots/shot-events-dark.jpg">
-                <img src="assets/shots/shot-events-light.jpg" width="1440" height="900" loading="lazy" alt="The Events view of the same mission, filtered to messages: the append-only log newest first, who messaged whom and about what, and two red lines for things the runtime did not do, one of them a message it would not deliver, each with the reason it gives.">
+                <img src="assets/shots/shot-events-light.jpg" width="1440" height="900" loading="lazy" alt="The Events view of the same mission, filtered to messages: the log newest first, who messaged whom and about what, and two red lines for things the runtime did not do, one of them a message it would not deliver, each with the reason it gives.">
               </picture>
               <figcaption><b>Events.</b> The append-only log as it streams, newest first, here filtered to messages. The red lines are things the runtime refused or did not do, with the reason it gives.</figcaption>
             </figure>
@@ -238,8 +238,8 @@
         <p>The human is a seat in the team with the final say. Pause, approve, redirect, reopen. A mission is done when every criterion has evidence, not when an agent says so.</p></li>
     </ol>
     <figure class="frame mt-xl">
-      <img src="assets/shots/shot-graph.jpg" width="1100" height="560" loading="lazy" alt="The Graph view of the same mission: who talked to whom among the seven agents (product manager, architect, tech lead, developer, QA, security and explorer). Thicker links are more messages, and the legend says whether a link asked for help, was blocked, updated something or simply messaged.">
-      <figcaption><b>Graph.</b> Who talked to whom. Thicker links are more messages; the colour says whether a link asked for help, was blocked, updated something or simply messaged.</figcaption>
+      <img src="assets/shots/shot-graph.jpg" width="1139" height="606" loading="lazy" alt="The Graph view of the same mission: who talked to whom among the seven agents (pm, architect, explorer, security, tech-lead, qa and developer), each a circle with its initials and its state, all done. Thicker links are more messages, and the legend under the graph names the colours: asked for help, approved, blocked, updated and messaged, and a dashed line for a message carried in the last 40 events.">
+      <figcaption><b>Graph.</b> Who talked to whom. Thicker links are more messages; the colour says whether a link asked for help, was approved, was blocked, updated something or simply messaged.</figcaption>
     </figure>
   </div>
 </section>
@@ -253,32 +253,32 @@
     </div>
     <ul class="tiles">
       <li class="tile">
-        <figure class="frame"><img src="assets/shots/shot-tile-overview.jpg" width="720" height="450" loading="lazy" alt="Mission control: the Delivered card with seven of seven checks evidenced, fifteen seconds from creation to delivery, tokens against the two million budget, and the start of the list of files the team made."></figure>
+        <figure class="frame"><img src="assets/shots/shot-tile-overview.jpg" width="720" height="450" loading="lazy" alt="Mission control: the Delivered card with the goal and four actions (open the files, reopen with feedback, what it cost, replay), then seven of seven checks evidenced, how long it ran from creation to delivery, tokens against the 2.0M budget, and the seven agents, none working."></figure>
         <h3>Mission control</h3>
         <p>Progress against the acceptance criteria, each with the evidence that satisfied it, and the artifacts the team produced.</p>
       </li>
       <li class="tile">
-        <figure class="frame"><img src="assets/shots/shot-tile-events.jpg" width="720" height="450" loading="lazy" alt="Live events: the event log newest first with a search box, an agent filter, chips for alerts, activity and routine events with Messages selected, a red line for an agent that could not be woken because the mission was complete, and who messaged whom."></figure>
+        <figure class="frame"><img src="assets/shots/shot-tile-events.jpg" width="720" height="450" loading="lazy" alt="Live events: the log newest first, with a search box, an agent filter, counts of alerts, activity and routine events, a row of kinds with Messages selected, a switch that folds routine events, a red line for an agent that could not be woken because the mission was complete, and a line for who messaged whom."></figure>
         <h3>Live events</h3>
         <p>Everything the mesh does, newest first, streamed from the append-only log. Filter down to alerts, and open a line to see what caused it.</p>
       </li>
       <li class="tile">
-        <figure class="frame"><img src="assets/shots/shot-tile-steps.jpg" width="720" height="450" loading="lazy" alt="The per-turn ledger: filter chips for produced, no output, refused, blocked and crashed turns, then one row for each agent turn showing who ran, what it produced or that it wrote nothing, the reason a decision was refused, and the time and tokens each turn took."></figure>
+        <figure class="frame"><img src="assets/shots/shot-tile-steps.jpg" width="720" height="450" loading="lazy" alt="The per-turn ledger: filter chips for everything, working now, produced, no output, refused, blocked and crashed turns, a switch that collapses quiet runs, then one row for each agent turn showing who ran, why it woke, whether it produced anything, the reason a decision was refused, and its duration, tokens and start time."></figure>
         <h3>Per-turn ledger</h3>
         <p>One row per agent turn: who ran, how long it took, what it produced or refused, and the tokens it used.</p>
       </li>
       <li class="tile">
-        <figure class="frame"><img src="assets/shots/shot-tile-designer.jpg" width="720" height="450" loading="lazy" alt="The team designer: seven seats drawn as cards with arrows for who may contact whom, the product manager at the top, the explorer as a service seat with a dashed outline, and QA and the developer at the bottom."></figure>
+        <figure class="frame"><img src="assets/shots/shot-tile-designer.jpg" width="720" height="450" loading="lazy" alt="The team designer: seven seats drawn as cards with arrows for who may contact whom, the product manager at the top and selected, with its links in blue, the explorer as a service seat with a dashed outline, and QA and the developer at the bottom."></figure>
         <h3>Team designer</h3>
         <p>Seats, authority, who may contact whom, gates and budgets, drawn as a graph and validated as you edit.</p>
       </li>
       <li class="tile">
-        <figure class="frame"><img src="assets/shots/shot-tile-cost.jpg" width="720" height="450" loading="lazy" alt="Cost by agent: a bar for each agent scaled to the biggest spender, with its tokens, its share of everything spent and its own budget."></figure>
+        <figure class="frame"><img src="assets/shots/shot-tile-cost.jpg" width="720" height="450" loading="lazy" alt="Cost by agent: a strip that splits what was spent between the agents, then a bar for each agent scaled to the biggest spender, with its tokens, its share of everything spent and its own budget."></figure>
         <h3>Cost and budgets</h3>
         <p>Tokens against the mission budget, by agent and by model. A host-wide spend ceiling parks every open project when its estimate is reached.</p>
       </li>
       <li class="tile">
-        <figure class="frame"><img src="assets/shots/shot-tile-approvals.jpg" width="720" height="450" loading="lazy" alt="The Approve or reject panel: a decision (approve, reject or accept), what it is about, an optional reason, the files made recently, and a button to record the decision in the log."></figure>
+        <figure class="frame"><img src="assets/shots/shot-tile-approvals.jpg" width="720" height="450" loading="lazy" alt="The Approve or reject panel over the dimmed Delivered card: a decision set to Approve, what it is about (release), an optional reason, the files made recently, and a button to record the decision in the log."></figure>
         <h3>Approvals</h3>
         <p>You are a seat in the team. Record a yes or a no and any gate that listens for it can move: for example, a release that needs your approval.</p>
       </li>
