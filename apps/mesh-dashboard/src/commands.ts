@@ -47,9 +47,16 @@ export function unregister(scope: string): void {
   if (byScope.delete(scope)) bump();
 }
 
-/** Snapshot in registration order; a scope keeps the place it first registered in. The palette ranks and de-duplicates it (palette.ts). */
+/**
+ * Snapshot in registration order, the shell's own commands (scope "global") first: the project tab strip registers its scope before the
+ * shell does, so in plain registration order the palette's first row was "Go to Projects", ahead of "Go to Overview", and a person
+ * reads the top row as the answer. Otherwise a scope keeps the place it first registered in. The palette ranks and de-duplicates it
+ * (palette.ts): the first registration of an id wins, so a command both the shell and a view register is the shell's.
+ */
 export function list(): Command[] {
-  return [...byScope.values()].flat();
+  const scopes = [...byScope.entries()];
+  scopes.sort(([a], [b]) => Number(b === "global") - Number(a === "global"));
+  return scopes.flatMap(([, commands]) => commands);
 }
 
 /**
