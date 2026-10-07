@@ -301,7 +301,7 @@ export function summarize(e: MeshEvent): string {
     // ledger used to tell.
     case "turn.discarded":
       return `${p.agentId} turn discarded (${p.reason})${
-        typeof p.tokens === "number" ? ` · ${p.tokens} tokens lost` : " · cost unmeasured"
+        typeof p.tokens === "number" ? ` · ${p.partial === true ? "at least " : ""}${p.tokens} tokens lost` : " · cost unmeasured"
       }${p.turnId ? ` · ${shortId(p.turnId)}` : ""}`;
     default:
       return (p as any).summary ? String((p as any).summary).slice(0, 120) : "";

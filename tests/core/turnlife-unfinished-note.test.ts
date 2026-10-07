@@ -116,3 +116,13 @@ test("the note's wording follows the facts", () => {
   assert.match(nothing, /make this turn SMALLER/);
   assert.match(nothing, /spend unmeasured/);
 });
+
+test("a figure that is only what the stream had reached is said to be a lower bound, and a reported one is not", () => {
+  // The turn the twentieth run's shutdown cut: its backend gave no usage, its stream had reached 24,497 tokens.
+  const streamed = abnormalTurnNote({ reason: "interrupted", detail: "stopped by the mesh shutting down after the mission ended (x)", tokens: 24_497, partial: true }, 59_000);
+  assert.match(streamed, /after 59s having spent at least 24497 tokens\./);
+  const reported = abnormalTurnNote({ reason: "timeout", tokens: 24_497 }, 59_000);
+  assert.match(reported, /having spent 24497 tokens\./);
+  assert.doesNotMatch(reported, /at least/, "a figure the stopped call reported is the figure, not a floor");
+  assert.match(abnormalTurnNote({ reason: "failed" }, 59_000), /\(spend unmeasured\)/, "and no figure at all is still not zero");
+});

@@ -828,7 +828,13 @@ running` hint the runtime appends to a genuine backend loss: on a normal end of 
 that hint sent the operator looking for a failure that never happened. The seat's
 memory note says the same. Completion waits for the in-flight turns to settle (up to 30 s)
 before it retires the seats and stops the scheduler, so the teardown does not race its own
-agents.
+agents. A turn that outlasts that wait is stopped with its backend torn down under it, and
+the stopped call reports nothing; it is billed what its stream had reached (the running
+count the turn's record calls `liveTokens`), and its `turn.discarded` carries `partial:
+true`. The twentieth cronlite run's mission ended under a developer turn 24,497 tokens in,
+and no ledger, report or console cost view recorded any of them. A crash is the case this
+does not cover: the running count is in memory, so what a killed process's turn spent is
+still recorded nowhere.
 
 ### Provider outages: the mission-wide breaker
 

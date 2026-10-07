@@ -718,7 +718,7 @@ export interface UnfinishedTurnFacts {
  * without booting a mesh.
  */
 export function abnormalTurnNote(
-  discard: { reason: string; detail?: string; tokens?: number },
+  discard: { reason: string; detail?: string; tokens?: number; partial?: boolean },
   durationMs: number,
   facts?: UnfinishedTurnFacts,
 ): string {
@@ -750,7 +750,8 @@ export function abnormalTurnNote(
   // Absent tokens mean UNMEASURED, never zero — the same convention
   // `turn.discarded` carries. An invented 0 would read to the seat as "that
   // attempt was free", which is the opposite of true.
-  const spend = discard.tokens !== undefined ? ` having spent ${discard.tokens} tokens` : " (spend unmeasured)";
+  // A figure the stream had reached when the stop came is a lower bound, and is said so.
+  const spend = discard.tokens !== undefined ? ` having spent ${discard.partial ? "at least " : ""}${discard.tokens} tokens` : " (spend unmeasured)";
   const lines: string[] = [`⚠ your previous turn did not finish — it ${how} after ${Math.round(durationMs / 1000)}s${spend}.`];
   // The seat must not read a stop as a rollback: nothing the turn did was
   // undone, and a seat that believes otherwise rewrites the files it already has.

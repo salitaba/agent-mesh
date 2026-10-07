@@ -571,8 +571,13 @@ new version walks the ladder up to a merge of its own.
 ### `turn.discarded`: why a turn's work did not reach the mesh
 
 One event per turn that ended without its work landing, `{ agentId, turnId,
-reason, tokens?, detail? }`. `tokens` is present only when the backend measured
+reason, tokens?, partial?, detail? }`. `tokens` is present only when the backend measured
 the turn — absent means unmeasured, never zero — and that figure is billed.
+`partial: true` says the figure is a floor and not a final count: the stopped call
+reported no usage of its own (the backend was torn down under it, the stream's
+transport died, or the supervisor settled a call the runtime never answered), so it is
+what the turn's stream had reached when it stopped, and the turn spent at least that.
+It is billed like any other figure, once.
 
 | `reason` | meaning |
 | --- | --- |

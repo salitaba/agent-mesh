@@ -18,6 +18,10 @@ import type { MeshOp } from "../../packages/protocol/src/index";
  *   - a turn whose figure is NOT known bills nothing and says so explicitly: one
  *     `turn.discarded` with no `tokens` key, which is how "unmeasured" is spelled
  *     (an invented 0 reads as "this turn was free");
+ *   - a turn that was stopped with no final figure but whose stream had reported a running count
+ *     (`usage_update` frames) is billed that count, once, and says it is a lower bound
+ *     (`partial: true` on its `turn.discarded`). Cronlite's twentieth run ended its mission under a developer turn whose
+ *     backend the shutdown tore down, 24,497 tokens in, and no ledger recorded any of them;
  *   - either way, no hold outlives the turn — every agent and thread ledger is
  *     back to `reserved: 0`.
  *
@@ -41,6 +45,8 @@ interface Ending {
   name: string;
   /** The token figure the ending carries, or undefined when nothing measured it. */
   known: number | undefined;
+  /** True when `known` is the stream's running count, not a figure the stopped call reported: the discard says so. */
+  partial?: boolean;
   /** Set when the row fails today: the one-line defect it pins. */
   bug?: string;
   agent?: Partial<AgentSpec>;
@@ -167,6 +173,60 @@ const ENDINGS: Ending[] = [
     first: () => ({ tokens: ["a", "b", "c"], dieAfterFrames: 1 }),
   },
   {
+    name: "force-settle with a running count: the stream reported 6,500 tokens, froze, and the interrupt was ignored",
+    discard: null,
+    reached: ({ error }) => assert.match(error, /turn silence exceeded/, "precondition: the watchdog force-settled it"),
+    known: 6500,
+    partial: true,
+    streaming: true,
+    mesh: { turnSilenceMs: 200, stallIdleMs: 300, turnTimeoutMs: 30_000 },
+    first: () => ({
+      tokens: ["one ", "two"],
+      liveUsage: [{ input: 3000, output: 200, total: 3200 }, { input: 6000, output: 500, total: 6500 }],
+      silentAfterTokens: 1,
+      hang: true,
+    }),
+  },
+  {
+    name: "backend unreachable after the stream reported 6,500 tokens: the typed dead-backend error carries no usage",
+    discard: "failed",
+    known: 6500,
+    partial: true,
+    streaming: true,
+    first: () => ({
+      liveUsage: [{ input: 3000, output: 200, total: 3200 }, { input: 6000, output: 500, total: 6500 }],
+      throwKind: "backend_unreachable",
+      throwMessage: "backend unreachable at claude:abc (session torn down)",
+    }),
+  },
+  {
+    name: "process death mid-turn after the stream reported 4,200 tokens: the transport closes without a turn_end",
+    discard: "failed",
+    reached: ({ error }) => assert.match(error, /without a turn_end/, "precondition: the transport died mid-turn"),
+    known: 4200,
+    partial: true,
+    streaming: true,
+    // One token frame, one usage frame (4,200) and then the stream closes before the second (5,300): the count is the last one it sent.
+    first: () => ({
+      tokens: ["a"],
+      liveUsage: [{ input: 4000, output: 200, total: 4200 }, { input: 5000, output: 300, total: 5300 }],
+      dieAfterFrames: 2,
+    }),
+  },
+  {
+    name: "silence interrupt with a running count: the abort's own figure (1,000) is billed, not the stream's (400), and not both",
+    discard: "silence",
+    known: 1000,
+    streaming: true,
+    mesh: { turnSilenceMs: 200, stallIdleMs: 300, turnTimeoutMs: 30_000 },
+    first: () => ({
+      tokens: ["one ", "two"],
+      liveUsage: [{ input: 350, output: 50, total: 400 }],
+      silentAfterTokens: 1,
+      interruptUsage: KNOWN,
+    }),
+  },
+  {
     name: "output.error: the runtime answered with an error AND a usage figure",
     discard: "failed",
     known: 1000,
@@ -277,6 +337,7 @@ async function runEnding(row: Ending): Promise<void> {
       assert.ok(discards.length <= 1, "a turn is discarded at most once");
       if (discards.length === 1) {
         assert.equal(discards[0]!.tokens, row.known, "a discard record states the figure it billed, not a different one");
+        assert.equal(discards[0]!.partial === true, row.partial === true, "and says so when that figure is only what the stream had reached");
       }
     } else {
       assert.deepEqual(consumed("agent:"), [], "an unmeasured turn bills nothing to the seat");

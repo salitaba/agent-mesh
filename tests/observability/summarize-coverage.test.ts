@@ -92,3 +92,10 @@ test("summarize: withdrawing a plan does not render as zero steps done", () => {
     "coder 1/2 steps · r5",
   );
 });
+
+test("summarize: a turn thrown away with only the stream's count says it lost at least that many tokens", () => {
+  assert.match(render("turn.discarded", { agentId: "developer", turnId: "turn-1", reason: "interrupted", tokens: 24497, partial: true }), /· at least 24497 tokens lost/);
+  assert.match(render("turn.discarded", { agentId: "developer", turnId: "turn-1", reason: "timeout", tokens: 24497 }), /· 24497 tokens lost/);
+  assert.doesNotMatch(render("turn.discarded", { agentId: "developer", turnId: "turn-1", reason: "timeout", tokens: 24497 }), /at least/);
+  assert.match(render("turn.discarded", { agentId: "developer", turnId: "turn-1", reason: "failed" }), /cost unmeasured/, "no figure is not a zero");
+});

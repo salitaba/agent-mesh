@@ -7998,6 +7998,12 @@ export class Supervisor {
           detail?: string;
           tokens?: number;
           /**
+           * `tokens` is the stream's running count, not a final figure: the stopped call (a backend torn down under it, a
+           * forced settle the runtime never answered) reported no usage of its own, so what its stream had reached is
+           * all that is known, and the turn spent at least that. Rides on `turn.discarded` and into the seat's note.
+           */
+          partial?: boolean;
+          /**
            * The split behind `tokens`, when the stopped call reported one. Not
            * on `turn.discarded` (its payload stays as it was); it rides into the
            * `budget.consumed` the `finally` writes and into the ring's record.
@@ -9183,6 +9189,12 @@ export class Supervisor {
         const carrier = err instanceof TurnTimeoutError || err instanceof InterruptedTurnError || err instanceof RuntimeFailure ? err : undefined;
         const carriedModel = err instanceof TurnTimeoutError || err instanceof InterruptedTurnError ? err.model : undefined;
         const usage = carrier?.tokensUsed ? { ...carrier.tokensUsed, ...(carriedModel ? { model: carriedModel } : {}) } : undefined;
+        // A stopped call that reported no usage of its own still streamed some. The running count `noteLiveUsage` keeps is
+        // measured (the same figure the turn's record calls `liveTokens`, in the unit it is billed in), and it is the only
+        // figure the turn has: cronlite's twentieth run ended its mission under a developer turn whose backend the shutdown
+        // tore down, 24,497 tokens in, and the ledger, the end-of-run report and the console's cost view recorded none of
+        // them. It is a lower bound (the call in flight when the stop came is not in it), and it is said so.
+        const streamed = usage === undefined ? this.liveTurnTokens.get(turnId) : undefined;
         // The operator asked for this ending (`interruptTurn`). Whatever the
         // runtime's abort came back as — its own `InterruptedTurnError`, the
         // forced settle's AbortError, a timeout the stop raced — the cause is
@@ -9232,7 +9244,7 @@ export class Supervisor {
           // failure ladder) but says what actually stopped it. An operator stop
           // says so, with the operator's reason.
           detail: (operatorStop ? operatorStopDetail(operatorStop) : shutdownStop ? shutdownStopDetail(msg, this.missionOver()) : (budgetStop ?? msg)).slice(0, 200),
-          ...(usage ? { tokens: usage.total, usage } : {}),
+          ...(usage ? { tokens: usage.total, usage } : streamed !== undefined && streamed > 0 ? { tokens: streamed, partial: true } : {}),
         };
         // Failure handling first, so the note below states what is true AFTER
         // it: a terminal failure releases the task, the slow-turn path keeps it.
@@ -9395,6 +9407,7 @@ export class Supervisor {
               turnId,
               reason: turnDiscard.reason,
               ...(turnDiscard.tokens !== undefined ? { tokens: turnDiscard.tokens } : {}),
+              ...(turnDiscard.partial ? { partial: true } : {}),
               ...(turnDiscard.detail ? { detail: turnDiscard.detail } : {}),
             },
             { actorId: agentId, goalId, correlationId: turnId },

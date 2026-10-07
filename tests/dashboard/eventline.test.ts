@@ -180,6 +180,14 @@ test("the drawers' kernel dialect is gone: no raw state, no turn id, no event ty
   }
 });
 
+test("a thrown-away turn says at least that many tokens when the figure is only what its stream had reached", () => {
+  const thrown = (payload: Record<string, unknown>): string => text("turn.discarded", { actorId: "developer", payload: { agentId: "developer", turnId: TURN, reason: "failed", ...payload } });
+  assert.match(thrown({ tokens: 24497, partial: true }), /· at least 24\.5k tokens lost$/);
+  assert.match(thrown({ tokens: 24497 }), /· 24\.5k tokens lost$/);
+  assert.doesNotMatch(thrown({ tokens: 24497 }), /at least/);
+  assert.match(thrown({}), /· cost not measured$/, "an absent figure is still not a zero");
+});
+
 test("a turn charged to several budgets says which budget each line is, so one spend does not read as two", () => {
   const charge = (key: string): string => text("budget.consumed", { actorId: "qa", payload: { key, amount: 1800, agentId: "qa", limitKind: "tokens" } });
   assert.equal(charge(`agent:${G}/qa`), "qa spent 1.8k tokens of its own budget");
