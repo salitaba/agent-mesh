@@ -14,7 +14,7 @@ import "./kit.css";
 import {
   AgentAvatar, Banner, Button, Card, Checkbox, Chip, ConfirmDialog, CopyButton, Dialog, DialogPanel, DrawerHead, EmptyState, ErrorState, EventRow,
   Field, IconButton, IdChip, Input, Kbd, LifecyclePill, Menu, OutcomePill, PageHeader, Pill, Progress, Radio, Ring, Segmented, Select, Skeleton,
-  SkeletonText, Sparkline, Stat, StatusPill, StepMini, Switch, TabPanel, Tabs, TextArea, ToastCard, Tooltip, Wordmark, ZoneNote, agentColor,
+  SearchField, SkeletonText, Sparkline, Stat, StatusPill, StepMini, Switch, TabPanel, Tabs, TextArea, ToastCard, Tooltip, Wordmark, ZoneNote, agentColor,
   type ConfirmRequest, type MenuItem, type PillTone,
 } from "./components";
 import { CommandPalette, type PaletteLook } from "./commandpalette";
@@ -172,6 +172,7 @@ function Gallery(): React.JSX.Element {
   const [seg, setSeg] = useState("5m");
   const [open, setOpen] = useState<null | "plain" | "danger" | "dialog">(null);
   const [checked, setChecked] = useState(true);
+  const [query, setQuery] = useState("");
 
   useEffect(() => {
     register("gallery", [
@@ -346,6 +347,8 @@ function Gallery(): React.JSX.Element {
                 ["Select", <Select key="g" aria-label="Type" defaultValue="all"><option value="all">All types</option><option>ArchitectureDocument</option></Select>],
                 ["Select, focus", <Select key="h" extra="is-focus" aria-label="Type, focus" defaultValue="all"><option value="all">All types</option></Select>],
                 ["Textarea", <TextArea key="i" rows={3} placeholder="Say it in plain words" aria-label="Message" />],
+                ["Search", <SearchField key="j" label="Search the gallery" hint="/" placeholder="Agent or word" value={query} onChange={(e) => setQuery(e.target.value)} onClear={() => setQuery("")} />],
+                ["Search, filled", <SearchField key="k" label="Search, filled" value="developer" onChange={() => undefined} onClear={() => undefined} />],
               ]} />
             </Spec>
             <Spec name="Checkbox, radio, switch" wide>
