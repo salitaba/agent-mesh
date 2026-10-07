@@ -176,6 +176,7 @@ input:disabled,select:disabled{background:var(--k-surface-2);cursor:not-allowed}
 .secret input{padding-right:88px}
 .reveal{--n:4;--s:16px;position:absolute;top:0;right:0;bottom:0;display:inline-flex;align-items:center;gap:6px;padding:0 14px;border:0;border-radius:0 var(--k-r-md) var(--k-r-md) 0;background:none;color:var(--k-muted);font:600 .8125rem/1 var(--k-font);cursor:pointer}
 .reveal:hover{background:var(--k-surface-2);color:var(--k-ink)}
+.reveal:focus-visible{outline-offset:-5px;border-radius:var(--k-r-sm)}
 .reveal[aria-label^="Hide"]{--n:5}
 .check{display:flex;align-items:flex-start;gap:12px;margin-bottom:16px;font-size:.9375rem}
 .check label{display:block;min-height:44px;padding:10px 0;line-height:24px;cursor:pointer}
@@ -264,8 +265,7 @@ body[data-page="home"] main{background:var(--k-glow) top / 100% 520px no-repeat}
 .how li::before{content:counter(how);content:counter(how) / "";grid-row:span 2;display:grid;place-items:center;width:28px;height:28px;border:1px solid var(--k-accent);border-radius:50%;color:var(--k-accent-ink);font-size:.8125rem;font-weight:650}
 .how strong,.facts strong{letter-spacing:var(--k-track-tight)}
 .how span,.facts span{color:var(--k-muted);font-size:.9375rem}
-.facts{display:grid;gap:0 40px;margin:56px 0 0;padding:0;list-style:none}
-@media (min-width: 720px){.facts{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.facts{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,14rem),1fr));gap:0 40px;margin:56px 0 0;padding:0;list-style:none}
 .facts li{display:grid;align-content:start;gap:6px;padding:20px 0;border-top:1px solid var(--k-line)}
 .section{margin-top:clamp(40px,6vw,64px)}
 .section .facts{margin-top:0}
@@ -304,6 +304,7 @@ body[data-page="home"] main{background:var(--k-glow) top / 100% 520px no-repeat}
 .subnav a{display:inline-flex;align-items:center;flex:none;min-height:32px;padding:0 12px;border-radius:var(--k-r-pill);color:var(--k-muted);font-size:.8125rem;font-weight:600;text-decoration:none}
 .subnav a:hover{background:var(--k-surface-2);color:var(--k-ink)}
 .subnav a[aria-current]{background:var(--k-accent-soft);color:var(--k-accent-ink)}
+.subnav a:focus-visible{outline-offset:-2px}
 .panel{margin-top:40px;scroll-margin-top:124px}
 .panel > h2{scroll-margin-top:124px}
 /* A section is a heading and a ruled line, as a ledger's is. */
@@ -326,6 +327,7 @@ body[data-page="home"] main{background:var(--k-glow) top / 100% 520px no-repeat}
 .ws .btn-primary{min-height:48px;padding-inline:24px;font-size:1rem}
 .ws .btn-row{gap:8px}
 .ws .ws-auto .check{align-items:center;min-height:44px;margin:0}
+.ws .copy{margin-left:-12px}
 .ws .ws-address{display:flex;flex-wrap:wrap;align-items:center;gap:4px 8px;margin:4px -20px -20px;padding:10px 20px;border-top:1px solid var(--k-line);border-radius:0 0 var(--k-r-lg) var(--k-r-lg);background:var(--k-surface-2);font-size:.8125rem}
 .phase{display:flex;gap:4px;max-width:220px;margin-bottom:10px}
 .phase i{flex:1;height:4px;border-radius:2px;background:var(--k-sunken)}
@@ -338,7 +340,7 @@ body[data-page="home"] main{background:var(--k-glow) top / 100% 520px no-repeat}
 .confirm{display:grid;gap:10px;padding:16px;border-radius:var(--k-r-md)}
 .confirm .btn-danger{border-color:transparent;background:var(--k-bad);color:var(--k-on-accent)}
 .confirm .btn-danger[disabled]{background:var(--k-bad)}
-.inline-form{display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end}
+.inline-form{display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end;max-width:30rem}
 .inline-form .field{flex:1 1 14rem;margin:0}
 /* Plans: the price first, what it includes, the action at the foot of cards of one height. */
 .plans{display:grid;gap:16px}
@@ -376,8 +378,7 @@ td.num,th.num{text-align:right}
 tbody th,tfoot th{color:var(--k-ink-2);font-weight:500}
 tbody tr:hover > *{background:var(--k-surface-2)}
 tfoot > tr > *{background:var(--k-surface-2);font-weight:650}
-.bar-cell{display:inline-flex;align-items:center;justify-content:flex-end;gap:12px}
-.bar-cell meter{width:72px}
+.bar-cell{display:inline-grid;grid-template-columns:72px minmax(8ch,max-content);align-items:center;justify-content:end;gap:12px}
 .empty{display:grid;justify-items:center;gap:4px;padding:32px 16px;border-style:dashed;border-color:var(--k-line-strong);text-align:center}
 .empty p{max-width:44ch;margin:0}
 .empty .tile{margin-bottom:8px}
