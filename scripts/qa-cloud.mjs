@@ -201,6 +201,9 @@ await step(page, HOSTING ? "a team is made on the customer's own key, which the 
   await page.screenshot({ path: `${OUT}/workspace-designer.png` });
 });
 await step(page, HOSTING ? "the designer answers, on the customer's key" : "the designer answers, through the gateway", async () => {
+  // The Designer opens on "Connecting…" while the workspace's project starts. A person waits for it; a click and some typing made before the
+  // page has connected were thrown away when it did (the assistant's box was empty again), which this walk took for a designer that never answered.
+  await page.waitForFunction(() => !/Connecting/i.test(document.body.innerText), null, { timeout: 60000 });
   // A team made from the welcome opens the assistant on the person's first move; ask for it only when it is not there already.
   const send = page.getByRole("button", { name: "Send", exact: true });
   if (!(await send.isVisible().catch(() => false))) await page.locator("#btn-designer").click();
