@@ -4,7 +4,7 @@ import "./product.css";
 import { dur } from "../format";
 import { projectPath } from "../route";
 import { useMesh } from "../store";
-import { Button, CopyButton, ErrorState, Input, PageHeader, Pill, useNow, type PillTone } from "../components";
+import { Button, CopyButton, ErrorState, PageHeader, Pill, SearchField, Skeleton, useNow, type PillTone } from "../components";
 import { Icon } from "../icons";
 import { FileView, type DiffPayload, type FileKind } from "../fileview";
 import { fmtSize } from "../files";
@@ -432,16 +432,18 @@ export default function Product(): React.JSX.Element {
         <div className="prod-stack">
           <section className="card prod-facts-card" aria-label="The checkout">
             {!info ? (
-              <div className="prod-skel" role="status"><span className="sr-only">Reading the checkout</span><i /><i /></div>
+              <div className="prod-skel" role="status"><span className="sr-only">Reading the checkout</span><Skeleton w="40%" h={14} /><Skeleton w="70%" h={14} /></div>
             ) : (
               <>
                 <dl className="prod-facts">
-                  <div><dt>Branch</dt><dd>{noRepo ? "none" : info.gitBranch || "none"}</dd></div>
-                  <div><dt>Head</dt><dd>{noRepo ? "none" : info.gitHead || "none"}</dd></div>
+                  <div><dt>Branch</dt><dd className="mono">{noRepo ? "none" : info.gitBranch || "none"}</dd></div>
+                  <div><dt>Head</dt><dd className="mono">{noRepo ? "none" : info.gitHead || "none"}</dd></div>
                   <div>
                     <dt>Tree</dt>
-                    <dd className={dirty ? "warn" : ""}>
-                      {noRepo ? "not a git repository" : dirty ? (changes.length ? `${changes.length} uncommitted ${changes.length === 1 ? "change" : "changes"}` : "uncommitted changes") : info.gitClean === "true" ? "clean" : "unknown"}
+                    <dd>
+                      <Pill tone={noRepo ? "failed" : dirty ? "waiting" : info.gitClean === "true" ? "completed" : "idle"}>
+                        {noRepo ? "not a git repository" : dirty ? (changes.length ? `${changes.length} uncommitted ${changes.length === 1 ? "change" : "changes"}` : "uncommitted changes") : info.gitClean === "true" ? "clean" : "unknown"}
+                      </Pill>
                     </dd>
                   </div>
                 </dl>
@@ -451,7 +453,7 @@ export default function Product(): React.JSX.Element {
                   <CopyButton text={info.path} label="Copy path" title="Copy the checkout's path on the host" />
                 </div>
                 {commits.length ? (
-                  <details className="prod-commits">
+                  <details className="disc prod-commits">
                     <summary>Recent commits ({commits.length})</summary>
                     <ol>{commits.map((c, i) => <li key={i}>{c.hash ? <span className="mono">{c.hash}</span> : null}<span>{c.subject}</span></li>)}</ol>
                   </details>
@@ -463,9 +465,9 @@ export default function Product(): React.JSX.Element {
           <section className="card prod-run" aria-labelledby="run-h">
             <div className="prod-h"><h3 id="run-h">Run a script</h3></div>
             {!info ? (
-              <div className="prod-skel" role="status"><span className="sr-only">Reading the scripts</span><i /><i /></div>
+              <div className="prod-skel" role="status"><span className="sr-only">Reading the scripts</span><Skeleton w="40%" h={14} /><Skeleton w="70%" h={14} /></div>
             ) : scripts.length === 0 ? (
-              <div className="prod-none"><b>{empty.title}</b><p>{empty.body}</p></div>
+              <div className="prod-none"><span className="prod-none-ic" aria-hidden="true"><Icon name="play" size={16} /></span><div><b>{empty.title}</b><p>{empty.body}</p></div></div>
             ) : (
               <>
                 <p className="prod-note">
@@ -482,7 +484,7 @@ export default function Product(): React.JSX.Element {
                       title={`${s.command}${s.body ? `, which runs: ${s.body}` : ""}`}
                       onClick={() => void start(s)}
                     >
-                      <span className="run-name"><Icon name="play" size={14} />{s.label}</span>
+                      <span className="run-name"><span className="run-ic" aria-hidden="true"><Icon name="play" size={12} /></span>{s.label}</span>
                       <span className="run-cmd mono">{s.command}</span>
                       {s.body ? <span className="run-body mono">{s.body}</span> : null}
                       {s.usuallyStays ? <span className="run-note">Usually keeps running. Stop it when you are done.</span> : null}
@@ -560,19 +562,17 @@ export default function Product(): React.JSX.Element {
             <section className="card" aria-labelledby="tree-h">
               <div className="prod-h"><h3 id="tree-h">Files</h3></div>
               <form className="fv-search" role="search" onSubmit={(e: FormEvent) => { e.preventDefault(); void runSearch(q); }}>
-                <Input
-                  search
-                  mono
-                  aria-label="Search the whole workspace"
-                  placeholder="Search names and contents"
+                <SearchField
+                  label="Search the whole workspace"
+                  placeholder="Names and contents"
                   value={q}
                   onChange={(e) => {
                     setQ(e.target.value);
                     if (!e.target.value.trim()) setHits(null);
                   }}
+                  onClear={() => { setQ(""); setHits(null); }}
                 />
-                <Button variant="small" type="submit" icon="search">{searching ? "Searching…" : "Search"}</Button>
-                {hits ? <Button variant="small" onClick={() => { setHits(null); setQ(""); }}>Clear</Button> : null}
+                <Button variant="small" type="submit">{searching ? "Searching…" : "Search"}</Button>
               </form>
               {q.trim().length === 1 ? <p className="prod-note" role="status">Type at least two characters to search.</p> : null}
               {hits ? (
@@ -603,13 +603,13 @@ export default function Product(): React.JSX.Element {
                   </nav>
                   <div className="ptree">
                     {tree === null ? (
-                      <div className="prod-skel" role="status"><span className="sr-only">Reading the folder</span><i /><i /><i /></div>
+                      <div className="prod-skel" role="status"><span className="sr-only">Reading the folder</span><Skeleton w="40%" h={14} /><Skeleton w="70%" h={14} /><Skeleton w="55%" h={14} /></div>
                     ) : treeErr ? (
                       <ErrorState what={dir ? `the folder ${dir}` : "the workspace files"} detail={treeErr} onRetry={() => setAttempt((n) => n + 1)} />
                     ) : entries.length ? (
                       <>
                         {entries.slice(0, treeLimit).map((e) => (
-                          <button key={e.path} type="button" className="ptree-row" title={e.path} onClick={() => (e.type === "dir" ? setDir(e.path) : void openFile(e.path))}>
+                          <button key={e.path} type="button" className={`ptree-row${e.type === "dir" ? " dir" : ""}`} title={e.path} onClick={() => (e.type === "dir" ? setDir(e.path) : void openFile(e.path))}>
                             <Icon name={e.type === "dir" ? "folder" : "files"} size={14} />
                             <span className="ptree-name">{e.name}{e.type === "dir" ? "/" : ""}</span>
                             {e.type === "file" ? <span className="muted mono">{fmtSize(e.size)}</span> : null}
