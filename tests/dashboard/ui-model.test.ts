@@ -28,6 +28,16 @@ test("a chord is read the way the person's machine names its keys", () => {
 const VIEW = { width: 1000, height: 800 };
 const TIP = { width: 80, height: 28 };
 
+test("a tooltip is placed on whole pixels, so its text is not drawn on a half", () => {
+  // 480 + 35/2 - 80/2 = 457.5: it is rounded, not left to the browser to blur.
+  const p = tipPosition({ left: 480, top: 400, width: 35, height: 36 }, TIP, VIEW, "top");
+  assert.equal(p.left, 458);
+  assert.ok(Number.isInteger(p.top) && Number.isInteger(p.left));
+  // The same along the other axis: 400 + 35/2 - 28/2 = 403.5.
+  const side = tipPosition({ left: 100, top: 400, width: 36, height: 35 }, TIP, VIEW, "right");
+  assert.equal(side.top, 404);
+});
+
 test("a tooltip sits above its control, centred, with a gap", () => {
   const p = tipPosition({ left: 480, top: 400, width: 36, height: 36 }, TIP, VIEW, "top");
   assert.deepEqual(p, { left: 458, top: 364, side: "top" });
