@@ -275,6 +275,7 @@ body[data-page="home"] main{background:var(--k-glow) top / 100% 520px no-repeat}
 #who{margin:0;padding:4px 12px;border:1px solid var(--k-line);border-radius:var(--k-r-pill);background:var(--k-surface);font-size:.875rem;overflow-wrap:anywhere}
 #who:empty{display:none}
 #create-note:not(:empty){margin-top:12px}
+#create-slot #create{margin-top:16px}
 /* The one focal card: what the account waits for, and where in getting started. */
 .stage{display:flex;flex-wrap:wrap;align-items:center;gap:20px 40px;padding:clamp(20px,3vw,32px);border:1px solid var(--k-line);border-radius:var(--k-r-xl);background:var(--k-surface) linear-gradient(to bottom,color-mix(in srgb,var(--k-accent) 5%,transparent),transparent 60%);box-shadow:var(--k-hl),var(--k-shadow-2)}
 .stage-warn,.stage-bad{border-radius:var(--k-r-xl)}
@@ -440,7 +441,7 @@ tfoot > tr > *{background:var(--k-surface-2);font-weight:650}
 
 @media (max-width: 380px){.bar nav a,.bar nav button{padding:0 8px} .logo{height:20px}}
 
-/* ---- the system's own colours: a drawn tick box is the browser's again, and an icon keeps the colour of its text */
+/* ---- the system's own colours: a tick box is the browser's again */
 @media (forced-colors: active){input[type="checkbox"]{appearance:auto} input[type="checkbox"]::after{display:none}}
 
 /* ---- motion: a page arrives once, and nothing moves when a person asks it not to */
