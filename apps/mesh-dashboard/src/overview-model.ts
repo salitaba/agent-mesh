@@ -14,7 +14,7 @@
  *   itself is information, a refusal that will not retry is a fault, and the tone says which.
  * - A number that cannot be known is `null`, never `0`.
  */
-import { criterionDone, plainArtifact } from "./format";
+import { RUNNING, criterionDone, plainArtifact } from "./format";
 import type { MissionPhase } from "./mission";
 
 /* ------------------------------------------------------------------------- */
@@ -305,6 +305,11 @@ export const goalNeedsItsCard = (text: string): boolean => {
   return t.length > GOAL_FITS_IN_HERO || t.includes("\n");
 };
 
+/** The icon of a file by what it is: a patch is code, anything else is a document. */
+export function fileIcon(type: unknown): "code" | "files" {
+  return /patch|code|diff|source/i.test(String(type ?? "")) ? "code" : "files";
+}
+
 /** A file's place in the order a reader wants: settled work first, work in review next, drafts, then what needs rework. */
 const FILE_RANK: Record<string, number> = {
   MERGED: 0, FINAL: 0, ACCEPTED: 0, APPROVED: 0, VERIFIED: 0, QA_VERIFIED: 0, SECURITY_VERIFIED: 0, MERGEABLE: 0,
@@ -447,6 +452,125 @@ export function heroNote(i: HeroNoteInput): HeroNote | null {
     default:
       return null;
   }
+}
+
+/* ------------------------------------------------------------------------- */
+/* How the hero looks                                                         */
+/* ------------------------------------------------------------------------- */
+
+/**
+ * The headline cut after its first sentence: the state in a few words, set large, and what it means, set quieter. The words are
+ * mission.ts's, unchanged; a headline that is one sentence has nothing after it. The first sentence is at most 80 characters, so a
+ * long one that happens to hold a full stop does not become a title.
+ */
+export function splitHeadline(text: string): { lead: string; rest: string } {
+  const t = text.trim();
+  const m = /^(.{1,80}?[.!?])\s+(\S[\s\S]*)$/.exec(t);
+  return m ? { lead: m[1]!, rest: m[2]! } : { lead: t, rest: "" };
+}
+
+/** The names of the icons the hero draws; every one is in the console's registry (icons.tsx), which the compiler checks where they are drawn. */
+export type HeroIcon = "refresh" | "alert" | "cost" | "check" | "pause" | "dot";
+
+/**
+ * The mark at the head of the hero: a shape for each state, so the state reads without telling hues apart. Only a mission with agents
+ * mid-turn is live, and only it moves.
+ */
+export function heroLook(phase: MissionPhase): { icon: HeroIcon; live: boolean } {
+  switch (phase) {
+    case "loading": return { icon: "refresh", live: false };
+    case "offline": case "down": case "needs-you": case "failed": case "stalled": return { icon: "alert", live: false };
+    case "ceiling": return { icon: "cost", live: false };
+    case "done": return { icon: "check", live: false };
+    case "paused": case "parked": return { icon: "pause", live: false };
+    case "quiet": return { icon: "dot", live: false };
+    case "running": return { icon: "dot", live: true };
+  }
+}
+
+export interface SeatChip {
+  id: string;
+  role: string;
+  /** In a turn right now: drawn lit. */
+  working: boolean;
+}
+
+/**
+ * The seats as a stack of avatars: the roster in its own order (a seat's place in the mesh is stable), the ones in a turn lit. `max` is
+ * how many chips fit in the row, the "+N" one included: a roster that fits is drawn whole, and a longer one is drawn with a chip fewer
+ * so the count sits beside the seats and does not wrap onto a row of its own. The seats that are working are kept before the rest, so
+ * a long roster never hides who is busy; `more` is how many are left out. The human is not a seat.
+ */
+export function seatStack(agents: ReadonlyArray<{ id: string; role?: string; lifecycle?: string }> | undefined, max = 7): { shown: SeatChip[]; more: number } {
+  const seats: SeatChip[] = (agents ?? [])
+    .filter((a) => a?.id && a.id !== "human")
+    .map((a) => ({ id: String(a.id), role: String(a.role ?? ""), working: RUNNING.has(String(a.lifecycle ?? "").toUpperCase()) }));
+  if (seats.length <= max) return { shown: seats, more: 0 };
+  const room = Math.max(1, max - 1);
+  const keep = new Set<string>();
+  for (const s of seats) if (s.working && keep.size < room) keep.add(s.id);
+  for (const s of seats) if (keep.size < room) keep.add(s.id);
+  return { shown: seats.filter((s) => keep.has(s.id)), more: seats.length - room };
+}
+
+/**
+ * The turns the list of steps says are running that the status says are over. `/status` is read with every event and carries the ten
+ * latest turns; `/steps` is read every few seconds, so for a moment after a turn ends the page holds two readings of it. The list is
+ * the older one: these are the turns to read again, and not to count as running meanwhile.
+ */
+export function staleRunning(
+  steps: ReadonlyArray<{ turnId?: string; status?: string }>,
+  recent: ReadonlyArray<{ turnId?: string; status?: string }> | undefined,
+): string[] {
+  const said = new Map<string, string>();
+  for (const t of recent ?? []) if (t?.turnId) said.set(t.turnId, String(t.status ?? ""));
+  return steps.flatMap((s) => (s.status === "running" && s.turnId && said.has(s.turnId) && said.get(s.turnId) !== "running" ? [s.turnId] : []));
+}
+
+/**
+ * The turns the status says are running that the list of steps does not have at all: they began after the list was read. Like a turn
+ * that ended since, they are a reason to read the list again; unlike it, the list has nothing to un-count.
+ */
+export function unlistedRunning(
+  steps: ReadonlyArray<{ turnId?: string }>,
+  recent: ReadonlyArray<{ turnId?: string; status?: string }> | undefined,
+): string[] {
+  const listed = new Set(steps.map((s) => s.turnId).filter((id): id is string => Boolean(id)));
+  return (recent ?? []).flatMap((t) => (t?.turnId && t.status === "running" && !listed.has(t.turnId) ? [t.turnId] : []));
+}
+
+/** One mark for each mandatory check, in the goal's order: the segments of the bar under the figure. */
+export function checkSegments(criteria: readonly unknown[] | undefined): CheckMark[] {
+  return (criteria || []).filter((c: any) => c?.mandatory).map((c: any) => checkView(c).mark);
+}
+
+export interface EventLook {
+  icon: "message" | "agents" | "files" | "steps" | "approve" | "overview" | "cost" | "inbox" | "lock" | "alert" | "dot";
+  /** Only what went wrong and what was completed carry a colour; the rest of the log is quiet. */
+  tone: "bad" | "ok" | "neutral";
+}
+
+const EVENT_ICON: Record<string, EventLook["icon"]> = {
+  message: "message", thread: "message", human: "message",
+  agent: "agents", memory: "agents", session: "agents", continuity: "agents",
+  artifact: "files", patch: "files", release: "files", requirements: "files", requirement: "files", dependency: "files", research: "files",
+  architecture: "files", design: "files", implementation: "files", authentication: "files", authorization: "files",
+  task: "steps", plan: "steps", commitment: "steps",
+  review: "approve", decision: "approve",
+  goal: "overview", budget: "cost", escalation: "inbox", lease: "lock",
+};
+
+/**
+ * What a row of the log looks like: the icon of the kind of thing that happened, instead of the kind's name in a colour. An alert
+ * (the severity the catalog and eventmodel.ts assign) is a triangle in the bad tone whatever its kind, so a crash is never a quiet
+ * dot among the rest; a completion is the one good-news tone.
+ */
+export function eventLook(type: string, severity: "alert" | "notice" | "routine"): EventLook {
+  if (severity === "alert") return { icon: "alert", tone: "bad" };
+  const group = String(type).split(".")[0] ?? "";
+  // A seat finishing is bookkeeping at the end of every mission; the good news is the work and the mission.
+  const done = group !== "agent" && /\.(completed|approved|merged|satisfied|accepted)$/.test(type);
+  return { icon: EVENT_ICON[group] ?? "dot", tone: done ? "ok" : "neutral" };
 }
 
 /* ------------------------------------------------------------------------- */

@@ -235,6 +235,19 @@ export function holdsLine(h: Holds): string {
   return h.scope === "mission" ? "Holds up the whole mission." : h.scope === "seat" ? `Holds up ${h.seat} only. The rest of the mesh keeps working.` : "Holds up nothing.";
 }
 
+/**
+ * What happens if the card is left alone, said plainly under its title: the chip names what is held, this says what that means for
+ * the mission. The page used to keep it in the chip's tooltip, where the one thing a person deciding whether to act needs was out of sight.
+ * A notice holds nothing, so there is no consequence to add: its badge and its own text already say the mission carries on.
+ */
+export function ifLeftAlone(h: Holds): string | null {
+  return h.scope === "mission"
+    ? "The mission is halted until this is answered."
+    : h.scope === "seat"
+      ? "Only this seat is parked. The rest of the mesh keeps working."
+      : null;
+}
+
 /* ------------------------------- the wording -------------------------------- */
 
 function ledgerOf(status: any, key: unknown): any {

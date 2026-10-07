@@ -895,6 +895,15 @@ ul.errs { margin: var(--s1-5) 0; padding-left: 18px; font-size: 14px; color: var
 .empty .big { font-size: 30px; opacity: .5; }
 .empty-icon { display: grid; place-items: center; width: 56px; height: 56px; margin-bottom: var(--s1); border-radius: var(--r-lg); background: var(--k-accent-soft); color: var(--k-accent-ink); border: 1px solid color-mix(in srgb, var(--k-accent) 18%, transparent); }
 .empty.bad .empty-icon { color: var(--bad); background: color-mix(in srgb, var(--bad) 10%, var(--panel)); border-color: color-mix(in srgb, var(--bad) 22%, transparent); }
+/* An icon tile (IconTile): a glyph on the ground of its tone, the selection's own by default. 40px, sm 28, lg 48; a live one breathes a ring. The
+   ground of a status tone is its tint over the panel (opaque), so the glyph clears contrast on a card and on a tinted hero alike. */
+.tile { --tone: var(--k-accent-ink); display: inline-grid; place-items: center; flex: none; width: 40px; height: 40px; border-radius: var(--k-r-md); color: var(--tone); background: var(--k-accent-soft); border: 1px solid color-mix(in srgb, var(--k-accent) 18%, transparent); }
+.tile.sm { width: 28px; height: 28px; border-radius: var(--k-r-sm); }
+.tile.lg { width: 48px; height: 48px; border-radius: var(--k-r-lg); }
+.tile.ok { --tone: var(--ok); } .tile.warn { --tone: var(--warn); } .tile.bad { --tone: var(--bad); } .tile.info { --tone: var(--info); } .tile.neutral { --tone: var(--muted); }
+.tile:is(.ok, .warn, .bad, .info) { background: color-mix(in srgb, var(--tone) 14%, var(--panel)); border-color: color-mix(in srgb, var(--tone) 24%, transparent); }
+.tile.neutral { background: var(--panel-2); border-color: var(--line); }
+.tile.live { box-shadow: 0 0 0 0 color-mix(in srgb, var(--tone) 45%, transparent); animation: pulse 2.2s infinite; }
 .empty-title { color: var(--text); font: 600 16px/1.3 var(--sans); letter-spacing: var(--k-track-tight); text-wrap: balance; }
 .empty-body { margin: 0; max-width: 44ch; color: var(--muted); font-size: 14px; line-height: 1.5; }
 .empty-acts { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: var(--s2) var(--s3); margin-top: var(--s2); }
@@ -932,12 +941,6 @@ ul.errs { margin: var(--s1-5) 0; padding-left: 18px; font-size: 14px; color: var
 /* The older bars (a plain div scaled by an inline transform) take the same look. */
 .progress { height: 6px; border-radius: var(--k-r-pill); background: var(--sunken); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--line) 70%, transparent); overflow: hidden; margin-top: var(--s2); }
 .progress > div { height: 100%; border-radius: inherit; background: var(--k-accent); transform-origin: left center; transition: transform var(--k-dur-3) var(--k-ease); }
-.track { height: 8px; background: var(--sunken); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--line) 70%, transparent); border-radius: var(--k-r-pill); overflow: hidden; }
-.track > div { height: 100%; background: var(--k-accent); border-radius: inherit; transform-origin: left center; transition: transform var(--k-dur-3) var(--k-ease); }
-/* A track that is filling toward something bad rather than just filling: the accent reads as neutral progress, which is wrong
-   for a meter whose far end closes a session. */
-.track.warn > div { background: var(--warn); }
-.track.bad > div { background: var(--bad); }
 /* A small chart is drawn in the colour it is given, so one rule sets the ink. */
 .spark, .ring { color: var(--k-accent); }
 .tone-ok { color: var(--ok); } .tone-warn { color: var(--warn); } .tone-bad { color: var(--bad); } .tone-info { color: var(--info); } .tone-muted { color: var(--muted); }
@@ -1191,14 +1194,6 @@ ul.errs { margin: var(--s1-5) 0; padding-left: 18px; font-size: 14px; color: var
 .t-task { color: var(--text-dim); } .t-escalation { color: var(--bad); } .t-lease { color: var(--info); }
 .t-bad, .ev .type.message.rejected { color: var(--bad); }
 
-.bar-row { display: grid; grid-template-columns: 180px 1fr 150px; gap: var(--s2-5); align-items: center; padding: 6px 0; }
-.bar-row .lbl { font: 13px var(--mono); color: var(--text-dim); }
-/* The per-agent / per-model detail is a second line of the label, not a wrapped
-   continuation: as one string it broke wherever the 130px column ran out and
-   stranded the "·" separator at the start of line two. */
-.bar-row .lbl-meta { display: block; }
-.bar-row .num { font: 13px var(--sans); color: var(--muted); text-align: right; }
-
 /* ---------- escalations ---------- */
 .esc-next { background: var(--panel-2); border: 1px solid var(--line); border-radius: var(--r-sm); padding: var(--s2) var(--s3); font-size: 14px; margin-top: var(--s2); }
 .esc-raw { margin-top: var(--s2-5); }
@@ -1248,11 +1243,9 @@ ul.errs { margin: var(--s1-5) 0; padding-left: 18px; font-size: 14px; color: var
   #view { padding: var(--s3) var(--s3) var(--dock-clear); }
   .ev { grid-template-columns: 56px 1fr; grid-template-areas: "time type" "summary summary"; row-gap: var(--s0); }
   .ev time { grid-area: time; } .ev .type { grid-area: type; } .ev .summary { grid-area: summary; white-space: normal; }
-  .bar-row { grid-template-columns: 1fr; gap: var(--s1); }
-  .bar-row .num { text-align: left; }
   .respond-form .row { flex-direction: column; align-items: stretch; }
   .respond-form .primary { min-height: 44px; }
-  .row-actions button, button.small { min-height: 32px; }
+  .row-actions button { min-height: 32px; }
   /* The Message panel's recipient chips are the way to address a seat on a phone, so they are full touch targets. */
   .send-chips .chip-toggle { min-height: 44px; }
   /* The project strip stays, the words go: a shape and a name is what a narrow screen can carry without a second row. */
@@ -1321,16 +1314,4 @@ ul.errs { margin: var(--s1-5) 0; padding-left: 18px; font-size: 14px; color: var
 /* version row: the artifact drawer still draws it */
 .fv-versions { display: flex; align-items: center; gap: var(--s1-5); flex-wrap: wrap; margin: var(--s2) 0 var(--s0); }
 
-/* ---------- collaborations ---------- */
-/* One open agent-to-agent session: who is in the room and how much of the box
-   is left. No transcript — the thread view already owns the conversation. */
-.collab-row { padding: var(--s3) 0; border-bottom: 1px dashed var(--line); }
-.collab-row:first-child { padding-top: var(--s1); }
-.collab-row:last-child { border-bottom: 0; padding-bottom: 0; }
-.collab-head { display: flex; align-items: center; gap: var(--s2); }
-/* The topic is a free-text line from the opening agent, so it is held to one
-   line rather than allowed to push the meters down the card. */
-.collab-topic { flex: 1; min-width: 0; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.collab-who { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s1-5); margin: var(--s1-5) 0 var(--s2); font-size: 13px; }
-.collab-who .mono { color: var(--text-dim); }
 

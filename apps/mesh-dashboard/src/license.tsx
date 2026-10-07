@@ -16,7 +16,7 @@
 import React, { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import "./views/settings.css";
 import { api } from "./api";
-import { Banner, Button, CopyButton, useNow } from "./components";
+import { Banner, Button, CopyButton, IconTile, Pill, Progress, Skeleton, Stat, useNow } from "./components";
 import { Icon } from "./icons";
 import { useMesh } from "./store";
 import { useProjectsOptional } from "./projects";
@@ -214,8 +214,6 @@ export function LicenseBanner({ onOpen }: { onOpen: () => void }): React.JSX.Ele
   );
 }
 
-const meter = (r: number): React.CSSProperties => ({ "--w": Math.min(1, Math.max(0, r)) } as React.CSSProperties);
-
 /** What plan this install is on: its limits against what is in use, when it ends, and what to do next. */
 export function LicenseCard(): React.JSX.Element {
   const projects = useProjectsOptional();
@@ -224,18 +222,22 @@ export function LicenseCard(): React.JSX.Element {
   const now = new Date(useNow(60_000));
 
   const head = (
-    <div className="lic-head">
-      <h3 id="lic-h" className="hs-h">Plan and licence</h3>
-      <Button variant="small" icon="refresh" onClick={reload} title="Read the licence again">Read again</Button>
-    </div>
+    <header className="hs-head">
+      <IconTile icon="key" />
+      <h3 id="lic-h">Plan and licence</h3>
+      <Button variant="small" icon="refresh" extra="hs-head-act" onClick={reload} title="Read the licence again">Read again</Button>
+    </header>
   );
 
   if (!license) {
     return (
-      <section className="card lic" aria-labelledby="lic-h">
+      <section className="card hs-card lic" aria-labelledby="lic-h">
         {head}
         {status === "loading" ? (
-          <div className="lic-skel" role="status"><span className="sr-only">Reading the licence</span><i /><i /></div>
+          <div className="lic-skel" role="status" aria-busy="true">
+            <span className="sr-only">Reading the licence</span>
+            <Skeleton w="30%" h={34} /><Skeleton w="70%" h={14} /><Skeleton w="100%" h={56} />
+          </div>
         ) : (
           <p className="hs-note">This host did not report its licence, so the plan is not shown. An older build has no licence route.</p>
         )}
@@ -252,43 +254,44 @@ export function LicenseCard(): React.JSX.Element {
   const steps = nextSteps(license, use, now);
 
   return (
-    <section className="card lic" aria-labelledby="lic-h">
+    <section className="card hs-card lic" aria-labelledby="lic-h">
       {head}
       <div className="lic-top">
         <b className="lic-name">{planName(license.plan)}</b>
-        <span className={`lic-state ${st.tone}`}><Icon name={st.tone === "ok" ? "check" : "alert"} size={14} />{st.label}</span>
+        <Pill tone={st.tone}><Icon name={st.tone === "ok" ? "check" : "alert"} size={12} />{st.label}</Pill>
       </div>
       <p className="lic-sub">{headline(license, over)}</p>
 
-      <table className="lic-table">
-        <caption className="sr-only">What the plan allows, and what is in use</caption>
-        <thead><tr><th scope="col">Limit</th><th scope="col" className="r">Allowed</th><th scope="col">In use</th></tr></thead>
-        <tbody>
-          {rows.map((r) => (
-            <tr key={r.key}>
-              <th scope="row">{r.label}</th>
-              <td className="r mono">{r.allowed === null ? "Unlimited" : r.allowed}</td>
-              <td>
-                {r.inUse === null ? (
-                  <span className="muted">not shown here</span>
-                ) : (
-                  <span className={`lic-use${r.over ? (r.transient ? " warn" : " bad") : ""}`}>
-                    {r.ratio !== null ? <span className="lic-mini" aria-hidden="true"><i style={meter(r.ratio)} /></span> : null}
-                    <span><b className="mono">{r.inUse}</b> {r.per}{r.over ? (r.transient ? ", over for the moment" : ", over the limit") : ""}</span>
-                  </span>
+      <div className="card stat-strip lic-limits" role="group" aria-label="What the plan allows, and what is in use">
+        {rows.map((r) => {
+          const tone = r.over ? (r.transient ? "warn" : "bad") : undefined;
+          return (
+            <div className="stat-cell" key={r.key}>
+              <Stat
+                label={r.label}
+                value={r.inUse === null ? "Not shown here" : r.inUse}
+                size={r.inUse === null ? "sm" : undefined}
+                unit={r.inUse === null ? undefined : `of ${r.allowed === null ? "unlimited" : r.allowed}`}
+                tone={tone}
+                sub={r.inUse === null ? undefined : (
+                  <>
+                    {r.per}{r.over ? (r.transient ? ", over for the moment" : ", over the limit") : ""}
+                    {r.key === "projects" && use.registered !== null ? <span className="lic-aside">{use.registered} registered; the limit counts open ones</span> : null}
+                  </>
                 )}
-                {r.key === "projects" && use.registered !== null ? <span className="lic-aside">{use.registered} registered; the limit counts open ones</span> : null}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+              >
+                {r.ratio !== null && r.allowed !== null && r.inUse !== null ? <Progress value={r.inUse} max={r.allowed} label={`${r.label}: ${r.inUse} of ${r.allowed} used`} tone={tone} /> : null}
+              </Stat>
+            </div>
+          );
+        })}
+      </div>
 
-      <dl className="lic-facts">
-        <div><dt>Expiry</dt><dd>{ex.text}</dd></div>
-        <div><dt>Enforcement</dt><dd>{enforcementSentence(license.enforcement)} <span className="lic-aside">Set by MESH_LICENSE_ENFORCEMENT on the host: {license.enforcement}.</span></dd></div>
-        <div><dt>Licence key</dt><dd>{where.text}{where.code ? <> <code>{where.code}</code></> : null}</dd></div>
-        <div><dt>Features</dt><dd>{license.features.length ? license.features.map(featureName).join(", ") : "No extra features on this plan."}</dd></div>
+      <dl className="kv lic-facts">
+        <dt>Expiry</dt><dd>{ex.text}</dd>
+        <dt>Enforcement</dt><dd>{enforcementSentence(license.enforcement)} <span className="lic-aside">Set by MESH_LICENSE_ENFORCEMENT on the host: {license.enforcement}.</span></dd>
+        <dt>Licence key</dt><dd>{where.text}{where.code ? <> <code>{where.code}</code></> : null}</dd>
+        <dt>Features</dt><dd>{license.features.length ? license.features.map(featureName).join(", ") : "No extra features on this plan."}</dd>
       </dl>
 
       <h4 className="hs-h2">What to do next</h4>

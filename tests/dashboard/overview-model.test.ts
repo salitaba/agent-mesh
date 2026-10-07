@@ -7,19 +7,27 @@ import {
   bufferIsBehind,
   bySeq,
   capacityWaits,
+  checkSegments,
   checksSummary,
   checkView,
+  eventLook,
   evidenceChips,
+  fileIcon,
   filesByStatus,
   goalNeedsItsCard,
+  heroLook,
   heroNote,
   idleCause,
   missionClock,
   missionRead,
   nameOfUri,
+  seatStack,
   shortRef,
   sortFiles,
+  splitHeadline,
   standingBlocks,
+  staleRunning,
+  unlistedRunning,
   workspaceOf,
   type AttentionInput,
   type HeroNoteInput,
@@ -524,4 +532,132 @@ test("the Overview draws a mission only once the status names its goal; before t
   const s = describeMission(factsFromStatus(starting));
   assert.equal(s.phase, "loading");
   assert.match(s.headline, /starting/);
+});
+
+/* ------------------------------- how the hero looks -------------------------------- */
+
+test("the headline is cut after its first sentence, and says nothing different from mission.ts", () => {
+  assert.deepEqual(splitHeadline("Parked. Nothing runs on its own until you start the mission."), { lead: "Parked.", rest: "Nothing runs on its own until you start the mission." });
+  assert.deepEqual(splitHeadline("3 decisions waiting on you. The mission is paused until they are answered."), { lead: "3 decisions waiting on you.", rest: "The mission is paused until they are answered." });
+  assert.deepEqual(splitHeadline("1 agent working."), { lead: "1 agent working.", rest: "" }, "one sentence is a lead and nothing after it");
+  assert.deepEqual(splitHeadline("  Delivered. Every mandatory check is evidenced.  "), { lead: "Delivered.", rest: "Every mandatory check is evidenced." });
+  assert.deepEqual(splitHeadline("A spend of $50.00 was reached."), { lead: "A spend of $50.00 was reached.", rest: "" }, "a full stop inside a number is not a sentence");
+  assert.deepEqual(splitHeadline(""), { lead: "", rest: "" });
+  const long = `${"word ".repeat(30)}end. And more.`;
+  assert.equal(splitHeadline(long).lead, long, "a first sentence past 80 characters is not a title: the headline stays whole");
+  // Whatever the mission says, the two halves are the same words: nothing is added, dropped or reordered.
+  for (const f of [{}, { goalStatus: "COMPLETED" }, { goalStatus: "ACTIVE", working: 2 }, { goalStatus: "ACTIVE", parked: true }, { goalStatus: "PAUSED" }, { goalStatus: "FAILED" }, { goalStatus: "ESCALATED", blockingDecisions: 2 }]) {
+    const state = describeMission({ ...BASE_FACTS, ...f });
+    const { lead, rest } = splitHeadline(state.headline);
+    assert.equal(rest ? `${lead} ${rest}` : lead, state.headline, JSON.stringify(f));
+  }
+});
+
+const BASE_FACTS: MissionFacts = {
+  hasStatus: true, serverDown: false, projectDown: null, goalStatus: "ACTIVE", parked: false, blockingDecisions: 0, seatHeldDecisions: [], advisoryDecisions: 0,
+  hostCeilingTripped: false, working: 1, waiting: 0, runningSteps: 1, hasHistory: true, startupSeats: 3, goalWritten: true,
+};
+
+test("every phase of the mission has a mark, and only a mission with agents in a turn moves", () => {
+  const phases = ["loading", "offline", "down", "ceiling", "needs-you", "failed", "done", "paused", "parked", "stalled", "quiet", "running"] as const;
+  for (const p of phases) assert.ok(heroLook(p).icon, p);
+  assert.deepEqual(phases.filter((p) => heroLook(p).live), ["running"]);
+  assert.equal(heroLook("done").icon, "check");
+  assert.equal(heroLook("needs-you").icon, "alert");
+  assert.equal(heroLook("failed").icon, "alert");
+  assert.notEqual(heroLook("parked").icon, heroLook("done").icon, "a parked mission and a delivered one do not share a shape");
+  assert.equal(heroLook("quiet").icon, heroLook("running").icon, "a mission that is live but still wears the live mark without moving");
+  assert.equal(heroLook("quiet").live, false);
+});
+
+test("the seats stack in the roster's order with the busy ones lit, and the human is not a seat", () => {
+  const roster = [
+    { id: "human", role: "human", lifecycle: "STARTING" },
+    { id: "pm", role: "product-manager", lifecycle: "WAITING" },
+    { id: "architect", role: "architect", lifecycle: "THINKING" },
+    { id: "qa", role: "qa", lifecycle: "COMPLETED" },
+  ];
+  const s = seatStack(roster);
+  assert.deepEqual(s.shown.map((x) => x.id), ["pm", "architect", "qa"]);
+  assert.deepEqual(s.shown.map((x) => x.working), [false, true, false]);
+  assert.equal(s.more, 0);
+  assert.deepEqual(seatStack(undefined), { shown: [], more: 0 });
+  assert.deepEqual(seatStack([]), { shown: [], more: 0 });
+});
+
+test("a roster too long to stack keeps the seats in a turn in view, in roster order, and counts the rest beside them", () => {
+  const roster = Array.from({ length: 30 }, (_, i) => ({ id: `s${i}`, role: "developer", lifecycle: i === 25 || i === 28 ? "WORKING" : "IDLE" }));
+  const s = seatStack(roster, 7);
+  assert.equal(s.shown.length, 6, "the count is the seventh chip: one fewer seat than the row holds");
+  assert.equal(s.more, 24);
+  assert.equal(s.shown.length + 1, 7);
+  assert.ok(s.shown.some((x) => x.id === "s25" && x.working) && s.shown.some((x) => x.id === "s28" && x.working), "the busy seats are not hidden by the long roster");
+  assert.deepEqual(s.shown.map((x) => x.id), ["s0", "s1", "s2", "s3", "s25", "s28"], "the rest of the room goes to the seats at the head of the roster");
+  const busy = Array.from({ length: 12 }, (_, i) => ({ id: `b${i}`, role: "qa", lifecycle: "THINKING" }));
+  assert.equal(seatStack(busy, 5).shown.length, 4, "more busy seats than room: still only as many as fit");
+  const seven = Array.from({ length: 7 }, (_, i) => ({ id: `t${i}`, role: "qa", lifecycle: "IDLE" }));
+  assert.deepEqual(seatStack(seven, 7), { shown: seven.map((x) => ({ id: x.id, role: "qa", working: false })), more: 0 }, "a roster that fits the row is drawn whole, with no count");
+  assert.equal(seatStack([...seven, { id: "t7", role: "qa", lifecycle: "IDLE" }], 7).more, 2, "one seat over the row: the count takes a chip, so it says two");
+});
+
+test("one segment for each mandatory check, in the goal's order, as the checklist marks them", () => {
+  const criteria = [
+    { id: "a", mandatory: true, status: "EVIDENCED" },
+    { id: "b", mandatory: true, status: "ASSERTED" },
+    { id: "c", mandatory: false, status: "EVIDENCED" },
+    { id: "d", mandatory: true, status: "WAIVED" },
+    { id: "e", mandatory: true, status: "UNSATISFIED" },
+  ];
+  assert.deepEqual(checkSegments(criteria), ["done", "claimed", "skipped", "todo"], "an optional check is not a segment");
+  assert.deepEqual(checkSegments(undefined), []);
+  assert.deepEqual(checkSegments([]), []);
+  // The bar and the figure beside it count the same checks.
+  assert.equal(checkSegments(criteria).filter((m) => m === "done" || m === "skipped").length, checksSummary(criteria).done);
+});
+
+test("a row of the log shows the icon of what happened, and colour only for a fault or a completion", () => {
+  assert.deepEqual(eventLook("message.sent", "notice"), { icon: "message", tone: "neutral" });
+  assert.deepEqual(eventLook("agent.created", "notice"), { icon: "agents", tone: "neutral" });
+  assert.deepEqual(eventLook("artifact.versioned", "notice"), { icon: "files", tone: "neutral" });
+  assert.deepEqual(eventLook("task.completed", "notice"), { icon: "steps", tone: "ok" });
+  assert.deepEqual(eventLook("review.approved", "notice"), { icon: "approve", tone: "ok" });
+  assert.deepEqual(eventLook("patch.merged", "notice"), { icon: "files", tone: "ok" });
+  assert.deepEqual(eventLook("budget.spent", "routine"), { icon: "cost", tone: "neutral" });
+  // Every seat finishing is the end of every mission, so it is not good news seven times over: the work and the mission are.
+  assert.deepEqual(eventLook("agent.completed", "notice"), { icon: "agents", tone: "neutral" });
+  assert.deepEqual(eventLook("goal.completed", "notice"), { icon: "overview", tone: "ok" });
+  assert.deepEqual(eventLook("something.new", "notice"), { icon: "dot", tone: "neutral" }, "a kind this build does not know is a dot, not a gap");
+  // A fault is a triangle in the bad tone whatever it is about: a crash is never a quiet icon among the rest.
+  for (const type of ["agent.failed", "message.rejected", "review.rejected", "goal.escalated"]) assert.deepEqual(eventLook(type, "alert"), { icon: "alert", tone: "bad" }, type);
+});
+
+test("a patch is code and every other kind of file is a document", () => {
+  assert.equal(fileIcon("CodePatch"), "code");
+  assert.equal(fileIcon("patch"), "code");
+  for (const t of ["ArchitectureDocument", "ReleasePlan", "ResearchReport", "RequirementsDoc", "", undefined, null]) assert.equal(fileIcon(t), "files", String(t));
+});
+
+test("a turn the list still says is running and the status says is over is stale: the list is the older reading", () => {
+  const steps = [
+    { turnId: "t-3", status: "running" },
+    { turnId: "t-2", status: "running" },
+    { turnId: "t-1", status: "ok" },
+    { turnId: "t-0", status: "waiting" },
+  ];
+  const recent = [{ turnId: "t-2", status: "ok" }, { turnId: "t-1", status: "ok" }, { turnId: "t-0", status: "waiting" }];
+  assert.deepEqual(staleRunning(steps, recent), ["t-2"], "t-2 ended since the list was read; t-3 began since the status was read, so it stands");
+  assert.deepEqual(staleRunning(steps, [{ turnId: "t-2", status: "running" }]), [], "both readings say running: nothing is stale");
+  assert.deepEqual(staleRunning(steps, undefined), [], "a status with no turns in it settles nothing");
+  assert.deepEqual(staleRunning(steps, []), []);
+  assert.deepEqual(staleRunning([{ status: "running" }], [{ status: "ok" }]), [], "a turn with no id cannot be told apart, so it is not called stale");
+  assert.deepEqual(staleRunning([{ turnId: "t-1", status: "ok" }], [{ turnId: "t-1", status: "running" }]), [], "only a running step can be stale: an ended one that the status calls running is the status being earlier, and the list is read again anyway");
+});
+
+test("a turn the status says is running that the list has never heard of began after the list was read", () => {
+  const steps = [{ turnId: "t-1" }, { turnId: "t-0" }];
+  assert.deepEqual(unlistedRunning(steps, [{ turnId: "t-2", status: "running" }, { turnId: "t-1", status: "running" }, { turnId: "t-0", status: "ok" }]), ["t-2"]);
+  assert.deepEqual(unlistedRunning(steps, [{ turnId: "t-2", status: "ok" }]), [], "a turn that is over and not in the list is history, not news: the list is six rows long");
+  assert.deepEqual(unlistedRunning(steps, undefined), []);
+  assert.deepEqual(unlistedRunning([], [{ turnId: "t-9", status: "running" }]), ["t-9"], "nothing listed yet at all");
+  assert.deepEqual(unlistedRunning(steps, [{ status: "running" }]), [], "a turn with no id cannot be matched against the list");
 });

@@ -60,7 +60,8 @@ export interface NotifyView {
   press: NotifyPress | null;
 }
 
-const TURN_ON = "Notify me when the mission needs me";
+/** What the switch is called, whichever way it is set: the label of a switch does not change when it is turned on. */
+export const TURN_ON = "Notify me when the mission needs me";
 const WHEN = "when a decision starts to wait for you, when the mission is delivered and when it stops on its own";
 /** What it is not, said where the person decides and not in a settings page: the whole of it is in the hint and the answer to a press. */
 const WORKS_WHILE_OPEN = "It works while this page is open in a browser tab. Nothing is sent to anyone else, and nothing reaches you once the tab is closed.";

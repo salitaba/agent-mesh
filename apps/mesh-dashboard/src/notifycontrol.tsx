@@ -1,7 +1,7 @@
 import { useCallback, useMemo, useSyncExternalStore } from "react";
 import { useMesh } from "./store";
-import { Button } from "./components";
-import { notifyAnswer, notifyView, type NotifyState, type NotifyView } from "./notify";
+import { Switch } from "./components";
+import { TURN_ON, notifyAnswer, notifyView, type NotifyState, type NotifyView } from "./notify";
 import { notifySnapshot, pressNotify, subscribeNotify } from "./notifyclient";
 
 /**
@@ -25,13 +25,15 @@ export function useNotify(): { view: NotifyView; press: () => void } {
   return { view, press };
 }
 
-/** A quiet line on the Needs you page: the button, and in one line what it does and what it does not. */
+/**
+ * A small switch row on the Needs you page: what it turns on, and under it in one line what it does and does not do. A browser that
+ * will not show notifications (or one that blocks them) leaves the switch where it was and says why when it is pressed.
+ */
 export function NotifyRow({ atEnd }: { atEnd?: boolean }): React.JSX.Element {
   const { view, press } = useNotify();
   return (
     <div className={`ib-notify${atEnd ? " end" : ""}`}>
-      {view.press ? <Button variant="small" icon="bell" title={view.hint} aria-describedby="ib-notify-note" onClick={press}>{view.label}</Button> : null}
-      <p className="ib-notify-note" id="ib-notify-note">{view.note}</p>
+      <Switch label={TURN_ON} hint={view.note} checked={view.press === "turn-off"} disabled={view.press === null} title={view.hint} onChange={press} />
     </div>
   );
 }

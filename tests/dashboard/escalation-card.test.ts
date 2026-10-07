@@ -14,6 +14,7 @@ import {
   escalationText,
   holdsLine,
   holdsOf,
+  ifLeftAlone,
   isSystemRaiser,
   openSupports,
   raisedByLabel,
@@ -409,4 +410,15 @@ test("a derived card links only to the requests it summarises that are still ope
   const bySupports = esc({ id: "sum", reason: "stalemate", supports: ["c", "b"], detail: { openDeadlockEscalations: [{ id: "a" }] } });
   assert.deepEqual(openSupports(bySupports, list).map((s) => s.id), ["c"], "the card's own supports field outranks the detail");
   assert.deepEqual(openSupports(esc({ reason: "stalemate" }), list), []);
+});
+
+test("what happens if a card is left alone is said under its title, for each thing a card can hold, and a notice adds nothing", () => {
+  assert.equal(ifLeftAlone({ scope: "mission" }), "The mission is halted until this is answered.");
+  assert.equal(ifLeftAlone({ scope: "seat", seat: "dev" }), "Only this seat is parked. The rest of the mesh keeps working.");
+  // A notice holds nothing: its badge and its own words say the mission carries on, so a third sentence would only repeat them.
+  assert.equal(ifLeftAlone({ scope: "nothing" }), null);
+  // The sentence follows what the card holds.
+  assert.equal(ifLeftAlone(holdsOf(esc())), "The mission is halted until this is answered.");
+  assert.equal(ifLeftAlone(holdsOf(esc({ advisory: true }))), null);
+  assert.match(ifLeftAlone(holdsOf(esc({ conflictKey: "budget:agent:goal-1/dev" }))) ?? "", /Only this seat is parked/);
 });

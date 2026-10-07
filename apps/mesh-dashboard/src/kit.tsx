@@ -13,7 +13,7 @@ import "./styles.css";
 import "./kit.css";
 import {
   AgentAvatar, Banner, Button, Card, Checkbox, Chip, ConfirmDialog, CopyButton, Dialog, DialogPanel, DrawerHead, EmptyState, ErrorState, EventRow,
-  Field, IconButton, IdChip, Input, Kbd, LifecyclePill, Menu, OutcomePill, PageHeader, Pill, Progress, Radio, Ring, Segmented, Select, Skeleton,
+  Field, IconButton, IconTile, IdChip, Input, Kbd, LifecyclePill, Menu, OutcomePill, PageHeader, Pill, Progress, Radio, Ring, Segmented, Select, Skeleton,
   SearchField, SkeletonText, Sparkline, Stat, StatusPill, StepMini, Switch, TabPanel, Tabs, TextArea, ToastCard, Tooltip, Wordmark, ZoneNote, agentColor,
   type ConfirmRequest, type MenuItem, type PillTone,
 } from "./components";
@@ -401,8 +401,14 @@ function Gallery(): React.JSX.Element {
                 <AgentAvatar id="human" /><AgentAvatar id="developer" size="sm" color={agentColor("developer")} /><AgentAvatar id="qa" size="lg" color={agentColor("qa")} />
               </div>
             </Spec>
+            <Spec name="Icon tile" note="the mark at the head of a card or a row; live breathes a ring">
+              <div className="gal-row">
+                <IconTile icon="inbox" /><IconTile icon="check" tone="ok" /><IconTile icon="pause" tone="warn" /><IconTile icon="alert" tone="bad" /><IconTile icon="info" tone="info" /><IconTile icon="files" tone="neutral" />
+                <IconTile icon="inbox" size="sm" /><IconTile icon="dot" tone="ok" size="lg" live />
+              </div>
+            </Spec>
             <Spec name="Zone note" short note="said once above a run of times"><span className="caps">Just happened<ZoneNote /></span></Spec>
-            <Spec name="Rows" note="what the Overview lists">
+            <Spec name="Rows" note="compact rows: the agent drawer lists its steps with StepMini; the Overview draws its lists as timelines now">
               <div className="gal-col wide"><EventRow e={SAMPLE_EVENT} onOpen={() => undefined} /><StepMini s={SAMPLE_STEP} onOpen={() => undefined} /></div>
             </Spec>
           </div>

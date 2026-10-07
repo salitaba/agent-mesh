@@ -22,7 +22,7 @@
  */
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 import "./firstrun.css";
-import { Banner, Button, Wordmark } from "./components";
+import { Banner, Button, IconTile, Wordmark } from "./components";
 import { Icon } from "./icons";
 import { onAuthRequired } from "./api";
 import {
@@ -83,6 +83,7 @@ function Checking(): React.JSX.Element {
   return (
     <GateCard>
       <section className="si-card si-state" aria-labelledby="gate-title">
+        <IconTile icon="host" tone="neutral" />
         <h1 id="gate-title">Curule</h1>
         <p role="status">Checking the host…</p>
       </section>
@@ -94,6 +95,7 @@ function Unreachable({ onRetry }: { onRetry: () => void }): React.JSX.Element {
   return (
     <GateCard>
       <section className="si-card si-state" aria-labelledby="gate-title">
+        <IconTile icon="alert" tone="bad" />
         <h1 id="gate-title">Cannot reach the host</h1>
         <p>
           This page asked the host at <b className="mono">{window.location.host}</b> whether it needs a sign-in, and it did not answer. Check that it is
@@ -341,7 +343,7 @@ function SignIn({ ended, onSignedIn }: { ended: boolean; onSignedIn: () => void 
                 <Banner tone="info" title="You can try again now." />
               </div>
             ) : null}
-            <Button variant="primary" type="submit" extra="si-submit" disabled={busy || limited}>
+            <Button variant="primary" size="lg" type="submit" extra="si-submit" loading={busy} disabled={limited}>
               {label}
             </Button>
           </form>
@@ -362,7 +364,8 @@ function SignIn({ ended, onSignedIn }: { ended: boolean; onSignedIn: () => void 
           </details>
         </section>
         <p className="si-foot">
-          Signing in to <b>{window.location.host}</b>. The token is sent once and traded for a session cookie; this page does not keep it.
+          <Icon name="lock" size={14} />
+          <span>Signing in to <b>{window.location.host}</b>. The token is sent once and traded for a session cookie; this page does not keep it.</span>
         </p>
       </div>
     </main>

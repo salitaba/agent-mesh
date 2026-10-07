@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Button, Chip } from "../components";
+import { Button, Chip, Progress } from "../components";
 import { Icon } from "../icons";
 import { checkView, checksSummary, evidenceChips, goalNeedsItsCard } from "../overview-model";
 import { Panel } from "./Panel";
@@ -21,16 +21,17 @@ function GoalText({ text }: { text: string }): React.JSX.Element | null {
 }
 
 /**
- * Every check against the goal. A claim an agent made without verifying anything reads as "claimed, not verified", differently
- * from both done and to do, because the operator is the one who needs to know a claim is standing unproven. Evidence sits on
- * the check it supports, and a chip that names a file opens it. The goal's own text is shown here only when the hero could not
- * show all of it: a short goal is already the line under the headline, and saying it twice is noise.
+ * Every check against the goal, under a line that shows how many are done. A claim an agent made without verifying anything reads as
+ * "claimed, not verified", differently from both done and to do, because the operator is the one who needs to know a claim is
+ * standing unproven. Evidence sits on the check it supports, and a chip that names a file opens it. The goal's own text is shown
+ * here only when the hero could not show all of it: a short goal is already the line under the headline, and saying it twice is noise.
  */
 export function GoalChecks({ goal, arts, openArt }: { goal: any; arts: any[]; openArt: (a: any) => void }): React.JSX.Element {
   const criteria: any[] = goal?.acceptanceCriteria || [];
   const sum = checksSummary(criteria);
   return (
     <Panel id="ov-goal" className="ov-goalcard" title="Goal checks" meta={sum.total ? `${sum.done} of ${sum.total} mandatory evidenced` : undefined}>
+      {sum.total ? <Progress value={sum.done} max={sum.total} label="Mandatory checks evidenced" tone="ok" /> : null}
       {goalNeedsItsCard(String(goal?.description || "")) ? <GoalText text={String(goal?.description || "")} /> : null}
       {criteria.length ? (
         <ul className="ov-checks">

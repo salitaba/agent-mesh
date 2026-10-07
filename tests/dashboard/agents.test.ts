@@ -2,8 +2,8 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import {
-  GROUPS, actionNote, controlsHint, controlsOf, groupAgents, groupOf, lastTurnText, pauseWarning, stateText, totalsText, turnsByAgent,
-  memoryKey, unstartedText, worryText, type AgentLike, type TurnLike,
+  DENSE_FROM, GROUPS, actionNote, controlsHint, controlsOf, groupAgents, groupOf, lastTurnText, pauseWarning, seatBudgets, stateText, totalsText, turnSeries,
+  turnsByAgent, memoryKey, unstartedText, worryText, type AgentLike, type TurnLike,
 } from "../../apps/mesh-dashboard/src/agents";
 import { plainLifecycle } from "../../apps/mesh-dashboard/src/format";
 import { vitalsOf } from "../../apps/mesh-dashboard/src/vitals";
@@ -305,4 +305,48 @@ test("the line under a card whose turn has gone quiet is two sentences, in which
   assert.equal(worryText(true, "the model has not sent a single token in 59s"), "No sign of life. The model has not sent a single token in 59s");
   assert.equal(worryText(false, "20s with no output yet"), "Quiet. 20s with no output yet", "a detail that starts with a figure is left as it is");
   assert.equal(worryText(false, ""), "Quiet. ", "an empty detail does not throw");
+});
+
+/* ------------------------------ what a card draws beside its totals ------------------------------ */
+
+test("a seat's series is the tokens of its last turns, oldest first, from a list that is newest first", () => {
+  const steps = [
+    { agentId: "qa", status: "ok", tokens: 900 },
+    { agentId: "pm", status: "ok", tokens: 5000 },
+    { agentId: "qa", status: "ok", tokens: 400 },
+    { agentId: "qa", status: "ok", tokens: 100 },
+  ];
+  assert.deepEqual(turnSeries(steps, "qa"), [100, 400, 900]);
+  assert.deepEqual(turnSeries(steps, "pm"), [5000]);
+  assert.deepEqual(turnSeries(steps, "nobody"), [], "no turn in the loaded history is an empty series, never a made-up one");
+  assert.deepEqual(turnSeries(steps, "qa", 2), [400, 900], "only the newest n turns, still oldest first");
+});
+
+test("a turn still running counts what it has spent so far, and a value that is not a count is not drawn as one", () => {
+  assert.deepEqual(turnSeries([{ agentId: "qa", status: "running", tokens: 0, liveTokens: 1200 }, { agentId: "qa", status: "ok", tokens: 300 }], "qa"), [300, 1200]);
+  assert.deepEqual(turnSeries([{ agentId: "qa", status: "running", tokens: 7 }], "qa"), [7], "a running turn that reports no live count has its own");
+  assert.deepEqual(turnSeries([{ agentId: "qa", status: "ok", tokens: Number.NaN }, { agentId: "qa", status: "ok", tokens: -5 }, { agentId: "qa", status: "ok" }], "qa"), [0, 0, 0]);
+});
+
+test("a seat's own budget is read from the ledger by seat, and only when it is a limit", () => {
+  const ledger = [
+    { key: "mission:goal-1", limit: 2_000_000, limitKind: "tokens", consumed: 49_300 },
+    { key: "agent:goal-1/qa", limit: 200_000, limitKind: "tokens", consumed: 9_000 },
+    { key: "agent:goal-1/tech-lead", limit: 200_000, limitKind: "tokens", consumed: 190_000 },
+    { key: "attention:goal-1/qa", limit: 200_000, limitKind: "tokens", consumed: 1 },
+    { key: "agent:goal-1/pm", limit: null, limitKind: "tokens", consumed: 10 },
+    { key: "agent:goal-1/dev", limit: 0, limitKind: "tokens", consumed: 10 },
+    { key: "agent:goal-1/ops", limit: 60, limitKind: "minutes", consumed: 10 },
+  ];
+  const b = seatBudgets(ledger);
+  assert.deepEqual([...b.keys()], ["qa", "tech-lead"], "the mission's, the attention budgets, and a seat with no limit or another unit are not a seat's own");
+  assert.deepEqual(b.get("qa"), { used: 9_000, limit: 200_000, ratio: 0.045 });
+  assert.equal(b.get("tech-lead")!.ratio, 0.95);
+  assert.deepEqual([...seatBudgets(undefined).keys()], []);
+  assert.deepEqual(seatBudgets([{ key: "agent:g/x", limit: 10 }]).get("x"), { used: 0, limit: 10, ratio: 0 }, "no consumption reported is none used");
+});
+
+test("a long roster is offered as rows as well as cards", () => {
+  assert.ok(DENSE_FROM > 7, "the demo team of seven stays cards");
+  assert.ok(DENSE_FROM <= 12, "a dozen cards is already more than one screen");
 });

@@ -7,81 +7,82 @@
 .path-start { display: block; direction: rtl; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .path-start > bdi { direction: ltr; unicode-bidi: isolate; }
 
-/* The scrim behind a dialog. The second one sits above the first, for a picker opened from inside the New project dialog. */
-.pj-scrim { position: fixed; inset: 0; z-index: calc(var(--z-picker) - 1); background: var(--scrim); }
+/* The scrim behind a dialog, blurred as the shared dialogs' is. The second one sits above the first, for a picker opened from inside the New project dialog. */
+.pj-scrim { position: fixed; inset: 0; z-index: calc(var(--z-picker) - 1); background: var(--scrim); -webkit-backdrop-filter: blur(4px); backdrop-filter: blur(4px); animation: fade-in var(--k-dur-2) var(--k-ease); }
 .pj-scrim-top { z-index: var(--z-picker); }
 
 /* The strip across the top (tabs, the Projects button, the notices under it) is the shell's, and lives in styles.css. */
 
 /* ---------------------------------------------------------------------------------------------- the folder picker */
-.proj-picker { position: fixed; z-index: calc(var(--z-picker) + 1); top: 12vh; left: 50%; transform: translateX(-50%); width: min(560px, 92vw); display: flex; flex-direction: column; max-height: 76vh; background: var(--bg-2); border: 1px solid var(--line-strong); border-radius: var(--r); box-shadow: var(--shadow); }
-.proj-picker-head { display: flex; flex-direction: column; gap: var(--s1); padding: var(--s3-5) var(--s4) var(--s2); }
-.proj-picker-head h2 { margin: 0; font: 600 16px/1.3 var(--sans); color: var(--text); }
+.proj-picker { position: fixed; z-index: calc(var(--z-picker) + 1); top: 12vh; left: 50%; transform: translateX(-50%); width: min(560px, 92vw); display: flex; flex-direction: column; max-height: 76vh; overflow: hidden; background: var(--panel); border: 1px solid var(--line); border-radius: var(--k-r-xl); box-shadow: var(--k-hl), var(--k-shadow-4); animation: dialog-in var(--k-dur-2) var(--k-ease); }
+.proj-picker-head { display: flex; flex-direction: column; gap: var(--s1); padding: var(--s4) var(--s5) var(--s2-5); }
+.proj-picker-head h2 { margin: 0; font: 650 16px/1.3 var(--sans); letter-spacing: var(--k-track-title); color: var(--text); }
 .proj-picker-head p { margin: 0; font-size: 13px; line-height: 1.5; }
-.proj-picker-path { display: flex; gap: var(--s2); padding: 0 var(--s4) var(--s2-5); }
+.proj-picker-path { display: flex; gap: var(--s2); padding: 0 var(--s5) var(--s2-5); }
 .proj-picker-path input { flex: 1; min-width: 0; }
-.proj-picker-hint { margin: 0; padding: 0 var(--s4) var(--s2); font-size: 13px; color: var(--text-dim); }
+.proj-picker-hint { margin: 0; padding: 0 var(--s5) var(--s2); font-size: 13px; color: var(--text-dim); }
 .proj-picker-list { list-style: none; margin: 0; padding: var(--s1) var(--s2); overflow: auto; flex: 1 1 auto; min-height: 96px; border-top: 1px solid var(--line); }
 .proj-picker-row { display: flex; align-items: center; gap: var(--s2); width: 100%; min-height: 36px; text-align: left; background: none; border: 0; color: var(--text); font: 14px var(--sans); padding: var(--s1-5) var(--s2); border-radius: var(--r-sm); cursor: pointer; }
 .proj-picker-row .icon { flex: none; color: var(--text-dim); }
-.proj-picker-row:hover { background: color-mix(in srgb, var(--accent) 8%, transparent); }
+.proj-picker-row:hover { background: var(--panel-2); }
 .proj-picker-row:focus-visible { outline-offset: -2px; }
 .proj-picker-row.up { color: var(--text-dim); }
 .proj-picker-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .proj-picker-row em { flex: none; margin-left: auto; padding: 1px var(--s2); border-radius: 999px; font: 600 11px var(--sans); font-style: normal; color: var(--ok); background: color-mix(in srgb, var(--ok) 12%, transparent); }
 .proj-picker-empty { padding: var(--s2); font-size: 14px; }
-.proj-picker-err { padding: var(--s1-5) var(--s4); font-size: 14px; color: var(--bad); }
-.proj-picker-foot { display: flex; align-items: center; gap: var(--s3); padding: var(--s2-5) var(--s4); border-top: 1px solid var(--line); }
+.proj-picker-err { padding: var(--s1-5) var(--s5); font-size: 14px; color: var(--bad); }
+.proj-picker-foot { display: flex; align-items: center; gap: var(--s3); padding: var(--s3) var(--s5); background: var(--panel-2); border-top: 1px solid var(--line); }
 .proj-picker-here { flex: 1 1 auto; min-width: 0; display: flex; align-items: center; gap: var(--s2); }
 .proj-picker-here .path-start { min-width: 0; font-size: 13px; color: var(--text-dim); }
 .proj-picker-here em { flex: none; padding: 1px var(--s2); border-radius: 999px; font: 600 11px var(--sans); font-style: normal; color: var(--ok); background: color-mix(in srgb, var(--ok) 12%, transparent); }
 .proj-picker-acts { display: flex; gap: var(--s2); flex: none; }
 @media (max-width: 560px) {
-  .proj-picker { top: auto; bottom: 0; left: 0; right: 0; transform: none; width: auto; max-height: 88vh; border-radius: var(--r) var(--r) 0 0; border-bottom: 0; }
+  .proj-picker { top: auto; bottom: 0; left: 0; right: 0; transform: none; width: auto; max-height: 88vh; border-radius: var(--k-r-xl) var(--k-r-xl) 0 0; border-bottom: 0; animation-name: sheet-in; }
   .proj-picker-foot { flex-direction: column; align-items: stretch; }
+  .proj-picker-row { min-height: 44px; }
+  .proj-picker-path input.txt { min-height: 44px; font-size: 16px; }
   .proj-picker-acts { justify-content: flex-end; }
 }
 
-/* ---------------------------------------------------------------------------------------------- the Projects page */
+/* ---------------------------------------------------------------------------------------------- the Projects page
+   The host's figures ruled across the top, then a card for each project: its name and state, where it lives, what it has been doing,
+   and the one thing to do with it. Taking a project off the host is a quiet red line at the foot, never a button as loud as the rest. */
 .pj-page { max-width: 1280px; }
-.pj-summary { display: flex; flex-wrap: wrap; gap: var(--s2) var(--s6); margin: 0 0 var(--s4); padding: var(--s3) var(--s4); background: var(--panel); border: 1px solid var(--line); border-radius: var(--r); }
-.pj-stat { display: flex; flex-direction: column; gap: var(--s0); min-width: 0; }
-.pj-stat dt { order: 2; font: 600 11px var(--sans); letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
-.pj-stat dd { order: 1; margin: 0; font: 600 18px/1.3 var(--mono); color: var(--text); font-variant-numeric: tabular-nums; }
-.pj-stat dd small { font: 13px var(--sans); color: var(--muted); font-weight: 400; }
-.pj-stat.attn dd { color: var(--bad); }
-.pj-note { margin: 0 0 var(--s3); }
+.pj-kpis { padding: 0; margin: 0 0 var(--s4); }
+/* The counts need little room and the spend is a figure, a ceiling and a meter: it takes twice a count's share, so "of $50.00 ceiling" is one line. */
+@media (min-width: 901px) {
+  .stat-strip.pj-kpis { display: flex; }
+  .pj-kpis .stat-cell { flex: 1 1 0; }
+  .pj-kpis .stat-cell.pj-spend { flex-grow: 2; }
+}
+/* Two by two below that, and a figure left alone on the last row takes the row. */
+@media (max-width: 900px) {
+  .pj-kpis .stat-cell:last-child:nth-child(odd) { grid-column: 1 / -1; }
+}
 .pj-group + .pj-group { margin-top: var(--s5); }
-.pj-group .group-h { margin: 0 var(--s0) var(--s2-5); }
-.pj-grid { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(min(340px, 100%), 1fr)); gap: var(--s3); }
-.pj-card { display: flex; flex-direction: column; gap: var(--s3); min-width: 0; padding: var(--s4); background: var(--panel); border: 1px solid var(--line); border-radius: var(--r-lg); }
-.pj-card[data-group="attention"] { border-color: color-mix(in srgb, var(--bad) 45%, var(--line)); }
-.pj-head { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--s2-5); min-width: 0; }
-.pj-name { margin: 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 600 16px/1.35 var(--sans); color: var(--text); }
-.pj-chip { flex: none; display: inline-flex; align-items: center; gap: var(--s1); padding: var(--s0) var(--s2-5) var(--s0) var(--s2); border-radius: 999px; font: 600 12px/1.5 var(--sans); color: var(--text-dim); background: color-mix(in srgb, var(--text-dim) 10%, transparent); }
-.pj-chip.ok { color: var(--ok); background: color-mix(in srgb, var(--ok) 12%, transparent); }
-.pj-chip.warn { color: var(--warn); background: color-mix(in srgb, var(--warn) 12%, transparent); }
-.pj-chip.bad { color: var(--bad); background: color-mix(in srgb, var(--bad) 12%, transparent); }
-.pj-chip[data-state="starting"] .icon { animation: pj-spin 1.1s linear infinite; }
-.pj-path { display: flex; align-items: center; gap: var(--s1-5); min-width: 0; color: var(--text-dim); }
-.pj-path .icon { flex: none; }
-.pj-path .path-start { flex: 1 1 auto; min-width: 0; font-size: 13px; }
-.pj-facts { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: var(--s1) var(--s3); margin: 0; font-size: 14px; }
-.pj-facts dt { color: var(--muted); }
-.pj-facts dd { margin: 0; color: var(--text); font-variant-numeric: tabular-nums; }
+.pj-group .group-h { display: flex; align-items: center; gap: var(--s2); margin: 0 var(--s0) var(--s2-5); }
+.pj-grid { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(min(440px, 100%), 1fr)); gap: var(--s3); }
+.pj-card { display: flex; flex-direction: column; gap: var(--s3); min-width: 0; padding: var(--s4) var(--s5); background: var(--panel); border: 1px solid var(--line); border-radius: var(--r-lg); box-shadow: var(--k-hl), var(--k-shadow-1); }
+.pj-card[data-group="attention"] { border-color: color-mix(in srgb, var(--bad) 40%, var(--line)); box-shadow: inset 3px 0 0 var(--bad), var(--k-hl), var(--k-shadow-1); }
+.pj-head { display: flex; align-items: center; gap: var(--s3); min-width: 0; }
+.pj-head > :last-child { flex: none; }
+.pj-name { flex: 1 1 auto; margin: 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 650 16px/1.35 var(--sans); letter-spacing: var(--k-track-title); color: var(--text); }
+.pj-card[data-state="starting"] .pill .icon { animation: spin 1.1s linear infinite; }
+.pj-path { display: flex; align-items: center; gap: var(--s1); min-width: 0; margin: 0; padding: var(--s0) var(--s1) var(--s0) var(--s2-5); background: var(--sunken); border: 1px solid var(--line); border-radius: var(--r-sm); color: var(--text-dim); }
+.pj-path .path-start { flex: 1 1 auto; min-width: 0; font-size: 12px; line-height: 24px; }
+.pj-facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: var(--s3) var(--s4); margin: 0; }
+.pj-facts > div { min-width: 0; }
+.pj-facts dt { font: 600 11px/1.3 var(--sans); letter-spacing: var(--k-track-caps); text-transform: uppercase; color: var(--muted); }
+.pj-facts dd { margin: var(--s0) 0 0; font-size: 14px; color: var(--text); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
 .pj-facts dd small { color: var(--muted); font-size: 13px; }
 .pj-problem { margin: 0; font-size: 14px; line-height: 1.5; color: var(--text-dim); }
-/* Two groups: the actions that bring a project up or down, and the one that forgets it. On a card too narrow for both on one
-   line the second goes under the first, at the start of its line, not stranded at the far edge. */
-.pj-acts { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--s2); margin-top: auto; padding-top: var(--s2); }
+/* The way forward on the left, the way out on the right: on a card too narrow for both the second goes under the first, at the start of its line. */
+.pj-acts { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--s2) var(--s3); margin-top: auto; padding-top: var(--s3); border-top: 1px solid var(--line); }
 .pj-acts-main { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s2); }
-.pj-skel { min-height: 168px; background: linear-gradient(180deg, var(--panel), color-mix(in srgb, var(--panel) 88%, var(--bg))); }
-.pj-skel i { display: block; height: 12px; margin-bottom: var(--s2-5); border-radius: var(--r-sm); background: var(--sunken); }
-.pj-skel i:nth-child(1) { width: 45%; height: 16px; }
-.pj-skel i:nth-child(2) { width: 80%; }
-.pj-skel i:nth-child(3) { width: 60%; }
+.pj-acts .pj-remove { color: var(--bad); }
 @media (max-width: 560px) {
-  .pj-summary { gap: var(--s2-5) var(--s5); padding: var(--s3); }
+  .pj-kpis { margin-bottom: var(--s3); }
   /* Starting, opening, closing or removing a project is pressed with a thumb. */
   .pj-page button { min-height: 44px; }
+  .pj-page .pj-path .copy-btn.compact { min-width: 44px; min-height: 44px; }
 }

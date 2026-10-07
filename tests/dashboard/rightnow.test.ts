@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { rightNow, rightNowInput, spanWord, type RightNowInput } from "../../apps/mesh-dashboard/src/rightnow";
+import { rightNow, rightNowInput, rightNowRows, spanWord, type RightNowInput } from "../../apps/mesh-dashboard/src/rightnow";
 
 /**
  * "Running. 1 agent waiting, none working right now." is true and says nothing about this mission. These pin what the lines say in
@@ -188,6 +188,25 @@ test("read off a /status payload: seats without the human, turns from the status
   assert.deepEqual(rightNow(i), ["qa (2 min) and developer (1 min) are working.", "Next in line: architect. 2 requests are waiting for an answer.", "Nothing is waiting for you."]);
 });
 
+test("a step that says running for a turn the status says is over is the older reading, and a turn only the steps know is a turn that began since", () => {
+  const status = {
+    agents: [{ id: "qa", lifecycle: "IDLE" }, { id: "dev", lifecycle: "THINKING" }],
+    recentTurns: [{ turnId: "t-qa", agentId: "qa", startedAt: ago(1), status: "ok" }, { turnId: "t-dev", agentId: "dev", startedAt: ago(0, 20), status: "running" }],
+  };
+  const steps = [
+    { turnId: "t-qa", agentId: "qa", startedAt: ago(1), status: "running" },
+    { turnId: "t-dev", agentId: "dev", startedAt: ago(0, 20), status: "running" },
+    { turnId: "t-new", agentId: "architect", startedAt: ago(0, 2), status: "running" },
+  ];
+  const i = rightNowInput(status, { phase: "running", now: NOW, forYou: 0, steps });
+  assert.deepEqual(i.turns.filter((t) => t.status === "running").map((t) => t.agentId).sort(), ["architect", "dev"], "qa's turn is over, whatever the list says");
+  assert.equal(i.turns.length, 3, "the status's two turns and the one only the steps know: a turn both name is read once");
+  assert.match(rightNow(i)[0]!, /^dev \(less than a minute\) and architect \(less than a minute\) are working\.$|^architect \(less than a minute\) and dev \(less than a minute\) are working\.$/);
+  // Steps with no turn id (an older server) cannot be told apart, so they are all read.
+  const bare = rightNowInput({ agents: [], recentTurns: [{ turnId: "t-1", agentId: "qa", status: "ok", startedAt: ago(1) }] }, { phase: "running", now: NOW, forYou: 0, steps: [{ agentId: "qa", startedAt: ago(1), status: "running" }] });
+  assert.deepEqual(bare.turns.map((t) => t.status), ["ok", "running"]);
+});
+
 test("a server that predates a field, or a status that is not there, reads as unknown and not as zero", () => {
   const none = rightNowInput({ agents: [] }, { phase: "running", now: NOW, forYou: 0 });
   assert.equal(none.openRequests, null);
@@ -195,4 +214,39 @@ test("a server that predates a field, or a status that is not there, reads as un
   assert.equal(rightNowInput({ commitments: { open: "3" } }, { phase: "running", now: NOW, forYou: 0 }).openRequests, null);
   assert.doesNotThrow(() => rightNowInput(null, { phase: "quiet", now: NOW, forYou: 0 }));
   assert.deepEqual(rightNow(rightNowInput(null, { phase: "quiet", now: NOW, forYou: 0 })), ["Nobody is working and nothing is queued. If it stays that way, send a message or wake an agent.", "Nothing is waiting for you."]);
+});
+
+test("each line says what it is about, so the page can mark it: the seat in a turn, who is next, who waits, the requests, the person", () => {
+  const rows = rightNowRows(input({ agents: [seat("qa", "THINKING"), seat("pm", "WAITING"), seat("dev", "IDLE")], turns: [run("qa", ago(3))], queued: ["dev"], openRequests: 2, forYou: 1 }));
+  assert.deepEqual(rows.map((r) => [r.kind, r.seat]), [["working", "qa"], ["queue", undefined], ["you", undefined]]);
+  assert.equal(rows[2]!.look, true, "something under Attention needs a look, so the last line is marked");
+  assert.match(rows[1]!.text, /^Next in line: dev\. 2 requests are waiting for an answer\.$/);
+});
+
+test("the seat a line names is the one that has been in its turn the longest, and the marks follow the same cases the words do", () => {
+  const two = rightNowRows(input({ agents: [seat("qa", "THINKING"), seat("pm", "THINKING")], turns: [run("pm", ago(1)), run("qa", ago(4))] }));
+  assert.equal(two[0]!.seat, "qa");
+  const waiting = rightNowRows(input({ agents: [seat("qa", "WAITING"), seat("pm", "WAITING")] }));
+  assert.deepEqual(waiting.map((r) => r.kind), ["waiting", "you"]);
+  const queued = rightNowRows(input({ agents: [seat("qa", "WAITING")], queued: ["qa"], openRequests: 1 }));
+  assert.deepEqual(queued.map((r) => r.kind), ["queue", "asked", "you"]);
+  const nobody = rightNowRows(input({ agents: [seat("qa", "IDLE")] }));
+  assert.deepEqual(nobody.map((r) => r.kind), ["idle", "you"]);
+  const asked = rightNowRows(input({ agents: [seat("qa", "THINKING")], turns: [run("qa", ago(1))], openRequests: 3 }));
+  assert.deepEqual(asked.map((r) => r.kind), ["working", "asked", "you"], "requests with nobody queued and nobody waiting are a line of their own");
+});
+
+test("the last line is marked only when something is asked of the person, and a crashed or blocked seat asks", () => {
+  const quiet = rightNowRows(input({ agents: [seat("qa", "THINKING")], turns: [run("qa", ago(1))] }));
+  assert.equal(quiet[quiet.length - 1]!.look, false);
+  const crashed = rightNowRows(input({ agents: [seat("qa", "THINKING"), seat("pm", "FAILED")], turns: [run("qa", ago(1))] }));
+  assert.equal(crashed[crashed.length - 1]!.look, true);
+  const blocked = rightNowRows(input({ agents: [seat("qa", "THINKING"), seat("pm", "BLOCKED")], turns: [run("qa", ago(1))] }));
+  assert.equal(blocked[blocked.length - 1]!.look, true);
+  assert.deepEqual(rightNowRows(input({ phase: "parked", agents: [seat("qa", "THINKING")] })), [], "a mission that is not live has no rows either");
+});
+
+test("the plain lines are the rows' words and nothing else", () => {
+  const i = input({ agents: [seat("qa", "THINKING"), seat("pm", "WAITING")], turns: [run("qa", ago(2))], openRequests: 1, forYou: 2 });
+  assert.deepEqual(rightNow(i), rightNowRows(i).map((r) => r.text));
 });

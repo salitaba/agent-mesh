@@ -21,7 +21,8 @@ import "./settings.css";
 import { api } from "../api";
 import { localTime } from "../format";
 import { useMesh } from "../store";
-import { Banner, Button, CopyButton, ErrorState, Input, PageHeader } from "../components";
+import { Banner, Button, CopyButton, ErrorState, IconTile, Input, PageHeader, Pill, Skeleton } from "../components";
+import type { IconName } from "../icons";
 import { Icon } from "../icons";
 import { LicenseCard } from "../license";
 import { LIST_PRICES_AS_OF, longDate } from "../cost";
@@ -53,6 +54,9 @@ interface HostConfigView {
   effects: Record<string, string>;
   warnings: string[];
 }
+
+/** The mark at the head of each group: money, money, and the machine. */
+const GROUP_ICON: Record<string, IconName> = { spend: "cost", prices: "sliders", memory: "host" };
 
 interface FieldProblems { byField: Partial<Record<Field, string>>; form: string[] }
 const NO_PROBLEMS: FieldProblems = { byField: {}, form: [] };
@@ -169,7 +173,10 @@ export default function HostSettings(): React.JSX.Element {
     return (
       <>
         <PageHeader title="Host settings" lede="Limits that apply to every project on this host." />
-        <div className="hs-skel" role="status"><span className="sr-only">Loading the host settings</span><i /><i /><i /></div>
+        <div className="hs-skel" role="status" aria-busy="true">
+          <span className="sr-only">Loading the host settings</span>
+          {[0, 1].map((i) => <div key={i} className="card hs-card" aria-hidden="true"><Skeleton w="30%" h={20} /><Skeleton w="100%" h={56} /><Skeleton w="100%" h={56} /></div>)}
+        </div>
       </>
     );
   }
@@ -189,8 +196,8 @@ export default function HostSettings(): React.JSX.Element {
       <div key={spec.field} className={`hs-row${edited ? " dirty" : ""}${problem ? " invalid" : ""}`}>
         <div className="hs-label">
           <label htmlFor={id}>{spec.label}</label>
-          {note.restart.includes(spec.field) ? <span className="hs-tag restart">Needs a host restart</span> : null}
-          {edited ? <span className="hs-tag edited">Edited</span> : null}
+          {note.restart.includes(spec.field) ? <Pill tone="warn" dot={false}>Needs a host restart</Pill> : null}
+          {edited ? <Pill tone="accent" dot={false}>Edited</Pill> : null}
           <p className="hs-what" id={`${id}-what`}>{spec.what}</p>
         </div>
         <div className="hs-control">
@@ -221,6 +228,8 @@ export default function HostSettings(): React.JSX.Element {
     );
   };
 
+  const dirty = plan.changes.length > 0 || blocked;
+
   return (
     <>
       <PageHeader
@@ -244,11 +253,11 @@ export default function HostSettings(): React.JSX.Element {
           </Banner>
         ) : null}
 
-        <p className="hs-legend">{note.text}</p>
+        <p className="hs-legend"><Icon name="info" size={16} />{note.text}</p>
 
         {GROUPS.map((g) => (
-          <section key={g.id} className="card" aria-labelledby={`hs-g-${g.id}`}>
-            <h3 id={`hs-g-${g.id}`} className="hs-h">{g.title}</h3>
+          <section key={g.id} className="card hs-card" aria-labelledby={`hs-g-${g.id}`}>
+            <header className="hs-head"><IconTile icon={GROUP_ICON[g.id] ?? "sliders"} /><h3 id={`hs-g-${g.id}`}>{g.title}</h3></header>
             {FIELDS.filter((f) => f.group === g.id).map(row)}
             {g.id === "prices" ? (
               <>
@@ -269,45 +278,51 @@ export default function HostSettings(): React.JSX.Element {
           </section>
         ))}
 
-        <section className="card" aria-labelledby="hs-save-h">
-          <h3 id="hs-save-h" className="hs-h">Changes{plan.changes.length ? <span className="hs-n">{plan.changes.length}</span> : null}</h3>
-          {plan.changes.length ? (
-            <ul className="hs-changes">
-              {plan.changes.map((c) => (
-                <li key={c.field}>
-                  <span className="hs-change">
-                    <b>{c.label}</b>
-                    <span className="hs-from">{c.from}</span>
-                    <span aria-hidden="true">→</span><span className="sr-only"> becomes </span>
-                    <span className="hs-to">{c.to}</span>
-                  </span>
-                  <span className="hs-then">
-                    {c.restart ? "Written now; takes effect when the host restarts." : "Takes effect as soon as you save."}
-                    {c.confirm === "raise" ? " Raising the ceiling asks you to confirm." : c.confirm === "remove" ? " Removing the ceiling asks you to confirm." : ""}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className="hs-note">Nothing to save. Edit a value above and exactly what will change is listed here before anything is sent.</p>
-          )}
-          {plan.problems.length ? <p className="hs-err"><Icon name="alert" size={14} />Fix {plan.problems.length === 1 ? "the value marked above" : `the ${plan.problems.length} values marked above`} before saving.</p> : null}
-          {refused.form.map((m) => <p key={m} className="hs-err" role="alert"><Icon name="alert" size={14} />{m}</p>)}
+        {plan.changes.length || plan.problems.length || refused.form.length ? (
+          <section className="card hs-card" aria-labelledby="hs-save-h">
+            <header className="hs-head"><IconTile icon="check" /><h3 id="hs-save-h">Changes</h3>{plan.changes.length ? <Pill tone="accent" dot={false}>{plan.changes.length}</Pill> : null}</header>
+            {plan.changes.length ? (
+              <ul className="hs-changes">
+                {plan.changes.map((c) => (
+                  <li key={c.field}>
+                    <span className="hs-change">
+                      <b>{c.label}</b>
+                      <span className="hs-from">{c.from}</span>
+                      <span aria-hidden="true">→</span><span className="sr-only"> becomes </span>
+                      <span className="hs-to">{c.to}</span>
+                    </span>
+                    <span className="hs-then">
+                      {c.restart ? "Written now; takes effect when the host restarts." : "Takes effect as soon as you save."}
+                      {c.confirm === "raise" ? " Raising the ceiling asks you to confirm." : c.confirm === "remove" ? " Removing the ceiling asks you to confirm." : ""}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+            {plan.problems.length ? <p className="hs-err"><Icon name="alert" size={14} />Fix {plan.problems.length === 1 ? "the value marked above" : `the ${plan.problems.length} values marked above`} before saving.</p> : null}
+            {refused.form.map((m) => <p key={m} className="hs-err" role="alert"><Icon name="alert" size={14} />{m}</p>)}
+          </section>
+        ) : (
+          <p className="hs-legend"><Icon name="check" size={16} />Nothing to save. Edit a value above and exactly what will change is listed here before anything is sent.</p>
+        )}
+
+        {/* The way to send it stays on screen while there is something to send: a form this long keeps its Save out of sight otherwise. */}
+        <div className={`hs-bar${dirty || saved || saving ? " on" : ""}`}>
+          <span className={`hs-status${saved ? " ok" : ""}`} role="status">
+            {saved
+              ? `Saved at ${localTime(new Date(saved.at).toISOString())}.${saved.live.length ? ` ${saved.live.join(" and ")} ${saved.live.length === 1 ? "is" : "are"} in force now.` : ""}${saved.restart.length ? ` ${saved.restart.join(" and ")} will apply when the host restarts.` : ""}`
+              : dirty ? `${plan.changes.length} ${plan.changes.length === 1 ? "change" : "changes"} not saved yet.` : ""}
+          </span>
           <div className="hs-acts">
-            <Button variant="primary" type="submit" disabled={plan.changes.length === 0 || blocked || saving}>{saving ? "Saving…" : "Save changes"}</Button>
             <Button variant="soft" disabled={(Object.keys(drafts).length === 0 && !blocked) || saving} onClick={discard}>Discard changes</Button>
-            <span className={`hs-status${saved ? " ok" : ""}`} role="status">
-              {saved
-                ? `Saved at ${localTime(new Date(saved.at).toISOString())}.${saved.live.length ? ` ${saved.live.join(" and ")} ${saved.live.length === 1 ? "is" : "are"} in force now.` : ""}${saved.restart.length ? ` ${saved.restart.join(" and ")} will apply when the host restarts.` : ""}`
-                : ""}
-            </span>
+            <Button variant="primary" type="submit" loading={saving} disabled={plan.changes.length === 0 || blocked || saving}>{saving ? "Saving…" : "Save changes"}</Button>
           </div>
-        </section>
+        </div>
       </form>
 
       {pending.length ? (
-        <section className="card hs-restart" aria-labelledby="hs-restart-h">
-          <h3 id="hs-restart-h" className="hs-h lead">Restart the host to apply {pendingLabels.join(" and ")}</h3>
+        <section className="card hs-card hs-restart" aria-labelledby="hs-restart-h">
+          <header className="hs-head"><IconTile icon="refresh" tone="warn" /><h3 id="hs-restart-h">Restart the host to apply {pendingLabels.join(" and ")}</h3></header>
           <p className="hs-note">
             {pendingLabels.join(" and ")} {pending.length === 1 ? "is" : "are"} saved in host.yaml, and the running host keeps the old {pending.length === 1 ? "value" : "values"} until it restarts.
             This console cannot restart the host: it has no restart route, so it is done where the host runs.

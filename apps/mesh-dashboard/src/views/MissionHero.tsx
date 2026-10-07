@@ -1,11 +1,10 @@
-import type { ReactNode } from "react";
 import { dur, fmt, spanLabel } from "../format";
-import { Button, Menu, useNow, type MenuItem } from "../components";
+import { AgentAvatar, Button, IconTile, Menu, Pill, Progress, Stat, Tooltip, agentColor, useNow, type MenuItem, type TileTone } from "../components";
 import { Icon, type IconName } from "../icons";
+import { budgetTone } from "../cost";
 import type { HeroAction, MissionAction, MissionControl, MissionState, NextStep } from "../mission";
-import { missionClock, type ChecksSummary, type HeroNote } from "../overview-model";
-import { rightNow, type RightNowInput } from "../rightnow";
-import { Bar } from "./Meter";
+import { checkSegments, heroLook, missionClock, seatStack, splitHeadline, type CheckMark, type ChecksSummary, type HeroNote } from "../overview-model";
+import { rightNowRows, type RightNowInput, type RightNowKind } from "../rightnow";
 import "./overview.css";
 
 /** The icon of each mission action, the same set the top bar draws, so one action looks the same in both places. */
@@ -18,31 +17,55 @@ const HERO_ICON: Record<HeroAction, IconName> = { ...MISSION_ICON, files: "files
 
 /**
  * One thing to do next, as the mission state (mission.ts) offers it: the same label, hint and handler as the top bar's button when it
- * is the bar's action. How loud it is comes with it: a result is read or sent back, and the rest is quiet.
+ * is the bar's action. How loud it is comes with it: the one to do is the large button, a second is the large quiet one, and what a
+ * person only sometimes wants (what it cost, replay) is a ghost that waits to be pointed at. The hint is the tooltip.
  */
 export function NextButton({ step, run }: { step: NextStep; run: (a: HeroAction) => void }): React.JSX.Element {
+  const common = { icon: HERO_ICON[step.action], "data-action": step.action, onClick: () => run(step.action) };
   return (
-    <Button variant={step.look === "quiet" ? "small" : step.look} icon={HERO_ICON[step.action]} title={step.hint} data-action={step.action} onClick={() => run(step.action)}>
-      {step.label}
-    </Button>
+    <Tooltip content={step.hint}>
+      {step.look === "quiet"
+        ? <Button variant="ghost" {...common}>{step.label}</Button>
+        : <Button variant={step.look} size="lg" {...common}>{step.label}</Button>}
+    </Tooltip>
   );
 }
 
-/** One labelled figure. The detail under the value lives inside the <dd>, so the list stays a valid definition list. */
-function Stat({ label, tone, title, value, children }: { label: string; tone?: "bad"; title?: string; value: ReactNode; children?: ReactNode }): React.JSX.Element {
+/** A headline's first sentence longer than this is set a size smaller: the display size is for a short line, not for a sentence. */
+const LONG_LEAD = 44;
+
+/** What each of the four figures is drawn with beside its number: a slot as tall as the avatars, so the four lines under it line up. */
+function Visual({ children }: { children?: React.ReactNode }): React.JSX.Element {
+  return <div className="stat-vis">{children}</div>;
+}
+
+/** A segment for each mandatory check: lit when it is evidenced, amber when it is only claimed, empty while it is to do. */
+function Segments({ marks, label }: { marks: CheckMark[]; label: string }): React.JSX.Element {
   return (
-    <div className="ov-stat">
-      <dt>{label}</dt>
-      <dd>
-        <span className={`v${tone ? ` ${tone}` : ""}`} title={title}>{value}</span>
-        {children}
-      </dd>
+    <div className="ov-seg" role="img" aria-label={label}>
+      {marks.map((m, i) => <i key={i} className={m} />)}
     </div>
   );
 }
 
+function ChecksKpi({ checks, marks }: { checks: ChecksSummary; marks: CheckMark[] }): React.JSX.Element {
+  if (checks.total === 0) {
+    return <Stat label="Checks" value="None" sub="This goal declares no mandatory checks."><Visual /></Stat>;
+  }
+  const claimed = checks.claimed > 0 ? `, ${checks.claimed} more claimed and not verified` : "";
+  return (
+    <Stat label="Checks" value={checks.done} unit={`of ${checks.total}`} sub={checks.claimed > 0 ? `${checks.claimed} more claimed, not verified` : `${checks.pct}% evidenced`}>
+      <Visual>
+        {marks.length <= 24
+          ? <Segments marks={marks} label={`${checks.done} of ${checks.total} mandatory checks evidenced${claimed}`} />
+          : <Progress value={checks.done} max={checks.total} label="Mandatory checks evidenced" tone={checks.done === checks.total ? "ok" : undefined} />}
+      </Visual>
+    </Stat>
+  );
+}
+
 /** Time since the goal was created, or how long the mission ran. It owns its own tick so the rest of the page does not re-render every second. */
-function ClockStat({ goal, ticking }: { goal: unknown; ticking: boolean }): React.JSX.Element | null {
+function ClockKpi({ goal, ticking }: { goal: unknown; ticking: boolean }): React.JSX.Element | null {
   const now = useNow(ticking ? 1000 : 15000);
   const clock = missionClock(goal as Parameters<typeof missionClock>[0], now);
   if (!clock) return null;
@@ -51,42 +74,88 @@ function ClockStat({ goal, ticking }: { goal: unknown; ticking: boolean }): Reac
     : clock.limitMs === null
       ? "Since the goal was created"
       : clock.over ? `Over the ${spanLabel(clock.limitMs)} limit` : `of ${spanLabel(clock.limitMs)} allowed`;
+  // The line is how much of the allowed time is gone, and only a running mission with a limit has one to say.
+  const ratio = !clock.ended && clock.limitMs ? clock.ms / clock.limitMs : null;
+  const tone = ratio === null ? "ok" : budgetTone(ratio, clock.over);
+  return (
+    <div className="stat-cell" title={clock.ended ? undefined : "The mission's wall clock runs from the goal's creation and does not stop while the project is parked."}>
+      <Stat label={clock.ended ? "Ran for" : "Elapsed"} value={dur(clock.ms)} tone={clock.over ? "bad" : undefined} sub={sub}>
+        <Visual>
+          {ratio !== null ? <Progress value={clock.ms} max={clock.limitMs!} label="Share of the allowed time gone" tone={tone === "ok" ? undefined : tone} valueText={`${dur(clock.ms)} of ${spanLabel(clock.limitMs!)}`} /> : null}
+        </Visual>
+      </Stat>
+    </div>
+  );
+}
+
+function TokensKpi({ tokens, events, messages }: { tokens: HeroProps["tokens"]; events: number; messages: number | null }): React.JSX.Element {
+  const limited = tokens !== null && tokens.limit > 0;
+  const tone = limited ? budgetTone(tokens.consumed / tokens.limit) : "ok";
   return (
     <Stat
-      label={clock.ended ? "Ran for" : "Elapsed"}
-      tone={clock.over ? "bad" : undefined}
-      title={clock.ended ? undefined : "The mission's wall clock runs from the goal's creation and does not stop while the project is parked."}
-      value={dur(clock.ms)}
+      label="Tokens" value={fmt(tokens?.consumed ?? 0)} unit={limited ? `of ${fmt(tokens.limit)}` : "no limit set"}
+      sub={`${events} events${messages !== null ? ` · ${messages} messages` : ""}`}
     >
-      <span className="ov-sub">{sub}</span>
+      <Visual>
+        {limited ? <Progress value={tokens.consumed} max={tokens.limit} size="lg" label="Mission token budget spent" tone={tone === "ok" ? undefined : tone} valueText={`${fmt(tokens.consumed)} of ${fmt(tokens.limit)} tokens`} /> : null}
+      </Visual>
     </Stat>
   );
 }
+
+/** Every seat as an avatar on its role's colour, the ones in a turn lit; the roster is as long as the mesh, so what does not fit is counted. */
+function AgentsKpi({ seats, agents }: { seats: HeroProps["seats"]; agents: HeroProps["agents"] }): React.JSX.Element {
+  const { shown, more } = seatStack(seats);
+  const names = shown.map((s) => (s.working ? `${s.id} (working)` : s.id)).join(", ");
+  return (
+    <Stat label="Agents" value={agents.working} unit="working" sub={`${agents.waiting} waiting · ${agents.queued} queued`}>
+      <Visual>
+        {shown.length ? (
+          <div className="ov-seats" role="img" aria-label={`${shown.length + more} seats: ${names}${more ? ` and ${more} more` : ""}`}>
+            {shown.map((s) => <span key={s.id} className={`ov-seat${s.working ? " on" : ""}`}><AgentAvatar id={s.id} color={agentColor(s.role)} size="sm" /></span>)}
+            {more ? <span className="ov-seat more">+{more}</span> : null}
+          </div>
+        ) : null}
+      </Visual>
+    </Stat>
+  );
+}
+
+/** What each line of "Right now" is marked with: the seat that is working, or the icon of what the line is about. */
+const NOW_ICON: Record<RightNowKind, IconName> = { working: "dot", queue: "steps", waiting: "inbox", asked: "message", idle: "pause", you: "check" };
 
 /**
  * What is happening this minute, in a few plain lines (rightnow.ts). It owns its own clock, so "for 2 min" moves without the rest of
  * the page re-rendering with it, and it is not a live region: it changes with every turn, and a screen reader is not told each time.
  */
-function RightNow({ input }: { input: Omit<RightNowInput, "now"> }): React.JSX.Element | null {
+function RightNow({ input, roleOf }: { input: Omit<RightNowInput, "now">; roleOf: (id: string) => string }): React.JSX.Element | null {
   const now = useNow(15000);
-  const lines = rightNow({ ...input, now });
-  if (!lines.length) return null;
+  const rows = rightNowRows({ ...input, now });
+  if (!rows.length) return null;
   return (
     <section className="ov-now" aria-labelledby="ov-now-h">
-      <b id="ov-now-h">Right now</b>
-      <ul>{lines.map((l) => <li key={l}>{l}</li>)}</ul>
+      <h3 id="ov-now-h" className="caps"><i className="ov-live" aria-hidden="true" />Right now</h3>
+      <ul>
+        {rows.map((r) => (
+          <li key={r.text} className={r.kind}>
+            <span className="ov-mk">
+              {r.kind === "working" && r.seat
+                ? <span className="ov-seat on lit"><AgentAvatar id={r.seat} color={agentColor(roleOf(r.seat))} size="sm" /></span>
+                : <IconTile size="sm" icon={r.kind === "you" && r.look ? "alert" : NOW_ICON[r.kind]} tone={r.kind === "you" ? (r.look ? "warn" : "ok") : "neutral"} />}
+            </span>
+            <span>{r.text}</span>
+          </li>
+        ))}
+      </ul>
     </section>
   );
 }
 
 function Note({ note }: { note: HeroNote }): React.JSX.Element {
-  if (!note.detail.length && !note.server) return <p className="ov-note">{note.summary}</p>;
+  if (!note.detail.length && !note.server) return <p className="ov-note"><Icon name="info" size={14} />{note.summary}</p>;
   return (
-    <details className="ov-note">
-      <summary>
-        <Icon name="chevron-right" size={14} className="chev" />
-        <span>{note.summary}</span>
-      </summary>
+    <details className="ov-note disc">
+      <summary>{note.summary}</summary>
       <div className="ov-note-body">
         {note.detail.map((p, i) => <p key={i}>{p}</p>)}
         {note.server ? <blockquote className="ov-server"><b>The server says</b>{note.server}</blockquote> : null}
@@ -102,11 +171,15 @@ export interface HeroProps {
   goalText: string;
   note: HeroNote | null;
   checks: ChecksSummary;
+  /** The mandatory checks as the goal lists them, for the segments under the figure. */
+  marks: CheckMark[];
   goal: unknown;
   tokens: { consumed: number; limit: number } | null;
   events: number;
   messages: number | null;
   agents: { working: number; waiting: number; queued: number };
+  /** The seats (the human is not one): who is in the stack, and what colour each one is. */
+  seats: ReadonlyArray<{ id: string; role?: string; lifecycle?: string }>;
   /** The figures are the last the server reported. */
   stale: boolean;
   /** The mission's clock is running: tick it every second. */
@@ -121,64 +194,44 @@ export interface HeroProps {
 }
 
 /**
- * Is it OK, and what do I do? One status, one headline, the goal, four figures, one button. The server's own explanatory text
- * is the quiet line under them, with the long wording a click away, where the old Overview put it in up to four banners.
+ * Is it OK, and what do I do? One mark for the state, one headline, the goal, four figures, one button. The state is a shape and a
+ * word before it is a colour: the tile at the head says what kind of state it is, the headline's first sentence says which. The
+ * server's own explanatory text is the quiet line under the figures, with the long wording a click away.
  */
 export function MissionHero(p: HeroProps): React.JSX.Element {
   const { state, checks } = p;
+  const look = heroLook(state.phase);
+  const { lead, rest } = splitHeadline(p.headline);
+  const roles = new Map(p.seats.map((s) => [s.id, String(s.role ?? "")]));
   // An action the hero already shows is not offered again behind "...".
   const items: MenuItem[] = p.secondary.filter((c) => !p.next.some((n) => n.action === c.action)).map((c) => ({ icon: MISSION_ICON[c.action], label: c.label, title: c.hint, onClick: () => p.run(c.action) }));
-  const spentRatio = p.tokens && p.tokens.limit > 0 ? p.tokens.consumed / p.tokens.limit : 0;
-  const barTone = spentRatio >= 0.95 ? "bad" : spentRatio >= 0.8 ? "warn" : undefined;
+  const tone: TileTone = state.tone;
   return (
-    <section className={`ov-hero ${state.tone}${p.stale ? " stale" : ""}`} aria-label="Mission status">
+    <section className={`ov-hero ${state.tone} ${state.phase}${p.stale ? " stale" : ""}`} aria-label="Mission status">
       <div className="ov-hero-top">
+        <IconTile icon={look.icon} tone={tone} size="lg" live={look.live && !p.stale} />
         <div className="ov-hero-lead">
-          <div className="ov-status">
-            <span className={`mission-chip ${state.tone}`}>
-              <i className={`dot${state.pulse && !p.stale ? " pulse" : ""}`} aria-hidden="true" />
-              {state.label}
-            </span>
-            {p.stale ? <span className="ov-stale">Last known state</span> : null}
-          </div>
-          <p className="ov-headline">{p.headline}</p>
-          {p.goalText ? <p className="ov-goal" title={p.goalText}>{p.goalText}</p> : null}
+          <p className="ov-headline">
+            <b className={lead.length > LONG_LEAD ? "long" : undefined}>{lead}</b>
+            {rest ? <> <span>{rest}</span></> : null}
+          </p>
+          {p.stale ? <Pill tone="bad" dot={false}>Last known state</Pill> : null}
+          {p.goalText ? <p className="ov-goal" title={p.goalText}><span className="caps">Goal</span><span className="ov-goal-line">{p.goalText}</span></p> : null}
         </div>
         <div className="ov-acts">
-          {p.next.filter((n) => n.look !== "quiet").map((n) => <NextButton key={n.action} step={n} run={p.run} />)}
-          {/* Together, so that on a phone they are one row of their own under the two that matter, not stragglers beside them. */}
-          {p.next.some((n) => n.look === "quiet") ? (
-            <div className="ov-quiet">{p.next.filter((n) => n.look === "quiet").map((n) => <NextButton key={n.action} step={n} run={p.run} />)}</div>
-          ) : null}
+          {p.next.map((n) => <NextButton key={n.action} step={n} run={p.run} />)}
           {items.length ? <Menu label={<Icon name="more" size={18} />} title="More actions on the mission" items={items} /> : null}
         </div>
       </div>
 
-      <dl className="ov-stats">
-        {checks.total > 0 ? (
-          <Stat label="Checks" value={<>{checks.done}<span className="of"> of {checks.total}</span></>}>
-            <Bar value={checks.done} max={checks.total} label="Mandatory checks evidenced" tone={checks.done === checks.total ? "ok" : undefined} />
-            <span className="ov-sub">{checks.claimed > 0 ? `${checks.claimed} more claimed, not verified` : `${checks.pct}% evidenced`}</span>
-          </Stat>
-        ) : (
-          <Stat label="Checks" value="None">
-            <span className="ov-sub">This goal declares no mandatory checks.</span>
-          </Stat>
-        )}
-        <ClockStat goal={p.goal} ticking={p.ticking} />
-        <Stat
-          label="Tokens"
-          value={p.tokens && p.tokens.limit > 0 ? <>{fmt(p.tokens.consumed)}<span className="of"> of {fmt(p.tokens.limit)}</span></> : <>{fmt(p.tokens?.consumed ?? 0)}<span className="of"> no limit set</span></>}
-        >
-          {p.tokens && p.tokens.limit > 0 ? <Bar value={p.tokens.consumed} max={p.tokens.limit} label="Mission token budget spent" tone={barTone} /> : null}
-          <span className="ov-sub">{p.events} events{p.messages !== null ? ` · ${p.messages} messages` : ""}</span>
-        </Stat>
-        <Stat label="Agents" value={<>{p.agents.working}<span className="of"> working</span></>}>
-          <span className="ov-sub">{p.agents.waiting} waiting · {p.agents.queued} queued</span>
-        </Stat>
-      </dl>
+      <div className="stat-strip" role="group" aria-label="Mission figures">
+        <div className="stat-cell"><ChecksKpi checks={checks} marks={p.marks} /></div>
+        <ClockKpi goal={p.goal} ticking={p.ticking} />
+        <div className="stat-cell"><TokensKpi tokens={p.tokens} events={p.events} messages={p.messages} /></div>
+        <div className="stat-cell"><AgentsKpi seats={p.seats} agents={p.agents} /></div>
+      </div>
 
-      <RightNow input={p.live} />
+      <RightNow input={p.live} roleOf={(id) => roles.get(id) ?? ""} />
       {p.note ? <Note note={p.note} /> : null}
     </section>
   );

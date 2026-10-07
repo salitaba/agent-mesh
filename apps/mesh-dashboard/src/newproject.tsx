@@ -16,7 +16,7 @@
  */
 import React, { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import "./firstrun.css";
-import { Button, IconButton, PageHeader, TextArea, useDismissable } from "./components";
+import { Button, IconButton, IconTile, PageHeader, Pill, TextArea, useDismissable } from "./components";
 import { Icon, type IconName } from "./icons";
 import { api } from "./api";
 import { useProjects } from "./projects";
@@ -222,10 +222,10 @@ function Card({ icon, title, tag, tagTone, lead, children, actions, id }: {
   return (
     <section className="fr-card" aria-labelledby={id}>
       <header className="fr-card-head">
-        <span className="fr-card-icon" aria-hidden="true"><Icon name={icon} size={18} /></span>
+        <IconTile icon={icon} />
         <div className="fr-card-title">
           <h3 id={id}>{title}</h3>
-          {tag ? <span className={`fr-tag${tagTone ? ` ${tagTone}` : ""}`}>{tag}</span> : null}
+          {tag ? <Pill tone={tagTone ?? "neutral"} dot={false}>{tag}</Pill> : null}
         </div>
       </header>
       <p className="fr-lead">{lead}</p>
@@ -316,6 +316,7 @@ export function NewProject({ layout, templates, onDone, onPickerChange }: {
           <>
             <Button
               variant="primary"
+              size="lg"
               icon="play"
               extra="fr-go"
               disabled={!demo || busy || (demoFolder !== null && !demoCheck.verdict.canProceed)}
@@ -374,6 +375,7 @@ export function NewProject({ layout, templates, onDone, onPickerChange }: {
           <>
             <Button
               variant="soft"
+              size="lg"
               icon="plus"
               extra="fr-go"
               disabled={!dflt || busy || keyMissing || !newCheck.verdict.canProceed}
@@ -421,6 +423,7 @@ export function NewProject({ layout, templates, onDone, onPickerChange }: {
           <>
             <Button
               variant="soft"
+              size="lg"
               icon="check"
               extra="fr-go"
               disabled={busy || !existingCheck.verdict.canProceed}
@@ -592,7 +595,7 @@ function HostedWelcome({ answer, templates }: { answer: TemplatesAnswer; templat
       {keyMissing ? (
         <section className="fr-card fr-key" aria-labelledby={`${ids}-key`}>
           <header className="fr-card-head">
-            <span className="fr-card-icon warn" aria-hidden="true"><Icon name="alert" size={18} /></span>
+            <IconTile icon="alert" tone="warn" />
             <div className="fr-card-title">
               <h3 id={`${ids}-key`}>{HOSTED.keyTitle}</h3>
             </div>
@@ -606,7 +609,7 @@ function HostedWelcome({ answer, templates }: { answer: TemplatesAnswer; templat
       ) : (
         <form className="fr-card fr-goal" aria-labelledby={`${ids}-goal`} aria-busy={busy} onSubmit={(e) => { e.preventDefault(); create(); }}>
           <header className="fr-card-head">
-            <span className="fr-card-icon" aria-hidden="true"><Icon name="spark" size={18} /></span>
+            <IconTile icon="spark" />
             <div className="fr-card-title">
               <h3 id={`${ids}-goal`}>{HOSTED.goalTitle}</h3>
             </div>
@@ -635,11 +638,11 @@ function HostedWelcome({ answer, templates }: { answer: TemplatesAnswer; templat
           <div className="fr-examples" role="group" aria-label={HOSTED.examples}>
             <span className="fr-examples-label" aria-hidden="true">{HOSTED.examples}</span>
             {GOAL_EXAMPLES.map((e) => (
-              <button key={e.id} type="button" className="fr-chip" disabled={busy} onClick={() => pick(e)}>{e.label}</button>
+              <button key={e.id} type="button" className="chip-toggle" disabled={busy} onClick={() => pick(e)}>{e.label}</button>
             ))}
           </div>
           <div className="fr-card-acts">
-            <Button variant="primary" type="submit" icon="plus" extra="fr-go" disabled={!canCreate}>{working("new", HOSTED.create)}</Button>
+            <Button variant="primary" size="lg" type="submit" icon="plus" extra="fr-go" disabled={!canCreate}>{working("new", HOSTED.create)}</Button>
             {start.errors.new ? <p className="fr-error" role="alert"><Icon name="alert" size={14} /><span>{start.errors.new}</span></p> : null}
             <p className="fr-after">{hostedAfter()}</p>
           </div>
@@ -780,9 +783,11 @@ export function NewProjectDialog({ onClose }: { onClose: () => void }): React.JS
           </div>
           <IconButton icon="x" label="Close" onClick={onClose} />
         </div>
-        <NewProject layout="stack" templates={templates} onDone={onClose} onPickerChange={(open) => { pickerOpen.current = open; }} />
-        <div className="fr-aside">
-          <RunWrites />
+        <div className="np-body">
+          <NewProject layout="stack" templates={templates} onDone={onClose} onPickerChange={(open) => { pickerOpen.current = open; }} />
+          <div className="fr-aside">
+            <RunWrites />
+          </div>
         </div>
       </div>
     </>
