@@ -181,6 +181,8 @@ export function rowKey<T extends Element = HTMLElement>(open: () => void): (e: R
   };
 }
 
+/** A status in words, from the strings the API gives (running, ok, waiting, blocked, failed), as a badge (styles.css "badges"). `running`
+ *  pulses its dot; `pulse` makes any other do the same. For a turn use OutcomePill: it says what the turn produced. */
 export function StatusPill({ status, pulse }: { status: string; pulse?: boolean }): React.JSX.Element {
   const map: Record<string, string> = { running: "awakened", ok: "completed", waiting: "waiting", blocked: "failed", failed: "failed" };
   return (
@@ -199,6 +201,7 @@ export function OutcomePill({ step }: { step: OutcomeInput }): React.JSX.Element
   return <span className={`otag ${meta.cls}`} title={meta.hint}>{meta.label}</span>;
 }
 
+/** An agent's lifecycle (IDLE, WORKING, WAITING, ...) in plain words, as a badge; `pulse` is for the one that is live right now. */
 export function LifecyclePill({ lifecycle, pulse }: { lifecycle: string; pulse?: boolean }): React.JSX.Element {
   return (
     <span className={`pill ${pillCls(lifecycle)}${pulse ? " running-pulse" : ""}`}>
@@ -241,6 +244,8 @@ export function EventRow({ e, onOpen, nameOf }: { e: TimelineEvent; onOpen: (seq
   );
 }
 
+/** One turn as a row: who, why, when, what it did, and its outcome at the end. The whole row opens the step; Enter and Space do too.
+ *  States: default, hover, focus-visible. */
 export function StepMini({ s, onOpen }: { s: TurnStep; onOpen: (turnId: string) => void }): React.JSX.Element {
   const open = () => onOpen(s.turnId);
   return (
@@ -329,6 +334,11 @@ export type MenuItem = {
   hint?: string;
 };
 
+/** A button that opens a panel of actions, drawn at 180ms under (or over, `placement="top"`) its trigger. The panel is `role="menu"` and
+ *  the trigger carries `aria-haspopup` and `aria-expanded`. Opened by a person it takes focus on its first item; the arrow keys, Home
+ *  and End move, Escape closes and puts focus back on the trigger, and so does choosing a row. Tab leaves it and it closes behind you.
+ *  States of a row: default, hover (the quiet ground), keyboard focus and pressed (the selection's ground, with an edge), `danger` (red,
+ *  set apart by `separated`). */
 export function Menu({ id, label, title, items, align = "right", placement = "bottom", extra, defaultOpen }: {
   id?: string; label: ReactNode; title?: string; items: MenuItem[]; align?: "left" | "right";
   /** Which side of the trigger the panel opens on. A trigger at the foot of the screen opens upward. */
@@ -429,18 +439,20 @@ export function Card({ title, meta, actions, interactive, variant, style, childr
   );
 }
 
-/** input.txt / input.search (styles.css:235,239). `mono` is the shared
- *  font utility at 191, not a form-specific class. */
+/** input.txt / input.search (styles.css "fields"). A text field's edge is the one that clears 3:1; focus turns it to the accent with a ring;
+ *  `aria-invalid` turns it red. `mono` is for an id, a path or a number a person types (13px mono), not for words. Give it a name:
+ *  wrap it in a Field (label, hint, error wired for you) or pass an aria-label.
+ *  States: default, hover, focus, disabled, invalid. */
 export function Input({ search, mono, extra, ...rest }: Omit<InputHTMLAttributes<HTMLInputElement>, "className"> & { search?: boolean; mono?: boolean; extra?: string }): React.JSX.Element {
   return <input className={`${search ? "search" : "txt"}${mono ? " mono" : ""}${extra ? ` ${extra}` : ""}`} {...rest} />;
 }
 
-/** textarea.txt (styles.css:235). */
+/** textarea.txt (styles.css "fields"): the same states as Input; it grows by dragging its corner, not by itself. */
 export function TextArea({ mono, extra, ...rest }: Omit<TextareaHTMLAttributes<HTMLTextAreaElement>, "className"> & { mono?: boolean; extra?: string }): React.JSX.Element {
   return <textarea className={`txt${mono ? " mono" : ""}${extra ? ` ${extra}` : ""}`} {...rest} />;
 }
 
-/** select.sel (styles.css:235). */
+/** select.sel (styles.css "fields"): the native control with the console's own caret; the same states as Input. */
 export function Select({ extra, ...rest }: Omit<SelectHTMLAttributes<HTMLSelectElement>, "className"> & { extra?: string }): React.JSX.Element {
   return <select className={`sel${extra ? ` ${extra}` : ""}`} {...rest} />;
 }
@@ -483,6 +495,9 @@ export interface TabDef {
   badgeHot?: boolean;
 }
 
+/** Tabs with panels (TabPanel), the selected one underlined by a line that slides to it (`variant="segmented"` is the same as a thumb in
+ *  a trough). One tab stop: the arrow keys, Home and End move the selection and the focus together. A count on a tab is measured, so
+ *  the line follows it when it widens. Choosing one of a few with no panel is a Segmented. States: default, hover, selected, focus-visible. */
 export function Tabs({ tabs, value, onChange, idPrefix, label, variant }: {
   tabs: TabDef[]; value: string; onChange: (id: string) => void; idPrefix: string; label?: string; variant?: "line" | "segmented";
 }): React.JSX.Element {
@@ -577,7 +592,7 @@ export function TabPanel({ idPrefix, id, children }: { idPrefix: string; id: str
 /** The one failed-to-load state. Views used to swallow fetch errors and then
  *  render their empty state, which reads as "the mesh has nothing" when the
  *  truth is "the console never heard back" — an operator cannot tell a quiet
- *  mesh from a dead one. `.empty` (styles.css:221) is the shared shell. */
+ *  mesh from a dead one. `.empty` (styles.css "empty, error and loading") is the shared shell. */
 export function ErrorState({ what, detail, onRetry }: { what: string; detail?: string; onRetry?: () => void }): React.JSX.Element {
   return (
     <div className="empty bad" role="alert">
@@ -715,6 +730,8 @@ export function DialogPanel({ title, children, actions, onSubmit, role = "dialog
   );
 }
 
+/** A dialog on a blurred scrim: it arrives in 180ms, keeps Tab inside it, closes on Escape or a click on the scrim, and gives the focus
+ *  back to what had it. The title names it; `actions` are the band at the foot (the one to do is last, and primary). */
 export function Dialog({ onClose, ...panel }: DialogProps & { onClose: () => void }): React.JSX.Element {
   const ref = useDismissable<HTMLDivElement>(true, onClose);
   return (
@@ -725,6 +742,10 @@ export function Dialog({ onClose, ...panel }: DialogProps & { onClose: () => voi
   );
 }
 
+/** A question that asks before a move that cannot be undone, or that costs something: a Dialog with a title, the sentences that say what
+ *  happens, and a button that says what it does (not "OK"). `danger` makes the button red; `require` arms it only once a person has
+ *  typed a name (match) or a reason (any text). The answer is the typed text, or null when cancelled. Cancel has the focus unless a
+ *  field does. */
 export function ConfirmDialog({ req, onResolve }: { req: ConfirmRequest; onResolve: (v: string | null) => void }): React.JSX.Element {
   const [text, setText] = useState("");
   const cancel = useCallback(() => onResolve(null), [onResolve]);
