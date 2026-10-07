@@ -43,6 +43,11 @@ if (!("insertBefore" in nodes)) {
 interface Pure {
   readingAt(tops: number[], line: number): number;
   docMatches(text: string, query: string): boolean;
+  scrolledOff(y: number): boolean;
+  staggerOf(index: number): number;
+  startsHidden(top: number, windowHeight: number): boolean;
+  withClass(names: string, name: string, on: boolean): string;
+  withoutArrival(names: string): string;
 }
 
 /** The script's pure parts, as it exports them when it is loaded as a module (in a browser nothing is exported). */
@@ -72,6 +77,9 @@ class FakeObserver {
   observe(node: FakeNode): void {
     this.observed.push(node);
   }
+  unobserve(node: FakeNode): void {
+    this.observed = this.observed.filter((n) => n !== node);
+  }
   disconnect(): void {
     this.observed = [];
   }
@@ -92,7 +100,7 @@ interface Reading {
 }
 
 /** A page with the script run on it, in a window `height` pixels tall whose observer, timers and events the test drives. */
-function read(rel: string, height = 800): Reading {
+function read(rel: string, height = 800, reduce = true): Reading {
   FakeObserver.made = [];
   const doc = parsePage(page(pages, rel).html);
   const bar = doc.querySelector(".toc-bar")!;
@@ -119,7 +127,7 @@ function read(rel: string, height = 800): Reading {
     IntersectionObserver: FakeObserver,
     innerHeight: height,
     getComputedStyle: () => ({ scrollPaddingTop: "150px" }),
-    matchMedia: () => ({ matches: true }),
+    matchMedia: () => ({ matches: reduce }),
     addEventListener: (type: string, fn: () => void) => listeners.set(type, [...(listeners.get(type) ?? []), fn]),
     requestAnimationFrame: (fn: () => void) => fn(),
     setTimeout: (fn: () => void) => timers.push(fn),
@@ -686,9 +694,11 @@ test("an address to write to has a copy button right beside it that copies the a
     await r.click(button);
     assert.equal(r.written[r.written.length - 1], link.textContent.trim(), `${kind}: the address is what was copied`);
     assert.equal(button.textContent, "Copied", `${kind}: and the button says so`);
+    assert.equal(button.className, "copy is-done", `${kind}: and the stylesheet can show it, in the colour of what went well as well as in words`);
     assert.equal(r.said(), `Copied the ${kind} address to the clipboard`, `${kind}: and so does the live region, for a screen reader`);
     r.runTimers();
     assert.equal(button.textContent, "Copy", `${kind}: after a moment it is a copy button again`);
+    assert.equal(button.className, "copy", `${kind}: that looks like one`);
     assert.equal(r.said(), "");
   }
   assert.equal(r.written.length, 3);
@@ -699,6 +709,7 @@ test("a browser that does not allow copying is told so, with where to look, and 
   const button = refused.doc.querySelector(".address-row button")!;
   await refused.click(button);
   assert.equal(button.textContent, "Not copied");
+  assert.equal(button.className, "copy", "a refusal is not shown as a success");
   assert.equal(refused.said(), "The browser did not allow copying; select the text instead");
   // A block that ends in a blank line (an editor leaves one) is copied without it, or the paste would run the last command at once.
   const home = copying("index.html", true, (html) => html.replace('echo "$MESH_API_TOKEN"</code>', 'echo "$MESH_API_TOKEN"\n\n</code>'));
@@ -756,4 +767,136 @@ test("the phone menu closes on a touch anywhere else and when Tab takes the focu
     leave(outside);
     assert.equal(menu.open, false, `${p.rel}: Tab out of it closes it`);
   }
+});
+
+// ---------------------------------------------------------------- the header, and what arrives as the reader scrolls
+
+test("a header shows its line only while the page is away from its top, a section is hidden only below the first screen, and the stagger stops at five", () => {
+  const { scrolledOff, staggerOf, startsHidden, withClass, withoutArrival } = pure();
+  assert.equal(scrolledOff(0), false);
+  assert.equal(scrolledOff(4), false, "the shake of a thumb at the top is still the top");
+  assert.equal(scrolledOff(5), true);
+  assert.deepEqual([0, 1, 4, 5, 6, 40].map(staggerOf), [0, 1, 4, 5, 5, 5], "five steps of delay, so that the seventh card is not a long wait");
+  assert.equal(staggerOf(-1), 0);
+  assert.equal(startsHidden(801, 800), true, "below the window");
+  assert.equal(startsHidden(800, 800), false, "at its edge it can be seen");
+  assert.equal(startsHidden(-300, 800), false, "above the window, the reader has been past it");
+  assert.equal(withClass("a b", "c", true), "a b c");
+  assert.equal(withClass("a b c", "c", true), "a b c", "once");
+  assert.equal(withClass("a b c", "b", false), "a c");
+  assert.equal(withClass("", "x", true), "x");
+  assert.equal(withClass(undefined as unknown as string, "x", false), "");
+  assert.equal(withoutArrival("grid rv rv-3 rv-in tile"), "grid tile", "the arrival's classes go and the node's own stay");
+  assert.equal(withoutArrival("rvx rv-"), "rvx", "only the script's names: rv, rv-in and rv-1 to rv-5 (and a class that merely starts with rv is left)");
+});
+
+test("the header is pinned by the script and carries the scrolled class while the page is away from its top", () => {
+  const r = scrolled("pricing/index.html");
+  const header = r.doc.querySelector(".site-header")!;
+  assert.equal(header.className, "site-header is-live", "pinned, and at rest part of the page");
+  r.win.scrollY = 300;
+  r.fire("scroll");
+  assert.equal(header.className, "site-header is-live is-scrolled");
+  r.win.scrollY = 3;
+  r.fire("scroll");
+  assert.equal(header.className, "site-header is-live", "back at the top, it is part of the page again");
+  const first = scrolled("contact/index.html");
+  first.win.scrollY = 900;
+  const header2 = first.doc.querySelector(".site-header")!;
+  first.fire("scroll");
+  assert.match(header2.className, /is-scrolled/, "a page that is reached part-way down (a reload, the back button) shows it from the first scroll event");
+  for (const p of pages) {
+    const doc = parsePage(p.html);
+    vm.runInNewContext(SCRIPT, { document: doc, navigator: {}, window: { setTimeout, clearTimeout } }, { filename: "site.js" });
+    assert.equal(doc.querySelector(".site-header")!.className, "site-header", `${p.rel}: without a window that scrolls, the header is left as the page wrote it`);
+  }
+});
+
+interface Arriving {
+  doc: FakeDocument;
+  /** The classes of every piece of the page the script hid to let it arrive. */
+  hidden: () => string[];
+  observer: () => FakeObserver | undefined;
+  /** The reader gets to a piece: the observer says so. */
+  see: (node: FakeNode) => void;
+  runTimers: () => void;
+}
+
+/** The home page with the script run on it in a window 800 tall, whose first section head is in view and the rest of the page is below. */
+function arriving(options: { reduce?: boolean; observer?: boolean } = {}): Arriving {
+  FakeObserver.made = [];
+  const doc = parsePage(page(pages, "index.html").html);
+  const first = doc.querySelector(".section-head")!;
+  for (const node of doc.querySelector("main")!.descendants()) {
+    (node as Placed).getBoundingClientRect = () => ({ top: node === first || first.contains(node) ? 320 : 4000, bottom: 4400, left: 0, right: 1280 });
+  }
+  const timers: Array<() => void> = [];
+  const window = {
+    ...(options.observer === false ? {} : { IntersectionObserver: FakeObserver }),
+    innerHeight: 800,
+    scrollY: 0,
+    matchMedia: () => ({ matches: options.reduce === true }),
+    addEventListener: () => undefined,
+    requestAnimationFrame: (fn: () => void) => fn(),
+    scrollTo: () => undefined,
+    getComputedStyle: () => ({ scrollPaddingTop: "150px" }),
+    setTimeout: (fn: () => void) => timers.push(fn),
+    clearTimeout: () => undefined,
+  };
+  vm.runInNewContext(SCRIPT, { document: doc, navigator: {}, window }, { filename: "site.js" });
+  return {
+    doc,
+    hidden: () => doc.querySelectorAll("main .rv").map((n) => n.className),
+    observer: () => FakeObserver.made[0],
+    see: (node) => (FakeObserver.made[0]!.callback as unknown as (entries: unknown[]) => void)([{ isIntersecting: true, target: node }]),
+    runTimers: () => timers.splice(0).forEach((fn) => fn()),
+  };
+}
+
+test("what is below the first screen is hidden to arrive, one child after another up to a fifth, and what can be seen already is left alone", () => {
+  const r = arriving();
+  const watched = r.observer()!.observed;
+  assert.ok(watched.length >= 25, `the pieces of the page below the first screen are watched (${watched.length})`);
+  const head = r.doc.querySelector(".section-head")!;
+  assert.ok(!/\brv\b/.test(head.className), "the heading that is in view is never hidden and shown again");
+  assert.ok(!watched.includes(head));
+  // The children of a group arrive in order: the first at once, the second 50 ms after it, and from the sixth on the last step.
+  const tiles = r.doc.querySelector(".tiles")!.children.filter((c) => !c.isText);
+  assert.equal(tiles.length, 6);
+  assert.deepEqual(tiles.map((t) => t.className), ["tile rv", "tile rv rv-1", "tile rv rv-2", "tile rv rv-3", "tile rv rv-4", "tile rv rv-5"]);
+  const cta = r.doc.querySelectorAll("section.cta")[0]!;
+  assert.deepEqual(cta.querySelectorAll(".wrap")[0]!.children.filter((c) => !c.isText).map((c) => /rv(?: rv-\d)?/.exec(c.className)![0]), ["rv", "rv rv-1", "rv rv-2"], "a heading, its line and its buttons, one after the other");
+  for (const n of watched) assert.match(n.className, /\brv\b/);
+  assert.ok(r.doc.querySelector(".hero")!.querySelectorAll(".rv").length === 0, "nothing in the hero: it is the first screen, and the picture is what the page is waiting for");
+});
+
+test("a piece arrives once, when the reader gets to it, and the script then takes its marks off so that its own hover and motion are the stylesheet's again", () => {
+  const r = arriving();
+  const tile = r.doc.querySelector(".tiles")!.children.filter((c) => !c.isText)[2]!;
+  assert.equal(tile.className, "tile rv rv-2");
+  r.see(tile);
+  assert.equal(tile.className, "tile rv rv-2 rv-in", "in view: the stylesheet moves it from 8 px down and clear to where it is");
+  assert.ok(!r.observer()!.observed.includes(tile), "and it is not watched again");
+  r.runTimers();
+  assert.equal(tile.className, "tile", "once it has arrived, nothing of the script is left on it");
+});
+
+test("a visitor who has asked for less motion, and a browser that cannot watch, are shown the whole page at once", () => {
+  assert.deepEqual(arriving({ reduce: true }).hidden(), [], "nothing is hidden");
+  assert.equal(arriving({ reduce: true }).observer(), undefined, "and nothing is watched");
+  const bare = arriving({ observer: false });
+  assert.deepEqual(bare.hidden(), []);
+  const everyPage = pages.map((p) => {
+    const doc = parsePage(p.html);
+    vm.runInNewContext(SCRIPT, { document: doc, navigator: {}, window: { setTimeout, clearTimeout } }, { filename: "site.js" });
+    return doc.querySelectorAll(".rv").length;
+  });
+  assert.deepEqual(everyPage, pages.map(() => 0), "a page the script cannot run on all the way is whole");
+});
+
+test("on a page with the On this page bar, the bar's observer is still the last one the script makes, after the one that lets the sections arrive", () => {
+  const r = read("pricing/index.html", 800, false);
+  assert.equal(FakeObserver.made.length, 2, "one for the sections, one for the bar");
+  assert.equal(r.observer().options.rootMargin, "0px 0px -533px 0px", "and the bar's is the last, so that what it does is as it was");
+  assert.equal(r.observer().observed.length, 6, "watching its six sections");
 });

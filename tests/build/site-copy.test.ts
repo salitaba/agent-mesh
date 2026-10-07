@@ -25,9 +25,10 @@ interface PricingData {
 /**
  * A mark's opening tag, whatever its kind: the drawing's own size, fill and stroke, so that a card is right before its stylesheet has
  * been read, or when the browser has an older one (the same values as the stylesheet's `.mark` rule, which a test below holds it to).
+ * It is the kit's icon: drawn on 24 units and shown at 20, where a line of 1.8 units is the 1.5 px the kit asks for.
  */
 const MARK =
-  '<svg class="mark(?: mark-(?:ok|out|no))?" viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">';
+  '<svg class="mark(?: mark-(?:ok|out|no))?" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">';
 
 const data = JSON.parse(/<script type="application\/json" id="plans-data">([\s\S]*?)<\/script>/.exec(page(pages, "pricing/index.html").html)![1]!) as PricingData;
 

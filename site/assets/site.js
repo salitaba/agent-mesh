@@ -34,8 +34,30 @@ var IMAGE_NAME = "ghcr.io/salitaba/curule";
     return words(query).every(function (word) { return hay.indexOf(word) >= 0; });
   };
 
+  // Whether the header shows its line and its blur: once the page has moved off its top by more than the shake of a thumb.
+  var scrolledOff = function (y) { return y > 4; };
+  // Where a child comes in a group that arrives together: 0 to 5, so that a long row of cards is not a long wait for the last one.
+  var staggerOf = function (index) { return Math.max(0, Math.min(index, 5)); };
+  // Whether something is hidden to arrive when the reader gets to it: only what is below the first screen. What can be seen already is
+  // never hidden and shown again.
+  var startsHidden = function (top, windowHeight) { return top > windowHeight; };
+  // A node's classes with one added or taken away.
+  var withClass = function (names, name, on) {
+    var list = String(names || "").split(/\s+/).filter(Boolean);
+    var at = list.indexOf(name);
+    if (on && at < 0) list.push(name);
+    if (!on && at >= 0) list.splice(at, 1);
+    return list.join(" ");
+  };
+  // A node's classes without the ones that made it arrive (rv, rv-in, rv-1 ... rv-5).
+  var withoutArrival = function (names) {
+    return String(names || "").split(/\s+/).filter(function (name) { return name && !/^rv(-|$)/.test(name); }).join(" ");
+  };
+
   // The pure parts, for the tests, when the file is loaded as a module; in a browser nothing is exported.
-  if (typeof module === "object" && module !== null && typeof module.exports === "object") module.exports = { readingAt: readingAt, docMatches: docMatches };
+  if (typeof module === "object" && module !== null && typeof module.exports === "object") {
+    module.exports = { readingAt: readingAt, docMatches: docMatches, scrolledOff: scrolledOff, staggerOf: staggerOf, startsHidden: startsHidden, withClass: withClass, withoutArrival: withoutArrival };
+  }
   if (typeof document === "undefined") return;
 
   var all = function (selector) { return Array.prototype.slice.call(document.querySelectorAll(selector)); };
@@ -115,15 +137,16 @@ var IMAGE_NAME = "ghcr.io/salitaba/curule";
       button.type = "button";
       button.setAttribute("aria-label", label);
       var timer = 0;
-      var say = function (shown, said) {
+      var say = function (shown, said, done) {
         button.textContent = shown;
+        button.className = done ? "copy is-done" : "copy";
         status.textContent = said;
         window.clearTimeout(timer);
-        timer = window.setTimeout(function () { button.textContent = "Copy"; status.textContent = ""; }, 2200);
+        timer = window.setTimeout(function () { button.textContent = "Copy"; button.className = "copy"; status.textContent = ""; }, 2200);
       };
       button.addEventListener("click", function () {
         navigator.clipboard.writeText(text()).then(
-          function () { say("Copied", spoken); },
+          function () { say("Copied", spoken, true); },
           function () { say("Not copied", "The browser did not allow copying; select the text instead"); }
         );
       });
@@ -144,6 +167,57 @@ var IMAGE_NAME = "ghcr.io/salitaba/curule";
       var kind = link.getAttribute("data-mail");
       link.parentNode.insertBefore(copyButton("Copy the " + kind + " address", "Copied the " + kind + " address to the clipboard", function () { return address; }), link.nextSibling);
     });
+  }
+
+  // The header is pinned once the script has run, and shows its line and its blur only while the page is away from its top (the
+  // stylesheet draws both from these two classes), so at rest it is part of the page, and a page without the script has a header that
+  // scrolls away like the rest of it.
+  var header = document.querySelector(".site-header");
+  if (header && typeof window.addEventListener === "function" && typeof window.requestAnimationFrame === "function") {
+    header.className = withClass(header.className, "is-live", true);
+    var away = null;
+    var settle = function () {
+      var now = scrolledOff(window.scrollY || 0);
+      if (now === away) return;
+      away = now;
+      header.className = withClass(header.className, "is-scrolled", now);
+    };
+    var settling = false;
+    window.addEventListener("scroll", function () {
+      if (settling) return;
+      settling = true;
+      window.requestAnimationFrame(function () {
+        settling = false;
+        settle();
+      });
+    }, { passive: true });
+    settle();
+  }
+
+  // What is below the first screen arrives as the reader gets to it: a short rise and a fade, once, the children of a group one after
+  // another. The stylesheet hides nothing by itself (.rv is added here, and only for a visitor who has not asked for less), so a page
+  // that this does not run on is whole. What is already in view is left alone.
+  var GROUP = /\b(ways|bento|steps|tiles|teaser|plans|starts|doc-grid|try|grid)\b/;
+  if (!reducedMotion() && typeof window.IntersectionObserver === "function" && typeof window.innerHeight === "number") {
+    var arrival = new window.IntersectionObserver(function (entries) {
+      entries.forEach(function (entry) {
+        if (!entry.isIntersecting) return;
+        var node = entry.target;
+        arrival.unobserve(node);
+        node.className = withClass(node.className, "rv-in", true);
+        window.setTimeout(function () { node.className = withoutArrival(node.className); }, 800);
+      });
+    }, { rootMargin: "0px 0px -48px 0px" });
+    var arrive = function (parent) {
+      Array.prototype.forEach.call(parent.children, function (child, i) {
+        if (GROUP.test(child.className || "")) return arrive(child);
+        if (typeof child.getBoundingClientRect !== "function" || !startsHidden(child.getBoundingClientRect().top, window.innerHeight)) return;
+        var step = staggerOf(i);
+        child.className = withClass(withClass(child.className, "rv", true), "rv-" + step, step > 0);
+        arrival.observe(child);
+      });
+    };
+    all(".section").forEach(function (section) { within(section, ".wrap").forEach(arrive); });
   }
 
   // On this page: on a long page the row of its sections stays under the header while the page is read, and the chip of the

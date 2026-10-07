@@ -430,3 +430,49 @@ test("a card or a row that a link points at is marked once the link is followed,
   // (No link points at a card today: the contact page's were the only ones. The rule stays for the next page that has one.)
   assert.ok(rows >= 3, `links point at the rows of addresses (${rows}): from the plan buttons, the documentation page and the security page`);
 });
+
+test("nothing is hidden by the stylesheet to be shown later: what arrives as the reader scrolls is marked by the script, for a visitor who allows motion, and no page is written hidden", () => {
+  const css = fs.readFileSync(path.join(SITE, "assets", "site.css"), "utf8");
+  const outside = withoutBlock(withoutBlock(css, "@media (prefers-reduced-motion: no-preference)"), "@media print");
+  assert.ok(!/\.rv\b/.test(outside), "no rule hides anything outside the block for a visitor who allows motion");
+  assert.match(/@media print \{[\s\S]*?\n\}/.exec(css)![0], /\.rv \{ opacity: 1 !important; transform: none !important; \}/, "and a page printed half-way down is printed whole");
+  assert.match(css, /\n  \.rv \{ opacity: 0; transform: translateY\(8px\);/, "a rise of eight pixels and a fade");
+  assert.match(css, /\n  \.rv\.rv-in \{ opacity: 1; transform: none; \}/);
+  for (const n of [1, 2, 3, 4, 5]) assert.match(css, new RegExp(`\\n  \\.rv-${n} \\{ transition-delay: ${n * 50}ms; \\}`), `the ${n}th child waits ${n * 50} ms`);
+  for (const p of pages) assert.ok(!/\sclass="[^"]*\brv(?:-in|-\d)?\b/.test(p.markup), `${p.rel}: written whole: nothing is hidden before a script says so`);
+  // The script asks before it hides anything, and again for a browser that cannot watch.
+  const script = fs.readFileSync(path.join(SITE, "assets", "site.js"), "utf8");
+  assert.match(script, /if \(!reducedMotion\(\) && typeof window\.IntersectionObserver === "function"/, "for a visitor who has not asked for less, in a browser that can tell what is in view");
+});
+
+test("the header is pinned and shows its line and its blur only by the classes the script sets, so a page without it has a header that scrolls away", () => {
+  const css = fs.readFileSync(path.join(SITE, "assets", "site.css"), "utf8");
+  assert.match(css, /\n\.site-header \{ position: relative;[^}]*border-bottom: 1px solid transparent; \}/, "at rest it is part of the page, and its line is there but clear, so that it does not change the height of the header");
+  assert.match(css, /\n\.site-header\.is-live \{ position: sticky; top: 0; \}/);
+  assert.match(css, /\n\.site-header\.is-scrolled \{ border-bottom-color: var\(--line\); background: var\(--bg\); \}/, "with a plain ground where the blur is not supported");
+  assert.match(css, /@supports \(backdrop-filter: blur\(1px\)\) and \(background: color-mix\([^)]*\)\) \{\s*\.site-header\.is-scrolled, \.toc-bar \{[^}]*backdrop-filter: saturate\(1\.4\) blur\(16px\);/);
+  for (const p of pages) assert.match(p.markup, /<header class="site-header">/, `${p.rel}: written at rest`);
+});
+
+test("a block of commands has its label from the stylesheet and its button from the script, in a header of one height, so that nothing moves when the button arrives", () => {
+  const css = fs.readFileSync(path.join(SITE, "assets", "site.css"), "utf8");
+  const height = /\n\.code \{[^}]*padding-top: (\d+)px;/.exec(css)![1];
+  assert.match(css, new RegExp(`\\n\\.code::before \\{ content: "Terminal";[^}]*height: ${height}px;`), "the label's row is as tall as the room the block keeps for it");
+  assert.match(css, new RegExp(`\\n\\.code-bar \\{[^}]*height: ${height}px;`), "and the row the button is made in");
+  assert.ok(Number(height) >= 44 + 4, "a button of 44 pixels on a phone fits with room above and below");
+});
+
+test("a segmented control has as many inputs as its thumb has steps: the tabs of the hero are three and the billing period is two", () => {
+  const css = fs.readFileSync(path.join(SITE, "assets", "site.css"), "utf8");
+  assert.match(css, /\n\.tabs, \.billing \{ --n: 3;/);
+  assert.match(css, /\n\.billing \{ --n: 2;/);
+  const home = page(pages, "index.html").markup;
+  const pricing = page(pages, "pricing/index.html").markup;
+  assert.equal((home.match(/class="tab-input"/g) ?? []).length, 3);
+  assert.equal((/<div class="tabs">[\s\S]*?<\/div>/.exec(home)![0].match(/<label\b/g) ?? []).length, 3, "a label for each");
+  assert.equal((pricing.match(/class="billing-input"/g) ?? []).length, 2);
+  assert.equal((/<div class="billing">[\s\S]*?<\/div>/.exec(pricing)![0].match(/<label\b/g) ?? []).length, 2);
+  // The thumb goes one step for each input after the first: two for the tabs' third, one for the billing's second.
+  assert.match(css, /\.tab-input:nth-of-type\(2\):checked ~ \.tabs::before, \.billing-input:nth-of-type\(2\):checked ~ \.billing::before \{ transform: translateX\(100%\); \}/);
+  assert.match(css, /\.tab-input:nth-of-type\(3\):checked ~ \.tabs::before \{ transform: translateX\(200%\); \}/);
+});
