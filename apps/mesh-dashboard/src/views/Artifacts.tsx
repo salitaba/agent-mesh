@@ -205,7 +205,7 @@ export default function Artifacts(): React.JSX.Element {
           <div className="files-bar" role="search">
             <SearchField
               label="Search files"
-              placeholder="Name, owner or path"
+              placeholder="Name, owner, type or path"
               value={filter.query}
               onChange={(e) => setFilter({ ...filter, query: e.target.value })}
               onClear={() => setFilter({ ...filter, query: "" })}
@@ -215,7 +215,7 @@ export default function Artifacts(): React.JSX.Element {
               {types.map((t) => <option key={t.type} value={t.type}>{t.type} ({t.n})</option>)}
             </Select>
             <Segmented
-              label="Which files"
+              label="Status"
               value={filter.group}
               onChange={(id) => setFilter({ ...filter, group: id })}
               options={[
