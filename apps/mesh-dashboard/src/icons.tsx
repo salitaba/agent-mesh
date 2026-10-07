@@ -1,8 +1,10 @@
 import type { ReactNode } from "react";
 
 /**
- * The console's icons: one 20-unit grid, one 1.6 stroke with round ends, `currentColor` throughout. An icon takes the colour
- * of the text it sits in, so it flips with the theme and with a hover or an active state for free.
+ * The console's icons: one 20-unit grid, one 1.5px stroke with round ends, `currentColor` throughout. The stroke is the same
+ * 1.5px at every size an icon is drawn (the stylesheet sets `vector-effect: non-scaling-stroke`), so a 14px glyph beside an 18px
+ * one differs in size and not in weight. An icon takes the colour of the text it sits in, so it flips with the theme and with a
+ * hover or an active state for free.
  *
  * They replace Unicode glyphs (◧ ≋ ⚑ ⊘ ✉ ⚙ …). A glyph is drawn by whichever font the machine has, so the same nav item
  * looked different on every operating system, sat on a different baseline, and was announced by screen readers as its
@@ -13,6 +15,8 @@ import type { ReactNode } from "react";
  * icon nothing uses, so the set stays the size of the interface.
  */
 const SOLID = { fill: "currentColor", stroke: "none" } as const;
+/** A solid shape that keeps the line's round joins: the stroke rounds its corners and ties it to the outline icons beside it. */
+const FILLED = { fill: "currentColor" } as const;
 
 const ICONS = {
   // Navigation
@@ -43,8 +47,8 @@ const ICONS = {
   x: (<path d="M5 5l10 10M15 5L5 15" />),
   check: (<path d="M4.5 10.5l3.6 3.6 7.4-8" />),
   "chevron-right": (<path d="M8 4.5L13.5 10 8 15.5" />),
-  play: (<path d="M6.5 4.2l9 5.8-9 5.8z" {...SOLID} />),
-  pause: (<><rect x="5" y="3.8" width="3.4" height="12.4" rx="1" {...SOLID} /><rect x="11.6" y="3.8" width="3.4" height="12.4" rx="1" {...SOLID} /></>),
+  play: (<path d="M7 5.1l8 4.9-8 4.9z" {...FILLED} />),
+  pause: (<><rect x="5.6" y="4.6" width="2.6" height="10.8" rx="1" {...FILLED} /><rect x="11.8" y="4.6" width="2.6" height="10.8" rx="1" {...FILLED} /></>),
   message: (<path d="M3.5 5.3A1.8 1.8 0 0 1 5.3 3.5h9.4a1.8 1.8 0 0 1 1.8 1.8v6.4a1.8 1.8 0 0 1-1.8 1.8H9.2L5.5 17v-3.5h-.2a1.8 1.8 0 0 1-1.8-1.8z" />),
   approve: (<><circle cx="10" cy="10" r="7.2" /><path d="M6.9 10.2l2.2 2.2 4-4.6" /></>),
   refresh: (<><path d="M16.2 10a6.2 6.2 0 1 1-1.9-4.4" /><path d="M16.2 3.8v3.4h-3.4" /></>),
@@ -72,7 +76,7 @@ const ICONS = {
   expand: (<path d="M3.5 8V4.5a1 1 0 0 1 1-1H8M12 3.5h3.5a1 1 0 0 1 1 1V8M16.5 12v3.5a1 1 0 0 1-1 1H12M8 16.5H4.5a1 1 0 0 1-1-1V12" />),
   // Added with the Files, Product, Cost and Host settings pages
   download: (<path d="M10 3.5v9M6.2 9.2L10 13l3.8-3.8M4 16.5h12" />),
-  stop: (<rect x="5" y="5" width="10" height="10" rx="1.8" {...SOLID} />),
+  stop: (<rect x="5.8" y="5.8" width="8.4" height="8.4" rx="1.6" {...FILLED} />),
 } satisfies Record<string, ReactNode>;
 
 export type IconName = keyof typeof ICONS;
@@ -93,7 +97,7 @@ export function Icon({ name, size = 16, title, className }: { name: IconName; si
       height={size}
       fill="none"
       stroke="currentColor"
-      strokeWidth="1.6"
+      strokeWidth="1.5"
       strokeLinecap="round"
       strokeLinejoin="round"
       focusable="false"
