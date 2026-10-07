@@ -380,13 +380,14 @@ main:has(.hero) .section-head .eyebrow::before { counter-increment: sec; content
 /* the closing band: deep, with the glow */
 .cta { position: relative; isolation: isolate; background: var(--deep); color: var(--on-deep); }
 .cta::after { content: ""; position: absolute; inset: 0; z-index: -1; background: var(--k-glow); pointer-events: none; }
-.cta .wrap { display: grid; gap: 28px 64px; }
+.cta .wrap { display: grid; gap: 0 64px; }
+.cta .btn-row { margin-top: 28px; }
 .cta h2 { max-width: 20ch; }
 .cta .lede { margin-top: 16px; color: color-mix(in srgb, var(--on-deep) 74%, transparent); }
 .cta :focus-visible { outline-color: var(--on-deep); }
 .cta .btn:not(.btn-primary) { border-color: color-mix(in srgb, var(--on-deep) 30%, transparent); background: color-mix(in srgb, var(--on-deep) 7%, transparent); box-shadow: none; color: var(--on-deep); }
 .cta .btn:not(.btn-primary):hover { background-color: color-mix(in srgb, var(--on-deep) 14%, transparent); }
-@media (min-width: 900px) { .cta .wrap { grid-template-columns: minmax(0, 1fr) auto; align-items: center; } .cta .btn-row { grid-column: 2; grid-row: 1 / span 2; } }
+@media (min-width: 900px) { .cta .wrap { grid-template-columns: minmax(0, 1fr) auto; align-items: center; } .cta .btn-row { grid-column: 2; grid-row: 1 / span 2; margin-top: 0; } }
 
 /* footer */
 .site-footer { padding: clamp(48px, 7vw, 80px) 0 40px; border-top: 1px solid var(--line); background: var(--k-sunken); color: var(--muted); font-size: .9375rem; }

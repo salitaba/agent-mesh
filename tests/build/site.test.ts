@@ -435,12 +435,17 @@ test("the plans' table has equal columns after the one that names the row, and a
   assert.ok(totals.length >= 2, `the yearly totals are marked (${totals.length})`);
 });
 
-test("a card's title has room above it only after an icon, a plan's figures share a line whatever their labels take, and a lone note is compact", () => {
+test("a card's title has room above it only after an icon, a plan's figures share a line whatever their labels take, a lone note is compact, and the closing band's words are one group", () => {
   const css = fs.readFileSync(path.join(SITE, "assets", "site.css"), "utf8");
   assert.match(css, /\n\.card h3 \{ margin: 0 0 8px; \}/, "a card that starts with its title starts at its padding");
   assert.match(css, /\n\.card > \.mark \+ h3 \{ margin-top: 16px; \}/, "and the icon's tile has its 16 above the title it comes with");
   assert.match(css, /\n\.plan-limits div \{[^}]*flex-direction: column-reverse; justify-content: flex-end;/, "the figure is at the top of its cell, so a label of two lines does not lift it");
   assert.match(css, /\n\.section:has\(> \.wrap > p:only-child\) \{ padding-block: \d+px; \}/, "a section that holds one paragraph is as tall as the paragraph needs");
+  // The closing band: its heading and its line are one group (the line's own 16 px under the heading, no gap of the grid), and the
+  // actions stand 28 px off it on a phone and level with it, beside it, on a desktop.
+  assert.match(css, /\n\.cta \.wrap \{ display: grid; gap: 0 64px; \}\n\.cta \.btn-row \{ margin-top: 28px; \}/);
+  assert.match(css, /\n\.cta \.lede \{ margin-top: 16px;/);
+  assert.match(css, /@media \(min-width: 900px\) \{ \.cta \.wrap \{[^}]*\} \.cta \.btn-row \{[^}]*margin-top: 0;/);
   // And the pages are what those rules were written for: some cards start with their title, some with an icon, one section is a note.
   const starts = pages.flatMap((p) => [...p.markup.matchAll(/<(?:div|article) class="card[^"]*">\s*(<svg class="mark|<h3)/g)].map((m) => m[1]));
   assert.ok(starts.includes("<h3") && starts.some((s) => s.startsWith("<svg")), "both kinds of card are in use");
