@@ -387,6 +387,17 @@ among them case-insensitive names, tried with `JAN` and `MON`; the library refus
 the runs of sections 8, 9, 14, 17, 19 and 20 of the notes, each of which QA had passed. Whether the section changes what QA runs is
 for the next live run to show.
 
+With no operator list to run, QA writes one before it runs anything, in the form of the list that is known to be run in full
+(numbered commands, each with the output it must print): a line for every rejection and its near-miss, every worked example,
+every member of every enumeration, every "every X must Y" sentence, each MUST of the `RequirementsDoc` and each testable
+constraint of the `ArchitectureDocument`, and the wrong spellings of each kind of value the contract defines (signed, fractional,
+prefixed, repeated, truncated). It reports each line as the command, the output required and the output printed, and a line it
+wrote no command for is NOT TESTED and keeps the report from passing. The prose version of this (the architecture's constraints
+as a checklist) was ignored by the twentieth run's QA, which ran the developer's suite and six CLI commands; the developer's
+prompt has the matching rule for a failure it is sent: it names one instance, and the lines to run before re-versioning are every
+other place the same rule applies. Neither is enforced; the next run's round 1 shows whether a list the seat writes is run as a
+list the operator writes is.
+
 ### A handover's continuity call
 
 A handover turn exists to write one record. When `write_continuity` lands the supervisor ends the
