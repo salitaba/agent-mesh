@@ -86,17 +86,6 @@
 .ib-done-title { color: var(--text); overflow-wrap: anywhere; }
 .ib-done-resp { max-width: 40ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-/* ---------- tool gates ---------- */
-.tg-lede { margin: 0 0 var(--s3); max-width: 80ch; font-size: 14px; color: var(--text-dim); }
-.tg-list { list-style: none; margin: 0; padding: 0; }
-.tg-req, .tg-seat { display: grid; gap: var(--s2-5); padding: var(--s3) 0; border-top: 1px solid var(--line); }
-.tg-list > li:first-child { border-top: 0; padding-top: 0; }
-.tg-list > li:last-child { padding-bottom: 0; }
-.tg-who { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s2); }
-.tg-who code { font: 12px var(--mono); }
-.tg-acts, .tg-grants { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s2); }
-.tg-manual { display: grid; gap: var(--s1); max-width: 520px; }
-.tg-note { margin: var(--s3) 0 0; font-size: 13px; color: var(--muted); }
 .ib .card + .card { margin-top: var(--s3); }
 
 @media (max-width: 620px) {
@@ -115,7 +104,6 @@
   .ib-answered { grid-template-columns: auto minmax(0, 1fr); }
   .ib-answered .icon-btn { grid-column: 2; justify-self: start; }
   .ib-sent { white-space: normal; }
-  .tg-acts > button { flex: 1 1 auto; justify-content: center; }
 }
 
 /* The stripe down a decision's edge is a shadow, and shadows go when the system takes the colours: the edge is a border then. */
