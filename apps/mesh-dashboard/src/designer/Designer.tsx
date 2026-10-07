@@ -751,8 +751,10 @@ export default function Designer(): React.JSX.Element {
         lede={<>The seats, wires, tools and budgets of <b>{meshName}</b>. Nothing is saved until you save.</>}
         actions={(
           <>
-            <ToolButton icon="undo" label={labelsNow.undo ? `Undo: ${labelsNow.undo}` : "Undo"} disabled={!labelsNow.undo} onClick={doUndo} title={labelsNow.undo ? `Undo: ${labelsNow.undo} (Ctrl or Cmd Z)` : "Nothing to undo"} />
-            <ToolButton icon="redo" label={labelsNow.redo ? `Redo: ${labelsNow.redo}` : "Redo"} disabled={!labelsNow.redo} onClick={doRedo} title={labelsNow.redo ? `Redo: ${labelsNow.redo} (Shift Ctrl or Cmd Z)` : "Nothing to redo"} />
+            <div className="ms-toolgroup" role="group" aria-label="History">
+              <ToolButton icon="undo" label={labelsNow.undo ? `Undo: ${labelsNow.undo}` : "Undo"} disabled={!labelsNow.undo} onClick={doUndo} title={labelsNow.undo ? `Undo: ${labelsNow.undo} (Ctrl or Cmd Z)` : "Nothing to undo"} />
+              <ToolButton icon="redo" label={labelsNow.redo ? `Redo: ${labelsNow.redo}` : "Redo"} disabled={!labelsNow.redo} onClick={doRedo} title={labelsNow.redo ? `Redo: ${labelsNow.redo} (Shift Ctrl or Cmd Z)` : "Nothing to redo"} />
+            </div>
             <div className="ms-checks-anchor" ref={checksAnchor}>
               <ChecksButton
                 checking={checking && !result} valid={valid} offline={checkFailed && !result} errors={errors.length} notes={notes.length}

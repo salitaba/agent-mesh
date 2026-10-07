@@ -1,7 +1,7 @@
 /* Small shared inputs and buttons for the Designer. */
 
 import { cloneElement, isValidElement, useEffect, useId, useRef, useState } from "react";
-import { Button, Input, Select, TextArea } from "../components";
+import { Button, IconButton, Input, Select, TextArea } from "../components";
 import { Icon, type IconName } from "../icons";
 import { shortPath } from "./save";
 import type { Reveal } from "./types";
@@ -210,32 +210,26 @@ export function AuthorityGrid({ values, known, domains, verbs, onToggle, onRemov
 /* ---------------- buttons ---------------- */
 
 /**
- * A toolbar button: an icon with a visible label (`text`) or alone, named by `label`. It is the Designer's own
- * shape because the shared IconButton is 36px square and stretches in a flex row.
+ * A toolbar button: an icon with a visible label (`text`, the kit's button) or alone, named by `label` and a tooltip (the kit's icon
+ * button). It keeps the props the Designer's toolbars were written with: the state of a toggle, and what an opener opens.
  */
 export function ToolButton({ icon, label, onClick, disabled, pressed, title, text, id, expanded, controls, haspopup }: {
   icon: IconName; label: string; onClick?: () => void; disabled?: boolean; pressed?: boolean; title?: string; text?: boolean; id?: string;
   expanded?: boolean; controls?: string; haspopup?: "dialog" | "menu";
 }): React.JSX.Element {
+  if (!text) {
+    return <IconButton icon={icon} label={label} title={title} id={id} pressed={pressed} expanded={expanded} controls={controls} haspopup={haspopup} disabled={disabled} extra="ms-tg" onClick={() => onClick?.()} />;
+  }
   return (
-    <button
-      type="button" id={id} className={`ms-tool${text ? " has-text" : ""}`}
-      aria-label={text ? undefined : label} aria-pressed={pressed} aria-expanded={expanded} aria-controls={controls} aria-haspopup={haspopup}
-      title={title ?? label} disabled={disabled} onClick={onClick}
-    >
-      <Icon name={icon} size={16} />
-      {text ? <span>{label}</span> : null}
-    </button>
+    <Button variant="soft" icon={icon} id={id} title={title ?? label} disabled={disabled} aria-pressed={pressed} aria-expanded={expanded} aria-controls={controls} aria-haspopup={haspopup} onClick={onClick}>
+      {label}
+    </Button>
   );
 }
 
 /** The close button every panel in the Designer carries: a real target, named for what it closes. */
 export function CloseButton({ label, onClick }: { label: string; onClick: () => void }): React.JSX.Element {
-  return (
-    <button type="button" className="ms-close" aria-label={label} title={label} onClick={onClick}>
-      <Icon name="x" size={16} />
-    </button>
-  );
+  return <IconButton icon="x" label={label} size="sm" onClick={onClick} />;
 }
 
 /** A file path that has to fit: the folder is cut from the left and the file name never is. The whole path is the tooltip. */

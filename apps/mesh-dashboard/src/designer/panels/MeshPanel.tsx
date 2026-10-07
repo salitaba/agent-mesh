@@ -56,8 +56,8 @@ export default function MeshPanel({ ctx }: { ctx: DCtx }): React.JSX.Element {
     <div className="ms-panel">
       <Section id="identity" title="Identity" reveal={reveal}>
         <div className="grid2">
-          <Field label="Mesh id" name="id"><Input mono value={m.mesh.id || ""} onChange={(e) => { setPath(m, "mesh.id", e.target.value); touch(); }} /></Field>
-          <Field label="Display name" name="name"><Input value={m.mesh.name || ""} onChange={(e) => { setPath(m, "mesh.name", e.target.value); touch(); }} /></Field>
+          <Field label="Mesh id" name="id" span><Input mono value={m.mesh.id || ""} onChange={(e) => { setPath(m, "mesh.id", e.target.value); touch(); }} /></Field>
+          <Field label="Display name" name="name" span><Input value={m.mesh.name || ""} onChange={(e) => { setPath(m, "mesh.name", e.target.value); touch(); }} /></Field>
         </div>
         <Field label="Workspace folder" name="workspace" hint="Where the seats write the product, relative to mesh.yaml.">
           <Input mono value={m.mesh.workspace?.path || "./workspace"} onChange={(e) => { setPath(m, "mesh.workspace.path", e.target.value); touch(); }} />
@@ -90,12 +90,12 @@ export default function MeshPanel({ ctx }: { ctx: DCtx }): React.JSX.Element {
 
       <Section id="runtime" title="Runtime" meta={savedRuntime || "stub"} defaultOpen={false} reveal={reveal}>
         <div className="grid2">
-          <Field label="Default runtime" name="runtime">
+          <Field label="Default runtime" name="runtime" span>
             <Select value={savedRuntime || "stub"} onChange={(e) => { setPath(m, "mesh.runtime.default", e.target.value); touch(); }}>
               {runtimeOptions.map((r) => <option key={r} value={r}>{r}</option>)}
             </Select>
           </Field>
-          <Field label="Default model" name="model" hint="Used by seats with no model of their own.">
+          <Field label="Default model" name="model" span hint="Used by seats with no model of their own.">
             {catalogue.phase === "error" ? (
               <ErrorState what="the model list" detail={catalogue.detail} onRetry={reloadModels} />
             ) : (
@@ -119,7 +119,7 @@ export default function MeshPanel({ ctx }: { ctx: DCtx }): React.JSX.Element {
             )}
           </Field>
           {variantOptions.length ? (
-            <Field label="Default thinking variant" name="variant" hint={variantHint}>
+            <Field label="Default thinking variant" name="variant" span hint={variantHint}>
               <Select
                 value={savedVariant} disabled={catalogue.phase === "loading"} aria-label="Default thinking variant"
                 onChange={(e) => {

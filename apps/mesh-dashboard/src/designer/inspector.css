@@ -1,83 +1,116 @@
 /* ============ The inspector: tabs, sections, forms ============
- * One card with three tabs. Each tab is a list of collapsible sections; each section is a short form. The jump from a validation message opens a
- * section and puts focus in a control, so the controls carry `data-field` and the sections an id (`ins-sec-<name>`). */
+ * One card with three tabs. Each tab is a list of sections that fold; each section is a short form. The jump from a validation message opens
+ * a section and puts focus in a control, so the controls carry `data-field` and the sections an id (`ins-sec-<name>`). The fields, the chips, the
+ * switches and the buttons are the kit's: what is here is how a long form is laid out in a column 340 to 400 px wide. */
 
 .ms-insp { display: flex; flex-direction: column; padding: 0; overflow: hidden; min-width: 0; }
 .ms-insp .tabs { flex: none; margin: 0; padding: 0 var(--s2); }
-.ms-insp .tab-btn { flex: 1 1 0; justify-content: center; padding: var(--s3) var(--s2); }
-.ms-insp .tabpanel { flex: 1 1 auto; min-height: 0; overflow: auto; padding: var(--s3) var(--s3-5) var(--s5); }
-.ms-panel { display: flex; flex-direction: column; gap: var(--s3); }
+.ms-insp .tab-btn { flex: 1 1 0; justify-content: center; }
+/* The panel scrolls inside the card. A soft edge shows on the side that has more, and only then: the covers are fixed to the content and the
+   shadows to the frame, so a short panel has no edge at all. */
+.ms-insp .tabpanel {
+  flex: 1 1 auto; min-height: 0; overflow: auto; overscroll-behavior: contain; padding: var(--s1) var(--s4) var(--s5);
+  --ms-edge: color-mix(in srgb, var(--text) 13%, transparent);
+  background:
+    linear-gradient(var(--panel) 30%, transparent) 0 0 / 100% 28px no-repeat local,
+    linear-gradient(to top, var(--panel) 30%, transparent) 0 100% / 100% 28px no-repeat local,
+    radial-gradient(farthest-side at 50% 0, var(--ms-edge), transparent) 0 0 / 100% 10px no-repeat scroll,
+    radial-gradient(farthest-side at 50% 100%, var(--ms-edge), transparent) 0 100% / 100% 10px no-repeat scroll;
+}
+.ms-panel { display: flex; flex-direction: column; gap: 0; }
 
 /* ---------- a selected seat's header ---------- */
-.ms-seat-head { display: flex; align-items: center; gap: var(--s3); flex-wrap: wrap; }
+.ms-seat-head { display: flex; align-items: center; gap: var(--s3); flex-wrap: wrap; padding: var(--s3) 0; }
 .ms-seat-id { display: flex; flex-direction: column; min-width: 0; flex: 1 1 120px; line-height: 1.3; }
-.ms-seat-id b { font: 600 16px var(--mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.ms-seat-id .muted { font: var(--tx-meta); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ms-seat-id b { font: 600 15px var(--mono); letter-spacing: var(--k-track-tight); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ms-seat-id .muted { font: 13px var(--sans); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ms-seat-acts { display: flex; gap: var(--s2); }
 
 /* ---------- nothing selected ---------- */
-.ms-nosel { display: flex; flex-direction: column; align-items: flex-start; gap: var(--s3); padding: var(--s2) 0; }
+.ms-nosel { display: flex; flex-direction: column; align-items: flex-start; gap: var(--s3); padding: var(--s3) 0 var(--s1); }
 .ms-lead { margin: 0; font: var(--tx-value); color: var(--text-dim); }
-.ms-pick { display: flex; flex-direction: column; gap: var(--s1-5); width: 100%; margin: 0; padding: 0; list-style: none; }
+/* The seats to pick are one list, ruled between rows, with the seat's role at the right. */
+.ms-pick { display: flex; flex-direction: column; width: 100%; margin: 0; padding: 0; list-style: none; border: 1px solid var(--line); border-radius: var(--r); overflow: hidden; }
+.ms-pick li + li { border-top: 1px solid var(--line); }
 .ms-pick button {
-  display: flex; align-items: center; gap: var(--s2-5); width: 100%; min-height: 36px; padding: var(--s1) var(--s2-5);
-  background: var(--panel); border: 1px solid var(--line-control); border-radius: var(--r-sm); color: var(--text); font: var(--tx-value); text-align: left; cursor: pointer;
+  display: flex; align-items: center; gap: var(--s2-5); width: 100%; min-height: 44px; padding: var(--s1) var(--s3);
+  background: transparent; border: 0; border-radius: 0; color: var(--text); font: var(--tx-value); text-align: left; cursor: pointer;
+  transition: background-color var(--k-dur-1) var(--k-ease);
 }
-.ms-pick button:hover { border-color: var(--accent); }
+.ms-pick button:is(:hover, .is-hover) { background: var(--wash); }
+.ms-pick button:focus-visible { outline-offset: -2px; }
 .ms-pick .nm { font: 600 13px var(--mono); }
-.ms-pick .muted { margin-left: auto; font: var(--tx-meta); }
+.ms-pick .muted { margin-left: auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 13px var(--sans); }
 
 /* ---------- sections ---------- */
-.ms-sec { border-top: 1px solid var(--line); padding-top: var(--s2-5); }
+.ms-sec { border-top: 1px solid var(--line); }
+.ms-panel > .ms-sec:first-child { border-top: 0; }
 .ms-sec > summary {
-  display: flex; align-items: center; gap: var(--s2); min-height: 28px; cursor: pointer; list-style: none;
-  font: var(--tx-section); text-transform: uppercase; letter-spacing: .08em; color: var(--text-dim);
+  display: flex; align-items: center; gap: var(--s2); min-height: 44px; margin: 0 calc(var(--s2) * -1); padding: 0 var(--s2); border-radius: var(--r-sm);
+  cursor: pointer; list-style: none; font: 600 14px var(--sans); letter-spacing: var(--k-track-tight); color: var(--text);
+  transition: background-color var(--k-dur-1) var(--k-ease);
 }
 .ms-sec > summary::-webkit-details-marker { display: none; }
+/* The chevron turns a quarter when the section opens: a small thing that says the title is a control. */
 .ms-sec > summary::before {
-  content: ""; flex: none; width: 7px; height: 7px; border-right: 2px solid currentColor; border-bottom: 2px solid currentColor;
-  transform: rotate(-45deg); transition: transform .12s; margin: 0 var(--s1) 0 var(--s1);
+  content: ""; flex: none; width: 6px; height: 6px; margin: 0 var(--s1-5) 0 var(--s1); border-right: 1.5px solid var(--muted); border-bottom: 1.5px solid var(--muted);
+  transform: rotate(-45deg); transition: transform var(--k-dur-2) var(--k-ease), border-color var(--k-dur-1) var(--k-ease);
 }
 .ms-sec[open] > summary::before { transform: rotate(45deg); }
-.ms-sec > summary:hover { color: var(--text); }
+.ms-sec > summary:is(:hover, .is-hover) { background: var(--wash); }
+.ms-sec > summary:hover::before { border-color: var(--text); }
+.ms-sec > summary:focus-visible { outline-offset: -2px; }
 .ms-sec-title { flex: 0 1 auto; }
-.ms-sec-meta { margin-left: auto; font: 500 12px var(--sans); text-transform: none; letter-spacing: 0; color: var(--muted); white-space: nowrap; }
-.ms-sec-body { display: flex; flex-direction: column; gap: var(--s3); padding: var(--s2-5) 0 var(--s2); }
+.ms-sec-meta { margin-left: auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; font: 500 12px var(--sans); letter-spacing: 0; font-variant-numeric: tabular-nums; color: var(--muted); white-space: nowrap; }
+.ms-sec-body { display: flex; flex-direction: column; gap: var(--s3-5); padding: var(--s1) 0 var(--s4); }
 
 /* ---------- fields ---------- */
 .ms-span { grid-column: 1 / -1; }
-.ms-hint { font: var(--tx-meta); color: var(--muted); }
+.ms-hint { font: 12px/1.45 var(--sans); color: var(--muted); }
 .ms-hint.bad { color: var(--bad); }
-.ms-flabel { font: 600 12px var(--sans); color: var(--text); }
-.ms .field label { font: 600 12px var(--sans); text-transform: none; letter-spacing: 0; color: var(--text); }
-.ms .field label.chk, .ms label.chk { font: 13px var(--sans); }
-.ms .field input[aria-invalid="true"] { border-color: var(--bad); }
-.ms-start { min-height: 24px; }
+.ms-flabel { font: 600 12px/1.35 var(--sans); color: var(--text-dim); }
+.ms-insp .field > label { font: 600 12px/1.35 var(--sans); color: var(--text-dim); }
+.ms-insp .field { gap: var(--s1-5); }
+.ms-insp .grid2, .ms-insp .grid3 { gap: var(--s3-5) var(--s3); }
+.ms-insp .grid3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.ms-insp .field input[aria-invalid="true"] { border-color: var(--bad); }
+.ms-start { min-height: 28px; }
 .ms-adder { align-items: stretch; }
 .ms-adder .txt { flex: 1 1 auto; min-width: 0; }
 .ms-note.warn { margin: 0; }
-.ms-cap-group { display: flex; flex-direction: column; gap: var(--s1); margin-top: var(--s1-5); }
-.ms-cap-name { font: 600 11px var(--sans); text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+/* A tool or a seat is a chip; the chips of one group sit under the group's name, and the groups are ruled apart by space, not lines. */
+.ms-cap-group { display: flex; flex-direction: column; gap: var(--s1-5); margin-top: var(--s2); }
+.ms-cap-name { font: 600 12px var(--sans); color: var(--muted); }
+/* A tool the file names that the catalogue does not: the same chip with its edge dashed, so "custom" is told by shape and not by colour alone. */
 .chip-toggle.custom { border-style: dashed; }
-.ms-scrollbox { max-height: 168px; overflow: auto; padding: var(--s1); border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--sunken); }
+.ms-scrollbox { max-height: 176px; overflow: auto; padding: var(--s2); border: 1px solid var(--line); border-radius: var(--r); background: var(--sunken); }
 
 /* ---------- authority: a grid of switches ---------- */
 .ms-auth { display: flex; flex-direction: column; gap: var(--s2); }
-.ms-auth table { width: 100%; border-collapse: collapse; font: 12px var(--sans); }
+.ms-auth table { width: 100%; border-collapse: collapse; font: 13px var(--sans); }
 .ms-auth th { padding: var(--s1) var(--s1); font-weight: 600; color: var(--muted); text-align: center; }
-.ms-auth thead th { font-size: 11px; text-transform: lowercase; }
-.ms-auth tbody th { text-align: left; color: var(--text-dim); white-space: nowrap; }
+.ms-auth thead th { padding-bottom: var(--s2); font-size: 12px; }
+.ms-auth tbody th { padding-left: 0; text-align: left; font-weight: 500; color: var(--text); white-space: nowrap; }
 .ms-auth td { text-align: center; padding: 0; }
+.ms-auth tbody tr { transition: background-color var(--k-dur-1) var(--k-ease); }
+.ms-auth tbody tr:hover { background: var(--wash); }
 .ms-auth tbody tr + tr > * { border-top: 1px solid var(--line); }
-.ms-auth input[type="checkbox"] { width: 18px; height: 18px; margin: var(--s1-5) 0; accent-color: var(--accent); cursor: pointer; }
+/* The box is the kit's; the cell around it is the target, so a press a little off still lands. */
+.ms-auth td > input[type="checkbox"] { margin: var(--s1-5) 0; vertical-align: middle; cursor: pointer; }
 .ms-auth-extra { display: flex; flex-direction: column; gap: var(--s1); }
 
-/* ---------- done-when checks, triage rules, gates ---------- */
-.ms-crit, .ms-trule, .ms-gate { display: flex; flex-direction: column; gap: var(--s2); padding: var(--s2-5) var(--s3); border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--sunken); }
+/* ---------- done-when checks, triage rules, gates: a row you can add and remove ---------- */
+.ms-crit, .ms-trule, .ms-gate { display: flex; flex-direction: column; gap: var(--s2-5); padding: var(--s3); border: 1px solid var(--line); border-radius: var(--r); background: var(--panel-2); }
+.ms-gate > button { align-self: flex-start; }
 .ms-crit-foot { display: flex; align-items: center; justify-content: space-between; gap: var(--s2); }
-.ms-holders { display: flex; flex-direction: column; gap: var(--s1); margin: 0; padding: 0; list-style: none; font: 13px var(--mono); color: var(--text-dim); }
-.ms-holders li { display: flex; flex-wrap: wrap; gap: var(--s1) var(--s2); align-items: baseline; }
+/* Who holds what a gate requires: the requirement at the left, the seat that answers it at the right, ruled like a short table. */
+.ms-holders { display: flex; flex-direction: column; margin: 0; padding: 0; list-style: none; font: 12px var(--mono); color: var(--text-dim); border-top: 1px solid var(--line); }
+.ms-holders li { display: flex; flex-wrap: wrap; gap: var(--s1) var(--s3); align-items: baseline; justify-content: space-between; min-height: 30px; padding: var(--s1-5) 0; border-bottom: 1px solid var(--line); }
 .ms-holders-who { display: inline-flex; flex-wrap: wrap; gap: var(--s1) var(--s2); font: 13px var(--sans); }
 .ms-who { margin: 0; padding: 0; font-size: 13px; }
 .ms-nobody { color: var(--bad); font-style: normal; }
 
+@media (max-width: 760px) {
+  /* The inspector is a drawer here and the fields are on a thumb's reach. */
+  .ms-insp .tabpanel { padding-inline: var(--s3-5); }
+}

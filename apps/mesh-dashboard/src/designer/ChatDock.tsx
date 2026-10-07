@@ -11,6 +11,7 @@ import { useCallback, useEffect, useRef } from "react";
 import ChatPanel from "./panels/ChatPanel";
 import { markSeen, useChatSelector } from "./chatStore";
 import { Icon } from "../icons";
+import { IconButton } from "../components";
 // Imported here rather than in the lazy Designer view: ChatDock is eager (it
 // renders on every shell view), so the shared ms-* styles must ride the eager
 // chunk or the button and panel are unstyled until Designer first loads.
@@ -92,7 +93,7 @@ export default function ChatDock({ open, onClose }: {
       <div className="ms-dock-head">
         <b>Designer assistant</b>
         <span className="muted">It proposes; you apply to your draft and save</span>
-        <button type="button" className="ms-slide-close" aria-label="Close the designer assistant" onClick={onClose}><Icon name="x" /></button>
+        <IconButton icon="x" label="Close the designer assistant" size="sm" extra="ms-slide-close" onClick={onClose} />
       </div>
       <ChatPanel />
     </div>
