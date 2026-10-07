@@ -160,7 +160,7 @@
 .fv-md { padding: var(--s4) var(--s5) var(--s5); font: 400 15px/1.65 var(--sans); color: var(--text); overflow-wrap: anywhere; }
 .fv-md h1, .fv-md h2, .fv-md h3, .fv-md h4, .fv-md h5, .fv-md h6 { margin: var(--s5) 0 var(--s1-5); line-height: 1.3; letter-spacing: var(--k-track-title); text-transform: none; color: var(--text); }
 .fv-md > :first-child { margin-top: 0; }
-.fv-md h1 { padding-bottom: var(--s2); border-bottom: 1px solid var(--line); font: 650 22px/1.25 var(--sans); }
+.fv-md h1 { padding-bottom: var(--s2); border-bottom: 1px solid var(--line); font: 650 24px/1.25 var(--sans); }
 .fv-md h2 { font: 650 18px/1.3 var(--sans); }
 .fv-md h3 { font: 600 16px/1.3 var(--sans); }
 .fv-md h4, .fv-md h5, .fv-md h6 { font: 600 15px/1.3 var(--sans); color: var(--text-dim); }
