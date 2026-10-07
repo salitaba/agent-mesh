@@ -139,6 +139,17 @@ test("the console shares its neutrals with the brand: paper, panel, ink and line
   assert.ok(contrast(colour(light, "--accent"), toRgb(brand.light["--curule-blue"]!)) < 1.3, "close to the brand blue");
 });
 
+test("the browser's own chrome takes the colour of the top bar, in each theme", () => {
+  // index.html cannot read the stylesheet before it loads, so it carries the two colours; they are --bg-2, the ground of the frame.
+  const page = read("apps/mesh-dashboard/index.html");
+  assert.match(page, /<meta name="theme-color" content="#[0-9a-f]{6}" \/>/i, "a theme-color meta is in the head");
+  const bootstrap = /theme === "light" \? "(#[0-9a-f]{6})" : "(#[0-9a-f]{6})"/i.exec(page);
+  assert.ok(bootstrap, "the pre-paint script sets it from the theme");
+  assert.equal(bootstrap![1]!.toLowerCase(), hex(light, "--bg-2"), "light");
+  assert.equal(bootstrap![2]!.toLowerCase(), hex(dark, "--bg-2"), "dark");
+  assert.ok(page.includes(`content="${hex(dark, "--bg-2")}"`), "the dark colour is the one written in the meta, before the script runs");
+});
+
 /** Every stylesheet under the console's source, so a new one is covered the day it is added. */
 function stylesheets(dir: string): string[] {
   return fs.readdirSync(path.join(ROOT, dir), { withFileTypes: true }).flatMap((e) => {

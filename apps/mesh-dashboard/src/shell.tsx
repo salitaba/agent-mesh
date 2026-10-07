@@ -292,6 +292,8 @@ export function Shell({ viewNode }: { viewNode: React.ReactNode }): React.JSX.El
     const cur = document.documentElement.dataset.theme === "light" ? "dark" : "light";
     document.documentElement.dataset.theme = cur;
     localStorage.setItem("mesh-theme", cur);
+    // The browser's own chrome follows the top bar's ground (index.html writes the first one).
+    document.querySelector('meta[name="theme-color"]')?.setAttribute("content", getComputedStyle(document.documentElement).getPropertyValue("--bg-2").trim());
     setIsLight(cur === "light");
   }, []);
   const openHelp = useCallback(() => openDrawer(

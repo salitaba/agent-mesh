@@ -4,6 +4,8 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="color-scheme" content="light dark" />
+  <!-- The browser's own chrome (a phone's address bar) takes the colour of the top bar, in whichever theme is showing. -->
+  <meta name="theme-color" content="#181715" />
   <!-- The sign-in page answers to anyone who can reach the host. It is not something to find through a search. -->
   <meta name="robots" content="noindex" />
   <title>Curule</title>
@@ -16,7 +18,12 @@
       try {
         var saved = localStorage.getItem("mesh-theme");
         var sys = window.matchMedia && window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
-        document.documentElement.dataset.theme = (saved === "light" || saved === "dark") ? saved : sys;
+        var theme = (saved === "light" || saved === "dark") ? saved : sys;
+        document.documentElement.dataset.theme = theme;
+        // --bg-2 in each theme; tests/build/console-palette.test.ts keeps these two in step with the stylesheet, and shell.tsx
+        // reads the stylesheet when the theme is switched by hand.
+        var m = document.querySelector('meta[name="theme-color"]');
+        if (m) m.setAttribute("content", theme === "light" ? "#fbfaf8" : "#181715");
       } catch (e) { /* keep the dark fallback written on <html> */ }
     })();
   </script>
