@@ -124,6 +124,81 @@ their first mission, an operator who leaves a mission running. What each surface
   "Get" buttons on the site are a mail link, which opens nothing for a visitor who uses webmail (the contact page has the address
   with a Copy button).
 
+### Changed: the look of every page, on one kit
+
+A pass over how every page looks and feels to use, on the three surfaces: the marketing site, the Curule Cloud account pages
+and the console. Nothing here changes an API, an event type, what a number means or what a page says; where a sentence moved,
+a test pins it.
+
+- **One set of values.** The colour roles, the five steps of elevation, the radii, the tracking that goes with each size of text
+  and the motion are written once (`scripts/kit-tokens.mjs`), generated into the three stylesheets and `brand/kit.css`, and
+  checked by `npm run brand:check` and a test, which also hold every text pair to its contrast in both themes
+  ([docs/brand.md](docs/brand.md#the-ui-kit)).
+- **The marketing site.** A card at rest, a card that can be pressed and what floats sit at different heights, and in the dark
+  scheme the height shows as a lighter surface and a lit top edge where the shadow used to vanish. Figures are tabular, headings
+  tight and balanced, a button has a pressed state, the product tabs and the billing switch are one control with a thumb that
+  slides (radio inputs: it works without the script), and a code block has a header row with a Copy button. The first screen is
+  composed: the product in a raised frame on the page's glow and ruled paper, the claims ruled under it. "Who runs it" is a
+  decision between two cards, "Why it is not a group chat" four reasons each with a small drawing of its idea (a gate, a ledger
+  with a playhead, budgets with a ceiling, a container), a mission is three steps on one rail, plans are cards whose rows line
+  up, and the page closes on a dark band. The header becomes a layer with a line and a blur once the page has moved, and what is
+  below the first screen rises once as it arrives, for a visitor who allows motion. Every page still reads and works without the
+  script, and prints whole with its buttons as black text.
+- **The account pages.** The sign-in family is a form beside a calm panel from 900 px (three statements, each already said on
+  the front page or in the terms), with a drawn checkbox, a Show that has an eye, and a bar that says only that a new password
+  has the ten characters asked for. The account opens on one card (what it waits for, with the steps while a workspace starts),
+  then three tiles (workspaces, plan, balance) and a list of its sections that stays under the header and marks where you are.
+  A workspace shows its state, its one action large, its address as a band with Copy, and a bar of three steps while it starts;
+  the balance is a large figure with a meter for what is left of the plan's usage; usage is a table with a bar for each day, or
+  a sentence that there is nothing yet; Settings are closed until opened. The first read shows a skeleton of the page's shape,
+  so nothing jumps. Terms and privacy have a contents list beside them. Windows High Contrast keeps ticks, status dots and icons.
+- **The console's shell and shared controls.** Page titles are larger and figures are set in the interface font (tabular; monospace
+  is for ids, paths and code). Buttons, badges, menus, dialogs, toasts and the command palette share one set of shapes, shadows and
+  motion. An icon button has a tooltip that says what it does and the key for it; the project tabs show each project's state; the
+  palette groups its results, shows key hints and lists *Go to Overview* first; the top bar reads out the agents working and the
+  token budget and is one row at every width (at a tablet's width it wrapped to two). Focus rings, reduced motion and Windows High
+  Contrast are honoured throughout. Every component is drawn in every state on a gallery page, `/kit.html` (on a host it needs the
+  sign-in; `npm run dev:ui` serves it without), and a test fails for one that is not.
+- **The front pages.** Overview: one mark and one sentence for the state, one button, four figures ruled under it (checks, time,
+  tokens, seats), *Right now* in at most three lines, what shipped as file cards, the latest work and the log as timelines.
+  Needs you: the question first, what happens if nobody answers, then the answer; a notice holds nothing and says no more. Agents:
+  cards that lead with the seat and what it is doing, seats in a turn lit, and nine seats or more can be read as rows. Projects,
+  Host settings, sign-in, the welcome and the New project dialog follow. A project whose process stopped, or a server that stopped
+  answering, marks its figures *Last known state*. The Overview's *Right now*, its pill and the count on Latest work follow the
+  status where it is newer than the list of steps, so they no longer disagree about how many agents are working. On a phone
+  everything pressed is 44 px tall and a field is 16 px, so the page does not zoom.
+- **The working pages.** Steps draws its timeline: bars in the outcome's colour, pointing at a bar says which turn it is and picks
+  its row (and the other way round), and a mission that is finished, paused or failed opens on a *Fit* window, first turn to last,
+  where it used to open on a sliver at the edge of the last five minutes. Events reads as a ledger with one pane for each event:
+  an alert is a red tile and rail, routine runs fold into one row, and a row keeps the clock time in your zone (said once above
+  the list), not how long ago, so rows can be compared and quoted. The Graph draws a seat as a disc in its role colour inside a ring for its state. Files shows
+  what a file is before it is read and colours a patch. Product, Cost, Tool gates, the Designer and the step and agent panels are
+  redrawn from the same parts. A seat is one colour on every page.
+- **Words that moved** (structure, not claims): the Steps captions read "Turns done", "Tokens" and "No output"; the Files *Any
+  status* select is a row of buttons with a count each (All, Approved, Rework, Drafts), the full names in their tooltips; the Cost
+  page's "240k left, 85 turns, 7 agents" is labelled cells, and a mission with no limit says "Limit: none"; on Tool gates *Unlock
+  Bash* is *Unlock* on the Bash row (the control's name still says the tool); a card's title is a sentence on every page, where
+  some were capitals.
+- **Weight.** The console's startup stylesheet is 208 KB minified (39 KB gzipped); it was 165 KB (30 KB). The site's is 49.6 KB
+  (11.7 KB gzipped, was 48.2 KB and 10.5 KB) and the account pages' 38 KB, written to be read (9.6 KB gzipped, was 21 KB and
+  5.6 KB); their scripts went from 91 to 102 KB and from 19 to 23 KB. No font, image or remote request was added to any of them.
+- **Pictures.** The product pictures on the home page and the demo recording in the README are taken again from the new console, and
+  each picture's description says only what the picture shows.
+
+Also:
+
+- **Windows High Contrast.** A bar, a segment or a dot that is only a background disappears there, so the Steps timeline, the Cost
+  strip and its bars, the step panel's phase bars, ticks, switch tracks and meter fills are drawn again in the system's colours,
+  an outcome is told by how its mark is filled and not only by colour, and a test fails for a drawn mark that has no such rule.
+  This was tried with the browser's emulation, not on Windows. On the account pages a ticked box, every icon and every status
+  dot are drawn in it too.
+- **Reachable by keyboard.** A wide table in a document is a named region a keyboard can focus and scroll, and a dialog whose body
+  scrolls is a tab stop, so what is below its fold can be reached. A drawer's title row is not a second banner landmark, and a
+  stylesheet that reads a custom property nothing sets (a radius that does not exist, which draws as no radius and fails no
+  other check) now fails a test.
+- **Print.** A printed page no longer shows a primary button as white text on white paper, nor the closing band's buttons: a button
+  prints as black text in a black line.
+
 ### Changed: read this before upgrading a deployment
 
 - **The product is called Curule** (it was Agent Mesh). The command is `curule`; `mesh` stays installed as the same
