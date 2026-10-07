@@ -452,3 +452,15 @@ test("the pages say what they must: the plans, how licences work, the security s
   assert.ok(shareable(pages).length === 6);
   assert.ok(fs.existsSync(path.join(SITE, "404.html")));
 });
+
+test("the hero is one grid that the stylesheet places: the statement, the claims, the actions of both states in one group, and the picture, in the order a phone shows them", () => {
+  const hero = /<section class="hero" id="top">[\s\S]*?\n<\/section>/.exec(page(pages, "index.html").html)![0];
+  const at = (needle: string): number => hero.indexOf(needle);
+  const order = ['<div class="hero-grid">', '<p class="eyebrow">', "<h1>", '<p class="lede">', '<ul class="proof">', '<div class="hero-cta">', '<div class="hero-visual">'].map(at);
+  assert.ok(order.every((n) => n >= 0), "every part is there");
+  assert.deepEqual(order, [...order].sort((a, b) => a - b), "in reading order: a statement, what it is, the claims, where to start, then the picture");
+  const cta = hero.slice(at('<div class="hero-cta">'), at('<div class="hero-visual">'));
+  assert.equal((cta.match(/class="actions"/g) ?? []).length, 2, "the actions of the site that is open and of the one that is not");
+  assert.equal((cta.match(/<p class="small muted mt-s"/g) ?? []).length, 2, "and what is said under each");
+  assert.ok(!/class="actions"|class="proof"/.test(hero.slice(at('<div class="hero-visual">'))), "nothing of the statement is inside the picture's column");
+});
