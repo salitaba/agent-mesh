@@ -447,6 +447,10 @@ test("a card's title has the tile's room above it, a plan's figures share a line
   assert.match(css, /\n\.cta \.wrap \{ display: grid; gap: 0 64px; \}\n\.cta \.btn-row \{ margin-top: 28px; \}/);
   assert.match(css, /\n\.cta \.lede \{ margin-top: 16px;/);
   assert.match(css, /@media \(min-width: 900px\) \{ \.cta \.wrap \{[^}]*\} \.cta \.btn-row \{[^}]*margin-top: 0;/);
+  // The room under the On this page bar is the first visible section's, also where the section before it is closed: the pricing page
+  // opens with the choice between the two ways, which is for Curule Cloud, and the plans come right after it.
+  assert.match(css, /\n\.page-head \+ \.section, \.toc-bar \+ \.section, \.toc-bar \+ \[hidden\] \+ \.section \{ padding-top: clamp\(32px, 4vw, 48px\); \}/);
+  assert.match(page(pages, "pricing/index.html").markup, /<\/nav>\s*<section class="section" id="ways" data-cloud-only>[\s\S]*?<\/section>\s*<section class="section" id="plans">/, "the plans follow the choice that is only for Curule Cloud");
   // And one section of the pages is what the lone-note rule was written for.
   const notes = pages.filter((p) => /<section class="section">\s*<div class="wrap">\s*<p class="measure">[^]*?<\/p>\s*<\/div>\s*<\/section>/.test(p.markup));
   assert.deepEqual(notes.map((p) => p.rel), ["contact/index.html"], "the contact page ends with a note in a section of its own");

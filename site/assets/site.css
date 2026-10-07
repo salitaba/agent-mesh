@@ -212,7 +212,7 @@ main:has(.hero) .section-head .eyebrow::before { counter-increment: sec; content
 .arrow-link:hover::after { transform: translateX(3px); }
 .btn-row { display: flex; flex-wrap: wrap; gap: 12px; }
 
-/* hero: the statement, the product, the claims under the picture; one column on a phone, in written order */
+/* hero: the statement, the product, the claims under it; one column on a phone, in written order */
 .hero { position: relative; isolation: isolate; padding: clamp(24px, 4vw, 48px) 0 clamp(40px, 6vw, 80px); }
 .hero::before, .hero::after { content: ""; position: absolute; top: calc(-1 * var(--head-h)); left: 0; right: 0; z-index: -1; pointer-events: none; }
 .hero::after { height: 720px; background: var(--k-glow); }
@@ -297,7 +297,7 @@ main:has(.hero) .section-head .eyebrow::before { counter-increment: sec; content
 
 /* two ways in: the one we run has a tinted head and the leading action; actions stay at the foot */
 .hero + .section { padding-top: clamp(8px, 2vw, 32px); }
-.page-head + .section, .toc-bar + .section { padding-top: clamp(32px, 4vw, 48px); }
+.page-head + .section, .toc-bar + .section, .toc-bar + [hidden] + .section { padding-top: clamp(32px, 4vw, 48px); }
 .ways { gap: 16px; }
 @media (min-width: 760px) { .ways { grid-template-columns: var(--c2); gap: 24px; } }
 .way { display: flex; flex-direction: column; overflow: hidden; }
@@ -310,7 +310,7 @@ main:has(.hero) .section-head .eyebrow::before { counter-increment: sec; content
 .way dt .mark { width: 16px; height: 16px; }
 .way dd { margin: 6px 0 0; font-size: .9375rem; }
 .way > .way-action { margin: auto 28px 28px; }
-/* With one of the two hidden, the other takes the width; its two answers sit side by side. */
+/* With one of the two hidden the other takes the width; its answers sit side by side. */
 @media (min-width: 760px) { .ways:has(> .way[hidden]) { grid-template-columns: minmax(0, 1fr); } .ways:has(> .way[hidden]) dl { grid-template-columns: var(--c2); gap: 32px; } }
 
 /* three steps on one rail (down the left on a phone, across on a desktop) */
@@ -424,7 +424,7 @@ main:has(.hero) .section-head .eyebrow::before { counter-increment: sec; content
 /* The section being read: a dot before its name (not colour alone), paid for in padding so the row does not shift. */
 .toc a[aria-current="true"] { position: relative; padding: 0 10px 0 22px; border-color: color-mix(in srgb, var(--accent) 40%, transparent); background: var(--soft); color: var(--link); }
 .toc a[aria-current="true"]::before { content: ""; position: absolute; left: 10px; top: 50%; width: 6px; height: 6px; margin-top: -3px; border-radius: 50%; background: currentColor; }
-/* At a glance: each answer on a tile whose shape says its kind (shield, arrow out of a box, barred circle), linked to its section. */
+/* At a glance: each answer on a tile whose shape says its kind (shield, arrow out, barred circle), linked to its section. */
 .glance { margin-top: clamp(32px, 4vw, 48px); padding: 24px; }
 .glance-list { gap: 20px; }
 .glance-list li { display: grid; grid-template-columns: 40px minmax(0, 1fr); align-content: start; gap: 2px 16px; }
