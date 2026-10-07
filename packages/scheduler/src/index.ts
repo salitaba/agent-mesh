@@ -404,6 +404,14 @@ export class Scheduler implements SchedulerPort {
    */
   private triagedAway = 0;
   /**
+   * The interest wakes a pause turned away, one per seat (the latest). A pause defers; it does not decide: the seat's interest in the
+   * event stands, and nothing else will tell the mission, once it runs again, that the seat is owed a turn. Mail needs no such record
+   * (it waits in the box, and the supervisor's recovery finds a seat that holds some); an event leaves nothing behind, so a seat whose
+   * only reason to run was one came back from a pause to nothing, and in a scripted team, whose manager only reports "turn done", the
+   * mission stopped there. `takeHeldWakes` hands them over once, at resume; `resetMissionState` empties it.
+   */
+  private heldByPause = new Map<string, ActivationReason>();
+  /**
    * The other two deliberate interest-wake drops, counted for the same reason
    * `triagedAway` is and zeroed with it. Kept apart from it rather than folded
    * in: the console explains `triagedAway` as "a triage rule matched", and an
@@ -645,6 +653,7 @@ export class Scheduler implements SchedulerPort {
     this.staleMailWakes = 0;
     this.missionOverWakes = 0;
     this.wakeRequestRefs = new Map();
+    this.heldByPause = new Map();
     this.stuckEscalated = new Set();
     this.strikes = new Map();
     this.lastRefusal = new Map();
@@ -858,7 +867,10 @@ export class Scheduler implements SchedulerPort {
     // after a goal completes and its recipient must wake to answer it.
     // Interest-based wakeups stay gated on a healthy goal.
     const goalHalted = !goal || goal.status === "PAUSED" || goal.status === "COMPLETED" || goal.status === "FAILED";
-    if (goalHalted && event.type !== "message.sent") return;
+    if (goalHalted && event.type !== "message.sent") {
+      if (goal?.status === "PAUSED") this.holdForResume(event);
+      return;
+    }
     if (!goal) return;
 
     if (event.type === "message.sent") {
@@ -1091,6 +1103,25 @@ export class Scheduler implements SchedulerPort {
       if (rule.ignoreIfTextMatches.some((needle) => text.includes(needle.toLowerCase()))) return "IGNORE";
     }
     return "SKIM";
+  }
+
+  /**
+   * Remember who an event would have woken, because the mission is paused and woke nobody. The same cheap gate as a live wake
+   * (a progress tick the seat has no use for is not a reason to run later either); triage is not asked, since it may cost a model
+   * call and the seat's turn at resume is the answer to it.
+   */
+  private holdForResume(event: MeshEvent): void {
+    for (const agentId of this.candidatesFor(event.type, event.actorId)) {
+      if (this.isRedundantObservation(agentId, event)) continue;
+      this.heldByPause.set(agentId, { kind: "interest_event", eventId: event.id, eventType: event.type });
+    }
+  }
+
+  /** What the pause turned away, handed over once: the supervisor wakes these seats when the mission is resumed. */
+  takeHeldWakes(): Array<{ agentId: string; reason: ActivationReason }> {
+    const held = [...this.heldByPause].map(([agentId, reason]) => ({ agentId, reason }));
+    this.heldByPause = new Map();
+    return held;
   }
 
   /** Circuit-breaker probe (also used to keep timer nudges honest). */
@@ -1371,6 +1402,9 @@ export class Scheduler implements SchedulerPort {
     // refuse. (The op guard in `executeOp` reaches `denied()` too now; neither
     // path is the exception the other once was.)
     if (decision.decision === "DENY" || decision.decision === "DEFER") {
+      // The wake the pause refuses at the door was raised for an event a moment before the pause landed: the same loss as the event
+      // that arrives during one, so it is kept the same way.
+      if (decision.ruleId === "goal-paused" && req.reason.kind === "interest_event") this.heldByPause.set(req.agentId, req.reason);
       this.noteRefusal(req.agentId, decision, req.reason);
       return false;
     }

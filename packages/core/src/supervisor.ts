@@ -591,6 +591,13 @@ const OPERATOR_STOP_WAIT_MS = OPERATOR_STOP_GRACE_MS + TURN_CHECKPOINT_TIMEOUT_M
  * PM's answer to the ask that defaulted early arrived 90 s after it was raised.
  */
 const ANSWER_TURN_ALLOWANCE_MS = 120_000;
+/**
+ * How long a pause waits for the op loops that have already begun. A turn whose model has answered applies its ops back to back, in
+ * milliseconds; a pause that cut one between two ops left a lease held, a patch unannounced or a task closed by the `done` that
+ * followed. The pause takes effect once they are finished, or after this long if an op is stuck (a merge waiting on git), when the
+ * freeze stops the rest as it always has.
+ */
+const PAUSE_OP_GRACE_MS = 10_000;
 
 /** An operator's stop of one running turn, while that turn closes. See `Supervisor.interruptTurn`. */
 interface OperatorStop {
@@ -1245,6 +1252,18 @@ export class Supervisor {
    * priced exactly as before.
    */
   private wakesBoughtThisTurn = new Map<string, Set<string>>();
+  /**
+   * The turns a pause cut, by seat (the latest): the reason each was woken for. A turn whose model call returned into a paused mission
+   * lands nothing, and the pause that cut it leaves the seat no wake to find it by; `resumeGoal` gives each of these seats the turn
+   * again. Emptied there, and by `resetMission`.
+   */
+  private cutByPause = new Map<string, { reason: ActivationReason; notRun: string[] }>();
+  /** The op loops of the turns whose models have answered, until each is done. `pauseGoal` waits for them. */
+  private opPhases = new Set<Promise<void>>();
+  /** Pauses asked for and not yet in force (they are waiting for `opPhases`): a turn that answers meanwhile is cut as if paused. */
+  private pausesPending = 0;
+  /** `PAUSE_OP_GRACE_MS`, held on the instance so a test can shorten it. */
+  private pauseOpGraceMs = PAUSE_OP_GRACE_MS;
   /**
    * How many messages each sender has sent during its current turn, and the
    * FYI-class ones that went past the budget and are waiting for the turn-end
@@ -2545,6 +2564,7 @@ export class Supervisor {
     this.heldSendsThisTurn.clear();
     this.verdictNoticesThisTurn.clear();
     this.flushingSends.clear();
+    this.cutByPause.clear();
     this.recentTurns = [];
     this.turns.clear();
     this.idleCallbacks = [];
@@ -7523,7 +7543,39 @@ export class Supervisor {
   async pauseGoal(goalId?: GoalId): Promise<void> {
     const gid = goalId ?? this.state.activeGoalId;
     if (!gid) return;
-    await this.deps.kernel.emit("goal.paused", { goalId: gid, reason: "user pause" }, { actorId: HUMAN_AGENT_ID });
+    // A turn whose model has answered is in the middle of applying its ops, and the freeze would stop it between two of them. The pause
+    // is asked for now (a turn that answers from here on is cut whole, and given again at resume) and takes effect when the turns that
+    // have begun applying are finished, which is milliseconds, or after `PAUSE_OP_GRACE_MS` if one is stuck.
+    this.pausesPending++;
+    try {
+      if (this.opPhases.size > 0) {
+        let grace: ReturnType<typeof setTimeout> | undefined;
+        await Promise.race([
+          Promise.all([...this.opPhases]),
+          new Promise<void>((resolve) => {
+            grace = setTimeout(resolve, this.pauseOpGraceMs);
+          }),
+        ]);
+        if (grace) clearTimeout(grace);
+      }
+      await this.deps.kernel.emit("goal.paused", { goalId: gid, reason: "user pause" }, { actorId: HUMAN_AGENT_ID });
+    } finally {
+      this.pausesPending--;
+    }
+  }
+
+  /** Enter the op phase of a turn: from here until the returned function is called, a pause waits for this turn to finish applying what its model returned. */
+  private enterOpPhase(): () => void {
+    let done!: () => void;
+    const phase = new Promise<void>((resolve) => (done = resolve));
+    this.opPhases.add(phase);
+    let left = false;
+    return () => {
+      if (left) return;
+      left = true;
+      this.opPhases.delete(phase);
+      done();
+    };
   }
 
   async resumeGoal(goalId?: GoalId): Promise<void> {
@@ -7540,8 +7592,28 @@ export class Supervisor {
       await this.activateStartup(false);
       return;
     }
+    const woken = new Set<string>();
     for (const c of this.recoveryCandidates()) {
+      woken.add(c);
       await this.activateAgent(c, { kind: "recovery", note: "goal resumed" });
+    }
+    // What the pause took from a seat without leaving it mail, a task or a wait to be found by, so that the loop above does not know
+    // it: a turn the pause cut, and an event that came while the mission was paused (the scheduler kept who it would have woken).
+    // Each seat is given the reason it was first woken for, kind and event included (a seat that reads who woke it, as the scripted
+    // team does, must find what it was given), with a note that says what happened. A seat woken above reads what changed in the
+    // same context.
+    const owed = new Map<string, { reason: ActivationReason; why: string }>();
+    for (const { agentId, reason } of this.deps.scheduler.takeHeldWakes?.() ?? []) {
+      owed.set(agentId, { reason, why: `goal resumed: ${reason.eventType ?? "an event"} happened while the mission was paused, and nothing woke you for it` });
+    }
+    for (const [agentId, { reason, notRun }] of this.cutByPause) {
+      const what = notRun.length > 0 ? `${notRun.slice(0, 8).join(", ")} did not run` : "what you proposed in it did not run";
+      owed.set(agentId, { reason, why: `goal resumed: the pause cut your last turn short (${what}), and this is that turn again` });
+    }
+    this.cutByPause.clear();
+    for (const [agentId, { reason, why }] of owed) {
+      if (woken.has(agentId)) continue;
+      await this.activateAgent(agentId, { ...reason, note: why });
     }
   }
 
@@ -7958,6 +8030,15 @@ export class Supervisor {
     // it, so the streak has to break on any real turn rather than only on a
     // watchdog-driven one.
     let turnProducedWork = false;
+    /**
+     * Set when the mission was paused while the model was thinking, so the seat's ops were stopped before they landed (the
+     * freeze refuses every op that moves work, and a half-applied turn is worse than none). `ran` of the `of` operations the
+     * runtime returned had run. Read by the classification below, which says so to the seat and to the log, and by
+     * `resumeGoal`, which gives the seat the turn again.
+     */
+    let cutByPause: { ran: number; of: number } | null = null;
+    /** Leaves the op phase `pauseGoal` waits for, in the `finally`: the turn's own bookkeeping (state, budget, memory) is part of what a pause waits for. */
+    let leaveOpPhase: (() => void) | undefined;
     // Set when this turn was spent on a handover; holds the reason the seat was
     // ACTUALLY woken for, so the `finally` can give it back.
     let handoverReactivation: ActivationReason | null = null;
@@ -7988,6 +8069,12 @@ export class Supervisor {
             | "budget_blocked"
             | "failed"
             | "interrupted"
+            /**
+             * A turn whose model answered into a mission that was paused (or being paused): none of its ops ran, so the work it cost
+             * is lost, but nobody stopped it and nothing failed. Not an abnormal ending (the seat's note keeps what the mesh told it
+             * when the turn closed), and the seat is given the turn again at resume.
+             */
+            | "paused"
             /**
              * A turn the budget watch stopped. Its own reason since 2026-09-27:
              * the stop comes back as the runtime's own abort, so it used to be
@@ -8608,7 +8695,14 @@ export class Supervisor {
       // A handover rendered no mail (`handoverBundle`), so it delivered none:
       // draining here marked 44 of one run's 82 deliveries inside turns
       // forbidden to answer, and the successor woke for mail it no longer had.
-      const delivered = turn.handover ? [] : renderableMail(bundle.unreadMail).shown.slice(0, MAX_DELIVERED_PER_TURN);
+      //
+      // And none for a turn the pause has already cut: nothing it proposes will run, so the mail it was handed was not answered
+      // ("delivered means rendered AND answered"). It stays owed, which is also what wakes the seat when the mission resumes.
+      if (!turn.handover && output.operations.length > 0) {
+        if (haltedGoalStatus(this.state) === "PAUSED" || this.pausesPending > 0) cutByPause = { ran: 0, of: output.operations.length };
+        else leaveOpPhase = this.enterOpPhase();
+      }
+      const delivered = turn.handover || cutByPause ? [] : renderableMail(bundle.unreadMail).shown.slice(0, MAX_DELIVERED_PER_TURN);
       for (const msg of delivered) {
         await this.deps.kernel.emit(
           "message.delivered",
@@ -8628,7 +8722,8 @@ export class Supervisor {
       // Ops a runtime returned structurally (stub, http). A Claude seat returns
       // none: its ops already ran through `executeToolOp` during the call and
       // sit in `turn.results`, which this loop appends to.
-      for (const op of output.operations) {
+      // A turn cut before its loop (the pause is in force, or asked for and waiting on other seats' ops) runs none of them.
+      for (const op of cutByPause ? [] : output.operations) {
         // The mission can flip mid-turn (pause / escalation / completion
         // while the runtime was thinking). Stop before the next op instead of
         // executing the rest into one rejection after another — which burns
@@ -8639,6 +8734,7 @@ export class Supervisor {
         const followUpTurn = reason.kind === "message" || reason.kind === "manual" || reason.kind === "recovery";
         if (midTurnHalt && !(midTurnHalt === "COMPLETED" && followUpTurn)) {
           this.auditLine(`turn ${turnId} for ${agentId} stopped early: ${haltReasonText(midTurnHalt)}`);
+          if (midTurnHalt === "PAUSED" && !turn.handover) cutByPause = { ran: turn.results.length, of: output.operations.length };
           break;
         }
         this.markTurn(turnId, "opsStartAt");
@@ -8759,7 +8855,29 @@ export class Supervisor {
       // Ops from BOTH channels: `turn.results` holds the tool calls that ran
       // during the runtime call as well as the ops the runtime returned.
       const noOps = turn.results.length === 0 && output.operations.length === 0;
-      if (noOps && (this.turnEffects.get(turnId) ?? 0) > 0) {
+      if (cutByPause) {
+        // The pause landed while the model was thinking. Nothing here is the seat's doing, so it is neither told it produced nothing
+        // nor charged a strike; what it proposed did not run, the mission will give it the turn again at resume, and it is told so.
+        const { ran, of } = cutByPause;
+        const noun = `operation${of === 1 ? "" : "s"}`;
+        const notRun = output.operations.slice(ran).map((o) => String(o.op));
+        const notice =
+          ran === 0
+            ? `⚠ the mission was paused while you were thinking, so none of your ${of} ${noun} ran and the mail you were handed is still unread; the mission will give you this turn again when it resumes`
+            : `⚠ the mission was paused while you were working: ${ran} of your ${of} ${noun} ran and the rest did not (${notRun.slice(0, 8).join(", ")}); the mission will wake you when it resumes`;
+        notices.push(notice);
+        endSummary = `${notice}${modelSummary ? ` (model said: ${modelSummary})` : ""}`;
+        this.auditLine(`turn ${turnId} for ${agentId} was cut by a pause: ${ran} of ${of} ops ran`);
+        // A turn that landed some work is not discarded; one that landed none is the loss `turn.discarded` exists to record.
+        if (ran === 0) {
+          turnDiscard = {
+            reason: "paused",
+            detail: `the mission was paused while the seat was thinking: none of its ${of} ${noun} ran, and its mail stays unread`,
+            tokens: output.tokensUsed?.total,
+          };
+        }
+        this.cutByPause.set(agentId, { reason, notRun });
+      } else if (noOps && (this.turnEffects.get(turnId) ?? 0) > 0) {
         // No op ran, yet mesh effects landed under this turn's correlation
         // (work that reached the log without passing through `executeOp`).
         // Judging such a turn by its ops alone once called the most productive
@@ -9328,6 +9446,7 @@ export class Supervisor {
     } finally {
       // Nothing below is the turn's own work, and the tally must not outlive it.
       stopTally();
+      leaveOpPhase?.();
       // A turn that threw escapes upstream of the settlement block, so until now
       // it released its holds at zero cost and the ledgers never saw a token of
       // it. Measured 2026-09-24: one 20-minute backend timeout spent 295,953

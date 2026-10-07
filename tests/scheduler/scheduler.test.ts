@@ -481,6 +481,28 @@ test("scheduler: a policy refusal reaches the operator instead of collapsing to 
   await m.cleanup();
 });
 
+test("scheduler: what a pause turned away is handed over once, and a wiped mission forgets it", async () => {
+  const m = await makeMesh({
+    agents: [
+      { id: "qa", role: "qa", interests: ["dependency.changed"] },
+      { id: "trigger", role: "dev", interests: [] },
+    ],
+    mayContact: { qa: [], trigger: [] },
+  });
+  await m.supervisor.pauseGoal();
+  await m.kernel.emit("dependency.changed", { files: ["pom.xml"], summary: "upgrade" }, { actorId: "trigger" });
+  await new Promise((r) => setTimeout(r, 200));
+  const held = m.scheduler.takeHeldWakes?.() ?? [];
+  assert.deepEqual(held.map((h) => [h.agentId, h.reason.kind, h.reason.eventType]), [["qa", "interest_event", "dependency.changed"]]);
+  assert.deepEqual(m.scheduler.takeHeldWakes?.(), [], "handed over once");
+  // A mission that is wiped is not owed what its predecessor missed.
+  await m.kernel.emit("dependency.changed", { files: ["pom.xml"], summary: "upgrade" }, { actorId: "trigger" });
+  await new Promise((r) => setTimeout(r, 200));
+  m.scheduler.resetMissionState?.();
+  assert.deepEqual(m.scheduler.takeHeldWakes?.(), []);
+  await m.cleanup();
+});
+
 /**
  * `scheduling.timeouts.idle_quiet_period_ms` was resolved, defaulted and read
  * by nothing: the scheduler declared an idle moment on the instant its queue and

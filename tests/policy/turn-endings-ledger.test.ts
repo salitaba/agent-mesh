@@ -94,7 +94,8 @@ const ENDINGS: Ending[] = [
   },
   {
     name: "mid-turn halt: the mission is paused while the model is thinking",
-    discard: null,
+    // Cut whole (its ops never run and its mail stays owed), so it is the loss `turn.discarded` records, with the tokens it cost.
+    discard: "paused",
     reached: ({ events }) => assert.ok(events.some((e) => e.type === "goal.paused"), "precondition: the goal paused mid-turn"),
     known: 1000,
     first: async (m) => {

@@ -301,6 +301,11 @@ export interface SchedulerPort {
    */
   lastActivationRefusal?(agentId: string): PolicyDecisionResult | undefined;
   /**
+   * The interest wakes a pause turned away, one per seat, handed over once. A pause defers a seat's reason to run without leaving
+   * the seat anything to find it by (an event is not mail), so the supervisor asks at resume. Optional for mocks.
+   */
+  takeHeldWakes?(): Array<{ agentId: string; reason: import("../../protocol/src/index").ActivationReason }>;
+  /**
    * Is this agent currently parked by the circuit breaker? The stall watchdog
    * asks so it never picks a parked agent as the mission driver — that agent
    * is by definition the one that cannot make progress. Optional for mocks.
