@@ -1,3 +1,4 @@
+import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
@@ -40,7 +41,12 @@ export default defineConfig({
   resolve: { alias: { "@mesh/protocol": fileURLToPath(new URL("../../packages/protocol/src/index.ts", import.meta.url)) } },
   // No public/ copying: the legacy static dir is gone; everything ships from src.
   publicDir: false,
-  build: { outDir: "dist", emptyOutDir: true, chunkSizeWarningLimit: 1200 },
+  // Two pages are built: the console (index.html) and the kit gallery (kit.html, served as /kit.html: every primitive in every state,
+  // photographed by whoever restyles a view). The gallery shares the primitives' modules with the console and adds nothing to it.
+  build: {
+    outDir: "dist", emptyOutDir: true, chunkSizeWarningLimit: 1200,
+    rollupOptions: { input: { index: resolve(root, "index.html"), kit: resolve(root, "kit.html") } },
+  },
   server: {
     port: 5173,
     proxy: Object.fromEntries(
