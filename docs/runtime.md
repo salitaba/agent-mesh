@@ -477,6 +477,20 @@ to the architect (21:11:38) waited behind `max_active_agents: 3`; the pm's last 
 21:12:14, eight seconds after the goal completed, and the architect's turn cost 9,795 tokens and was
 discarded as `no_ops`.
 
+**The floor says what it found, and a turn that only read is described as one.** The stale-mail
+floor's note used to be one sentence about mail having waited. Its wake now lists what is in the box by
+kind and sender ("2 announcements (INFORM) from pm, tech-lead") and says whether any of it asks
+something of the seat: an ask, work handed over or an adverse verdict, the operator's mail, anything
+classed `interrupt`. When none does, the note says so, names the ending that fits (`mesh_wait`; a
+`mesh_done` closes a task the seat holds) and the reason carries `asksNothing`. A turn woken that way
+which only waited or finished and changed nothing is recorded as "read the mail that had been waiting
+— none of it asked anything of you" (the seat's own summary follows) and carries no warning, where it
+had been "no work was produced while the mission has unmet criteria; the watchdog will rotate to
+another driver", a sentence that replaced the seat's words in its memory and stayed in a QA seat's
+briefing for its next four turns in the twentieth run. It still counts as a turn that changed nothing
+(the watchdog's retry is armed as before), and a turn that did work is described by its work. A floor
+wake with an ask in its box says how many of the messages ask, and its turn is judged as before.
+
 ## Runtime adapter interface
 
 ```ts

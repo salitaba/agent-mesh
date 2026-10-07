@@ -1582,6 +1582,12 @@ export interface ActivationReason {
   messageId?: MessageId;
   threadId?: ThreadId;
   note?: string;
+  /**
+   * Set by the scheduler on the wake it raises for mail that asks nothing of the seat: the floor under the wake gates found only
+   * announcements and information (no ask, no handed-over work, nothing from the operator). The turn exists to read, so ending it
+   * with nothing done is the right outcome, and the end-of-turn accounting says that instead of calling it idle work.
+   */
+  asksNothing?: boolean;
 }
 
 export interface MeshOpSend {

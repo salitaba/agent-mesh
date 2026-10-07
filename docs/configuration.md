@@ -205,8 +205,9 @@ agents:
   that list `message.sent` (or `message.*`), at every point mail can buy a turn — when it is sent,
   when the wait sweep counts unread mail, and when a turn ends with mail left in the box. The rest
   get it in their mailbox, read it on the next turn they take, and are woken for it once it has
-  waited four minutes (`STALE_MAIL_MS`). Nobody in a shipped mesh lists `message.sent`, so in every
-  one an announcement is read, not reacted to.
+  waited four minutes (`STALE_MAIL_MS`; the wake's note lists what is waiting and says whether any of
+  it asks anything). Nobody in a shipped mesh lists `message.sent`, so in every one an announcement is
+  read, not reacted to.
 - `authority` tokens are `<domain>.<verb>`. The positive verdict of a seat that tests or scans is a
   **pass** (`quality.pass`, `security.pass`; QA and security hold these and no `.approve` in every
   shipped mesh), given with `mesh_approve` `kind: "pass"`. An approve from a seat whose verdict in

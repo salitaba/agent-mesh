@@ -307,6 +307,61 @@ const mailTogetherNote = (count: number): string => `${count} messages arrived t
 const OWN_MAIL_NOTE = /^(?:1 message waiting in your mailbox\.|\d+ messages (?:waiting in your mailbox\.|arrived together, not one — the others are in your mailbox below\.))$/;
 
 /**
+ * Does this message ask something of its recipient? The questions `defersMail` answers before it lets a seat's own wake policy
+ * hold a message back, asked here for the opposite purpose: what a wake for mail may truthfully tell the seat it is waking for.
+ * An ask, work handed over (or an adverse verdict), the operator's mail and anything the sender classed `interrupt` all count.
+ */
+function asksSomething(m: MeshMessage): boolean {
+  return obligesRecipients(m) || movesWorkMessage(m) || m.from === "human" || m.control?.delivery === "interrupt";
+}
+
+/** At most this many senders are named for one kind of waiting mail; the rest are counted. */
+const FLOOR_NOTE_SENDERS = 4;
+
+/** "2 announcements (INFORM) from pm, tech-lead; 1 REQUEST_REVIEW from developer": what is in the box, by kind. */
+function describeWaitingMail(mail: readonly MeshMessage[]): string {
+  const kinds = new Map<string, { label: string; count: number; from: string[] }>();
+  for (const m of mail) {
+    const announcement = m.control?.mode === "broadcast";
+    const key = `${announcement ? "announcement" : "message"}:${m.type}`;
+    const kind = kinds.get(key) ?? { label: announcement ? `announcement%S (${m.type})` : m.type, count: 0, from: [] };
+    kind.count++;
+    if (!kind.from.includes(m.from)) kind.from.push(m.from);
+    kinds.set(key, kind);
+  }
+  return [...kinds.values()]
+    .map((k) => {
+      const shown = k.from.slice(0, FLOOR_NOTE_SENDERS).join(", ");
+      const more = k.from.length > FLOOR_NOTE_SENDERS ? ` and ${k.from.length - FLOOR_NOTE_SENDERS} more` : "";
+      return `${k.count} ${k.label.replace("%S", k.count === 1 ? "" : "s")} from ${shown}${more}`;
+    })
+    .join("; ");
+}
+
+/**
+ * The wake the floor under the wake gates raises (`STALE_MAIL_MS`), and what it tells the seat.
+ *
+ * It used to say only that mail was waiting. The seat it woke in the twentieth cronlite run found two announcements it had not
+ * subscribed to, nothing owed (its briefing said "you owe no answers and are waiting on nobody"), wrote a status into its reply text
+ * and ended the turn with `mesh_done`: the ending that closes a task the seat holds, and the one the mesh then reported as "no work
+ * was produced … the watchdog will rotate to another driver", a line that stayed in the seat's memory for its next four turns. The
+ * mesh knew when it raised the wake what the mail was and whether any of it asked anything. It says so now, and which ending fits,
+ * and marks the reason `asksNothing` when none of it does so that the end of the turn is described for what it was.
+ */
+export function floorWakeReason(mail: readonly MeshMessage[]): ActivationReason {
+  const asks = mail.filter(asksSomething);
+  const why = "mail has been waiting unread and nothing you subscribe to woke you for it";
+  if (asks.length > 0) {
+    return { kind: "timer", note: `${why}: ${describeWaitingMail(mail)}. ${asks.length} of ${mail.length} ask something of you: answer those first.` };
+  }
+  return {
+    kind: "timer",
+    note: `${why}: ${describeWaitingMail(mail)}. None of it asks anything of you: read it, and unless it changes what you do next, end the turn with mesh_wait (mesh_done closes a task you hold).`,
+    asksNothing: true,
+  };
+}
+
+/**
  * `survivor` as it stands after absorbing `absorbed` — a coalesce onto a queued
  * wake, or a newer strong wake replacing a stashed one. An operator wake folded
  * into another wake makes that wake the operator's, and operator standing
@@ -1904,7 +1959,7 @@ export class Scheduler implements SchedulerPort {
           this.lastStaleMailWake.set(id, now);
           void this.requestActivation({
             agentId: id,
-            reason: { kind: "timer", note: "mail has been waiting unread and nothing you subscribe to woke you for it" },
+            reason: floorWakeReason(resolveUnread(this.state, id)),
             priority: 3,
           });
           continue;

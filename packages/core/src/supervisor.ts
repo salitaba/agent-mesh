@@ -8886,15 +8886,25 @@ export class Supervisor {
         // "changed nothing" — the mission did not advance and the re-armed
         // activation deserves the fast retry — but it must not be told it
         // produced nothing. The mechanics stay; only the sentence changes.
+        // A wake raised for mail that asked nothing of the seat (the floor under the wake gates, `floorWakeReason`) is a turn to
+        // read, and a seat that read it and stopped did what it was woken for. The mechanics stay (the turn changed nothing, so the
+        // watchdog's retry is armed as for a handover), but the sentence does not call it idle work: in the twentieth cronlite run
+        // that sentence replaced what a QA seat said it had learned and stayed in its memory for the next four turns.
+        const readOnly = !turn.handover && reason.asksNothing === true;
         endSummary = turn.handover
           ? `continuity written for the session handover — this turn is not scored as work, and the activation it consumed has been re-armed`
-          : `⚠ turn only ${[...new Set(turn.results.map((r) => r.op))].join("/")} — no work was produced while the mission has unmet criteria; the watchdog will rotate to another driver`;
-        // The whole sentence is the mesh's: this arm drops the model's words.
-        notices.push(endSummary);
+          : readOnly
+            ? `read the mail that had been waiting — none of it asked anything of you${modelSummary ? ` (model said: ${modelSummary})` : ""}`
+            : `⚠ turn only ${[...new Set(turn.results.map((r) => r.op))].join("/")} — no work was produced while the mission has unmet criteria; the watchdog will rotate to another driver`;
+        // The sentence is the mesh's and this arm drops the model's words, except for a seat that read mail it was not asked
+        // about: what it says it learned is the memory worth keeping, and there is no warning to give a turn that did its job.
+        if (!readOnly) notices.push(endSummary);
         this.auditLine(
           turn.handover
             ? `turn ${turnId} for ${agentId} was a rotation handover (${turn.results.map((r) => r.op).join(",")}) — not scored as work, activation re-armed`
-            : `turn ${turnId} for ${agentId} produced no work (${turn.results.map((r) => r.op).join(",")})`,
+            : readOnly
+              ? `turn ${turnId} for ${agentId} read waiting mail that asked nothing of it (${turn.results.map((r) => r.op).join(",")}) — not scored as work`
+              : `turn ${turnId} for ${agentId} produced no work (${turn.results.map((r) => r.op).join(",")})`,
         );
       } else if (rejected.length > 0) {
         // PARTIAL failure. Previously only an ALL-rejected turn told the agent
