@@ -1160,6 +1160,22 @@ ul.errs { margin: var(--s1-5) 0; padding-left: 18px; font-size: 14px; color: var
 @media (max-width: 560px) { .palette { top: 6vh; } .palette-foot { display: none; } }
 
 
+/* ============ forced colours ============
+   Windows High Contrast and the like drop shadows and swap every background for the system's. What survives is borders and
+   outlines, so what a primitive draws with a background says so here: the tick and the dot, the switch's track, the line under the
+   tabs, the fill of a meter, the field that has focus, the segment that is chosen. System colour keywords only. */
+@media (forced-colors: active) {
+  input[type="checkbox"]::before, input[type="radio"]::before { forced-color-adjust: none; background: CanvasText; }
+  input[type="checkbox"][role="switch"] { border: 1px solid CanvasText; }
+  input[type="checkbox"][role="switch"]:checked { forced-color-adjust: none; background: Highlight; }
+  input[type="checkbox"][role="switch"]:checked::before { background: HighlightText; }
+  .tabs-ink, .prog > i, .progress > div, .bar-strip-stat .meter::after { forced-color-adjust: none; background: Highlight; }
+  .prog, .bar-strip-stat .meter { border: 1px solid CanvasText; }
+  .seg button:is([aria-pressed="true"], [aria-selected="true"]) { outline: 2px solid Highlight; outline-offset: -2px; }
+  :is(input.search, input.txt, select.sel, textarea.txt):is(:focus-visible, .is-focus) { outline: 2px solid Highlight; outline-offset: 1px; }
+  .menu-item:is(:focus-visible, :active, .is-active), .palette-item.on { outline: 2px solid Highlight; outline-offset: -2px; }
+}
+
 /* ============ lists the views share: events, cost bars, escalations, the step row, outcome colours ============ */
 .ev-list { display: flex; flex-direction: column; }
 .ev { display: grid; grid-template-columns: 64px 110px 1fr; gap: var(--s2-5); align-items: baseline; padding: 6px 8px; border-bottom: 1px solid var(--line); cursor: pointer; animation: slidein .25s ease; }

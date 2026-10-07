@@ -81,3 +81,13 @@ test("a person who asks for less motion gets none: every animation, transition a
     assert.ok(rule![1]!.includes(decl), decl);
   }
 });
+
+test("forced colours: what is drawn with a background says so, so it survives Windows High Contrast", () => {
+  const block = /@media \(forced-colors: active\) \{([\s\S]*?)\n\}/.exec(styles);
+  assert.ok(block, "the stylesheet has a forced-colours block");
+  for (const part of ['input[type="checkbox"]::before', 'input[type="checkbox"][role="switch"]', ".tabs-ink", ".prog > i", ".seg button", "select.sel", ".menu-item", "CanvasText", "Highlight"]) {
+    assert.ok(block![1]!.includes(part), `the block covers ${part}`);
+  }
+  assert.doesNotMatch(block![1]!, /#[0-9a-fA-F]{3,8}\b/, "system colours only, no literal");
+});
+
