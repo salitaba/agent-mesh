@@ -285,8 +285,8 @@ body[data-page="home"] main{background:var(--k-glow) top / 100% 520px no-repeat}
 .stage .btn-row:empty{display:none}
 .steps{flex:1 0 100%;display:flex;flex-wrap:wrap;align-items:center;gap:8px 0;margin:0;padding:0;list-style:none;color:var(--k-muted);font-size:.8125rem;font-weight:600}
 .steps li{display:inline-flex;align-items:center;gap:8px}
-.steps li + li::before{content:"";width:28px;height:1px;margin:0 6px 0 10px;background:var(--k-line-strong)}
-.steps .done + li::before{background:var(--k-accent)}
+.steps li:not(:last-child)::after{content:"";width:20px;height:1px;margin:0 8px 0 2px;background:var(--k-line-strong)}
+.steps li.done::after{background:var(--k-accent)}
 .steps .num{display:grid;place-items:center;width:22px;height:22px;border:1px solid var(--k-line-strong);border-radius:50%;font-size:.6875rem}
 .steps .done .num{border-color:transparent;background:var(--k-accent-soft);color:var(--k-accent-ink)}
 .steps .now{color:var(--k-ink)}
