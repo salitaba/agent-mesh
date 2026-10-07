@@ -407,6 +407,9 @@ main:has(.hero) .section-head .eyebrow::before { counter-increment: sec; content
 .page-head { padding: clamp(32px, 5vw, 64px) 0 clamp(28px, 4vw, 40px); border-bottom: 1px solid var(--line); }
 .page-head h1, .nf h1 { max-width: 18ch; font-size: clamp(2.25rem, 1.2rem + 4.4vw, 3.75rem); }
 .page-head .lede { margin-top: 24px; }
+/* the hero's ruled paper, fainter and anchored to the heading, so an inner page starts on the ground the home page does */
+.page-head { position: relative; isolation: isolate; }
+.page-head::before { content: ""; position: absolute; top: calc(-1 * var(--head-h)); left: 0; right: 0; height: 420px; z-index: -1; pointer-events: none; opacity: .5; background: var(--k-rule); mask-image: radial-gradient(60% 85% at 22% 38%, black 8%, transparent); }
 .prose { max-width: 68ch; }
 .prose h3 { margin: 32px 0 8px; }
 .prose h3:first-child { margin-top: 0; }
