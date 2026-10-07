@@ -53,3 +53,7 @@ i.sev-mark.routine { box-sizing: border-box; border: 1.5px solid var(--muted); }
 
 /* A table wider than its column scrolls inside its own frame, and the frame is a tab stop (markdown.ts), so its ring is drawn inside it. */
 .md-table:focus-visible { outline-offset: -2px; }
+
+/* A banner whose actions do not fit beside its words puts them on the next line, under the words. The phone rule above already gives the
+   actions the full width for that (styles.css, 620px); the row had nothing to wrap, so the words were squeezed into a column of five characters. */
+.banner.has-icon { flex-wrap: wrap; }

@@ -7,7 +7,7 @@ import { useMesh } from "../store";
 import { useMission } from "../useMission";
 import { useMissionActions } from "../useMissionActions";
 import { useProjectsOptional } from "../projects";
-import { Banner, Button, EmptyState, ErrorState, PageHeader, useNow } from "../components";
+import { AgentAvatar, Banner, Button, EmptyState, ErrorState, PageHeader, Progress, Skeleton, agentColor, useNow } from "../components";
 import { Icon } from "../icons";
 import {
   GROUP_LABEL,
@@ -48,12 +48,9 @@ function Updated({ at }: { at: number }): React.JSX.Element {
   return <span className="count-note">Updated {readingAge(now - at)}</span>;
 }
 
+/** The kit's bar, read for what it measures: the tone is cost.ts's (amber from 80%, red from 95% or when spent). */
 function Meter({ ratio, tone, label }: { ratio: number | null; tone: BudgetTone; label: string }): React.JSX.Element {
-  return (
-    <div className={`cost-meter ${tone}`} role="img" aria-label={label}>
-      <i style={bar(ratio ?? 0)} />
-    </div>
-  );
+  return <Progress value={Math.min(1, Math.max(0, ratio ?? 0))} max={1} label={label} tone={tone === "ok" ? undefined : tone} size="lg" />;
 }
 
 function OwnBudget({ own }: { own: NonNullable<ReturnType<typeof summarizeCost>["agents"][number]["own"]> }): React.JSX.Element {
@@ -186,7 +183,7 @@ export default function Cost(): React.JSX.Element {
       {err && !payload ? (
         <ErrorState what="spend and budgets" detail={err} onRetry={() => { setErr(null); setAttempt((n) => n + 1); }} />
       ) : !payload ? (
-        <div className="cost-skel" role="status"><span className="sr-only">Loading spend</span><i /><i /><i /></div>
+        <div className="cost-skel" role="status"><span className="sr-only">Loading spend</span><Skeleton w="36%" h={28} /><Skeleton h={12} /><Skeleton w="60%" h={16} /></div>
       ) : (
         <div className="cost-stack">
           {stale ? (
@@ -217,13 +214,13 @@ export default function Cost(): React.JSX.Element {
                 <span>of {m.limit > 0 ? fmt(m.limit) : "no limit"} tokens</span>
                 {m.ratio !== null ? <em className={m.tone}>{pctLabel(m.ratio)}</em> : null}
               </div>
-              <Meter ratio={m.ratio} tone={m.tone} label={m.ratio === null ? "The mission has no token limit" : `${fmt(m.used)} of ${fmt(m.limit)} tokens used, ${pctLabel(m.ratio)}`} />
-              <p className="cost-sub">
-                {m.remaining !== null ? `${fmt(m.remaining)} left` : "No token limit"}
-                {s.turns ? ` · ${s.turns} ${s.turns === 1 ? "turn" : "turns"}` : ""}
-                {s.agents.length ? ` · ${s.agents.length} ${s.agents.length === 1 ? "agent" : "agents"}` : ""}
-                {m.tone !== "ok" ? <span className={`cost-flag ${m.tone}`}><Icon name="alert" size={14} />{m.short ? "Too little left for a turn" : m.used >= m.limit ? "Spent" : FLAG[m.tone]}</span> : null}
-              </p>
+              {m.ratio !== null ? <Meter ratio={m.ratio} tone={m.tone} label={`${fmt(m.used)} of ${fmt(m.limit)} tokens used, ${pctLabel(m.ratio)}`} /> : null}
+              {m.tone !== "ok" ? <p className={`cost-flagline ${m.tone}`}><Icon name="alert" size={14} />{m.short ? "Too little left for a turn" : m.used >= m.limit ? "Spent" : FLAG[m.tone]}</p> : null}
+              <dl className="cost-facts">
+                <div><dt>{m.remaining !== null ? "Left" : "Limit"}</dt><dd>{m.remaining !== null ? fmt(m.remaining) : "none"}</dd></div>
+                {s.turns ? <div><dt>{s.turns === 1 ? "Turn" : "Turns"}</dt><dd>{s.turns}</dd></div> : null}
+                {s.agents.length ? <div><dt>{s.agents.length === 1 ? "Agent" : "Agents"}</dt><dd>{s.agents.length}</dd></div> : null}
+              </dl>
               {m.limit > 0 ? (
                 <p className="cost-fine">The mission budget is never raised on its own. When more is spent than it allows, the mission stops and Needs you asks whether to raise it.</p>
               ) : null}
@@ -243,10 +240,10 @@ export default function Cost(): React.JSX.Element {
                 </p>
                 <p className="cost-fine">
                   An estimate, not an invoice: your provider&apos;s invoice is the bill.{" "}
-                  <button type="button" className="reader-link" onClick={() => setView("hostsettings")}>Change the ceiling in Host settings</button>
+                  <Button variant="linklike" onClick={() => setView("hostsettings")}>Change the ceiling in Host settings</Button>
                 </p>
                 {priceNote ? <p className="cost-fine cost-default"><Icon name="info" size={14} />{priceNote}</p> : null}
-                <details className="cost-how">
+                <details className="disc cost-how">
                   <summary>How it is priced</summary>
                   <p>
                     Every kind of token (fresh input, output, cache writes and cache reads) is priced per model: at the price you set for it in model_prices, or else at Anthropic&apos;s list price
@@ -268,11 +265,17 @@ export default function Cost(): React.JSX.Element {
                   <h3 id="ca-h" className="cost-h">By agent <span className="cost-n">{s.agents.length}</span></h3>
                   <span className="cost-cap">Bars are scaled to the biggest spender. Percentages are shares of everything spent.</span>
                 </div>
+                {s.agents.some((a) => a.tokens > 0) ? (
+                  <div className="cost-strip" aria-hidden="true">
+                    {s.agents.filter((a) => a.tokens > 0).map((a) => <i key={a.agentId} title={`${a.agentId}: ${pctLabel(a.share)}`} style={{ flexGrow: a.tokens, "--tint": agentColor(a.agentId) } as CSSProperties} />)}
+                  </div>
+                ) : null}
                 <div className="cost-cols" aria-hidden="true"><span>Agent</span><span /><span className="r">Tokens</span><span className="r">Share</span><span>Its own budget</span></div>
                 <ul className="cost-rows">
                   {s.agents.map((a) => (
-                    <li className="cost-row" key={a.agentId}>
+                    <li className="cost-row" key={a.agentId} style={{ "--tint": agentColor(a.agentId) } as CSSProperties}>
                       <span className="cost-name" title={a.agentId}>
+                        <AgentAvatar id={a.agentId} color={agentColor(a.agentId)} size="sm" />
                         <span className="cost-trunc">{a.agentId}</span>
                         <span className="cost-meta">{a.activations === 0 ? "has not taken a turn" : `ran ${a.activations} ${a.activations === 1 ? "time" : "times"} · ${fmt(a.perTurn)} per turn`}</span>
                       </span>
