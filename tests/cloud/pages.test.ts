@@ -364,7 +364,8 @@ test("what a finger has to hit is as tall as a button on a phone: the buttons, t
   assert.equal(value(".btn-small", "min-height", phone), "44px");
   assert.ok(rules.some((r) => r.selectors.includes(".btn") && r.at.includes(phone) && r.at.includes("(pointer: coarse)")), "a coarse pointer is a finger at any width");
   assert.equal(value(".bar nav a", "min-height", phone), "44px", "the header's links");
-  assert.equal(value('input[type="email"]', "min-height", phone), "44px", "a field");
+  assert.equal(value('input:not([type="checkbox"])', "min-height", phone), "44px", "a field: every input but the tick box, which is drawn small and ticked by hitting its sentence");
+  assert.equal(value('input:not([type="checkbox"])', "min-height"), "40px", "and is 40 tall for a pointer");
   assert.deepEqual([value(".reveal", "top"), value(".reveal", "bottom")], ["0", "0"], "Show and Hide span the whole height of the field, so they are as tall as it is");
   assert.equal(value(".site-footer a", "min-height"), "44px", "the footer's links are words with the reach of a button");
   assert.equal(value(".site-footer a", "min-width"), "44px");
@@ -372,6 +373,20 @@ test("what a finger has to hit is as tall as a button on a phone: the buttons, t
   assert.equal(value(".aside a", "padding"), "12px 2px", "a link in a line of its own has a hit area taller than its text");
   assert.equal(value(".aside a", "margin"), "-12px 0", "without moving the lines around it");
   assert.equal(value(".ws .ws-auto .check", "min-height"), "44px", "and so is the offer to open a workspace when it is ready");
+});
+
+test("a name a person typed cannot widen the page: the cards that show one break a word that has nowhere to break, and the header fits a small phone", () => {
+  const rules = cssRules(read(path.join(ASSETS, "app.css")));
+  const own = (selector: string, property: string, within = ""): string | undefined => {
+    const found = rules.filter((r) => r.selectors.includes(selector) && (within === "" ? r.at === "" : r.at.includes(within)) && declared(r, property) !== undefined);
+    return found.length > 0 ? declared(found[found.length - 1]!, property) : undefined;
+  };
+  // A workspace is named by its owner and nothing says where the name may break: without this a card is as wide as its name and the page scrolls sideways.
+  for (const selector of [".row", ".stage", ".confirm"]) assert.equal(own(selector, "overflow-wrap"), "anywhere", selector);
+  // The header's three links stay on one line, and on a phone as small as 320 px they and the mark are made smaller before anything is allowed to wrap or overflow.
+  assert.equal(own(".bar nav a", "white-space"), "nowrap", "a link is a word, not two");
+  assert.equal(own(".bar nav a", "padding", "max-width: 380px"), "0 8px");
+  assert.equal(own(".logo", "height", "max-width: 380px"), "20px");
 });
 
 test("the stylesheet is held to its budget, and whatever it moves it stills for a person who asked for stillness", () => {

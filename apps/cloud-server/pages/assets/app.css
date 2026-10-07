@@ -119,6 +119,7 @@ td,th,dd,.price,.num,.badge,.auth-points li::before{font-variant-numeric:tabular
 /* Cards: a hairline, a lit top edge, the first rung of shadow. */
 .card,.row,.plan,.stat,.how-card,.table-wrap,.panel-quiet details,.empty{border:1px solid var(--k-line);border-radius:var(--k-r-lg);background:var(--k-surface)}
 .card,.row,.plan,.how-card{box-shadow:var(--k-hl),var(--k-shadow-1)}
+.stage,.row,.confirm{overflow-wrap:anywhere}
 
 /* ---- header and footer */
 .site-header{position:sticky;top:0;z-index:40;border-bottom:1px solid var(--k-line);background:color-mix(in srgb,var(--k-bg) 90%,transparent);-webkit-backdrop-filter:saturate(1.4) blur(14px);backdrop-filter:saturate(1.4) blur(14px)}
@@ -128,7 +129,7 @@ td,th,dd,.price,.num,.badge,.auth-points li::before{font-variant-numeric:tabular
 .logo .ink{stroke:var(--k-ink)}
 .logo .seat{fill:var(--k-accent)}
 .bar nav{display:flex;align-items:center;gap:2px;margin-left:auto}
-.bar nav a,.bar nav button{display:inline-flex;align-items:center;min-height:36px;padding:0 12px;border:0;border-radius:var(--k-r-md);background:none;color:var(--k-muted);font:500 .9375rem/1.2 var(--k-font);text-decoration:none;cursor:pointer}
+.bar nav a,.bar nav button{display:inline-flex;align-items:center;white-space:nowrap;min-height:36px;padding:0 12px;border:0;border-radius:var(--k-r-md);background:none;color:var(--k-muted);font:500 .9375rem/1.2 var(--k-font);text-decoration:none;cursor:pointer}
 .bar nav a:hover,.bar nav button:hover{background:var(--k-surface-2);color:var(--k-ink)}
 .bar nav a[aria-current="page"]{background:var(--k-accent-soft);color:var(--k-accent-ink);font-weight:600}
 .site-footer{border-top:1px solid var(--k-line);color:var(--k-muted);font-size:.875rem}
@@ -163,7 +164,7 @@ td,th,dd,.price,.num,.badge,.auth-points li::before{font-variant-numeric:tabular
 .field{display:grid;gap:6px;margin-bottom:16px}
 .field label{font-size:.875rem;font-weight:600}
 .field .hint{color:var(--k-muted);font-size:.8125rem}
-input[type="email"],input[type="password"],input[type="text"],input[type="number"],select{width:100%;min-height:40px;padding:0 12px;border:1px solid var(--k-line-control);border-radius:var(--k-r-md);background:var(--k-surface);color:var(--k-ink);font:1rem/1.2 var(--k-font)}
+input:not([type="checkbox"]),select{width:100%;min-height:40px;padding:0 12px;border:1px solid var(--k-line-control);border-radius:var(--k-r-md);background:var(--k-surface);color:var(--k-ink);font:1rem/1.2 var(--k-font)}
 input[type="number"]{appearance:textfield}
 input[type="number"]::-webkit-inner-spin-button,input[type="number"]::-webkit-outer-spin-button{appearance:none;margin:0}
 ::placeholder{color:color-mix(in srgb,var(--k-muted) 75%,transparent);opacity:1}
@@ -435,7 +436,9 @@ tfoot > tr > *{background:var(--k-surface-2);font-weight:650}
 .subnav{position:static}
 .subnav a{min-height:44px}
 }
-@media (max-width: 720px),(pointer: coarse){.btn,.btn-small,.bar nav a,.bar nav button,input[type="email"],input[type="password"],input[type="text"],input[type="number"],select{min-height:44px}}
+@media (max-width: 720px),(pointer: coarse){.btn,.btn-small,.bar nav a,.bar nav button,input:not([type="checkbox"]),select{min-height:44px}}
+
+@media (max-width: 380px){.bar nav a,.bar nav button{padding:0 8px} .logo{height:20px}}
 
 /* ---- the system's own colours: a drawn tick box is the browser's again, and an icon keeps the colour of its text */
 @media (forced-colors: active){input[type="checkbox"]{appearance:auto} input[type="checkbox"]::after{display:none}}
