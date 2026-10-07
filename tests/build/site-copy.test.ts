@@ -464,3 +464,13 @@ test("the hero is one grid that the stylesheet places: the statement, the claims
   assert.equal((cta.match(/<p class="small muted mt-s"/g) ?? []).length, 2, "and what is said under each");
   assert.ok(!/class="actions"|class="proof"/.test(hero.slice(at('<div class="hero-visual">'))), "nothing of the statement is inside the picture's column");
 });
+
+test("each of the four reasons is a card of its own, a mark, a title and its words first, and a drawing of the idea after them", () => {
+  const home = page(pages, "index.html");
+  const why = /<section[^>]*\sid="why"[\s\S]*?\n<\/section>/.exec(home.html)![0];
+  assert.match(why, /<div class="grid bento">/);
+  const cards = [...why.matchAll(new RegExp(`<div class="card">${MARK}[\\s\\S]*?</svg><h3>([^<]+)</h3><p>[^<]+</p>\\s*<svg class="viz"`, "g"))].map((m) => m[1]);
+  assert.deepEqual(cards, ["Enforced, not asked", "Recorded and replayable", "Bounded", "Yours"], "the title is next to its mark, so that a card reads the same with or without the drawing");
+  const how = /<ol class="steps">[\s\S]*?<\/ol>/.exec(home.html)![0];
+  assert.deepEqual([...how.matchAll(/<li>\s*<svg class="viz"[\s\S]*?<\/svg>\s*<h3>([^<]+)<\/h3>/g)].map((m) => m[1]), ["Describe the team and the goal", "The agents work through contracts", "You steer and you audit"], "a drawing, then the step's title");
+});

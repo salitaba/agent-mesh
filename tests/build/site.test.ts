@@ -476,3 +476,20 @@ test("a segmented control has as many inputs as its thumb has steps: the tabs of
   assert.match(css, /\.tab-input:nth-of-type\(2\):checked ~ \.tabs::before, \.billing-input:nth-of-type\(2\):checked ~ \.billing::before \{ transform: translateX\(100%\); \}/);
   assert.match(css, /\.tab-input:nth-of-type\(3\):checked ~ \.tabs::before \{ transform: translateX\(200%\); \}/);
 });
+
+test("the drawings of an idea are decorative: hidden from a screen reader, with no words of their own and no style attribute, one for each reason and each step", () => {
+  let drawings = 0;
+  for (const p of pages) {
+    for (const m of p.markup.matchAll(/<svg\b([^>]*\bclass="viz"[^>]*)>([\s\S]*?)<\/svg>/g)) {
+      drawings++;
+      assert.match(m[1]!, /aria-hidden="true"/, `${p.rel}: a drawing is hidden from a screen reader (the words beside it say it)`);
+      assert.match(m[1]!, /focusable="false"/, `${p.rel}: and cannot be tabbed to`);
+      assert.match(m[1]!, /viewBox="0 0 \d+ \d+"/, `${p.rel}: it keeps its proportions while the picture it is in is sized by the stylesheet`);
+      assert.ok(!/<(text|title|desc)\b|\sstyle=/.test(m[0]), `${p.rel}: no words and no style attribute in a drawing`);
+    }
+  }
+  assert.equal(drawings, 7, "the four reasons and the three steps");
+  const home = page(pages, "index.html").markup;
+  assert.equal((/<div class="grid bento">[\s\S]*?<\/section>/.exec(home)![0].match(/<svg class="viz"/g) ?? []).length, 4);
+  assert.equal((/<ol class="steps">[\s\S]*?<\/ol>/.exec(home)![0].match(/<svg class="viz"/g) ?? []).length, 3);
+});
