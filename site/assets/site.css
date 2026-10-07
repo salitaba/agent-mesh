@@ -1,6 +1,6 @@
-/* The site's one stylesheet, on the UI kit (generated block below). The brand's colours come first, under the names the pages have always
-   used (a test compares them): --bg --panel --ink --muted --line --accent are the kit's --k-bg --k-surface --k-ink --k-muted --k-line
-   --k-accent, written short; --accent-ink is text on blue (the kit's --k-on-accent). System fonts; the visitor's scheme is the only switch. */
+/* The site's stylesheet, on the UI kit (generated block below). The brand colours come first, under the names the pages have always
+   used (a test compares them): --bg --panel --ink --muted --line --accent are --k-bg --k-surface --k-ink --k-muted --k-line --k-accent,
+   written short; --accent-ink is --k-on-accent. System fonts; the visitor's scheme is the only switch. */
 :root {
   color-scheme: light dark;
   --bg: #fbfaf8; --panel: #ffffff; --ink: #1c1b1a; --muted: #5d5a55; --line: #e4e0d9;
@@ -103,7 +103,7 @@
   --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   --c2: repeat(2, minmax(0, 1fr)); --c3: repeat(3, minmax(0, 1fr)); --c4: repeat(4, minmax(0, 1fr));
   --max: 1120px; --gutter: clamp(16px, 4vw, 32px); --section: clamp(64px, 9vw, 120px);
-  /* The header (68 and its line) and the On this page bar (a 44 chip, 8 around it, its line): a followed heading lands below both. */
+  /* Header: 68 and its line. On this page bar: a 44 chip, 8 around it, its line. A followed heading lands below both. */
   --head-h: 69px; --toc-h: 61px;
   /* Grounds the kit has no role for: the alternate band and the deep closing band. */
   --lift: var(--k-hl), var(--k-shadow-1); --link: var(--k-accent-ink); --soft: var(--k-accent-soft); --ink2: var(--k-ink-2); --panel2: var(--k-surface-2); --line2: var(--k-line-strong);
@@ -139,11 +139,11 @@ code { font-family: var(--mono); font-size: .875em; }
 b, strong { font-weight: 650; }
 .muted { color: var(--muted); }
 .small { font-size: .875rem; }
-/* Said once: a small label in capitals, a quiet paragraph, a list that is only a layout, a one-column grid. */
+/* Said once: small capitals, a quiet paragraph, a list that is only layout, a one-column grid. */
 .eyebrow, .way-kind, .way dt, .code::before, .foot-col h2, .group, .contact h4, .compare thead th { font-size: .75rem; font-weight: 600; letter-spacing: var(--k-track-caps); text-transform: uppercase; }
 .card p, .steps p, .try p, .tile p, .doc-card > p, .start p, .plan-tag, .rows span, .address-row span, .glance-list p, .split > header p { color: var(--muted); font-size: .9375rem; }
 .proof, .tiles, .try, .starts, .doc-list, .rows, .plain, .tick, .plan-includes, .nf-list, .addresses, .teaser, .glance-list, .toc, .steps, .foot-col ul { margin: 0; padding: 0; list-style: none; }
-.grid, .ways, .steps, .tiles, .try, .starts, .doc-grid, .plans, .nf-list, .glance-list, .cols, .teaser, .hero-grid, .address-row, .split, .calc { display: grid; grid-template-columns: minmax(0, 1fr); }
+.grid, .ways, .steps, .tiles, .try, .starts, .doc-grid, .plans, .nf-list, .glance-list, .cols, .teaser, .hero-grid, .address-row, .split, .calc, .proof { display: grid; grid-template-columns: minmax(0, 1fr); }
 
 /* layout */
 .wrap { width: min(100% - 2 * var(--gutter), var(--max)); margin-inline: auto; }
@@ -155,7 +155,7 @@ b, strong { font-weight: 650; }
 .section-head { max-width: 46rem; margin-bottom: clamp(32px, 5vw, 56px); }
 .section-head .title { margin-bottom: 16px; }
 .eyebrow { display: flex; align-items: center; margin: 0 0 16px; color: var(--link); }
-/* The home page is a sequence: its sections are numbered like the entries of a ledger. */
+/* The home page's sections are numbered like ledger entries. */
 main { counter-reset: sec; }
 main:has(.hero) .section-head .eyebrow::before { counter-increment: sec; content: counter(sec, decimal-leading-zero); margin-right: 12px; padding-right: 12px; border-right: 1px solid var(--line2); color: var(--muted); font-variant-numeric: tabular-nums; }
 .lede { max-width: 40rem; color: var(--ink2); font-size: clamp(1.0625rem, .98rem + .4vw, 1.25rem); line-height: 1.55; }
@@ -164,12 +164,12 @@ main:has(.hero) .section-head .eyebrow::before { counter-increment: sec; content
 .cols > .section-head { margin-bottom: 0; }
 @media (min-width: 900px) { .cols { grid-template-columns: var(--c2); align-items: start; } }
 
-/* header: part of the page at rest (the hero's glow runs behind it), a line and a blur once the page has moved; the script pins it (.is-live) */
+/* header: at rest part of the page (the hero's glow runs behind it); a line and a blur once it has moved; the script pins it (.is-live) */
 .site-header { position: relative; z-index: 40; border-bottom: 1px solid transparent; }
 .site-header.is-live { position: sticky; top: 0; }
 .site-header.is-scrolled { border-bottom-color: var(--line); background: var(--bg); }
 @supports (backdrop-filter: blur(1px)) and (background: color-mix(in srgb, red 50%, blue)) {
-  .site-header.is-scrolled, .toc-bar { background: color-mix(in srgb, var(--bg) 78%, transparent); -webkit-backdrop-filter: saturate(1.4) blur(16px); backdrop-filter: saturate(1.4) blur(16px); }
+  .site-header.is-scrolled, .toc-bar { background: color-mix(in srgb, var(--bg) 78%, transparent); backdrop-filter: saturate(1.4) blur(16px); }
 }
 .bar { display: flex; align-items: center; gap: 12px; min-height: 68px; }
 .brand { display: inline-flex; align-items: center; min-height: 44px; border-radius: var(--k-r-sm); color: var(--ink); text-decoration: none; }
@@ -195,7 +195,7 @@ main:has(.hero) .section-head .eyebrow::before { counter-increment: sec; content
 @media (min-width: 860px) { .nav-main { display: flex; } .menu { display: none; } }
 @media (max-width: 859px) { .signin { padding: 0 6px; } }
 @media (max-width: 420px) { .bar .btn { padding-inline: 14px; white-space: nowrap; } .bar-actions { gap: 4px; } .logo { height: 24px; } }
-/* The narrowest phones: the menu is its icon, and still says "Menu". */
+/* Narrowest phones: the menu is its icon, and still says "Menu". */
 @media (max-width: 359px) { .menu summary { width: 44px; padding: 0; justify-content: center; } .menu-label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); clip-path: inset(50%); } .bar .btn { padding-inline: 12px; } }
 
 /* buttons and links */
@@ -213,7 +213,7 @@ main:has(.hero) .section-head .eyebrow::before { counter-increment: sec; content
 .arrow-link:hover::after { transform: translateX(3px); }
 .btn-row { display: flex; flex-wrap: wrap; gap: 12px; }
 
-/* hero: the statement, the product under it, the claims under the picture; one column on a phone, in the order the page is written */
+/* hero: the statement, the product, the claims under the picture; one column on a phone, in written order */
 .hero { position: relative; isolation: isolate; padding: clamp(24px, 4vw, 48px) 0 clamp(40px, 6vw, 80px); }
 .hero::before, .hero::after { content: ""; position: absolute; top: calc(-1 * var(--head-h)); left: 0; right: 0; z-index: -1; pointer-events: none; }
 .hero::after { height: 720px; background: var(--k-glow); }
@@ -225,7 +225,7 @@ main:has(.hero) .section-head .eyebrow::before { counter-increment: sec; content
 .hero .lede { margin-top: 24px; }
 .hero-cta { margin-top: 28px; }
 .actions { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 20px; }
-.proof { --s: 20px; margin-top: 32px; }
+.proof { --s: 20px; --y: 12px; margin-top: 32px; }
 .proof li { padding-block: 12px; border-top: 1px solid var(--line); color: var(--ink2); font-weight: 500; }
 .hero-visual { margin-top: 36px; }
 @media (min-width: 1040px) {
@@ -251,7 +251,7 @@ main:has(.hero) .section-head .eyebrow::before { counter-increment: sec; content
 .tab-input:nth-of-type(1):checked ~ .frame .pane:nth-of-type(1),
 .tab-input:nth-of-type(2):checked ~ .frame .pane:nth-of-type(2),
 .tab-input:nth-of-type(3):checked ~ .frame .pane:nth-of-type(3) { display: block; }
-/* A segmented control: a trough and a thumb that slides to the chosen label, from radio inputs and sibling selectors. */
+/* A segmented control: a trough, and a thumb that slides to the chosen radio's label. */
 .tabs, .billing { --n: 3; position: relative; display: inline-grid; grid-auto-flow: column; grid-auto-columns: 1fr; max-width: 100%; margin-bottom: 16px; padding: 3px; border-radius: var(--k-r-md); background: var(--k-sunken); box-shadow: inset 0 0 0 1px var(--line); }
 .billing { --n: 2; margin-bottom: 24px; }
 .tabs::before, .billing::before { content: ""; position: absolute; top: 3px; bottom: 3px; left: 3px; width: calc((100% - 6px) / var(--n)); border-radius: var(--k-r-sm); background: var(--panel); box-shadow: var(--lift), 0 0 0 1px var(--line2); }
@@ -265,20 +265,20 @@ main:has(.hero) .section-head .eyebrow::before { counter-increment: sec; content
 
 /* surfaces: one card, the first rung */
 .card, .way, .plan, .doc-card, .start, .glance, .result, .tile, .teaser, .addresses, .nf-list a { border: 1px solid var(--line); border-radius: var(--k-r-lg); background: var(--panel); box-shadow: var(--lift); }
-/* A card a link pointed at says so inside its border, so that it does not move. */
+/* A card a link points at says so inside its border: it does not move. */
 .card:target, .doc-card:target, .plan:target { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
 .card { display: flex; flex-direction: column; padding: 24px; }
 .card h3 { margin: 16px 0 8px; }
 .grid { gap: 16px; }
 @media (min-width: 900px) { .grid-3 { grid-template-columns: var(--c3); } }
-/* An icon is drawn on 24 units and shown at 20 on a 1.5 px line; in a card it sits on a tile of its tone. */
+/* Icons: drawn on 24 units, shown at 20 on a 1.5 px line; in a card, on a tile of their tone. */
 .mark { flex: none; width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 .mark-ok { --tone: var(--k-ok); }
 .mark-out { --tone: var(--link); }
 .mark-no { --tone: var(--k-warn); }
 .card > .mark, .glance-list .mark, .way-kind .mark { width: 40px; height: 40px; padding: 10px; border-radius: var(--k-r-md); background: color-mix(in srgb, var(--tone, var(--accent)) 12%, transparent); color: var(--tone, var(--link)); }
 
-/* why it is not a group chat: one wide reason, then three, each with a drawing of its idea */
+/* why it is not a group chat: one wide reason, then three, each drawn */
 .bento .card { padding: 28px; }
 .viz { display: block; width: 100%; max-width: 440px; height: auto; margin: auto auto 0; padding-top: 28px; fill: none; stroke: var(--viz); stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
 .viz .a { stroke: var(--accent); }
@@ -296,7 +296,7 @@ main:has(.hero) .section-head .eyebrow::before { counter-increment: sec; content
   .bento > :first-child .viz { grid-column: 2; grid-row: 1 / span 3; align-self: center; padding: 0; }
 }
 
-/* two ways in: the one we run has a tinted head and the action that leads; each action stays at the foot of its card */
+/* two ways in: the one we run has a tinted head and the leading action; actions stay at the foot */
 .hero + .section { padding-top: clamp(8px, 2vw, 32px); }
 .page-head + .section, .toc-bar + .section { padding-top: clamp(32px, 4vw, 48px); }
 .ways { gap: 16px; }
@@ -311,10 +311,10 @@ main:has(.hero) .section-head .eyebrow::before { counter-increment: sec; content
 .way dt .mark { width: 16px; height: 16px; }
 .way dd { margin: 6px 0 0; font-size: .9375rem; }
 .way > .way-action { margin: auto 28px 28px; }
-/* With one of the two hidden, the other takes the width and its two answers sit side by side. */
+/* With one of the two hidden, the other takes the width; its two answers sit side by side. */
 @media (min-width: 760px) { .ways:has(> .way[hidden]) { grid-template-columns: minmax(0, 1fr); } .ways:has(> .way[hidden]) dl { grid-template-columns: var(--c2); gap: 32px; } }
 
-/* how a mission goes: three steps on one rail (down the left on a phone, across on a desktop) */
+/* a mission in three steps on one rail (down the left on a phone, across on a desktop) */
 .steps { gap: 40px; counter-reset: step; }
 .steps li { position: relative; counter-increment: step; padding-left: 56px; }
 .steps li::before, .try > li::before { display: grid; place-items: center; border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent); border-radius: 50%; background: var(--soft); color: var(--link); font-weight: 650; font-variant-numeric: tabular-nums; }
@@ -329,7 +329,7 @@ main:has(.hero) .section-head .eyebrow::before { counter-increment: sec; content
   .steps li::after { left: 40px; right: -24px; top: 15.5px; bottom: auto; width: auto; height: 1px; }
 }
 
-/* what you see: every view in a frame of one size, so that a retaken picture of that size drops in */
+/* what you see: every view in a frame of one size, so a retaken picture drops in */
 .tiles { gap: 20px; }
 @media (min-width: 720px) { .tiles { grid-template-columns: var(--c2); gap: 24px; } }
 .tile { padding: 10px 10px 24px; }
@@ -341,7 +341,7 @@ main:has(.hero) .section-head .eyebrow::before { counter-increment: sec; content
 /* code, and the steps of the demo */
 .code { position: relative; margin: 14px 0; padding-top: 48px; overflow: hidden; border: 1px solid var(--line); border-radius: var(--k-r-md); background: var(--code); }
 .code::before { content: "Terminal"; position: absolute; top: 0; left: 0; right: 0; display: flex; align-items: center; height: 48px; padding: 0 16px; border-bottom: 1px solid var(--line); background: var(--panel2); color: var(--muted); }
-/* A line past the box shows a shadow at its edge until scrolled to its end: the cover scrolls with the text, the shadow stays with the box. */
+/* A long line shows a shadow at the edge until scrolled to its end: the cover scrolls with the text, the shadow stays. */
 .code pre { margin: 0; padding: 14px 18px 16px; overflow-x: auto; font: .8125rem/1.6 var(--mono); tab-size: 2; background: linear-gradient(to left, var(--code) 30%, transparent) right / 48px 100% no-repeat local, linear-gradient(to left, var(--edge), transparent) right / 12px 100% no-repeat scroll; }
 .code-bar { position: absolute; top: 0; right: 6px; z-index: 1; display: flex; align-items: center; height: 48px; }
 .copy { min-height: 36px; padding: 0 12px; border-radius: var(--k-r-sm); color: var(--ink2); font: 600 .8125rem/1 var(--font); }
@@ -357,7 +357,7 @@ main:has(.hero) .section-head .eyebrow::before { counter-increment: sec; content
 .try > li:last-child::after { display: none; }
 .try h3 { margin-bottom: 6px; }
 
-/* notices and tags: a ring with a dot over a bar, in the notice's own colour; the tint, the edge and the bold words say it again */
+/* notices and tags: a ring, a dot and a bar in the notice's colour; the tint, the edge and the bold words say it again */
 .notice { --i: var(--k-warn); position: relative; margin: 0; padding: 14px 16px 14px 48px; border: 1px solid color-mix(in srgb, var(--i) 30%, transparent); border-radius: var(--k-r-md); background: color-mix(in srgb, var(--i) 8%, var(--panel)); font-size: .9375rem; }
 .notice.neutral { --i: var(--link); }
 .notice::before { content: ""; position: absolute; left: 16px; top: 15px; width: 20px; height: 20px; border: 1.5px solid var(--i); border-radius: 50%; background: radial-gradient(circle at 50% 28%, var(--i) 1.4px, transparent 1.7px), linear-gradient(var(--i), var(--i)) 50% 72% / 1.5px 7px no-repeat; }
@@ -412,7 +412,7 @@ main:has(.hero) .section-head .eyebrow::before { counter-increment: sec; content
 .prose h3:first-child { margin-top: 0; }
 .prose ul, .prose ol { margin: 0 0 1em; padding-left: 1.25em; }
 .prose li { margin-bottom: .45em; }
-/* On this page: one row of chips (plain links without the script); the script pins it and marks the section being read. One row at every width, so it is as tall pinned as at rest. */
+/* On this page: one row of chips (plain links without the script); the script pins it and marks the section being read. One row at every width: as tall pinned as at rest. */
 .page-head.has-toc { padding-bottom: 20px; border-bottom: 0; }
 .toc-bar { border-bottom: 1px solid var(--line); background: var(--bg); }
 .toc-bar.is-live { position: sticky; top: var(--head-h); z-index: 30; }
@@ -421,10 +421,10 @@ main:has(.hero) .section-head .eyebrow::before { counter-increment: sec; content
 .toc li { flex: none; }
 .toc a { min-height: 44px; padding: 0 16px; border-radius: var(--k-r-pill); color: var(--ink2); font-size: .875rem; white-space: nowrap; text-decoration: none; }
 .toc a:hover { border-color: var(--k-line-control); color: var(--ink); }
-/* The section being read: a dot before its name (not colour alone); the padding moves for it, so the row does not shift. */
+/* The section being read: a dot before its name (not colour alone), paid for in padding so the row does not shift. */
 .toc a[aria-current="true"] { position: relative; padding: 0 10px 0 22px; border-color: color-mix(in srgb, var(--accent) 40%, transparent); background: var(--soft); color: var(--link); }
 .toc a[aria-current="true"]::before { content: ""; position: absolute; left: 10px; top: 50%; width: 6px; height: 6px; margin-top: -3px; border-radius: 50%; background: currentColor; }
-/* At a glance: each answer on a tile whose shape says its kind (a shield, an arrow out of a box, a barred circle), with a link to its section. */
+/* At a glance: each answer on a tile whose shape says its kind (shield, arrow out of a box, barred circle), linked to its section. */
 .glance { margin-top: clamp(32px, 4vw, 48px); padding: 24px; }
 .glance-list { gap: 20px; }
 .glance-list li { display: grid; grid-template-columns: 40px minmax(0, 1fr); align-content: start; gap: 2px 16px; }
@@ -453,16 +453,16 @@ main:has(.hero) .section-head .eyebrow::before { counter-increment: sec; content
 .plain { counter-reset: plain; }
 .plain li { position: relative; counter-increment: plain; padding: 14px 0 14px 44px; border-bottom: 1px solid var(--line); }
 .plain li::before { content: counter(plain, decimal-leading-zero); position: absolute; left: 0; top: 14px; color: var(--link); font: 650 .8125rem/1.9 var(--font); font-variant-numeric: tabular-nums; }
-/* A drawn check, a tinted disc and a stroke, so that what is included is not a list of bullets. */
+/* A drawn check, a tinted disc and a stroke, not a bullet. */
 .tick, .plan-includes { margin-bottom: 16px; font-size: .9375rem; }
 .tick li, .plan-includes li { margin-bottom: 8px; }
 .tick li { color: var(--muted); }
 .proof li, .tick li, .plan-includes li { position: relative; padding-left: calc(var(--s, 16px) + 10px); }
-.proof li::before, .tick li::before, .plan-includes li::before { content: ""; position: absolute; left: 0; top: .26em; width: var(--s, 16px); height: var(--s, 16px); border-radius: 50%; background: var(--soft); }
-.proof li::after, .tick li::after, .plan-includes li::after { content: ""; position: absolute; left: calc(var(--s, 16px) * .3); top: calc(.26em + var(--s, 16px) * .27); width: calc(var(--s, 16px) * .42); height: calc(var(--s, 16px) * .25); border-left: 1.5px solid var(--link); border-bottom: 1.5px solid var(--link); transform: rotate(-45deg); }
+.proof li::before, .tick li::before, .plan-includes li::before { content: ""; position: absolute; left: 0; top: calc(var(--y, 0px) + .26em); width: var(--s, 16px); height: var(--s, 16px); border-radius: 50%; background: var(--soft); }
+.proof li::after, .tick li::after, .plan-includes li::after { content: ""; position: absolute; left: calc(var(--s, 16px) * .3); top: calc(var(--y, 0px) + .26em + var(--s, 16px) * .27); width: calc(var(--s, 16px) * .42); height: calc(var(--s, 16px) * .25); border-left: 1.5px solid var(--link); border-bottom: 1.5px solid var(--link); transform: rotate(-45deg); }
 .contact h3 { margin-bottom: 8px; font-size: 1.5rem; line-height: 1.2; }
 .contact h4 { margin: 20px 0 8px; color: var(--muted); }
-/* Which address, for what: a ruled row each; a link that points at a row marks it with a bar at its edge, not by colour alone. */
+/* Which address, for what: a ruled row each; a row a link points at gets a bar at its edge, not colour alone. */
 .addresses { overflow: hidden; }
 .address-row { gap: 6px 24px; padding: 20px 24px; border-bottom: 1px solid var(--line); }
 .address-row:last-child { border-bottom: 0; }
@@ -515,7 +515,7 @@ main:has(.hero) .section-head .eyebrow::before { counter-increment: sec; content
 .compare th, .compare td { padding: 14px 18px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
 .compare thead th { background: var(--panel2); color: var(--ink); }
 .compare tbody th { position: sticky; left: 0; z-index: 1; width: 24%; background: var(--panel); color: var(--ink2); font-weight: 500; }
-/* On a phone the table scrolls under its first column, and a line marks where the columns go under it. */
+/* On a phone the table scrolls under its first column, and a line marks where. */
 .compare thead th:first-child { position: sticky; left: 0; z-index: 2; }
 @media (max-width: 799px) { .compare tbody th, .compare thead th:first-child { box-shadow: inset -1px 0 0 var(--line); } }
 .compare tbody tr:last-child th, .compare tbody tr:last-child td { border-bottom: 0; }
@@ -559,7 +559,7 @@ main:has(.hero) .section-head .eyebrow::before { counter-increment: sec; content
 @media (min-width: 1040px) { .doc-grid { grid-template-columns: var(--c3); } }
 .doc-card, .start { display: flex; flex-direction: column; gap: 6px; padding: 24px; }
 .doc-card h2, .doc-card h3, .start h3 { font-size: 1.1875rem; line-height: 1.3; }
-/* Start here: four cards, or three while the one for Curule Cloud is not there. */
+/* Start here: four cards, or three without Curule Cloud. */
 @media (min-width: 600px) { .starts { grid-template-columns: var(--c2); } }
 @media (min-width: 1160px) { .starts { grid-template-columns: var(--c4); } .starts:has(> .start[hidden]) { grid-template-columns: var(--c3); } }
 .start-doc { margin: 0; }
@@ -605,7 +605,7 @@ main:has(.hero) .section-head .eyebrow::before { counter-increment: sec; content
   .arrow-link::after, .nf-list a::after, .faq summary::after { transition: transform var(--k-dur-1) var(--k-ease), border-color var(--k-dur-1); }
   .tabs::before, .billing::before { transition: transform var(--k-dur-2) var(--k-ease); }
   .site-header { transition: background-color var(--k-dur-2), border-color var(--k-dur-2); }
-  /* What arrives as the reader gets to it: the script adds .rv below the first screen, and .rv-in in view. */
+  /* Arrival: the script adds .rv below the first screen and .rv-in when it is in view. */
   .rv { opacity: 0; transform: translateY(8px); transition: opacity var(--k-dur-3) var(--k-ease), transform var(--k-dur-3) var(--k-ease); }
   .rv.rv-in { opacity: 1; transform: none; }
   .rv-1 { transition-delay: 50ms; }
