@@ -4,7 +4,7 @@ import { ago, dur, fmt, hhmmss, outcomeOf, opsSummary, pillCls, plural, produced
 import { buildLedger, ledgerTally, msgKind, msgSnippet, opHead, producedFromTimeline, recordNotices, splitSummary } from "./ledger";
 import { planLabel, planStale } from "./plan";
 import { useMesh, useMeshStreams, type TimelineEvent, type TurnStep } from "./store";
-import { StatusPill, LifecyclePill, StepMini, OutcomePill, isTopTrap, rowKey, AgentAvatar, Banner, Button, Chip, ErrorState, Input, Pill, Select, TabPanel, Tabs, TextArea, ZoneNote, agentColor, type ConfirmFn } from "./components";
+import { StatusPill, LifecyclePill, StepMini, OutcomePill, isTopTrap, rowKey, AgentAvatar, Banner, Button, Chip, DrawerHead, ErrorState, Input, Pill, Select, TabPanel, Tabs, TextArea, ZoneNote, agentColor, type ConfirmFn } from "./components";
 import { Icon } from "./icons";
 import { messageTypeLabel, recipientsOf, toggleRecipient } from "./message-form";
 import { actionNote, controlsHint, controlsOf, memoryKey, pauseWarning, unstartedText } from "./agents";
@@ -23,21 +23,30 @@ import { escalationWhat, plainCode, verdictDone, verdictSubject } from "./eventm
 /** The most steps `/steps` will return (the server clamps `limit` to it). */
 const STEPS_MAX = 200;
 
-export function CloseX({ extra }: { extra?: string } = {}): React.JSX.Element {
+/** What the × does. A deep-linked step or agent lives in `detail`, not in the drawer stack, so popping the stack was a no-op and the
+ *  × did nothing on exactly the URLs people share. Mirror the shell's own Esc/scrim handler: pop a stacked panel if there is one,
+ *  otherwise close the URL-backed detail. */
+function useCloseHandler(): () => void {
   const { closeDrawer, closeDetail, drawerDepth } = useMesh();
-  // A deep-linked step or agent lives in `detail`, not in the drawer stack, so
-  // popping the stack was a no-op and the × did nothing on exactly the URLs
-  // people share. Mirror the shell's own Esc/scrim handler: pop a stacked
-  // panel if there is one, otherwise close the URL-backed detail.
-  const close = (): void => {
+  return (): void => {
     if (drawerDepth > 0) closeDrawer();
     else closeDetail();
   };
+}
+
+export function CloseX({ extra }: { extra?: string } = {}): React.JSX.Element {
+  const close = useCloseHandler();
   return (
     <button type="button" className={`close-x${extra ? ` ${extra}` : ""}`} aria-label="Close panel" title="Close (Esc)" onClick={close}>
       <Icon name="x" size={16} />
     </button>
   );
+}
+
+/** The title row of a panel: its name, the close button, a hairline under it, and it stays put while the body scrolls. The close
+ *  button is beside the heading and not inside it, so it is not read as part of the panel's name. */
+export function DrawerHeader({ children }: { children: React.ReactNode }): React.JSX.Element {
+  return <DrawerHead onClose={useCloseHandler()}>{children}</DrawerHead>;
 }
 
 /**
@@ -138,7 +147,7 @@ export function MessageDrawer(): React.JSX.Element {
   };
   return (
     <>
-      <h2 id="drawer-title">Message an agent <CloseX /></h2>
+      <DrawerHeader>Message an agent</DrawerHeader>
       <p className="muted" style={{ marginTop: 0 }}>
         You write as the human, the one seat every agent listens to.{parked ? " The project is parked and nothing runs on its own, so a message waits until the agent is run." : ""}
       </p>
@@ -226,7 +235,7 @@ export function ApprovalDrawer(): React.JSX.Element {
   };
   return (
     <>
-      <h2 id="drawer-title">Approve or reject <CloseX /></h2>
+      <DrawerHeader>Approve or reject</DrawerHeader>
       <p className="muted" style={{ marginTop: 0 }}>Record a decision that a gate may be waiting for, such as approving the release. It goes in the log.</p>
       <form className="stack" onSubmit={submit}>
         <div className="field"><label htmlFor="appr-kind">Decision</label><Select id="appr-kind" value={kind} onChange={(e) => setKind(e.target.value)}><option value="approve">Approve</option><option value="reject">Reject</option><option value="accept">Accept</option></Select></div>
@@ -317,7 +326,7 @@ export function AgentDrawer({ id }: { id: string }): React.JSX.Element {
     const unreachable = json.error === "unreachable";
     return (
       <>
-        <h2 id="drawer-title">{(id)}<CloseX /></h2>
+        <DrawerHeader>{id}</DrawerHeader>
         <ErrorState
           what={`agent ${id}`}
           detail={unreachable ? "the mesh server did not answer. The agent may still be running." : String(json.error)}
@@ -393,9 +402,10 @@ export function AgentDrawer({ id }: { id: string }): React.JSX.Element {
   const escState = (s: unknown): string => (s === "OPEN" ? "waiting on you" : s === "RESPONDED" ? "answered" : s === "AUTO_RESOLVED" ? "settled itself" : plainCode(s));
   return (
     <>
-      <h2 id="drawer-title"><AgentAvatar id={id} color="var(--accent)" />{(id)}
+      <DrawerHeader>
+        <AgentAvatar id={id} color="var(--accent)" />{id}
         <span className={`pill ${pillCls(s.lifecycle)}${RUNNING.has(s.lifecycle) ? " running-pulse" : ""}`}>{(plainLifecycle(s.lifecycle, setting))}</span>
-        <CloseX /></h2>
+      </DrawerHeader>
       <p className="muted" style={{ margin: "4px 0" }}>{(d.role)} · active {(ago(s.lastActivityAt))}</p>
 
       <div className="agent-vitals">

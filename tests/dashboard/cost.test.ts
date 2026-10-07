@@ -80,13 +80,14 @@ test("a budget meter is one colour rule: amber from 80%, red from 95%, red whene
 });
 
 test("the top bar and this page use the same thresholds", () => {
-  // shell.tsx is not DOM-free, so the numbers are compared by reading it: if the bar moves its line, this fails.
+  // shell.tsx is not DOM-free, so it is read: the bar's meter takes its tone from budgetTone, not from numbers of its own, so the two
+  // cannot drift apart. (They were two copies of 0.8 and 0.95, and this test compared them by pattern.)
   const shell = fs.readFileSync(path.join(path.resolve(__dirname, "..", "..", ".."), "apps", "mesh-dashboard", "src", "shell.tsx"), "utf8");
-  // The bar tests the higher line first (`spentRatio >= 0.95 ? bad : spentRatio >= 0.8 ? warn`), so the two numbers come in that order.
-  const m = /spentRatio >= ([0-9.]+)[^;]*?spentRatio >= ([0-9.]+)/.exec(shell);
-  assert.ok(m, "the top bar's meter rule is where this test expects it");
-  assert.equal(Number(m![1]), BAD_AT);
-  assert.equal(Number(m![2]), WARN_AT);
+  assert.match(shell, /import \{ budgetTone \} from "\.\/cost";/, "the bar imports the reading the Cost page uses");
+  assert.match(shell, /const spentTone = budgetTone\(spentRatio\);/, "and applies it to the spend");
+  assert.doesNotMatch(shell, /spentRatio >= [0-9.]+/, "with no threshold of its own");
+  assert.equal(budgetTone(BAD_AT), "bad");
+  assert.equal(budgetTone(WARN_AT), "warn");
 });
 
 test("a percentage never rounds a real spend down to nothing or a budget that is not spent up to a hundred", () => {

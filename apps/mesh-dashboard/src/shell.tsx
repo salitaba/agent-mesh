@@ -1,18 +1,20 @@
 import { useEffect } from "react";
-import { createContext, useCallback, useContext, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { createContext, useCallback, useContext, useMemo, useRef, useState } from "react";
 import { fmt, mandatoryProgress, plural } from "./format";
 import { useMesh, type View } from "./store";
 import { CloseX, MessageDrawer, ApprovalDrawer, StepDrawer, AgentDrawer } from "./drawers";
 // The shell keeps its own stack-aware trap (drawer over drawer), but it must
 // agree with every other dialog about what "focusable" means.
-import { Banner, Button, EmptyState, IconButton, Menu, Wordmark, focusables, isTopTrap, pushTrap, type MenuItem } from "./components";
+import { Banner, Button, EmptyState, IconButton, Kbd, Menu, ToastCard, Wordmark, focusables, isTopTrap, pushTrap, type MenuItem } from "./components";
 import { Icon, type IconName } from "./icons";
 import { barActionIsHere, documentTitle, type MissionAction } from "./mission";
 import { useMission } from "./useMission";
 import { useMissionActions } from "./useMissionActions";
 import { useToolRequests } from "./inbox";
-import { list, register, setPendingAgent, unregister, getVersion, subscribe, type Command } from "./commands";
-import { paletteMatches, pointerMoved } from "./palette";
+import { register, setPendingAgent, unregister, type Command } from "./commands";
+import { CommandPalette } from "./commandpalette";
+import { budgetTone } from "./cost";
+import { ratioOf } from "./ui/chart-model";
 import { ViewLoading } from "./viewboundary";
 import { HostEmptyState, ProjectTabs } from "./tabs";
 import { useProjectsOptional } from "./projects";
@@ -158,83 +160,21 @@ function ProjectStarting({ name }: { name: string | null }): React.JSX.Element {
   );
 }
 
-/** ⌘K/Ctrl+K palette. Lists whatever `commands.ts` holds right now, so the
- *  Designer's commands appear only while it is mounted. The input keeps the
- *  focus (Tab is trapped) and the shell owns Escape for everything that routes
- *  through handleKey, so one dispatch order closes palette → focus → panel.
- *  The exception is any overlay built on useDismissable (the Designer's checks
- *  popover): it listens on document in the CAPTURE phase and stops Escape
- *  before the shell's window listener sees it. That is deliberate — the
- *  innermost open layer should claim the key. */
-function CommandPalette({ onClose }: { onClose: () => void }): React.JSX.Element {
-  const [q, setQ] = useState("");
-  const [sel, setSel] = useState(0);
-  const inputRef = useRef<HTMLInputElement | null>(null);
-  // Re-list when a scope registers/unregisters: a view can unmount while the
-  // palette is open (browser Back), and its commands must vanish with it.
-  // Re-render on every registry change; `list()` is a cheap pure read of the
-  // module registry, so the snapshot is taken directly at render time.
-  useSyncExternalStore(subscribe, getVersion);
-  const matches = paletteMatches(list(), q);
-  const active = Math.min(sel, Math.max(0, matches.length - 1));
-  const activeId = matches[active]?.id;
-  // Where the mouse was last seen over the list: a row takes the selection only when the mouse has moved (palette.ts).
-  const pointer = useRef<{ x: number; y: number } | null>(null);
-  const choose = (c: Command | undefined): void => {
-    if (!c) return;
-    onClose();
-    c.run();
-  };
-  useEffect(() => {
-    inputRef.current?.focus();
-  }, []);
-  // Keyed on the selection and the query, not the list: the registry is rebuilt on every status poll, and scrolling on each one
-  // pulled a list the person had scrolled with the wheel back to the selected row every few seconds.
-  useEffect(() => {
-    if (activeId) document.getElementById(`palette-opt-${activeId}`)?.scrollIntoView({ block: "nearest" });
-  }, [activeId, q]);
-  const onKey = (e: React.KeyboardEvent<HTMLInputElement>): void => {
-    if (e.key === "ArrowDown") {
-      e.preventDefault();
-      setSel((s) => Math.min(s + 1, matches.length - 1));
-    } else if (e.key === "ArrowUp") {
-      e.preventDefault();
-      setSel((s) => Math.max(s - 1, 0));
-    } else if (e.key === "Tab") {
-      e.preventDefault();
-    } else if (e.key === "Enter") {
-      e.preventDefault();
-      choose(matches[active]);
-    }
-  };
-  return (
-    <div className="palette" role="dialog" aria-modal="true" aria-label="Command palette"
-      onMouseDown={(e) => { if (!(e.target instanceof HTMLInputElement)) e.preventDefault(); }}>
-      <input ref={inputRef} className="palette-input" role="combobox" aria-label="Search commands" aria-autocomplete="list"
-        aria-expanded="true" aria-controls="palette-list"
-        aria-activedescendant={activeId ? `palette-opt-${activeId}` : undefined}
-        placeholder="Type a command or agent…" value={q}
-        onChange={(e) => { setQ(e.target.value); setSel(0); }} onKeyDown={onKey} />
-      <ul id="palette-list" className="palette-list" role="listbox" aria-label="commands">
-        {matches.map((c, i) => (
-          <li key={c.id} id={`palette-opt-${c.id}`} role="option" aria-selected={i === active}
-            className={`palette-item${i === active ? " on" : ""}`}
-            onMouseMove={(e) => {
-              const at = { x: e.clientX, y: e.clientY };
-              if (pointerMoved(pointer.current, at)) setSel(i);
-              pointer.current = at;
-            }}
-            onClick={() => choose(c)}>
-            <span className="palette-label">{c.label}</span>
-            {c.scope !== "global" ? <span className="palette-scope">{c.scope}</span> : null}
-          </li>
-        ))}
-        {!matches.length ? <li className="palette-none">No matching commands.</li> : null}
-      </ul>
-      <div className="palette-foot"><kbd>↑</kbd><kbd>↓</kbd> navigate <kbd>↵</kbd> run <kbd>esc</kbd> close</div>
-    </div>
-  );
+/** What a command looks like in the palette: where it is listed when nothing has been typed, its icon, and the key that does the same. */
+function lookOf(c: Command): { group: string; icon: IconName; hint?: string } {
+  if (c.id.startsWith("go.")) {
+    const view = c.id.slice(3) as View;
+    const nav = NAV_ITEMS.find((n) => n.view === view);
+    const key = viewKey(view);
+    return { group: "Go to", icon: nav?.icon ?? "arrow-right", hint: key || undefined };
+  }
+  if (c.id.startsWith("agent.")) return { group: "Agents", icon: "agents" };
+  if (c.id === "help.open") return { group: "Actions", icon: "help", hint: "?" };
+  if (c.id === "chat.ask") return { group: "Actions", icon: "spark" };
+  if (c.id === "projects.new") return { group: "Actions", icon: "plus" };
+  return { group: "Actions", icon: "arrow-right" };
 }
+const PALETTE_GROUPS = ["Go to", "Agents", "Actions"] as const;
 
 export function Shell({ viewNode }: { viewNode: React.ReactNode }): React.JSX.Element {
   const mesh = useMesh();
@@ -642,7 +582,8 @@ export function Shell({ viewNode }: { viewNode: React.ReactNode }): React.JSX.El
     moreItems.push({ id: "btn-reset", icon: "trash", label: "Reset mission to zero…", title: "Wipe all mission data and restart the goal from zero", danger: true, separated: true, onClick: () => void missionActions.reset() });
   }
   const primary = state.primary;
-  const spentRatio = mission?.limit ? Math.min(1, (mission.consumed ?? 0) / mission.limit) : 0;
+  const spentRatio = ratioOf(mission?.consumed ?? 0, mission?.limit ?? 0);
+  const spentTone = budgetTone(spentRatio);
   // A mesh must declare a goal, so a status that has none is a project that answered before it finished reading its log:
   // "No goal" here said the mesh had nothing to do, beside a chip that said it was starting. Only a mission on its way is
   // "loading": beside "Closed" or "Offline" the chip says it all, and "Loading the mission…" there was not true.
@@ -672,12 +613,12 @@ export function Shell({ viewNode }: { viewNode: React.ReactNode }): React.JSX.El
       <aside id="sidebar" className={menuOpen ? "open" : ""} inert={sidebarHidden} aria-hidden={sidebarHidden || undefined}>
         <div className="brand">
           <Wordmark height={22} />
-          <span id="mesh-id" className="sub">{goal.id ? `goal ${goal.id.slice(0, 14)}` : ""}</span>
+          <span id="mesh-id" className="sub" title={goal.id ? `Goal ${goal.id}` : undefined}>{goal.id ? goal.id.slice(0, 14) : ""}</span>
         </div>
         {/* The palette was chord-only: the fastest route to every view, agent and action in the product, discoverable
             solely by already knowing it existed. */}
-        <button id="btn-palette" type="button" className="side-search" title="Search views, agents and actions (⌘K / Ctrl K)" aria-keyshortcuts="Meta+K Control+K" onClick={togglePalette}>
-          <Icon name="search" /><span>Search</span><kbd>⌘K</kbd>
+        <button id="btn-palette" type="button" className="side-search" title="Search views, agents and actions" aria-keyshortcuts="Meta+K Control+K" onClick={togglePalette}>
+          <Icon name="search" size={18} /><span>Search</span><Kbd keys="mod+k" />
         </button>
         <nav id="nav" aria-label="views">
           {NAV.filter((g) => showsSection(kind, g.section)).map((group) => (
@@ -700,9 +641,9 @@ export function Shell({ viewNode }: { viewNode: React.ReactNode }): React.JSX.El
           ))}
         </nav>
         <div className="side-foot">
-          <IconButton id="btn-theme" icon={isLight ? "moon" : "sun"} label={isLight ? "Switch to the dark theme" : "Switch to the light theme"} onClick={toggleTheme} />
-          <IconButton id="btn-help" icon="help" label="Keyboard shortcuts and help" title="Keyboard shortcuts and help (?)" onClick={openHelp} />
-          {auth?.required ? <IconButton id="btn-signout" icon="sign-out" label="Sign out" title="End this browser's session on the server" onClick={auth.signOut} /> : null}
+          <IconButton id="btn-theme" icon={isLight ? "moon" : "sun"} label={isLight ? "Switch to the dark theme" : "Switch to the light theme"} keys="t" onClick={toggleTheme} />
+          <IconButton id="btn-help" icon="help" label="Keyboard shortcuts and help" keys="?" onClick={openHelp} />
+          {auth?.required ? <IconButton id="btn-signout" icon="sign-out" label="Sign out" title="Sign out: end this browser's session on the server" onClick={auth.signOut} /> : null}
         </div>
       </aside>
 
@@ -722,11 +663,15 @@ export function Shell({ viewNode }: { viewNode: React.ReactNode }): React.JSX.El
             </div>
           </div>
           <div className="bar-strip" role="group" aria-label="mission telemetry">
-            <div className="bar-strip-stat agents" title="Agents mid-turn right now"><b>{facts.working}</b><span>working</span></div>
+            <div className="bar-strip-stat agents" title="Agents mid-turn right now"><span className="k">Working</span><b>{facts.working}</b></div>
             <div className="bar-strip-stat spent" title="Tokens spent out of the mission budget">
-              <b>{fmt(mission?.consumed ?? 0)}<span className="muted">/{fmt(mission?.limit ?? 0)}</span></b>
-              <span>tokens</span>
-              <i className={`meter${spentRatio >= 0.95 ? " bad" : spentRatio >= 0.8 ? " warn" : ""}`} style={{ "--p": spentRatio } as React.CSSProperties} aria-hidden="true" />
+              <span className="k">Tokens</span>
+              <b>{fmt(mission?.consumed ?? 0)}{mission?.limit ? <span className="of"> / {fmt(mission.limit)}</span> : null}</b>
+              {mission?.limit ? (
+                <span className={`meter${spentTone === "ok" ? "" : ` ${spentTone}`}`} style={{ "--p": spentRatio } as React.CSSProperties}
+                  role="meter" aria-label="Mission tokens spent" aria-valuemin={0} aria-valuemax={mission.limit} aria-valuenow={Math.min(mission.consumed ?? 0, mission.limit)}
+                  aria-valuetext={`${fmt(mission.consumed ?? 0)} of ${fmt(mission.limit)} tokens`} />
+              ) : null}
             </div>
           </div>
           <div className="top-actions">
@@ -792,18 +737,14 @@ export function Shell({ viewNode }: { viewNode: React.ReactNode }): React.JSX.El
       {paletteOpen && (
         <>
           <div id="palette-scrim" aria-hidden="true" onClick={closePalette} />
-          <CommandPalette onClose={closePalette} />
+          <CommandPalette onClose={closePalette} look={lookOf} groups={PALETTE_GROUPS} />
         </>
       )}
       <ChatDock open={chatOpen} onClose={() => setChatOpen(false)} />
       <AttentionEffects projectId={mesh.projectId} projectName={projectName} />
       <div id="toasts" aria-live="polite">
         {toasts.map((t) => (
-          <div key={t.id} className={`toast ${t.kind}`}>
-            <b>{t.title}{t.count && t.count > 1 ? <span className="toast-n">×{t.count}</span> : null}</b>
-            <span className="toast-msg">{t.msg}</span>
-            {t.action ? <button type="button" className="toast-act" onClick={t.action.run}>{t.action.label}</button> : null}
-          </div>
+          <ToastCard key={t.id} kind={t.kind} title={t.title} msg={t.msg} count={t.count} action={t.action} />
         ))}
       </div>
     </div>

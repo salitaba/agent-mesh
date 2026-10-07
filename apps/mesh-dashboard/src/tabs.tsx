@@ -14,7 +14,7 @@
 
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import "./projects.css";
-import { Banner, Button } from "./components";
+import { Banner, Button, Tooltip } from "./components";
 import { Icon } from "./icons";
 import { useProjects, type ProjectSummary } from "./projects";
 import { useMesh } from "./store";
@@ -163,30 +163,36 @@ function Tab({ project, label, active, missionParked, onPick, onClose, onDragSta
       onDragEnd={() => setOver(false)}
       onAuxClick={(e) => { if (e.button === 1 && canClose) { e.preventDefault(); onClose(); } }}
     >
-      <button
-        type="button"
-        className="ptab-main"
-        aria-current={active ? "page" : undefined}
-        title={`${label}: ${card.sentence}${rss ? ` Memory ${rss}.` : ""} Ctrl+Left and Ctrl+Right move this tab.`}
-        onClick={onPick}
-        onKeyDown={(e) => {
-          if (!(e.metaKey || e.ctrlKey)) return;
-          if (e.key === "ArrowLeft") { e.preventDefault(); onMove(-1); }
-          else if (e.key === "ArrowRight") { e.preventDefault(); onMove(1); }
-        }}
-      >
-        <span className="ptab-ico"><Icon name={look.icon} size={14} /></span>
-        <span className="ptab-name">{label}</span>
-        <span className="ptab-meta">
-          <span className="ptab-state">{look.word}</span>
-          {rss ? <span className="ptab-rss">{rss}</span> : null}
-        </span>
-      </button>
+      {/* The name is cut to fit and the tooltip says all of it: the whole name, what the state means, and how to move the tab. */}
+      <Tooltip content={<><b>{label}</b><span className="tip-sub">{card.sentence}{rss ? ` Memory ${rss}.` : ""}</span><span className="tip-sub">Ctrl+Left and Ctrl+Right move this tab.</span></>} side="bottom">
+        <button
+          type="button"
+          className="ptab-main"
+          aria-current={active ? "page" : undefined}
+          onClick={onPick}
+          onKeyDown={(e) => {
+            if (!(e.metaKey || e.ctrlKey)) return;
+            if (e.key === "ArrowLeft") { e.preventDefault(); onMove(-1); }
+            else if (e.key === "ArrowRight") { e.preventDefault(); onMove(1); }
+          }}
+        >
+          <span className="ptab-ico"><Icon name={look.icon} size={14} /></span>
+          <span className="ptab-text">
+            <span className="ptab-name">{label}</span>
+            <span className="ptab-meta">
+              <span className="ptab-state">{look.word}</span>
+              {rss ? <span className="ptab-rss">{rss}</span> : null}
+            </span>
+          </span>
+        </button>
+      </Tooltip>
       {/* The tab itself stays when its project is closed: it is closed, not removed (see Projects). */}
       {canClose ? (
-        <button type="button" className="ptab-x" aria-label={`Close ${label}`} title="Close this project: its process stops. The tab and its files stay." onClick={onClose}>
-          <Icon name="x" size={14} />
-        </button>
+        <Tooltip content="Close this project: its process stops. The tab and its files stay." side="bottom">
+          <button type="button" className="ptab-x" aria-label={`Close ${label}`} onClick={onClose}>
+            <Icon name="x" size={14} />
+          </button>
+        </Tooltip>
       ) : null}
     </li>
   );
@@ -361,9 +367,11 @@ export function ProjectTabs({ parked, parkedId }: { parked?: boolean; parkedId?:
           </ul>
           {!ordered.length ? <span className="muted ptabs-empty">No projects yet.</span> : null}
         </div>
-        <button type="button" className="ptab-add" title="New project: try the demo, create a mesh or add a folder" aria-label="New project" onClick={() => setAdding(true)}>
-          <Icon name="plus" size={16} />
-        </button>
+        <Tooltip content="New project: try the demo, create a mesh or add a folder" side="bottom">
+          <button type="button" className="ptab-add" aria-label="New project" onClick={() => setAdding(true)}>
+            <Icon name="plus" size={18} />
+          </button>
+        </Tooltip>
       </nav>
       {hostDown ? <HostDownBanner loaded={loaded} /> : null}
       {!hostDown && crashed ? <CrashBanner project={crashed} name={names.get(crashed.id) ?? crashed.name} /> : null}
