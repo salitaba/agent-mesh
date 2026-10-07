@@ -322,10 +322,13 @@ To retake them without Docker: scaffold the demo project into a scratch folder (
 it under a scratch `MESH_HOME` (`curule project add <dir>`), start `curule host --home <scratch>`, open it in a browser window
 of the size above, start the mission, wait for *Delivered*, and capture each view in the light colour scheme and in the
 dark one (the dashboard's *theme* button). The 720 × 450 pictures are crops of the view's own content (a 960 pixel wide window
-shows all of it) taken without the sidebar; the Overview one needs a window about 1100 pixels wide to put its four figures in one
-row, so it is taken from such a window at a scale of 0.83, which makes the 868 × 542 pixel view exactly 720 × 450. Save JPEGs at
-quality about 80. The pages describe each picture in its `alt` text and say only what is in the picture, so read them again when a
-picture is retaken: a figure that moves, or a control that is renamed, is a sentence that has to follow. In the Designer, the path shown at the bottom is the
-scratch folder's: replace it with `/data/projects/demo-stub/mesh.yaml`, which is what the container the pages tell people to run
-shows. `npm run demo:capture` does the same for the GIF in the README and needs Chrome (`CHROME=/path/to/chrome`) and an ffmpeg
+shows all of it) taken without the sidebar; the Overview one needs a window about 1100 pixels wide to put its four figures in
+one row, so it is taken from such a window at a scale of 0.83, which makes the 868 × 542 pixel view exactly 720 × 450. Save JPEGs
+at quality about 80. In the Designer, the path shown at the bottom is the scratch folder's: replace it with
+`/data/projects/demo-stub/mesh.yaml`, which is what the container the pages tell people to run shows.
+
+The pages describe each picture in its `alt` text, and say only what is in the picture. Read them again when a picture is
+retaken: a figure that moves, or a control that is renamed, is a sentence that has to follow.
+
+`npm run demo:capture` does the same for the GIF in the README and needs Chrome (`CHROME=/path/to/chrome`) and an ffmpeg
 that can write GIFs.
