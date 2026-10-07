@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 /*
  * Writes the Curule brand files from one description of the mark: brand/*.svg, brand/tokens.css and the HTML the
- * social card is rendered from.
+ * social card is rendered from. It also keeps the UI kit's tokens (scripts/kit-tokens.mjs) in brand/kit.css and between the
+ * fence comments of the three stylesheets that carry them.
  *
  *   node scripts/build-brand.mjs            write the files
  *   node scripts/build-brand.mjs --check    write nothing; exit 1 if a checked-in file differs (npm run brand:check)
@@ -24,6 +25,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { tmpdir } from "node:os";
 import { WebSocket } from "undici";
+import { kitFile, kitState, writeKit } from "./kit-tokens.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const OUT = join(root, "brand");
@@ -241,6 +243,7 @@ export function files() {
     "app-icon.svg": appIconFile(),
     "social-card.html": cardHtml(),
     "tokens.css": tokensFile(),
+    "kit.css": kitFile(),
   };
 }
 
@@ -336,9 +339,10 @@ async function withChrome(chrome, fn) {
 async function main() {
   const want = files();
   if (CHECK) {
-    const stale = Object.entries(want).filter(([name, text]) => !existsSync(join(OUT, name)) || readFileSync(join(OUT, name), "utf8") !== text);
+    const stale = Object.entries(want).filter(([name, text]) => !existsSync(join(OUT, name)) || readFileSync(join(OUT, name), "utf8") !== text).map(([name]) => `brand/${name}`);
+    for (const k of kitState()) if (k.have !== k.want) stale.push(k.file);
     if (stale.length > 0) {
-      console.error(`brand files are out of date: ${stale.map(([name]) => name).join(", ")}\nrun \`node scripts/build-brand.mjs\` and commit the result`);
+      console.error(`brand files are out of date: ${stale.join(", ")}\nrun \`node scripts/build-brand.mjs\` and commit the result`);
       process.exit(1);
     }
     console.log("brand files are up to date");
@@ -347,6 +351,8 @@ async function main() {
   mkdirSync(OUT, { recursive: true });
   for (const [name, text] of Object.entries(want)) writeFileSync(join(OUT, name), text);
   console.log(`wrote ${Object.keys(want).length} files to brand/`);
+  const kit = writeKit();
+  console.log(kit.length ? `rewrote the kit tokens in ${kit.join(", ")}` : "the kit tokens in the stylesheets are up to date");
   if (!PNG) return;
   const chrome = chromePath();
   if (!chrome) {

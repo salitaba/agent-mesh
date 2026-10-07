@@ -113,6 +113,18 @@ values and recomputes the console's own pairs. Its light accent is the brand blu
 because the brand blue itself is 3.9 : 1 as text on its own tint. The console's logo uses the same drawing with the
 console's text and accent colours.
 
+## The UI kit
+
+The values the site, the account pages and the console must share are written once, in `scripts/kit-tokens.mjs`, and
+generated into each stylesheet between two fence comments (`@kit:tokens begin` and `end`) and into `brand/kit.css`:
+the colour roles (surface, text, the one blue, status), the five-step elevation ladder, the radii, the tracking that
+goes with each size of text, and the motion. They are named `--k-*`. A stylesheet's own names may alias them; nobody
+edits a block by hand. `npm run brand:build` rewrites the blocks, `npm run brand:check` fails when one differs, and
+`tests/build/ui-kit-tokens.test.ts` holds the kit to the brand's colours, to the console's status colours and to the
+contrast every text pair needs in both themes. The brand's own seven colours are above and are not changed by the kit;
+the kit adds what a dense tool and a long page need around them (a step down from a card, a well, the blue as text, the
+shadows).
+
 ## Type
 
 The system's own fonts, nothing downloaded: `system-ui, -apple-system, "Segoe UI", Roboto, sans-serif` for text and

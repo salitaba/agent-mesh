@@ -135,11 +135,14 @@ function stylesheets(dir: string): string[] {
   });
 }
 
-test("no colour literal appears in the console's stylesheets outside the two token blocks", () => {
+const KIT_BLOCK = /\/\* @kit:tokens begin[\s\S]*?@kit:tokens end \*\//;
+
+test("no colour literal appears in the console's stylesheets outside the token blocks", () => {
   const files = stylesheets("apps/mesh-dashboard/src");
   assert.ok(files.includes("apps/mesh-dashboard/src/styles.css") && files.length >= 2, "the sweep finds the stylesheets");
   for (const file of files) {
-    let text = read(file).replace(/\/\*[\s\S]*?\*\//g, "");
+    // The UI kit's block is generated (scripts/kit-tokens.mjs) and held by tests/build/ui-kit-tokens.test.ts: it is a third token block.
+    let text = read(file).replace(KIT_BLOCK, "").replace(/\/\*[\s\S]*?\*\//g, "");
     if (file.endsWith("/src/styles.css")) {
       for (const selector of [":root", '[data-theme="light"]']) text = text.replace(block(text, selector), "");
     }
