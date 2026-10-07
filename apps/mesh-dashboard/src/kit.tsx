@@ -404,7 +404,7 @@ function Gallery(): React.JSX.Element {
               </div>
             </Spec>
             <Spec name="Zone note" short note="said once above a run of times"><span className="caps">Just happened<ZoneNote /></span></Spec>
-            <Spec name="Rows" note="what the Overview lists">
+            <Spec name="Rows" note="compact rows: the agent drawer lists its steps with StepMini; the Overview draws its lists as timelines now">
               <div className="gal-col wide"><EventRow e={SAMPLE_EVENT} onOpen={() => undefined} /><StepMini s={SAMPLE_STEP} onOpen={() => undefined} /></div>
             </Spec>
           </div>
