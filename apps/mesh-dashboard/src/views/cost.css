@@ -5,7 +5,7 @@
  * 80%, red from 95% or when spent) is decided in cost.ts, the same rule as the top bar's meter. The meters are the kit's Progress.
  * A seat is drawn in its role's colour here as everywhere (its avatar, its bar, its slice of the strip), so the colour is a name.
  *
- * styles.css still holds .bar-row and .track: the collaboration card (collabcard.tsx) draws with them. This page no longer does.
+ * This page draws its own bars (.cost-bar, .cost-mini) and the kit's Progress; it does not use the older .bar-row and .track.
  */
 
 .cost-stack { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--s4); }
