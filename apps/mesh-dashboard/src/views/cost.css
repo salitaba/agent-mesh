@@ -127,3 +127,11 @@
   .cost-table th, .cost-table td { padding-left: var(--s1-5); padding-right: var(--s1-5); font-size: 13px; }
   .cost-table thead th:first-child, .cost-table tbody th[scope="row"] { width: 34%; }
 }
+
+/* ---- Windows High Contrast ----
+ * The bars, the strip and the small meters are backgrounds, which it replaces with the system's, so each was an empty track. They are drawn again
+ * in the system's highlight on a track with an edge; whose slice it is is told by the row it sits in, not by its colour. */
+@media (forced-colors: active) {
+  .cost-bar, .cost-mini { border: 1px solid CanvasText; }
+  .cost-bar > i, .cost-mini > i, .cost-own-b:is(.warn, .bad) .cost-mini > i, .cost-strip > i { forced-color-adjust: none; background: Highlight; }
+}

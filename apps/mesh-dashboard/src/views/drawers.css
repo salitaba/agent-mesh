@@ -494,3 +494,11 @@ span.caret { color: var(--ok); animation: blink 1s steps(1) infinite; }
 @media (prefers-reduced-motion: reduce) {
   .prail-fill, .lw-dl-fill, .sv-split b { transition: none; }
 }
+
+/* ---- Windows High Contrast ----
+ * The phase bars, the deadline's bar and the little split of input to output in a step's header are backgrounds, which it replaces with the
+ * system's: each is drawn again in the highlight on a track with an edge. The words beside them carry the figures. */
+@media (forced-colors: active) {
+  .prail-track, .lw-dl-track, .sv-split { border: 1px solid GrayText; }
+  .prail-fill, .lw-dl-fill, .sv-split b { forced-color-adjust: none; background: Highlight; opacity: 1; }
+}

@@ -252,3 +252,18 @@
   .st-now-tool { max-width: 100%; }
   .st-fold-head { padding-left: var(--s3-5); padding-right: var(--s3-5); }
 }
+
+/* ---- Windows High Contrast ----
+ * It swaps every background for the system's and drops shadows, so a bar, a segment, a dot or a hairline that is a background is gone and the chart is
+ * an empty well. Each is drawn again here in system colours. With colour gone the outcome is told by how a mark is filled: solid for a turn that
+ * produced, hollow for one that wrote nothing, hatched for one that was refused, blocked or crashed, and the highlight for one still running. */
+@media (forced-colors: active) {
+  .st-track { border: 1px solid GrayText; }
+  .st-grid, .st-tick::before { forced-color-adjust: none; background: GrayText; }
+  .st-bar, .st-mix-seg, .st-f-dot { forced-color-adjust: none; background: CanvasText; border: 1px solid CanvasText; }
+  .st-bar.o-quiet, .st-mix-seg.o-quiet, .o-quiet > .st-f-dot { background: Canvas; }
+  :is(.st-bar, .st-mix-seg):is(.o-rej, .o-block, .o-crash), :is(.o-rej, .o-block, .o-crash) > .st-f-dot { background: repeating-linear-gradient(135deg, CanvasText 0 2px, Canvas 2px 4px); }
+  .st-bar.o-live, .st-mix-seg.o-live, .o-live > .st-f-dot { background: Highlight; border-color: Highlight; }
+  .st-cost-bar { forced-color-adjust: none; background: CanvasText; }
+  .st-bar:is(:hover, .hot, :focus-visible) { outline: 2px solid Highlight; outline-offset: 2px; }
+}
