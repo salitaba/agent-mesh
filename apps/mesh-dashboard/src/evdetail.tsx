@@ -107,7 +107,7 @@ export function EventDetail({
 
   return (
     <div className="evd">
-      <header className="evd-head">
+      <div className="evd-head">
         <div className="evd-title">
           <span className={`evd-tile ${sev}`}><SevMark s={sev} /></span>
           <h3>{plainEvent(e.type, e.payload)}</h3>
@@ -126,7 +126,7 @@ export function EventDetail({
           <Chip mono title="The event's type, as the log records it">{e.type}</Chip>
           <CopyButton text={e.type} what="event type" compact />
         </p>
-      </header>
+      </div>
 
       <section className="evd-sec" aria-labelledby="evd-why">
         <h4 id="evd-why">Why it happened</h4>

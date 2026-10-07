@@ -57,3 +57,7 @@ i.sev-mark.routine { box-sizing: border-box; border: 1.5px solid var(--muted); }
 /* A banner whose actions do not fit beside its words puts them on the next line, under the words. The phone rule above already gives the
    actions the full width for that (styles.css, 620px); the row had nothing to wrap, so the words were squeezed into a column of five characters. */
 .banner.has-icon { flex-wrap: wrap; }
+
+/* The panel is focused when it opens, so the keyboard is inside it and a screen reader announces it. It is a container and not a control: a ring
+   drawn round the whole panel (its edge showed as a blue line down the left of the page) says nothing the controls inside it do not. */
+.drawer:focus, .drawer:focus-visible { outline: none; }

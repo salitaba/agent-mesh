@@ -317,7 +317,7 @@ export function textStats(s: string): string {
 export function StepSkeleton({ close }: { close?: React.ReactNode }): React.JSX.Element {
   return (
     <div className="stepv" aria-busy="true" aria-label="loading step">
-      <header className="sv-head">
+      <div className="sv-head">
         <div className="sv-topbar"><span className="sk" style={{ width: 110, height: 22 }} />{close}</div>
         <div className="sv-ident">
           <span className="sk" style={{ width: 28, height: 28, borderRadius: "50%" }} />
@@ -326,7 +326,7 @@ export function StepSkeleton({ close }: { close?: React.ReactNode }): React.JSX.
         </div>
         <div className="sv-metrics"><span className="sk" style={{ width: 300, height: 12 }} /></div>
         <div className="sv-jump"><span className="sk" style={{ width: 340, height: 22 }} /></div>
-      </header>
+      </div>
       <div className="sv-body">
         <div className="sv-main">
           <span className="sk" style={{ height: 96 }} />

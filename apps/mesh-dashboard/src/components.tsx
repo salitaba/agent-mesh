@@ -855,12 +855,12 @@ export function ToastCard({ kind, title, msg, count, action }: { kind?: "ok" | "
  *  of the name), a hairline, and it stays put while the body scrolls. drawers.tsx's DrawerHeader is this with the store's close. */
 export function DrawerHead({ children, onClose }: { children: ReactNode; onClose: () => void }): React.JSX.Element {
   return (
-    <header className="drawer-head">
+    <div className="drawer-head">
       <h2 id="drawer-title">{children}</h2>
       <button type="button" className="close-x" aria-label="Close panel" title="Close (Esc)" onClick={onClose}>
         <Icon name="x" size={16} />
       </button>
-    </header>
+    </div>
   );
 }
 

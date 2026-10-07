@@ -4,7 +4,8 @@ import { ago, dur, fmt, hhmmss, outcomeOf, opsSummary, pillCls, plural, produced
 import { buildLedger, ledgerTally, msgKind, msgSnippet, opHead, producedFromTimeline, recordNotices, splitSummary } from "./ledger";
 import { planLabel, planStale } from "./plan";
 import { useMesh, useMeshStreams, type TimelineEvent, type TurnStep } from "./store";
-import { StatusPill, LifecyclePill, StepMini, OutcomePill, isTopTrap, rowKey, AgentAvatar, Banner, Button, Chip, DrawerHead, ErrorState, Input, Pill, Select, TabPanel, Tabs, TextArea, ZoneNote, agentColor, type ConfirmFn } from "./components";
+import { StatusPill, LifecyclePill, StepMini, OutcomePill, isTopTrap, rowKey, AgentAvatar, Banner, Button, Chip, DrawerHead, ErrorState, Input, Pill, Progress, Select, TabPanel, Tabs, TextArea, ZoneNote, agentColor, type ConfirmFn } from "./components";
+import "./views/drawers.css";
 import { Icon } from "./icons";
 import { messageTypeLabel, recipientsOf, toggleRecipient } from "./message-form";
 import { actionNote, controlsHint, controlsOf, memoryKey, pauseWarning, unstartedText } from "./agents";
@@ -406,7 +407,7 @@ export function AgentDrawer({ id }: { id: string }): React.JSX.Element {
         <AgentAvatar id={id} color="var(--accent)" />{id}
         <span className={`pill ${pillCls(s.lifecycle)}${RUNNING.has(s.lifecycle) ? " running-pulse" : ""}`}>{(plainLifecycle(s.lifecycle, setting))}</span>
       </DrawerHeader>
-      <p className="muted" style={{ margin: "4px 0" }}>{(d.role)} · active {(ago(s.lastActivityAt))}</p>
+      <p className="muted ag-sub">{(d.role)} · active {(ago(s.lastActivityAt))}</p>
 
       <div className="agent-vitals">
         <div className="avital"><b>{s.activations}</b><span>turns run</span></div>
@@ -418,7 +419,7 @@ export function AgentDrawer({ id }: { id: string }): React.JSX.Element {
           <b>{pct === null ? fmt(s.tokensConsumed) : `${pct}%`}</b><span>{pct === null ? "tokens used" : "of its budget"}</span>
         </div>
       </div>
-      {pct !== null ? <div className="progress"><div style={{ transform: `scaleX(${Math.min(1, pct / 100)})` }} /></div> : null}
+      {pct !== null ? <Progress value={Math.min(100, pct)} max={100} label="How much of its own budget it has used" tone={ab?.exceeded ? "bad" : pct >= 80 ? "warn" : undefined} valueText={`${pct}% of its budget`} /> : null}
 
       {s.lastError ? (
         <>

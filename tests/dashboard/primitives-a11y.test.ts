@@ -51,6 +51,14 @@ test("a search box is one search field named for what it searches, with a clear 
   assert.match(live, /\.srch-clear \{ width: 40px; height: 40px; \}/, "the clear button is a thumb's target on a phone");
 });
 
+test("the title row of a panel is not a second banner: the page has one, the top bar", () => {
+  const body = bodyOf(components, "DrawerHead");
+  assert.doesNotMatch(body, /<header/, "a header outside a section is a banner landmark, and the panel sits beside the top bar's");
+  assert.match(body, /<div className="drawer-head">/);
+  assert.doesNotMatch(read("stepdetail.tsx"), /<header/, "the step's loading shape is not one either");
+  assert.doesNotMatch(read("evdetail.tsx"), /<header/, "nor is the event's title row");
+});
+
 test("a wide dialog is the same dialog, 640 wide, and it is the panel that says so", () => {
   assert.match(bodyOf(components, "DialogPanel"), /className=\{`confirm\$\{wide \? " wide" : ""\}`\}/);
   assert.match(live, /\.confirm\.wide \{ width: min\(640px, 92vw\); \}/);
