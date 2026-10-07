@@ -492,6 +492,11 @@ test("nothing is hidden by the stylesheet to be shown later: what arrives as the
     .map((m) => m[1]!.trim().replace(/\s+/g, " "));
   assert.deepEqual(invisible, [".tab-input, .billing-input", ".to-top:not(.is-shown)"], "nothing else is made invisible by the stylesheet alone");
   assert.match(/@media print \{[\s\S]*?\n\}/.exec(css)![0], /\.rv \{ opacity: 1 !important; transform: none !important; \}/, "and a page printed half-way down is printed whole");
+  // A browser does not print backgrounds unless it is told to: the primary button's white label and the closing band's light one would
+  // be white on white. On paper a button is black text in a black line, and the band is black text on the paper.
+  const print = /@media print \{[\s\S]*?\n\}/.exec(css)![0];
+  assert.match(print, /\.btn \{ background: none !important; border-color: #000 !important; color: #000 !important; \}/);
+  assert.match(print, /\.cta, \.cta \.lede \{ background: none; color: #000; \}/);
   assert.match(css, /\n  \.rv \{ opacity: 0; transform: translateY\(8px\);/, "a rise of eight pixels and a fade");
   assert.match(css, /\n  \.rv\.rv-in \{ opacity: 1; transform: none; \}/);
   for (const n of [1, 2, 3, 4, 5]) assert.match(css, new RegExp(`\\n  \\.rv-${n} \\{ transition-delay: ${n * 50}ms; \\}`), `the ${n}th child waits ${n * 50} ms`);

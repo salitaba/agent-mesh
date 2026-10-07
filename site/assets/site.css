@@ -111,7 +111,6 @@
 }
 @media (prefers-color-scheme: dark) { :root { --band: var(--k-sunken); --deep: var(--k-sunken); --on-deep: var(--k-ink); } }
 
-/* base */
 *, *::before, *::after { box-sizing: border-box; }
 html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; scroll-padding-top: calc(var(--head-h) + 19px); scrollbar-width: thin; scrollbar-color: var(--line2) transparent; }
 html:has(.toc-bar) { scroll-padding-top: calc(var(--head-h) + var(--toc-h) + 20px); }
@@ -145,7 +144,6 @@ b, strong { font-weight: 650; }
 .proof, .tiles, .try, .starts, .doc-list, .rows, .plain, .tick, .plan-includes, .nf-list, .addresses, .teaser, .glance-list, .toc, .steps, .foot-col ul { margin: 0; padding: 0; list-style: none; }
 .grid, .ways, .steps, .tiles, .try, .starts, .doc-grid, .plans, .nf-list, .glance-list, .cols, .teaser, .hero-grid, .address-row, .split, .calc, .proof { display: grid; grid-template-columns: minmax(0, 1fr); }
 
-/* layout */
 .wrap { width: min(100% - 2 * var(--gutter), var(--max)); margin-inline: auto; }
 .section { padding-block: var(--section); }
 .section:not(.band, .tint, .cta, [hidden]) + .section:not(.band, .tint, .cta) { padding-top: 0; }
@@ -315,7 +313,7 @@ main:has(.hero) .section-head .eyebrow::before { counter-increment: sec; content
 /* With one of the two hidden, the other takes the width; its two answers sit side by side. */
 @media (min-width: 760px) { .ways:has(> .way[hidden]) { grid-template-columns: minmax(0, 1fr); } .ways:has(> .way[hidden]) dl { grid-template-columns: var(--c2); gap: 32px; } }
 
-/* a mission in three steps on one rail (down the left on a phone, across on a desktop) */
+/* three steps on one rail (down the left on a phone, across on a desktop) */
 .steps { gap: 40px; counter-reset: step; }
 .steps li { position: relative; counter-increment: step; padding-left: 56px; }
 .steps li::before, .try > li::before { display: grid; place-items: center; border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent); border-radius: 50%; background: var(--soft); color: var(--link); font-weight: 650; font-variant-numeric: tabular-nums; }
@@ -544,7 +542,7 @@ main:has(.hero) .section-head .eyebrow::before { counter-increment: sec; content
 .result .who { color: var(--muted); font-size: .8125rem; font-weight: 400; }
 .result .total { font-size: 1.5rem; font-weight: 650; letter-spacing: var(--k-track-title); }
 .result .fine { margin-top: 12px; color: var(--muted); font-size: .875rem; }
-/* The plans on the home page: one rate card, ruled between its cells. */
+/* The home page's plans: a rate card ruled between its cells. */
 .teaser { gap: 1px; overflow: hidden; background: var(--line); }
 @media (min-width: 600px) { .teaser { grid-template-columns: var(--c2); } }
 @media (min-width: 1040px) { .teaser { grid-template-columns: var(--c4); } }
@@ -597,7 +595,7 @@ main:has(.hero) .section-head .eyebrow::before { counter-increment: sec; content
 .to-top:hover { background: var(--panel2); }
 .to-top:not(.is-shown) { visibility: hidden; opacity: 0; }
 @media (min-width: 860px) { .to-top { right: 24px; bottom: 24px; } }
-/* No style attributes (the policy forbids them): spacing is a class. */
+/* The policy forbids style attributes: spacing is a class. */
 .mt-s { margin-top: 16px; }
 .mt-m { margin-top: 24px; }
 .mt-l { margin-top: 32px; }
@@ -624,7 +622,7 @@ main:has(.hero) .section-head .eyebrow::before { counter-increment: sec; content
   .faq details::details-content { height: 0; overflow: clip; transition: height var(--k-dur-3) var(--k-ease), content-visibility var(--k-dur-3) allow-discrete; }
   .faq details[open]::details-content { height: auto; }
 }
-/* Forced colours (high contrast) drop the thumb's fill: outline it. */
+/* Forced colours drop the thumb's fill: outline it. */
 @media (forced-colors: active) {
   .tabs::before, .billing::before { outline: 2px solid Highlight; outline-offset: -2px; }
   .card:target, .doc-card:target, .plan:target { outline: 2px solid Highlight; outline-offset: 2px; }
@@ -636,4 +634,5 @@ main:has(.hero) .section-head .eyebrow::before { counter-increment: sec; content
   .rv { opacity: 1 !important; transform: none !important; }
   body { background: #fff; color: #000; }
   .cta, .cta .lede { background: none; color: #000; }
+  .btn { background: none !important; border-color: #000 !important; color: #000 !important; }
 }
