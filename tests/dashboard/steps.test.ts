@@ -2,8 +2,8 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import {
-  FILTERS, FOLD_AT, MIN_BAR_PCT, WINDOWS, autoWindow, axisTicks, busyText, filterSteps, foldQuiet, groupSteps, outcomeCounts, pulseLine,
-  rowSummary, spendOf, timeline, type StepLike,
+  FILTERS, FIT_WINDOW, FOLD_AT, MIN_BAR_PCT, WINDOWS, autoPick, autoWindow, axisTicks, busyText, clockTicks, filterSteps, foldQuiet, groupSteps, outcomeCounts,
+  pulseLine, rowSummary, spendOf, timeline, type StepLike,
 } from "../../apps/mesh-dashboard/src/steps";
 import { BUCKETS } from "../../apps/mesh-dashboard/src/feed";
 import { rovingTarget } from "../../apps/mesh-dashboard/src/roving";
@@ -289,6 +289,108 @@ test("no turns, no timeline; the preset windows end with the whole run", () => {
   assert.equal(timeline([], "5m", NOW), null);
   assert.equal(WINDOWS[WINDOWS.length - 1]!.id, "all");
   assert.equal(WINDOWS[WINDOWS.length - 1]!.ms, 0);
+});
+
+/* ------------------------------------------------------------ fitting the run */
+
+// A run of eight seconds that ended two minutes ago: all that a delivered mission leaves to look at.
+const finishedRun = (): StepLike[] => [
+  turn("shipped", "pm", 130_000, 2_000), turn("shipped", "qa", 126_000, 3_000), turn("quiet", "qa", 124_000, 1_000), turn("shipped", "dev", 122_000, 4_000),
+];
+
+test("the fitted window is not one of the presets, which end with the whole run", () => {
+  assert.equal(FIT_WINDOW.id, "fit");
+  assert.ok(!WINDOWS.some((w) => w.id === FIT_WINDOW.id), "the presets are unchanged");
+});
+
+test("a mission that is over or stopped opens on its run, and one that is working opens on the preset it always did", () => {
+  const steps = finishedRun();
+  for (const phase of ["done", "failed", "parked", "paused", "ceiling", "no-goal"]) assert.equal(autoPick(steps, NOW, phase), "fit", phase);
+  for (const phase of ["running", "quiet", "stalled", "needs-you", "loading", "offline"]) assert.equal(autoPick(steps, NOW, phase), autoWindow(steps, NOW), phase);
+  assert.equal(autoPick([], NOW, "done"), "all", "no turns, nothing to fit");
+});
+
+test("the choice follows the phase and not whether a turn is in flight this second", () => {
+  const between = finishedRun();
+  const during = [...finishedRun(), turn("live", "dev", 4_000)];
+  assert.equal(autoPick(between, NOW, "running"), autoPick(during, NOW, "running"), "agents work in bursts; the window must not flip with every one");
+});
+
+test("a fitted window runs from the first turn to the last, with a margin, and does not reach for now", () => {
+  const tl = timeline(finishedRun(), "fit", NOW)!;
+  assert.equal(tl.fit, true);
+  assert.equal(tl.nowAt, null, "the run ended before now, so now is off the axis");
+  assert.ok(tl.t0 < NOW - 130_000, "a margin before the first start");
+  assert.ok(tl.t1 > NOW - 120_000 && tl.t1 < NOW - 100_000, "the end of the last turn, and a margin: not now");
+  const bars = tl.lanes.flatMap((l) => l.bars);
+  assert.ok(Math.min(...bars.map((b) => b.left)) > 0, "the first bar is not flush against the edge");
+  assert.ok(Math.max(...bars.map((b) => b.left + b.width)) < 100, "nor the last");
+  const pm = tl.lanes.find((l) => l.agentId === "pm")!.bars[0]!;
+  assert.ok(pm.width > 10, `a two-second turn in an eight-second run is a bar, not a sliver: ${pm.width}`);
+  assert.equal(tl.hidden, 0);
+  assert.ok(tl.lanes.every((l) => l.busyPct > 0), "a lane's share divides by the run it is drawn in");
+});
+
+test("a fitted window with a turn still running ends at now, and says where now is", () => {
+  const tl = timeline([...finishedRun(), turn("live", "dev", 20_000)], "fit", NOW)!;
+  assert.equal(tl.t1, NOW);
+  assert.equal(tl.nowAt, 100);
+});
+
+test("a run of one instant is still given room to be drawn", () => {
+  const tl = timeline([turn("quiet", "pm", 60_000, 0)], "fit", NOW)!;
+  assert.ok(tl.span >= 1000, "a window of nothing would put the bar on a division by zero");
+  assert.ok(tl.lanes[0]!.bars[0]!.left > 0 && tl.lanes[0]!.bars[0]!.left < 100);
+});
+
+test("the presets still end at now, and now is on their axis", () => {
+  const tl = timeline(finishedRun(), "5m", NOW)!;
+  assert.equal(tl.fit, false);
+  assert.equal(tl.nowAt, 100);
+  assert.equal(tl.ticks[tl.ticks.length - 1]!.label, "now");
+});
+
+test("clock ticks fall on round times in the reader's zone, never more than seven, left to right", () => {
+  const at = (hh: number, mm: number, ss = 0): number => Date.UTC(2026, 9, 7, hh, mm, ss);
+  const label = (ms: number, step: number): string => `${new Date(ms).toISOString().slice(11, step >= 60_000 ? 16 : 19)}`;
+  // 14 minutes: a 5-minute step lands on :00, :05, :10.
+  const mins = clockTicks(at(10, 1, 20), at(10, 15, 20), label, () => 0);
+  assert.deepEqual(mins.map((t) => t.label), ["10:05", "10:10", "10:15"]);
+  // Eight seconds: a 2-second step, with seconds said.
+  const secs = clockTicks(at(10, 1, 3), at(10, 1, 11), label, () => 0);
+  assert.deepEqual(secs.map((t) => t.label), ["10:01:04", "10:01:06", "10:01:08", "10:01:10"]);
+  for (const ticks of [mins, secs, clockTicks(at(0, 0), at(23, 0), label, () => 0)]) {
+    assert.ok(ticks.length <= 7, "never a wall of labels");
+    for (let i = 1; i < ticks.length; i++) assert.ok(ticks[i]!.at > ticks[i - 1]!.at);
+    assert.ok(ticks.every((t) => t.at >= 0 && t.at <= 100), "all on the axis");
+  }
+  // Nepal is UTC+05:45: a round half hour there is a quarter past or to the hour in UTC, so the ticks move with the reader's zone.
+  const inUtc = clockTicks(at(10, 0), at(13, 0), label, () => 0);
+  const inNepal = clockTicks(at(10, 0), at(13, 0), label, () => -(5 * 60 + 45) * 60_000);
+  assert.deepEqual(inUtc.map((t) => t.label).slice(0, 3), ["10:00", "10:30", "11:00"]);
+  assert.deepEqual(inNepal.map((t) => t.label).slice(0, 3), ["10:15", "10:45", "11:15"]);
+});
+
+test("with no zone given, the ticks are round in the zone the machine is in", () => {
+  const was = process.env.TZ;
+  process.env.TZ = "Asia/Kathmandu"; // UTC+05:45, so a round local half hour is not a round UTC one
+  try {
+    const ticks = clockTicks(Date.UTC(2026, 9, 7, 10, 0), Date.UTC(2026, 9, 7, 13, 0));
+    assert.ok(ticks.length >= 5);
+    // The tick's position on the axis is the only thing returned, so read the time it stands for back off it.
+    for (const t of ticks) {
+      const at = Date.UTC(2026, 9, 7, 10, 0) + (t.at / 100) * 3 * 3_600_000;
+      assert.equal(new Date(Math.round(at)).getMinutes() % 30, 0, `tick at ${t.at}% is a half hour on the local clock`);
+    }
+  } finally {
+    if (was === undefined) delete process.env.TZ;
+    else process.env.TZ = was;
+  }
+});
+
+test("every other clock tick is major, so a narrow axis keeps half of them", () => {
+  const ticks = clockTicks(Date.UTC(2026, 9, 7, 10, 0, 0), Date.UTC(2026, 9, 7, 10, 30, 0), (ms) => String(ms), () => 0);
+  assert.deepEqual(ticks.map((t) => t.major), ticks.map((_, i) => i % 2 === 0));
 });
 
 /* -------------------------------------------------------------------- rows */

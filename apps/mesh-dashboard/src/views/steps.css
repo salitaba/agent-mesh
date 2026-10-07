@@ -1,162 +1,159 @@
 /* ============================== steps ledger ==============================
-   The page is a ledger: one console strip (who is working, what the run has cost, who was busy when), one sticky toolbar where
-   the outcome legend is the filter, then one spine of turns grouped by recency. Every colour is `--oc` from the `.o-*` palette
-   (styles.css), so a hue means the same thing in the strip, the mix bar, the lanes, the chips and the rows. The word is always
-   there beside it, because a colour alone is not a cue.
+   One console card (who is working, what the run has cost, who was busy when), one sticky toolbar where the outcome legend is the
+   filter, then the turns as rows of a table, a card per stretch of time. Every colour is `--oc` from the `.o-*` palette (styles.css), so a
+   hue means the same thing in the mix bar, the lanes, the filter, the rail and the pill, and the word is always beside it.
 
    Geometry that comes from data arrives as a custom property set by the component and is placed here: --l and --w on a bar,
    --at on a tick or a grid line, --g on a mix segment, --w on a cost bar. Prefix: st-. */
 
-.st-page { --st-rail: 3px; --st-lab: 112px; --st-sum: 60px; min-width: 0; }
+.st-page { --st-cols: 30px minmax(0, 1fr) 76px 128px 76px; --st-lab: 124px; --st-sum: 68px; min-width: 0; }
 
-/* ---- console strip ---- */
+/* ---- the console card ---- */
 
-.st-console { margin-bottom: var(--s3); border: 1px solid var(--line); border-radius: var(--r-lg); background: var(--panel); }
-.st-console.hot { border-color: color-mix(in srgb, var(--ok) 34%, var(--line)); }
-.st-console-top { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: var(--s3) var(--s5); padding: var(--s3) var(--s4); }
+.st-pulse { padding: 0; margin-bottom: var(--s3); }
+.st-pulse.hot { border-color: color-mix(in srgb, var(--ok) 34%, var(--line)); }
+.st-pulse-top { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: var(--s3) var(--s6); padding: var(--s4) var(--s5); }
 .st-live { display: flex; align-items: center; flex-wrap: wrap; gap: var(--s2-5) var(--s3); min-width: 0; }
 .st-live-text { display: flex; flex-direction: column; gap: var(--s0); min-width: 0; }
-.st-live-text b { font: 600 16px/1.25 var(--sans); }
+.st-live-text b { font: 650 16px/1.25 var(--sans); letter-spacing: var(--k-track-title); }
 .st-live-text span { font-size: 13px; color: var(--muted); }
 
 .st-beacon { position: relative; flex: none; width: 10px; height: 10px; border-radius: 50%; background: var(--muted); }
 .st-beacon.on { background: var(--ok); }
-.st-beacon.on::after {
-  content: ""; position: absolute; inset: -3px; border-radius: 50%;
-  border: 1.5px solid var(--ok); opacity: 0; animation: st-ring 2.2s ease-out infinite;
-}
+.st-beacon.on::after { content: ""; position: absolute; inset: -3px; border-radius: 50%; border: 1.5px solid var(--ok); opacity: 0; animation: st-ring 2.2s ease-out infinite; }
 @keyframes st-ring { 0% { transform: scale(.6); opacity: .9; } 100% { transform: scale(2.1); opacity: 0; } }
 
 /* Who is working: one chip per agent mid-turn, and the chip opens that turn. */
-.st-now {
-  display: inline-flex; align-items: center; gap: var(--s2); min-height: 28px; padding: var(--s0) var(--s3) var(--s0) var(--s1);
-  background: var(--bg-2); border: 1px solid color-mix(in srgb, var(--ok) 36%, var(--line)); border-radius: 999px;
-  color: var(--text); font: 14px var(--sans); cursor: pointer;
-}
-.st-now:hover { border-color: var(--ok); }
+.st-now { display: inline-flex; align-items: center; gap: var(--s2); min-height: 32px; padding: 0 var(--s3) 0 var(--s1); background: var(--panel); border: 1px solid color-mix(in srgb, var(--ok) 36%, var(--line)); border-radius: var(--k-r-pill); box-shadow: var(--k-hl), var(--k-shadow-1); color: var(--text); font: 14px var(--sans); cursor: pointer; transition: border-color var(--k-dur-1) var(--k-ease), box-shadow var(--k-dur-1) var(--k-ease); }
+.st-now:hover { border-color: var(--ok); box-shadow: var(--k-hl), var(--k-shadow-2); }
 .st-now-name { font-weight: 600; }
-.st-now-t { font: 12px var(--mono); color: var(--ok); font-variant-numeric: tabular-nums; }
+.st-now-t { font: 600 12px var(--sans); color: var(--ok); }
 
-/* The figures read value first, label under it; the markup keeps the label first so a screen reader says "tokens 84k". */
-.st-stats { display: flex; flex-wrap: wrap; gap: var(--s2) var(--s5); margin: 0; }
-.st-stats > div { display: flex; flex-direction: column; align-items: flex-end; min-width: 56px; line-height: 1.2; }
-.st-stats dt { order: 2; font: var(--tx-meta); color: var(--muted); white-space: nowrap; }
-.st-stats dd { order: 1; margin: 0; font: 600 20px/1.2 var(--sans); font-variant-numeric: tabular-nums; }
-.st-stats .warn dd { color: var(--warn); }
+/* Three figures in one style, the share that went nowhere as a ring: a hairline between them, as in a ledger's totals. */
+.st-kpis { display: flex; align-items: center; gap: var(--s5); margin-left: auto; }
+.st-kpis > * + * { padding-left: var(--s5); border-left: 1px solid var(--line); }
+.st-kpis .stat-v, .st-kpis .stat-k { white-space: nowrap; }
+.st-noout { display: flex; align-items: center; gap: var(--s3); }
+.st-noout-k { display: flex; flex-direction: column; gap: var(--s0); }
 
-/* The shape of the run in one line. It is a picture of the legend's counts, which carry the words and the numbers. */
-.st-mix { display: flex; gap: var(--s0); height: 6px; margin: 0 var(--s4); border-radius: 3px; overflow: hidden; }
-.st-mix-seg { flex: var(--g) 1 0%; min-width: 6px; background: var(--oc); }
-.st-mix-seg.dim { opacity: .18; }
+/* The shape of the run in one line. It is a picture of the filter's counts, which carry the words and the numbers. */
+.st-mix { display: flex; gap: 2px; height: 8px; margin: 0 var(--s5) var(--s4); border-radius: var(--k-r-pill); overflow: hidden; }
+.st-mix-seg { flex: var(--g) 1 0%; min-width: 8px; border-radius: 2px; background: var(--oc); transition: opacity var(--k-dur-2) var(--k-ease); }
+.st-mix-seg.dim { opacity: .2; }
 
 /* ---- who was busy, when ---- */
 
-.st-tl { margin-top: var(--s3); padding: var(--s3) var(--s4) var(--s3-5); border-top: 1px solid var(--line); }
-.st-tl-head { display: flex; align-items: center; flex-wrap: wrap; gap: var(--s2) var(--s3); margin-bottom: var(--s2-5); }
+.st-tl { padding: var(--s3) var(--s5) var(--s4); border-top: 1px solid var(--line); }
+.st-tl-head { display: flex; align-items: center; flex-wrap: wrap; gap: var(--s2) var(--s3); margin-bottom: var(--s3); }
 .st-tl-head .seg { margin-left: auto; }
-.st-tl-cap {
-  display: inline-flex; align-items: center; gap: var(--s1-5); min-height: 24px; padding: 0;
-  background: none; border: 0; color: var(--text-dim); font: var(--tx-label); cursor: pointer;
-}
+.st-tl-cap { display: inline-flex; align-items: center; gap: var(--s1-5); min-height: 28px; padding: 0; background: none; border: 0; color: var(--text-dim); font: 600 12px/1.3 var(--sans); letter-spacing: var(--k-track-caps); text-transform: uppercase; cursor: pointer; }
 .st-tl-cap:hover { color: var(--text); }
 .st-axis-note { font: var(--tx-meta); color: var(--muted); }
+.st-tl-none { margin: 0; padding: var(--s3) 0; font-size: 14px; color: var(--muted); }
 
-.st-lanes { display: flex; flex-direction: column; gap: var(--s1-5); }
-.st-lane { display: grid; grid-template-columns: var(--st-lab) minmax(0, 1fr) var(--st-sum); gap: var(--s3); align-items: center; min-height: 32px; }
-.st-lane-label { display: flex; align-items: center; gap: var(--s1-5); min-width: 0; font-size: 14px; }
+.st-lanes { display: flex; flex-direction: column; gap: var(--s1); }
+.st-lane { display: grid; grid-template-columns: var(--st-lab) minmax(0, 1fr) var(--st-sum); gap: var(--s3); align-items: center; min-height: 36px; }
+.st-lane-label { display: flex; align-items: center; gap: var(--s2); min-width: 0; font: 500 14px var(--sans); color: var(--text-dim); }
 .st-lane-label span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.st-track { position: relative; height: 24px; border-radius: var(--r-sm); background: color-mix(in srgb, var(--line) 55%, transparent); }
-.st-grid { position: absolute; top: 0; bottom: 0; left: var(--at); width: 1px; background: color-mix(in srgb, var(--line-strong) 60%, transparent); }
+/* The track is a well: the time is read off the lines in it, and a bar is a turn laid on it. */
+.st-track { position: relative; height: 32px; border-radius: var(--r-sm); background: var(--sunken); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--line) 70%, transparent); }
+.st-grid { position: absolute; top: 0; bottom: 0; left: var(--at); width: 1px; background: color-mix(in srgb, var(--line-strong) 50%, transparent); }
+.st-nowline { position: absolute; top: 0; bottom: 0; left: var(--at); width: 0; border-left: 1.5px solid color-mix(in srgb, var(--k-accent) 60%, transparent); }
 
 /* A bar is a turn. The ledger below lists the same turns as full-size rows, so a bar narrower than a fingertip is a shortcut and
    not the only way in. */
-.st-bar {
-  position: absolute; top: 4px; bottom: 4px; left: var(--l); width: var(--w); min-width: 3px; padding: 0;
-  border: 0; border-radius: 3px; background: var(--oc); cursor: pointer;
-}
-.st-bar:hover { box-shadow: 0 0 0 1px var(--oc); z-index: var(--z-raise); }
+.st-bar { position: absolute; top: 8px; bottom: 8px; left: var(--l); width: var(--w); min-width: 4px; padding: 0; border: 0; border-radius: 4px; background: var(--oc); box-shadow: var(--k-hl); cursor: pointer; transition: transform var(--k-dur-1) var(--k-ease), box-shadow var(--k-dur-1) var(--k-ease), opacity var(--k-dur-2) var(--k-ease); }
+.st-bar:is(:hover, .hot) { z-index: var(--z-raise); transform: scaleY(1.32); box-shadow: var(--k-hl), 0 0 0 2px var(--sunken), 0 0 0 3.5px color-mix(in srgb, var(--oc) 60%, transparent); }
+.st-bar:active { transform: scaleY(1.2); }
 .st-bar:focus-visible { z-index: var(--z-raise); }
-.st-bar.o-live { background: linear-gradient(90deg, var(--oc), color-mix(in srgb, var(--oc) 55%, transparent)); animation: st-breathe 1.6s ease-in-out infinite; }
+.st-bar.o-live { background: linear-gradient(90deg, var(--oc) 35%, color-mix(in srgb, var(--oc) 40%, transparent)); animation: st-breathe 1.6s ease-in-out infinite; }
 @keyframes st-breathe { 50% { opacity: .55; } }
 /* A filter is a lens on the timeline too, not only on the list below. */
-.st-bar.dim { opacity: .14; }
+.st-bar.dim { opacity: .16; }
 /* A turn that began before the window starts gets a flat left edge, so a clipped bar never reads as "this is when it started". */
-.st-bar.clipped { border-radius: 0 3px 3px 0; }
+.st-bar.clipped { border-radius: 0 4px 4px 0; }
 
 /* Nothing breathes while the server is silent: the pulse says "working now", and that is the one thing nobody can vouch for. */
-.st-page.offline .st-bar.o-live, .st-page.offline .st-row.o-live .st-mark, .st-page.offline .st-row.o-live .otag::before { animation: none; }
+.st-page.offline .st-bar.o-live, .st-page.offline .st-row.o-live::before, .st-page.offline .st-row.o-live .otag::before, .st-page.offline .st-beacon::after { animation: none; }
 
-.st-lane-sum { display: flex; flex-direction: column; align-items: flex-end; line-height: 1.3; white-space: nowrap; }
-.st-lane-sum b { font: 600 12px var(--mono); font-variant-numeric: tabular-nums; }
-.st-lane-sum span { font: 11px var(--mono); color: var(--muted); }
+.st-lane-sum { display: flex; flex-direction: column; align-items: flex-end; line-height: 1.25; white-space: nowrap; }
+.st-lane-sum b { font: 650 13px var(--sans); }
+.st-lane-sum span { font-size: 12px; color: var(--muted); }
 
 /* The axis sits under the track column only (the label and the sums are the grid's other two), so a tick's percentage lands where
    the bars' percentages do. */
-.st-axis { position: relative; height: 18px; margin: var(--s1-5) calc(var(--st-sum) + var(--s3)) 0 calc(var(--st-lab) + var(--s3)); }
-.st-tick { position: absolute; top: 0; left: var(--at); transform: translateX(-50%); font: 11px var(--mono); color: var(--muted); white-space: nowrap; }
+.st-axis { position: relative; height: 22px; margin: var(--s1-5) calc(var(--st-sum) + var(--s3)) 0 calc(var(--st-lab) + var(--s3)); }
+.st-tick { position: absolute; top: 5px; left: var(--at); transform: translateX(-50%); font: 11px var(--sans); color: var(--muted); white-space: nowrap; }
+.st-tick::before { content: ""; position: absolute; top: -6px; left: 50%; width: 1px; height: 4px; background: var(--line-strong); }
 .st-tick.edge { transform: none; }
-.st-tick.now { transform: translateX(-100%); color: var(--text-dim); font-weight: 600; }
+.st-tick.edge::before { left: 0; }
+.st-tick.now { color: var(--k-accent-ink); font-weight: 650; }
+.st-tick.now::before { background: var(--k-accent); }
+.st-tick.now.end { transform: translateX(-100%); }
+.st-tick.now.end::before { left: 100%; }
 
 /* ---- sticky toolbar: the legend is the filter ---- */
 
 /* Sticky offsets measure from inside the scroller's padding, so a bare `top: 0` left a band above the bar where rows scrolled past
    in plain view. The offset cancels the page's top padding (styles.css `#view`) so the bar sits flush with the top of the page. */
-.st-toolbar {
-  position: sticky; top: calc(var(--s5) * -1); z-index: var(--z-toolbar);
-  display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: var(--s2) var(--s4);
-  margin-bottom: var(--s3); padding: var(--s2) 0; background: var(--bg);
-}
-.st-filters { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s1-5); }
+.st-toolbar { position: sticky; top: calc(var(--s5) * -1); z-index: var(--z-toolbar); display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: var(--s2) var(--s4); margin-bottom: var(--s3); padding: var(--s2) 0; background: var(--bg); }
+/* The filter is the segmented trough, wrapping when it must. */
+.st-filters { flex-wrap: wrap; max-width: 100%; }
+.st-filters button { display: inline-flex; align-items: center; gap: var(--s1-5); }
+.st-filters button:disabled { opacity: .5; cursor: default; }
+/* On a phone a choice with nothing behind it is a third of a screen of things that cannot be pressed. */
+@media (max-width: 620px) { .st-filters button:disabled { display: none; } }
+.st-f-dot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--oc); }
+.st-f-n { font-weight: 500; color: var(--muted); }
+.st-filters button[aria-pressed="true"] { color: var(--oc, var(--k-accent-ink)); }
+.st-filters button[aria-pressed="true"] .st-f-n { color: inherit; }
 .st-toolbar-right { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s2-5) var(--s4); }
-.st-count { font: 13px var(--mono); color: var(--muted); font-variant-numeric: tabular-nums; }
+.st-count { font: 13px var(--sans); color: var(--muted); }
 
-/* ---- ledger ---- */
+/* ---- the ledger: a card per stretch of time, and rows that line up ---- */
 
 .st-ledger { display: flex; flex-direction: column; gap: var(--s5); min-width: 0; }
-.st-group-head { display: flex; align-items: baseline; gap: var(--s3); margin: 0 var(--s0) var(--s2); }
-.st-group-head h3 { margin: 0; font: var(--tx-section); color: var(--text-dim); }
-.st-group-head span { font: var(--tx-meta); color: var(--muted); font-variant-numeric: tabular-nums; }
-.st-group-head::after { content: ""; flex: 1; height: 1px; background: var(--line); align-self: center; }
-.st-list { display: flex; flex-direction: column; gap: var(--s1-5); margin: 0; padding: 0; list-style: none; }
+.st-group { background: var(--panel); border: 1px solid var(--line); border-radius: var(--r-lg); box-shadow: var(--k-hl), var(--k-shadow-1); overflow: hidden; }
+.st-group-head { display: grid; grid-template-columns: var(--st-cols); column-gap: var(--s3); align-items: baseline; padding: var(--s2) var(--s4); background: var(--panel-2); border-bottom: 1px solid var(--line); }
+.st-group-title { grid-column: 1 / 3; display: flex; align-items: baseline; flex-wrap: wrap; gap: var(--s0) var(--s3); min-width: 0; }
+.st-group-title h3 { margin: 0; font: 650 13px/1.3 var(--sans); letter-spacing: var(--k-track-tight); color: var(--text); text-transform: none; }
+.st-group-title span { font: var(--tx-meta); color: var(--muted); }
+.st-cols { display: contents; }
+.st-cols span { justify-self: end; font: 600 11px/1.3 var(--sans); letter-spacing: var(--k-track-caps); text-transform: uppercase; color: var(--muted); }
+.st-list { display: flex; flex-direction: column; margin: 0; padding: 0; list-style: none; }
 .st-item { min-width: 0; margin: 0; }
+.st-item + .st-item, .st-item + .st-fold, .st-fold + .st-item, .st-fold + .st-fold { border-top: 1px solid var(--line); }
 
-/* A turn is one button: the whole row opens it. Rail, avatar, what happened, what it cost. */
-.st-row {
-  --row: var(--panel);
-  position: relative; display: grid; grid-template-columns: var(--st-rail) auto minmax(0, 1fr) auto; align-items: center; column-gap: var(--s3);
-  width: 100%; padding: var(--s2-5) var(--s3-5) var(--s2-5) 0; overflow: hidden;
-  background: var(--row); border: 1px solid var(--line); border-radius: var(--r);
-  color: var(--text); font: 14px var(--sans); text-align: left; cursor: pointer;
-}
-.st-row:hover { --row: var(--panel-2); border-color: color-mix(in srgb, var(--oc) 55%, var(--line)); }
-.st-mark { align-self: stretch; background: var(--oc); }
+/* A turn is one button: the whole row opens it. Avatar, what happened, then the figures in columns. The rail on its left edge is the
+   outcome's colour. */
+.st-row { --row: var(--panel); position: relative; display: grid; grid-template-columns: var(--st-cols); align-items: center; column-gap: var(--s3); width: 100%; min-height: 60px; padding: var(--s2-5) var(--s4); background: var(--row); border: 0; color: var(--text); font: 14px var(--sans); text-align: left; cursor: pointer; transition: background-color var(--k-dur-1) var(--k-ease); }
+.st-row::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 3px; background: var(--oc); transition: width var(--k-dur-1) var(--k-ease); }
+.st-row:is(:hover, .hot) { --row: var(--panel-2); }
+.st-row.hot::before, .st-row:focus-visible::before { width: 5px; }
+.st-row:focus-visible { outline-offset: -2px; }
 /* A turn that wrote nothing steps back. Anything that did something, was stopped or is running keeps its full colour. */
-.st-row.o-quiet { --row: color-mix(in srgb, var(--panel) 70%, var(--bg)); }
-.st-row.o-quiet:hover { --row: var(--panel-2); }
-.st-row.o-quiet .st-mark { opacity: .45; }
+.st-row.o-quiet::before { opacity: .45; }
 .st-row.o-quiet .st-agent { color: var(--text-dim); }
-.st-row.o-live { border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); }
-.st-row.o-live .st-mark { animation: st-breathe 1.6s ease-in-out infinite; }
-.st-row.o-crash, .st-row.o-rej, .st-row.o-block { --row: color-mix(in srgb, var(--oc) 6%, var(--panel)); }
-.st-row.o-crash:hover, .st-row.o-rej:hover, .st-row.o-block:hover { --row: color-mix(in srgb, var(--oc) 11%, var(--panel)); }
+.st-row.o-quiet .avatar { opacity: .75; }
+.st-row.o-live { --row: color-mix(in srgb, var(--oc) 4%, var(--panel)); }
+.st-row.o-live::before { animation: st-breathe 1.6s ease-in-out infinite; }
+.st-row.o-crash, .st-row.o-rej, .st-row.o-block { --row: color-mix(in srgb, var(--oc) 5%, var(--panel)); }
+.st-row.o-live:is(:hover, .hot), .st-row.o-crash:is(:hover, .hot), .st-row.o-rej:is(:hover, .hot), .st-row.o-block:is(:hover, .hot) { --row: color-mix(in srgb, var(--oc) 9%, var(--panel)); }
 
 .st-main { display: flex; flex-direction: column; gap: var(--s0); min-width: 0; }
 .st-l1 { display: flex; align-items: center; flex-wrap: wrap; gap: var(--s1) var(--s2); min-width: 0; font-size: 15px; line-height: 1.35; }
-.st-agent { font-weight: 600; overflow-wrap: anywhere; }
+.st-agent { font-weight: 600; letter-spacing: var(--k-track-tight); overflow-wrap: anywhere; }
 .st-sum { color: var(--text-dim); font-size: 13px; }
 /* A live row's current tool is a path or a command: mono, and clipped rather than wrapping the row onto a third line. */
 .st-now-tool { max-width: 46ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 13px var(--mono); }
 .st-now-tool.run { color: var(--text); }
-.st-retry { font: 12px var(--mono); color: var(--warn); }
+.st-retry { font: 600 12px var(--sans); color: var(--warn); }
 .st-l2 { display: flex; min-width: 0; font: var(--tx-meta); color: var(--muted); }
 .st-woke { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .st-note { color: var(--text-dim); }
 
 /* Two lines at most; the tooltip has the rest. */
-.st-err, .st-refusal {
-  margin-top: var(--s1-5); font: 13px/1.45 var(--mono); overflow: hidden; overflow-wrap: anywhere;
-  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2;
-}
+.st-err, .st-refusal { margin-top: var(--s1-5); font: 13px/1.45 var(--mono); overflow: hidden; overflow-wrap: anywhere; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; }
 .st-err { color: var(--bad); }
 /* On a blocked row the error is the blocker ("mission budget used up"), not a crash. */
 .st-row.o-block .st-err { color: var(--oc); }
@@ -164,46 +161,53 @@
 .st-refusal { color: var(--rej); }
 .st-refusal b { font-weight: 600; margin-right: var(--s1); }
 
-.st-num { display: flex; flex-direction: column; align-items: flex-end; gap: var(--s0); min-width: 84px; white-space: nowrap; font: 12px/1.35 var(--mono); color: var(--muted); font-variant-numeric: tabular-nums; }
-.st-num b { font: 600 15px/1.35 var(--mono); color: var(--text); }
-/* Cost against the costliest loaded turn: a hairline track under the figure with the share filled from the right edge. A bare short
-   dash read as a stray underline. */
-.st-cost { position: relative; padding-bottom: var(--s1); }
-.st-cost::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 2px; border-radius: 1px; background: color-mix(in srgb, var(--line) 80%, transparent); }
-.st-cost-bar { position: absolute; z-index: var(--z-raise); right: 0; bottom: 0; width: var(--w); max-width: 100%; height: 2px; border-radius: 1px; background: var(--oc); }
-.st-left.warn { color: var(--warn); }
+/* The three figures are the row's own columns on a wide screen (the wrapper takes no box), and a line under the words on a phone. */
+.st-num { display: contents; }
+.st-dur { justify-self: end; font: 650 15px/1.3 var(--sans); letter-spacing: var(--k-track-tight); color: var(--text); white-space: nowrap; }
+/* Cost against the costliest loaded turn: the figure, and under it a bar as long as its share, from the right edge. */
+.st-cost { justify-self: end; display: flex; flex-direction: column; align-items: flex-end; gap: var(--s1); width: 100%; white-space: nowrap; }
+.st-tok { font: 13px/1.3 var(--sans); color: var(--text-dim); }
+.st-cost-bar { display: block; width: var(--w); max-width: 100%; height: 3px; border-radius: 2px; background: color-mix(in srgb, var(--oc) 72%, transparent); }
+.st-when { justify-self: end; font: 13px var(--sans); color: var(--muted); white-space: nowrap; }
+.st-left { justify-self: end; font: 13px var(--sans); color: var(--muted); white-space: nowrap; }
+.st-left.warn { color: var(--warn); font-weight: 600; }
 
 /* ---- quiet runs, folded ---- */
 
-.st-fold { list-style: none; margin: 0; border: 1px dashed var(--line-strong); border-radius: var(--r); overflow: hidden; }
-.st-fold-head {
-  display: flex; align-items: center; gap: var(--s2); width: 100%; min-height: 40px; padding: var(--s2) var(--s3-5);
-  background: none; border: 0; color: var(--text); font: 14px var(--sans); text-align: left; cursor: pointer;
-}
-.st-fold-head:hover { background: var(--panel-2); }
+.st-fold { list-style: none; margin: 0; background: color-mix(in srgb, var(--sunken) 60%, var(--panel)); }
+.st-fold-head { display: flex; align-items: center; gap: var(--s2); width: 100%; min-height: 44px; padding: var(--s2) var(--s4); background: none; border: 0; color: var(--text-dim); font: 14px var(--sans); text-align: left; cursor: pointer; transition: background-color var(--k-dur-1) var(--k-ease); }
+.st-fold-head:hover { background: var(--wash); color: var(--text); }
 .st-fold-head:focus-visible { outline-offset: -2px; }
 .st-fold-head .icon { flex: none; color: var(--muted); }
-.st-fold-head b { flex: none; font-weight: 600; }
+.st-fold-head b { flex: none; font-weight: 600; color: var(--text); }
 .st-fold-who { flex: 1 1 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; color: var(--muted); }
-.st-fold-cost { flex: none; font: var(--tx-meta); font-family: var(--mono); color: var(--muted); font-variant-numeric: tabular-nums; }
-.st-fold-body { display: flex; flex-direction: column; gap: var(--s1-5); margin: 0; padding: var(--s2-5); list-style: none; border-top: 1px dashed var(--line); }
+.st-fold-cost { flex: none; font: 13px var(--sans); color: var(--muted); }
+.st-fold-body { display: flex; flex-direction: column; margin: 0; padding: 0; list-style: none; border-top: 1px solid var(--line); }
+.st-fold-body > .st-item + .st-item { border-top: 1px solid var(--line); }
 
 /* ---- more, and loading ---- */
 
 .st-more { display: flex; justify-content: center; padding: var(--s2) 0; }
 .st-skel { cursor: default; pointer-events: none; }
-.sk-av { width: 28px; height: 28px; border-radius: var(--r-sm); }
-.sk-l1 { width: 42%; height: 12px; margin-bottom: var(--s2); }
-.sk-l2 { width: 68%; height: 10px; }
-.sk-n { width: 44px; height: 12px; margin-bottom: var(--s1-5); }
-.sk-n2 { width: 60px; height: 9px; }
+.st-skel .st-main { gap: var(--s2); }
+.st-skel .st-num { display: contents; }
+
+/* ---- what a tooltip over a bar says (the tooltip's own ink: it is the inverse of the page in light) ---- */
+
+.tt { display: flex; flex-direction: column; gap: var(--s0); min-width: 168px; }
+.tt-h { display: flex; align-items: baseline; justify-content: space-between; gap: var(--s3); }
+.tt-h b { font-weight: 650; }
+.tt-oc { font-weight: 600; opacity: .9; }
+.tt-r { opacity: .92; font-variant-numeric: tabular-nums; }
+.tt-dim { opacity: .7; }
 
 /* ---- narrower ---- */
 
 @media (max-width: 1100px) {
   /* With the sidebar open the track is a few hundred pixels wide and a long label ("-1h 30m") would touch its neighbour, so every
      other label goes. The grid line stays. */
-  .st-tick:not(.major) { display: none; }
+  .st-tick:not(.major):not(.now) { display: none; }
+  .st-page { --st-cols: 30px minmax(0, 1fr) 70px 112px 70px; }
 }
 
 @media (max-width: 900px) {
@@ -215,18 +219,18 @@
 }
 
 @media (max-width: 760px) {
-  .st-page { --st-lab: 80px; --st-sum: 52px; }
-  /* Seven chips wrap onto three lines on a phone; a bar that deep would cover a third of the screen while you scroll. */
+  .st-page { --st-lab: 84px; --st-sum: 56px; }
+  /* A wrapped trough is a third of a phone screen; a bar that deep would cover it while you scroll. */
   .st-toolbar { position: static; }
-  .st-stats dd { font-size: 18px; }
 }
 
 @media (max-width: 620px) {
-  .st-console-top { padding: var(--s3); }
-  .st-stats { width: 100%; justify-content: space-between; }
-  .st-stats > div { align-items: flex-start; }
-  .st-mix { margin: 0 var(--s3); }
-  .st-tl { padding-left: var(--s3); padding-right: var(--s3); }
+  .st-pulse-top { padding: var(--s3-5) var(--s4); }
+  .st-kpis { width: 100%; justify-content: space-between; gap: var(--s3); margin-left: 0; }
+  .st-kpis > * + * { padding-left: var(--s3); }
+  .st-mix { margin: 0 var(--s4) var(--s3-5); }
+  .st-tl { padding-left: var(--s4); padding-right: var(--s4); }
+  .st-tl-head .seg { margin-left: 0; max-width: 100%; overflow-x: auto; }
   /* A lane is two lines: who and their totals, then a track the full width of the card. Eighty pixels for a name cut "developer"
      to "devel…", and a lane you cannot name is not worth drawing. */
   .st-lane { grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "label sum" "track track"; gap: var(--s1) var(--s3); min-height: 0; padding-bottom: var(--s1-5); }
@@ -234,12 +238,17 @@
   .st-lane-sum { grid-area: sum; flex-direction: row; align-items: baseline; gap: var(--s2); }
   .st-track { grid-area: track; }
   .st-axis { margin-left: 0; margin-right: 0; }
+  .st-group-head { grid-template-columns: minmax(0, 1fr); padding: var(--s2) var(--s3-5); }
+  .st-group-title { grid-column: 1; }
+  .st-cols { display: none; }
   /* What it cost moves under what it did, so the words get the whole row. */
-  .st-row { grid-template-columns: var(--st-rail) auto minmax(0, 1fr); row-gap: var(--s1-5); padding-right: var(--s3); }
-  .st-row .st-mark { grid-row: 1 / span 2; }
-  .st-num { grid-column: 3; flex-direction: row; align-items: baseline; flex-wrap: wrap; gap: var(--s0) var(--s3); min-width: 0; }
-  .st-num b { font-size: 14px; }
-  .st-cost { padding-bottom: 0; }
-  .st-cost::after, .st-cost-bar { display: none; }
+  .st-row { grid-template-columns: 30px minmax(0, 1fr); row-gap: var(--s1-5); padding: var(--s2-5) var(--s3-5); }
+  .st-num { display: flex; align-items: baseline; flex-wrap: wrap; grid-column: 2; gap: var(--s0) var(--s3); }
+  .st-skel .st-num { display: flex; }
+  .st-dur { justify-self: auto; font-size: 14px; }
+  .st-cost { width: auto; flex-direction: row; justify-self: auto; }
+  .st-cost-bar { display: none; }
+  .st-when, .st-left { justify-self: auto; }
   .st-now-tool { max-width: 100%; }
+  .st-fold-head { padding-left: var(--s3-5); padding-right: var(--s3-5); }
 }

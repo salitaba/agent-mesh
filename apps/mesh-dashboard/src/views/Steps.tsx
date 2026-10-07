@@ -2,7 +2,7 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties } from "react";
 import { ago, dur, fmt, localTime, plainBlocker, plainReason, plural, refusalSummary, outcomeOf, zoneLabel, OUTCOME_META, type Outcome } from "../format";
 import { useMesh, type TurnStep } from "../store";
-import { AgentAvatar, Button, EmptyState, ErrorState, Input, PageHeader, agentColor, useNow } from "../components";
+import { AgentAvatar, Button, EmptyState, ErrorState, OutcomePill, PageHeader, Ring, SearchField, Segmented, Skeleton, Stat, Switch, Tooltip, agentColor, useNow } from "../components";
 import { Icon } from "../icons";
 import { compactNow, nowLine, timeLeftText, type CurrentTool } from "../livework";
 import { BUCKETS, heldList, newestKey } from "../feed";
@@ -10,7 +10,7 @@ import { FeedStatus, HoldBar, PauseButton, useFeedHold } from "../feedstatus";
 import { useRoving } from "../rovinglist";
 import { titleWhenClipped } from "../domutil";
 import {
-  FILTERS, OUTCOME_ORDER, WINDOWS, autoWindow, busyText, filterSteps, groupSteps, outcomeCounts, pulseLine, rowSummary, spendOf, timeline,
+  FILTERS, FIT_WINDOW, OUTCOME_ORDER, WINDOWS, autoPick, busyText, filterSteps, groupSteps, outcomeCounts, pulseLine, rowSummary, spendOf, timeline,
   type Bar, type Lane,
 } from "../steps";
 import { useMission } from "../useMission";
@@ -18,18 +18,40 @@ import { useMissionActions } from "../useMissionActions";
 import { useMedia } from "../shell";
 import "./steps.css";
 
-/* The page is a ledger: one console strip on top (what is running, what the run has cost, who was busy when), one sticky toolbar
-   (the outcome legend is the filter), and one spine of turns underneath. Everything shares the outcome palette in `.o-*`, so a
-   colour means the same thing everywhere. What it decides lives in steps.ts and feed.ts, which node:test covers. */
+/* The page is a ledger: one console card on top (what is running, what the run has cost, who was busy when), one sticky toolbar
+   (the outcome legend is the filter), and the turns underneath as rows of a table. Everything shares the outcome palette in `.o-*`, so a
+   colour means the same thing everywhere, and a word is always beside it. What it decides lives in steps.ts and feed.ts, which
+   node:test covers. */
 
 const css = (vars: Record<string, string | number>): CSSProperties => vars as CSSProperties;
 
 /** Mirrors the phone rule in steps.css. A phone gets the numbers first and the swimlanes one tap away. */
 const PHONE = "(max-width: 620px)";
 
+/** The windows the timeline offers: the run first (it is the one that fits a mission that is over), then the ones that count back from now. */
+const WINDOW_OPTIONS = [FIT_WINDOW, ...WINDOWS].map((w) => ({
+  id: w.id,
+  label: w.label,
+  hint: w.id === FIT_WINDOW.id ? "Fit the window to the run: from its first turn to its last" : w.ms ? `Show the last ${w.label}` : "Show the whole run, up to now",
+}));
+
 /* ------------------------------- the strip -------------------------------- */
 
-function Strip({ steps, loaded, onPick, filter, counts, missionTokens }: {
+/** What the tooltip over a bar says about the turn: the same facts the row below carries, so pointing is enough to read one. */
+function TurnTip({ s }: { s: TurnStep }): React.JSX.Element {
+  const oc = outcomeOf(s);
+  const summary = rowSummary(s);
+  return (
+    <span className="tt">
+      <span className="tt-h"><b>{s.agentId}</b><span className={`tt-oc ${OUTCOME_META[oc].cls}`}>{OUTCOME_META[oc].label}</span></span>
+      <span className="tt-r">{localTime(s.startedAt)} · {dur(s.durationMs) || (oc === "live" ? "running" : "no duration")} · {s.tokens ? `${fmt(s.tokens)} tok` : "no cost"}</span>
+      {summary ? <span className="tt-r">{summary}</span> : null}
+      <span className="tt-r tt-dim">Woke: {plainReason(s.reasonKind)}</span>
+    </span>
+  );
+}
+
+function Strip({ steps, loaded, onPick, filter, counts, missionTokens, hot, onHot }: {
   steps: TurnStep[];
   /** The step history has arrived. Before that the strip shows dashes, not zeros: zero is a claim about a list nobody has fetched. */
   loaded: boolean;
@@ -38,6 +60,9 @@ function Strip({ steps, loaded, onPick, filter, counts, missionTokens }: {
   counts: Record<string, number>;
   /** Whole-mission spend from the budget projection, or null before /status lands. */
   missionTokens: number | null;
+  /** The turn the pointer or the keyboard is on, in the timeline or in the list: both draw it picked out. */
+  hot: string | null;
+  onHot: (turnId: string | null) => void;
 }): React.JSX.Element {
   const now = useNow(1000);
   const { state } = useMission();
@@ -46,7 +71,7 @@ function Strip({ steps, loaded, onPick, filter, counts, missionTokens }: {
   const phone = useMedia(PHONE);
   const [openPref, setOpenPref] = useState<boolean | null>(null);
   const open = openPref ?? !phone;
-  const auto = useMemo(() => autoWindow(steps, Date.now()), [steps]);
+  const auto = useMemo(() => autoPick(steps, Date.now(), state.phase), [steps, state.phase]);
   const winId = win ?? auto;
 
   const live = steps.filter((s) => outcomeOf(s) === "live");
@@ -60,105 +85,122 @@ function Strip({ steps, loaded, onPick, filter, counts, missionTokens }: {
 
   const barKeys = useMemo(() => tl?.lanes.flatMap((l) => l.bars.map((b) => b.step.turnId)) ?? [], [tl]);
   const roving = useRoving(barKeys, { horizontal: true });
+  const warn = spend.wastedPct >= 40;
 
   return (
-    <section className={`st-console${working ? " hot" : ""}`} aria-label="Mission pulse">
-      <div className="st-console-top">
-        <div className="st-live">
-          <span className={`st-beacon${working ? " on" : ""}`} aria-hidden="true" />
-          <div className="st-live-text">
-            <b>{pulse.title}</b>
-            <span>{pulse.detail}</span>
+    <section className={`card st-pulse${working ? " hot" : ""}`} aria-label="Mission pulse">
+        <div className="st-pulse-top">
+          <div className="st-live">
+            <span className={`st-beacon${working ? " on" : ""}`} aria-hidden="true" />
+            <div className="st-live-text">
+              <b>{pulse.title}</b>
+              <span>{pulse.detail}</span>
+            </div>
+            {live.map((s) => (
+              <button
+                key={s.turnId}
+                type="button"
+                className="st-now"
+                onClick={() => onPick(s)}
+                title={`${s.agentId}. Woke: ${plainReason(s.reasonKind)}${s.currentTool ? `. ${nowLine(s.currentTool, now)}` : ""}`}
+              >
+                <AgentAvatar id={s.agentId} color={agentColor(s.agentId)} size="sm" />
+                <span className="st-now-name">{s.agentId}</span>
+                <span className="st-now-t">{dur(now - Date.parse(s.startedAt))}</span>
+              </button>
+            ))}
           </div>
-          {live.map((s) => (
-            <button
-              key={s.turnId}
-              type="button"
-              className="st-now"
-              onClick={() => onPick(s)}
-              title={`${s.agentId}. Woke: ${plainReason(s.reasonKind)}${s.currentTool ? `. ${nowLine(s.currentTool, now)}` : ""}`}
-            >
-              <AgentAvatar id={s.agentId} color={agentColor(s.agentId)} size="sm" />
-              <span className="st-now-name">{s.agentId}</span>
-              <span className="st-now-t">{dur(now - Date.parse(s.startedAt))}</span>
-            </button>
-          ))}
-        </div>
 
-        <dl className="st-stats">
-          <div title="Turns that have finished.">
-            <dt>done</dt><dd>{loaded ? done : "–"}</dd>
-          </div>
-          <div
-            title={
-              missionTokens == null
-                ? `${fmt(spend.loaded)} tokens across the ${plural(steps.length, "turn")} loaded here.`
-                : `Every turn of the mission, from the budget ledger.${spend.partial ? ` The ${plural(steps.length, "turn")} loaded below account for ${fmt(spend.loaded)}.` : ""}`
-            }
-          >
-            <dt>tokens</dt><dd>{loaded || missionTokens != null ? fmt(spend.tokens) : "–"}</dd>
-          </div>
-          <div
-            className={spend.wastedPct >= 40 ? "warn" : ""}
-            title={`Share of the ${fmt(spend.loaded)} tokens in the ${plural(steps.length, "loaded turn")} that went to turns which wrote nothing or were refused.${spend.partial ? " Older turns are not counted." : ""}`}
-          >
+          <div className="st-kpis">
+            <div title="Turns that have finished.">
+              <Stat label="Turns done" value={loaded ? done : "–"} />
+            </div>
+            <div
+              title={
+                missionTokens == null
+                  ? `${fmt(spend.loaded)} tokens across the ${plural(steps.length, "turn")} loaded here.`
+                  : `Every turn of the mission, from the budget ledger.${spend.partial ? ` The ${plural(steps.length, "turn")} loaded below account for ${fmt(spend.loaded)}.` : ""}`
+              }
+            >
+              <Stat label="Tokens" value={loaded || missionTokens != null ? fmt(spend.tokens) : "–"} />
+            </div>
             {/* Not "wasted": a turn that decided nothing needed doing, or was refused by policy, is working as designed. The figure says what is
                 measured (tokens that produced no output) and leaves the verdict to the reader. */}
-            <dt>{spend.partial ? `no output (${plural(steps.length, "turn")} loaded)` : "no output"}</dt><dd>{loaded ? `${spend.wastedPct}%` : "–"}</dd>
-          </div>
-        </dl>
-      </div>
-
-      {mix.length ? (
-        <div className="st-mix" role="img" aria-label={`Outcome mix: ${mix.map(({ o, n }) => `${n} ${OUTCOME_META[o].label.toLowerCase()}`).join(", ")}`}>
-          {mix.map(({ o, n }) => (
-            <span
-              key={o}
-              className={`st-mix-seg ${OUTCOME_META[o].cls}${filter && filter !== o ? " dim" : ""}`}
-              style={css({ "--g": n })}
-              title={`${n} ${OUTCOME_META[o].label.toLowerCase()}, ${Math.round((n / steps.length) * 100)}%`}
-            />
-          ))}
-        </div>
-      ) : null}
-
-      {tl ? (
-        <div className="st-tl">
-          <div className="st-tl-head">
-            <button type="button" className="st-tl-cap" aria-expanded={open} onClick={() => setOpenPref(!open)}>
-              <Icon name="chevron-right" size={12} className={open ? "caret turned" : "caret"} />
-              Who was busy, when
-            </button>
-            {/* Beside the caption, not on the axis: there it sat on top of the "now" tick, which is always at the right edge. */}
-            {tl.hidden ? <span className="st-axis-note">{tl.hidden} older turn{tl.hidden > 1 ? "s" : ""} outside this window</span> : null}
-            <span className="seg" role="group" aria-label="Timeline window">
-              {WINDOWS.map((w) => (
-                <button key={w.id} type="button" aria-pressed={winId === w.id} onClick={() => setWin(w.id)} title={w.ms ? `Show the last ${w.label}` : "Show the whole run"}>
-                  {w.label}
-                </button>
-              ))}
-            </span>
-          </div>
-          {open ? (
-            <div className="st-lanes" role="group" aria-label="Turns on a timeline, one lane per agent" onKeyDown={roving.onKeyDown}>
-              {tl.lanes.map((ln) => (
-                <LaneRow key={ln.agentId} lane={ln} filter={filter} ticks={tl.ticks} stop={roving.stop} setLast={roving.setLast} onPick={onPick} />
-              ))}
-              <div className="st-axis" aria-hidden="true">
-                {tl.ticks.map((t) => (
-                  <span key={t.at} className={`st-tick${t.label === "now" ? " now" : t.at === 0 ? " edge" : ""}${t.major ? " major" : ""}`} style={css({ "--at": `${t.at}%` })}>{t.label}</span>
-                ))}
-              </div>
+            <div
+              className={`st-noout${warn ? " warn" : ""}`}
+              title={`Share of the ${fmt(spend.loaded)} tokens in the ${plural(steps.length, "loaded turn")} that went to turns which wrote nothing or were refused.${spend.partial ? " Older turns are not counted." : ""}`}
+            >
+              <Ring
+                value={loaded ? spend.wastedPct : 0}
+                max={100}
+                size={58}
+                stroke={6}
+                tone={warn ? "warn" : "muted"}
+                label={loaded ? `${spend.wastedPct}% of the tokens in the ${plural(steps.length, "loaded turn")} went to turns that produced no output` : "No output share, not loaded yet"}
+              >
+                <b>{loaded ? `${spend.wastedPct}%` : "–"}</b>
+              </Ring>
+              <span className="st-noout-k">
+                <span className="stat-k">No output</span>
+                <span className="stat-s">{spend.partial ? `of ${plural(steps.length, "turn")} loaded` : "of tokens"}</span>
+              </span>
             </div>
-          ) : null}
+          </div>
         </div>
-      ) : null}
+
+        {mix.length ? (
+          <div className="st-mix" role="img" aria-label={`Outcome mix: ${mix.map(({ o, n }) => `${n} ${OUTCOME_META[o].label.toLowerCase()}`).join(", ")}`}>
+            {mix.map(({ o, n }) => (
+              <span
+                key={o}
+                className={`st-mix-seg ${OUTCOME_META[o].cls}${filter && filter !== o ? " dim" : ""}`}
+                style={css({ "--g": n })}
+                title={`${n} ${OUTCOME_META[o].label.toLowerCase()}, ${Math.round((n / steps.length) * 100)}%`}
+              />
+            ))}
+          </div>
+        ) : null}
+
+        {tl ? (
+          <div className="st-tl">
+            <div className="st-tl-head">
+              <button type="button" className="st-tl-cap" aria-expanded={open} onClick={() => setOpenPref(!open)}>
+                <Icon name="chevron-right" size={12} className={open ? "caret turned" : "caret"} />
+                Who was busy, when
+              </button>
+              {/* Beside the caption, not on the axis: there it sat on top of the "now" tick, which is always at the right edge. */}
+              {tl.hidden ? <span className="st-axis-note">{tl.hidden} older turn{tl.hidden > 1 ? "s" : ""} outside this window</span> : null}
+              {tl.fit ? <span className="st-axis-note">Times in {zoneLabel()}</span> : null}
+              {open ? <Segmented options={WINDOW_OPTIONS} value={winId} onChange={setWin} label="Timeline window" /> : null}
+            </div>
+            {open ? (
+              tl.lanes.length ? (
+                <div className="st-lanes" role="group" aria-label="Turns on a timeline, one lane per agent" onKeyDown={roving.onKeyDown}>
+                  {tl.lanes.map((ln) => (
+                    <LaneRow key={ln.agentId} lane={ln} filter={filter} ticks={tl.ticks} nowAt={tl.nowAt} hot={hot} onHot={onHot} stop={roving.stop} setLast={roving.setLast} onPick={onPick} />
+                  ))}
+                  <div className="st-axis" aria-hidden="true">
+                    {tl.ticks.filter((t) => t.label !== "now" && (tl.nowAt === null || Math.abs(t.at - tl.nowAt) > 7)).map((t) => (
+                      <span key={t.at} className={`st-tick${t.at === 0 ? " edge" : ""}${t.major ? " major" : ""}`} style={css({ "--at": `${t.at}%` })}>{t.label}</span>
+                    ))}
+                    {tl.nowAt !== null ? <span className={`st-tick now${tl.nowAt > 96 ? " end" : ""}`} style={css({ "--at": `${tl.nowAt}%` })}>now</span> : null}
+                  </div>
+                </div>
+              ) : (
+                <p className="st-tl-none" role="status">
+                  No turn ran in this window.{" "}
+                  <button type="button" className="linklike" onClick={() => setWin(FIT_WINDOW.id)}>Fit the run</button>
+                </p>
+              )
+            ) : null}
+          </div>
+        ) : null}
     </section>
   );
 }
 
-function LaneRow({ lane, filter, ticks, stop, setLast, onPick }: {
-  lane: Lane<TurnStep>; filter: string; ticks: { at: number }[];
+function LaneRow({ lane, filter, ticks, nowAt, hot, onHot, stop, setLast, onPick }: {
+  lane: Lane<TurnStep>; filter: string; ticks: { at: number }[]; nowAt: number | null; hot: string | null; onHot: (turnId: string | null) => void;
   stop: string | null; setLast: (key: string) => void; onPick: (s: TurnStep) => void;
 }): React.JSX.Element {
   return (
@@ -169,23 +211,27 @@ function LaneRow({ lane, filter, ticks, stop, setLast, onPick }: {
       </div>
       <div className="st-track">
         {ticks.map((t) => <span key={t.at} className="st-grid" style={css({ "--at": `${t.at}%` })} aria-hidden="true" />)}
+        {nowAt !== null ? <span className="st-nowline" style={css({ "--at": `${nowAt}%` })} aria-hidden="true" /> : null}
         {lane.bars.map((b: Bar<TurnStep>) => {
           const s = b.step;
           const oc = outcomeOf(s);
           const dim = filter && oc !== filter;
           return (
-            <button
-              key={s.turnId}
-              type="button"
-              data-rv=""
-              tabIndex={stop === s.turnId ? 0 : -1}
-              className={`st-bar ${OUTCOME_META[oc].cls}${dim ? " dim" : ""}${b.clipped ? " clipped" : ""}`}
-              style={css({ "--l": `${b.left}%`, "--w": `${b.width}%` })}
-              onClick={() => onPick(s)}
-              onFocus={() => setLast(s.turnId)}
-              title={`${s.agentId}. ${OUTCOME_META[oc].label}. ${dur(s.durationMs)}. ${fmt(s.tokens)} tokens.`}
-              aria-label={`${s.agentId} turn, ${OUTCOME_META[oc].label.toLowerCase()}, ${dur(s.durationMs) || "running"}, ${ago(s.startedAt)}`}
-            />
+            <Tooltip key={s.turnId} content={<TurnTip s={s} />}>
+              <button
+                type="button"
+                data-rv=""
+                tabIndex={stop === s.turnId ? 0 : -1}
+                className={`st-bar ${OUTCOME_META[oc].cls}${dim ? " dim" : ""}${b.clipped ? " clipped" : ""}${hot === s.turnId ? " hot" : ""}`}
+                style={css({ "--l": `${b.left}%`, "--w": `${b.width}%` })}
+                onClick={() => onPick(s)}
+                onFocus={() => { setLast(s.turnId); onHot(s.turnId); }}
+                onBlur={() => onHot(null)}
+                onPointerEnter={() => onHot(s.turnId)}
+                onPointerLeave={() => onHot(null)}
+                aria-label={`${s.agentId} turn, ${OUTCOME_META[oc].label.toLowerCase()}, ${dur(s.durationMs) || "running"}, ${ago(s.startedAt)}`}
+              />
+            </Tooltip>
           );
         })}
       </div>
@@ -226,8 +272,8 @@ function LiveLeft({ deadlineAt, ceilingAt }: { deadlineAt: number; ceilingAt?: n
   );
 }
 
-const StepRow = memo(function StepRow({ s, maxTokens, tab, onPick, onTab }: {
-  s: TurnStep; maxTokens: number; tab: boolean; onPick: (s: TurnStep) => void; onTab: (key: string) => void;
+const StepRow = memo(function StepRow({ s, maxTokens, tab, hot, onPick, onTab, onHot }: {
+  s: TurnStep; maxTokens: number; tab: boolean; hot: boolean; onPick: (s: TurnStep) => void; onTab: (key: string) => void; onHot: (turnId: string | null) => void;
 }): React.JSX.Element {
   const oc = outcomeOf(s);
   const meta = OUTCOME_META[oc];
@@ -245,16 +291,18 @@ const StepRow = memo(function StepRow({ s, maxTokens, tab, onPick, onTab }: {
         data-rv=""
         data-turn={s.turnId}
         tabIndex={tab ? 0 : -1}
-        className={`st-row ${meta.cls}`}
+        className={`st-row ${meta.cls}${hot ? " hot" : ""}`}
         onClick={() => onPick(s)}
-        onFocus={() => onTab(s.turnId)}
+        onFocus={() => { onTab(s.turnId); onHot(s.turnId); }}
+        onBlur={() => onHot(null)}
+        onPointerEnter={() => onHot(s.turnId)}
+        onPointerLeave={() => onHot(null)}
       >
-        <span className="st-mark" aria-hidden="true" />
         <AgentAvatar id={s.agentId} color={agentColor(s.agentId)} />
         <span className="st-main">
           <span className="st-l1">
             <b className="st-agent">{s.agentId}</b>
-            <span className="otag" title={meta.hint}>{meta.label}</span>
+            <OutcomePill step={s} />
             {live && s.currentTool ? <LiveVerb tool={s.currentTool} /> : live ? <span className="st-sum">{s.lifecycle ? s.lifecycle.toLowerCase().replace(/_/g, " ") : "thinking"}…</span> : summary ? <span className="st-sum">{summary}</span> : null}
             {s.attempt && s.attempt > 1 ? <span className="st-retry" title="The scheduler woke this agent again after a timeout.">attempt {s.attempt}</span> : null}
           </span>
@@ -267,16 +315,16 @@ const StepRow = memo(function StepRow({ s, maxTokens, tab, onPick, onTab }: {
           {s.error ? <span className="st-err" title={s.error}>{plainBlocker(s.error)}</span> : null}
         </span>
         <span className="st-num">
-          <b>{live ? <LiveElapsed startedAt={s.startedAt} /> : (dur(elapsed) || "no duration")}</b>
+          <b className="st-dur">{live ? <LiveElapsed startedAt={s.startedAt} /> : (dur(elapsed) || "no duration")}</b>
           <span
             className="st-cost"
             title={s.tokens
               ? `${fmt(s.tokens)} tokens. The bar is relative to the costliest loaded turn.`
               : liveTok ? "Billable tokens the runtime has reported so far, cache reads excluded." : live ? "No token figure reported yet." : "No tokens spent."}
           >
-            {share ? <i className="st-cost-bar" style={css({ "--w": `${share}%` })} aria-hidden="true" /> : null}
             {/* A running turn has spent nothing final yet; "no cost" read as a free turn while it burned tokens for seventeen minutes. */}
-            {s.tokens ? `${fmt(s.tokens)} tok` : liveTok ? `${fmt(s.liveTokens)} tok so far` : live ? "no figure yet" : "no cost"}
+            <span className="st-tok">{s.tokens ? `${fmt(s.tokens)} tok` : liveTok ? `${fmt(s.liveTokens)} tok so far` : live ? "no figure yet" : "no cost"}</span>
+            {share ? <i className="st-cost-bar" style={css({ "--w": `${share}%` })} aria-hidden="true" /> : null}
           </span>
           {/* A live row's start is its elapsed time, already above; how long it has left is the number that is not on screen elsewhere. */}
           {live && typeof s.deadlineAt === "number" ? <LiveLeft deadlineAt={s.deadlineAt} ceilingAt={s.ceilingAt} /> : <span className="st-when">{ago(s.startedAt)}</span>}
@@ -286,15 +334,15 @@ const StepRow = memo(function StepRow({ s, maxTokens, tab, onPick, onTab }: {
   );
 });
 
-function Skeleton(): React.JSX.Element {
+function Rows(): React.JSX.Element {
   return (
     <ol className="st-list" aria-busy="true" aria-label="Loading steps">
-      {[0, 1, 2, 3].map((i) => (
+      {[0, 1, 2, 3, 4].map((i) => (
         <li key={i} className="st-item">
           <div className="st-row st-skel">
-            <span className="st-mark" /><span className="sk sk-av" />
-            <div className="st-main"><span className="sk sk-l1" /><span className="sk sk-l2" /></div>
-            <div className="st-num"><span className="sk sk-n" /><span className="sk sk-n2" /></div>
+            <Skeleton w={30} h={30} />
+            <span className="st-main"><Skeleton w={`${34 + (i % 3) * 8}%`} h={14} /><Skeleton w={`${52 + (i % 2) * 14}%`} h={12} /></span>
+            <span className="st-num"><Skeleton w={44} h={14} /><Skeleton w={60} h={12} /><Skeleton w={52} h={12} /></span>
           </div>
         </li>
       ))}
@@ -310,6 +358,8 @@ export default function Steps(): React.JSX.Element {
   const missionActions = useMissionActions();
   const [fold, setFold] = useState(true);
   const [openFolds, setOpenFolds] = useState<ReadonlySet<string>>(() => new Set());
+  // The turn picked out in both the timeline and the list.
+  const [hot, setHot] = useState<string | null>(null);
   const ledgerRef = useRef<HTMLDivElement | null>(null);
   // Buckets only move at minute scale; a 30s clock keeps the ledger out of the per-second render path while live durations tick
   // inside their own leaves.
@@ -374,33 +424,32 @@ export default function Steps(): React.JSX.Element {
         lede="One row per agent turn, newest first."
         actions={
           <>
-            <label className="sr-only" htmlFor="step-search">Filter steps</label>
-            <Input search id="step-search" placeholder="Agent or word…  ( / )" value={stepSearch} onChange={(e) => setStepSearch(e.target.value)} />
+            <SearchField id="step-search" label="Filter steps" placeholder="Agent or word" hint="/" value={stepSearch} onChange={(e) => setStepSearch(e.target.value)} onClear={() => setStepSearch("")} />
             <PauseButton paused={hold.paused} onToggle={() => hold.setPaused(!hold.paused)} noun="turns" />
           </>
         }
       />
 
-      <Strip steps={visible} loaded={stepsLoaded} onPick={pick} filter={stepFilter} counts={counts} missionTokens={missionTokens} />
+      <Strip steps={visible} loaded={stepsLoaded} onPick={pick} filter={stepFilter} counts={counts} missionTokens={missionTokens} hot={hot} onHot={setHot} />
 
       <div className="st-toolbar">
-        <div className="st-filters" role="group" aria-label="Filter by outcome">
+        <div className="seg st-filters" role="group" aria-label="Filter by outcome">
           {FILTERS.map((f) => {
             const n = f.id ? counts[f.id] || 0 : visible.length;
             return (
               <button
                 key={f.id}
                 type="button"
-                className={`fchip ${f.id ? OUTCOME_META[f.id as Outcome].cls : ""}${stepFilter === f.id ? " on" : ""}`}
+                className={f.id ? OUTCOME_META[f.id as Outcome].cls : undefined}
                 onClick={() => setStepFilter(stepFilter === f.id ? "" : f.id)}
                 title={f.id ? OUTCOME_META[f.id as Outcome].hint : "Every turn, whatever it did."}
                 aria-pressed={stepFilter === f.id}
-                // A chip with nothing behind it is disabled, except the one that is on: it must stay operable so the filter can be lifted.
+                // A choice with nothing behind it is disabled, except the one that is on: it must stay operable so the filter can be lifted.
                 disabled={Boolean(f.id) && n === 0 && stepFilter !== f.id}
               >
-                {f.id ? <i className="fchip-dot" aria-hidden="true" /> : null}
+                {f.id ? <i className="st-f-dot" aria-hidden="true" /> : null}
                 {f.label}
-                <span className="fchip-n">{stepsLoaded ? n : "–"}</span>
+                <span className="st-f-n">{stepsLoaded ? n : "–"}</span>
               </button>
             );
           })}
@@ -411,16 +460,9 @@ export default function Steps(): React.JSX.Element {
           </span>
           {/* Said aloud only while a filter is on: a count that announced every new turn would talk all through a live run. */}
           <span className="sr-only" role="status">{filtered ? `${rows.length} of ${plural(visible.length, "turn")} ${rows.length === 1 ? "matches" : "match"}.` : ""}</span>
-          <button
-            type="button"
-            className={`fchip${folding ? " on" : ""}`}
-            aria-pressed={folding}
-            disabled={filtered}
-            onClick={() => setFold((f) => !f)}
-            title={filtered ? "Folding is off while a filter or search is active." : "Fold runs of three or more turns that wrote nothing into one row."}
-          >
-            Collapse quiet runs
-          </button>
+          <span title={filtered ? "Folding is off while a filter or search is active." : "Fold runs of three or more turns that wrote nothing into one row."}>
+            <Switch label="Collapse quiet runs" checked={folding} disabled={filtered} onChange={() => setFold((f) => !f)} />
+          </span>
         </div>
       </div>
 
@@ -432,13 +474,16 @@ export default function Steps(): React.JSX.Element {
             {groups.map((g) => (
               <section key={g.id} className="st-group" aria-labelledby={`st-g-${g.id}`}>
                 <header className="st-group-head">
-                  <h3 id={`st-g-${g.id}`}>{g.label}</h3>
-                  <span>{g.list.length} turn{g.list.length === 1 ? "" : "s"} · {fmt(g.tokens)} tokens</span>
+                  <div className="st-group-title">
+                    <h3 id={`st-g-${g.id}`}>{g.label}</h3>
+                    <span>{g.list.length} turn{g.list.length === 1 ? "" : "s"} · {groupTokens(g.list, g.tokens)}</span>
+                  </div>
+                  <span className="st-cols" aria-hidden="true"><span>Duration</span><span>Tokens</span><span>Started</span></span>
                 </header>
                 <ol className="st-list">
                   {g.rows.map((r) => {
                     if (r.kind === "step") {
-                      return <StepRow key={r.s.turnId} s={r.s} maxTokens={maxTokens} tab={roving.stop === r.s.turnId} onPick={pick} onTab={roving.setLast} />;
+                      return <StepRow key={r.s.turnId} s={r.s} maxTokens={maxTokens} tab={roving.stop === r.s.turnId} hot={hot === r.s.turnId} onPick={pick} onTab={roving.setLast} onHot={setHot} />;
                     }
                     const key = foldKey(r.items);
                     return (
@@ -451,6 +496,8 @@ export default function Steps(): React.JSX.Element {
                         maxTokens={maxTokens}
                         stop={roving.stop}
                         setLast={roving.setLast}
+                        hot={hot}
+                        onHot={setHot}
                         onPick={pick}
                       />
                     );
@@ -468,7 +515,7 @@ export default function Steps(): React.JSX.Element {
           // Before the first /steps response "No steps match" was a lie twice over: nothing had been fetched, and no filter had been applied.
           serverDown
             ? <ErrorState what="the step history" detail="The mesh server stopped answering. It may be restarting." onRetry={() => void refreshSteps(true)} />
-            : <Skeleton />
+            : <section className="st-group"><Rows /></section>
         ) : visible.length ? (
           <EmptyState icon="search" title="No turns match" action={<Button variant="small" onClick={clearFilters}>Clear filters</Button>}>
             Clear the outcome filter or the search to see every turn.
@@ -487,12 +534,18 @@ export default function Steps(): React.JSX.Element {
   );
 }
 
+/** What a stretch of time cost: its finished turns' tokens, and what the running ones have reported so far, which it says. */
+function groupTokens(list: readonly TurnStep[], finished: number): string {
+  const soFar = list.reduce((a, s) => a + (outcomeOf(s) === "live" ? s.liveTokens ?? 0 : 0), 0);
+  return soFar ? `${fmt(finished + soFar)} tokens so far` : `${fmt(finished)} tokens`;
+}
+
 /** A fold is keyed by its OLDEST turn: new quiet turns join at the top, and keying on the first remounted a fold the reader had opened. */
 const foldKey = (items: TurnStep[]): string => `fold-${items[items.length - 1]!.turnId}`;
 
-const FoldRow = memo(function FoldRow({ id, items, open, onToggle, maxTokens, stop, setLast, onPick }: {
+const FoldRow = memo(function FoldRow({ id, items, open, onToggle, maxTokens, stop, setLast, hot, onHot, onPick }: {
   id: string; items: TurnStep[]; open: boolean; onToggle: () => void; maxTokens: number;
-  stop: string | null; setLast: (key: string) => void; onPick: (s: TurnStep) => void;
+  stop: string | null; setLast: (key: string) => void; hot: string | null; onHot: (turnId: string | null) => void; onPick: (s: TurnStep) => void;
 }): React.JSX.Element {
   const tokens = items.reduce((a, s) => a + (s.tokens || 0), 0);
   const agents = [...new Set(items.map((s) => s.agentId))];
@@ -509,7 +562,7 @@ const FoldRow = memo(function FoldRow({ id, items, open, onToggle, maxTokens, st
       </button>
       {open ? (
         <ol className="st-fold-body">
-          {items.map((s) => <StepRow key={s.turnId} s={s} maxTokens={maxTokens} tab={stop === s.turnId} onPick={onPick} onTab={setLast} />)}
+          {items.map((s) => <StepRow key={s.turnId} s={s} maxTokens={maxTokens} tab={stop === s.turnId} hot={hot === s.turnId} onPick={onPick} onTab={setLast} onHot={onHot} />)}
         </ol>
       ) : null}
     </li>

@@ -6,7 +6,7 @@
  * the filter's counts, a fold never hides a turn that did something, a lane's busy share divides by the window it is drawn in,
  * and "nothing is running" is not allowed to say "parked on its mailbox" about a mission that was delivered.
  */
-import { opsSummary, outcomeOf, plainReason, producedCount, refusedOps, spanLabel, type Outcome, type OutcomeInput } from "./format";
+import { localTime, opsSummary, outcomeOf, plainReason, producedCount, refusedOps, spanLabel, type Outcome, type OutcomeInput } from "./format";
 import { bucketOf, type Bucket } from "./feed";
 
 /** What this model reads of a turn. Structural, so the store's `TurnStep` fits without this file importing a .tsx. */
@@ -188,6 +188,27 @@ export const WINDOWS: readonly WindowDef[] = [
   { id: "all", label: "all", ms: 0 },
 ];
 
+/**
+ * The window that fits the run itself: from the first loaded turn's start to the last one's end. The presets all count back from
+ * now, which is right for a mission being watched and wrong for one that is over: a run of five seconds that ended two minutes ago is
+ * a sliver at the edge of a five-minute axis, and "all" spends its width on the quiet since. It is not in `WINDOWS`, which end with
+ * the whole run on purpose; the page offers it first.
+ */
+export const FIT_WINDOW: WindowDef = { id: "fit", label: "Fit", ms: -1 };
+
+/** Mission phases in which nothing is going to start a turn without someone pressing something: the run is over or stopped. */
+const OVER_PHASES: ReadonlySet<string> = new Set(["done", "failed", "parked", "paused", "ceiling", "no-goal"]);
+
+/**
+ * The window the timeline opens on. A mission that is working keeps the smallest preset that holds about nine in ten turns (the
+ * window moves with now, and the picture is of what just happened). One that is over or stopped fits its run, because the run is
+ * what is left to read. The phase decides, not whether a turn is in flight at this second: agents work in bursts, and a window that
+ * changed every time the last live turn ended would never hold still under a reader's eyes.
+ */
+export function autoPick(steps: readonly StepLike[], now: number, phase: string): string {
+  return steps.length && OVER_PHASES.has(phase) ? FIT_WINDOW.id : autoWindow(steps, now);
+}
+
 const TICK_STEPS = [
   10_000, 30_000, 60_000, 2 * 60_000, 5 * 60_000, 10 * 60_000, 15 * 60_000, 30 * 60_000,
   3_600_000, 2 * 3_600_000, 6 * 3_600_000, 12 * 3_600_000, 24 * 3_600_000,
@@ -232,6 +253,32 @@ export function axisTicks(t0: number, t1: number): Tick[] {
   return out;
 }
 
+const CLOCK_STEPS = [
+  1000, 2000, 5000, 10_000, 15_000, 30_000, 60_000, 2 * 60_000, 5 * 60_000, 10 * 60_000, 15 * 60_000, 30 * 60_000,
+  3_600_000, 2 * 3_600_000, 3 * 3_600_000, 6 * 3_600_000, 12 * 3_600_000, 24 * 3_600_000,
+];
+
+/** "10:01:05" for a tick a few seconds apart from the next, "10:05" when the ticks are a minute or more apart. */
+const clockLabel = (ms: number, step: number): string => {
+  const t = localTime(new Date(ms).toISOString());
+  return step >= 60_000 ? t.slice(0, 5) : t;
+};
+const zoneOffsetMs = (ms: number): number => new Date(ms).getTimezoneOffset() * 60_000;
+
+/**
+ * Ticks at round times of the clock, for a window that does not end at now: 10:00, 10:05, 10:10 and not "-12m", "-7m". The step is
+ * the smallest that leaves six gaps or fewer, and the ticks fall on multiples of it in the reader's own zone, so a half-hour step
+ * reads :00 and :30. `label` and `offset` are for tests; the page passes neither.
+ */
+export function clockTicks(t0: number, t1: number, label: (ms: number, step: number) => string = clockLabel, offset: (ms: number) => number = zoneOffsetMs): Tick[] {
+  const span = Math.max(1, t1 - t0);
+  const step = CLOCK_STEPS.find((s) => span / s <= 6) ?? CLOCK_STEPS[CLOCK_STEPS.length - 1]!;
+  const off = offset(t0);
+  const out: Tick[] = [];
+  for (let t = Math.ceil((t0 - off) / step) * step + off, i = 0; t <= t1; t += step, i++) out.push({ at: ((t - t0) / span) * 100, label: label(t, step), major: i % 2 === 0 });
+  return out;
+}
+
 export interface Bar<T> {
   step: T;
   /** Percent from the left edge, clamped to the window. */
@@ -260,6 +307,10 @@ export interface Timeline<T> {
   ticks: Tick[];
   /** Turns older than the window, which the axis note admits to. */
   hidden: number;
+  /** Where now falls on the axis, in percent, or null when the window ends before it: the line that says "this is the present". */
+  nowAt: number | null;
+  /** The window was fitted to the run, so its ticks are times of the clock and not distances from now. */
+  fit: boolean;
 }
 
 /**
@@ -279,10 +330,16 @@ export const MIN_BAR_PCT = 0.8;
  */
 export function timeline<T extends StepLike>(steps: readonly T[], windowId: string, now: number): Timeline<T> | null {
   if (!steps.length) return null;
-  const t1 = Math.max(now, ...steps.map(endOf));
-  const chosen = WINDOWS.find((w) => w.id === windowId);
+  const fit = windowId === FIT_WINDOW.id;
+  const running = steps.some((s) => outcomeOf(s) === "live");
   const earliest = Math.min(...steps.map((s) => Date.parse(s.startedAt)));
-  const t0 = chosen && chosen.ms ? t1 - chosen.ms : earliest;
+  const lastEnd = Math.max(...steps.map(endOf));
+  // A fitted window ends at the last turn (or at now, when one is still running) with a margin each side, so the first and the last bar
+  // are not flush against the edge; a run of one instant is still given room to be drawn.
+  const margin = Math.max(500, (lastEnd - earliest) * 0.03);
+  const t1 = fit ? (running ? Math.max(now, lastEnd) : lastEnd + margin) : Math.max(now, lastEnd);
+  const chosen = WINDOWS.find((w) => w.id === windowId);
+  const t0 = fit ? earliest - margin : chosen && chosen.ms ? t1 - chosen.ms : earliest;
   const span = Math.max(1, t1 - t0);
   const shown = steps.filter((s) => endOf(s) >= t0);
   const byAgent = new Map<string, T[]>();
@@ -310,7 +367,8 @@ export function timeline<T extends StepLike>(steps: readonly T[], windowId: stri
       };
     })
     .sort((a, b) => b.busy - a.busy || a.agentId.localeCompare(b.agentId));
-  return { t0, t1, span, lanes, ticks: axisTicks(t0, t1), hidden: steps.length - shown.length };
+  const nowAt = now >= t0 && now <= t1 ? ((now - t0) / span) * 100 : null;
+  return { t0, t1, span, lanes, ticks: fit ? clockTicks(t0, t1) : axisTicks(t0, t1), hidden: steps.length - shown.length, nowAt, fit };
 }
 
 /* ---------------------------------- rows --------------------------------- */

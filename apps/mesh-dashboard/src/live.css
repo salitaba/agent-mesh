@@ -26,3 +26,21 @@ i.sev-mark.routine { box-sizing: border-box; border: 1.5px solid var(--muted); }
 /* On a line of its own, above rows. */
 .zone-line { margin: 0 0 var(--s1-5); }
 .zone-line .zone-note { margin-left: 0; }
+
+/* ---------- a search box: the field with a magnifier, the key that focuses it, and a way to empty it ---------- */
+
+.srch { position: relative; display: inline-flex; align-items: center; flex: 1 1 200px; min-width: 0; max-width: 420px; color: var(--muted); }
+.srch > .icon { position: absolute; left: var(--s2-5); pointer-events: none; transition: color var(--k-dur-1) var(--k-ease); }
+.srch:focus-within > .icon { color: var(--k-accent-ink); }
+/* 34px is the magnifier (16, at 10) and a gap of 8; 56 on the right leaves room for the key or the clear button. */
+.srch > input.search { flex: 1; width: 100%; min-width: 0; padding: 0 56px 0 34px; text-overflow: ellipsis; }
+.srch > input.search::-webkit-search-cancel-button, .srch > input.search::-webkit-search-decoration { -webkit-appearance: none; appearance: none; display: none; }
+.srch-hint { position: absolute; right: var(--s2); display: inline-flex; transition: opacity var(--k-dur-1) var(--k-ease); pointer-events: none; }
+.srch:focus-within .srch-hint { opacity: 0; }
+.srch-clear { position: absolute; right: var(--s1); display: grid; place-items: center; width: 28px; height: 28px; padding: 0; background: none; border: 0; border-radius: var(--r-sm); color: var(--muted); cursor: pointer; transition: background-color var(--k-dur-1) var(--k-ease), color var(--k-dur-1) var(--k-ease); }
+.srch-clear:is(:hover, .is-hover) { background: var(--wash); color: var(--text); }
+.srch-clear:active { background: var(--wash-2); }
+@media (pointer: coarse), (max-width: 620px) {
+  .srch > input.search { min-height: 44px; }
+  .srch-clear { width: 40px; height: 40px; }
+}
