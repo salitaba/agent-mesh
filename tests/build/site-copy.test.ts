@@ -288,7 +288,7 @@ test("the contact page says which address is for what in three rows that a link 
   for (const p of pages) {
     for (const m of p.markup.matchAll(/\bhref="([^"#]*contact\/)#(\w+)"/g)) assert.ok(rows.some((r) => r[1] === m[2]), `${p.rel}: ${m[0]} lands on the address, not above it`);
   }
-  const cards = [...contact.html.matchAll(/<article class="card contact">\s*<h3>([^<]+)<\/h3>\s*<h4>([^<]+)<\/h4>/g)].map((m) => [m[1], m[2]]);
+  const cards = [...contact.html.matchAll(new RegExp(`<article class="card contact">\\s*${MARK}[\\s\\S]*?</svg>\\s*<h3>([^<]+)</h3>\\s*<h4>([^<]+)</h4>`, "g"))].map((m) => [m[1], m[2]]);
   assert.deepEqual(cards, [["To sales", "Please say"], ["To support", "Please include"], ["To security", "Please include"]]);
   assert.match(contact.html, /Do not open a public issue\. We acknowledge a report within 3 business days\./, "what to expect from a security report stays on the page");
 });
@@ -388,6 +388,33 @@ test("the cards that carry a mark are the ones where it helps a reader find the 
   assert.deepEqual(why.map((m) => m.title), ["Enforced, not asked", "Recorded and replayable", "Bounded", "Yours"], "the four reasons");
   assert.deepEqual(answers.map((m) => m.title), ["What it does", "What leaves your environment", "What it does not do"], "and the three answers");
   for (const group of [why, answers]) assert.equal(new Set(group.map((m) => m.shape)).size, group.length, "no two cards in a row have the same drawing");
+  // The other pages' cards that are one of several kinds are the same: the four places to start in the documents, the three things a
+  // plan is for, the three addresses. A kind keeps its drawing from page to page: the cloud is Curule Cloud on the home page and in
+  // the documents, the stacked boxes are the software you run, a shield is security, a life buoy is support.
+  const docs = page(pages, "docs/index.html");
+  const pricing = page(pages, "pricing/index.html");
+  const contact = page(pages, "contact/index.html");
+  const kinds = (html: string, open: string): Array<{ title: string; shape: string }> =>
+    [...html.matchAll(new RegExp(`${open}\\s*${MARK}([\\s\\S]*?)</svg>\\s*<h3>([^<]+)</h3>`, "g"))].map((m) => ({ title: m[2]!, shape: m[1]! }));
+  const starts = kinds(docs.html, '<li class="start"[^>]*>');
+  const trio = kinds(section(pricing.html, "paying"), '<div class="card">');
+  const addresses = kinds(contact.html, '<article class="card contact">');
+  assert.deepEqual(starts.map((m) => m.title), ["Run the demo", "Deploy it", "Describe a team and its rules", "Use Curule Cloud"]);
+  assert.deepEqual(trio.map((m) => m.title), ["Licensed limits", "Features", "Support"]);
+  assert.deepEqual(addresses.map((m) => m.title), ["To sales", "To support", "To security"]);
+  for (const group of [starts, trio, addresses]) assert.equal(new Set(group.map((m) => m.shape)).size, group.length, "no two cards in a row have the same drawing");
+  const shapeOf = (group: Array<{ title: string; shape: string }>, title: string): string => group.find((m) => m.title === title)!.shape;
+  const ways = [...home.html.matchAll(new RegExp(`<p class="way-kind">${MARK}([\\s\\S]*?)</svg>`, "g"))].map((m) => m[1]);
+  assert.equal(shapeOf(starts, "Use Curule Cloud"), ways[0], "the cloud");
+  assert.equal(shapeOf(starts, "Deploy it"), ways[1], "the stacked boxes");
+  assert.equal(shapeOf(addresses, "To security"), answers[0]!.shape, "the shield");
+  assert.equal(shapeOf(addresses, "To support"), shapeOf(trio, "Support"), "the life buoy");
+  // Every card starts with its tile: the room above its title is the tile's, and a card without one would have a gap where it is not.
+  for (const p of pages) {
+    for (const m of p.markup.matchAll(/<(?:div|article|li) class="(card|start)\b[^"]*"[^>]*>\s*(<svg class="mark|<h3|<p)/g)) {
+      assert.equal(m[2], '<svg class="mark', `${p.rel}: a ${m[1]} starts with its tile`);
+    }
+  }
   // The security answers are the security page's three, in the same drawings: a shield is what it does, an arrow out of a box is what
   // leaves, a barred circle is what it does not do, wherever the reader meets them.
   const glance = [...section(security.html, "glance").matchAll(new RegExp(`${MARK}([\\s\\S]*?)</svg>`, "g"))].map((m) => m[1]);
