@@ -450,7 +450,7 @@ function describe(type: string, p: Record<string, any>, actorId: string, nameOf:
       const id = seat || actorId;
       if (!id) return null;
       const reason = str(p.reason);
-      const why = reason === "all_rejected" ? "every action was refused" : reason === "budget_blocked" ? "no budget left for it" : plainCode(reason);
+      const why = reason === "all_rejected" ? "every action was refused" : reason === "budget_blocked" ? "no budget left for it" : reason === "paused" ? "the mission was paused" : plainCode(reason);
       // An absent figure is not zero: a turn killed mid-generation spent tokens nobody counted.
       const cost = typeof p.tokens === "number" ? `${p.partial === true ? "at least " : ""}${fmt(p.tokens)} tokens lost` : "cost not measured";
       return owned(id, `turn was thrown away${why ? `: ${why}` : ""} · ${cost}`);

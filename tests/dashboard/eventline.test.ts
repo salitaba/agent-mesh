@@ -186,6 +186,7 @@ test("a thrown-away turn says at least that many tokens when the figure is only 
   assert.match(thrown({ tokens: 24497 }), /· 24\.5k tokens lost$/);
   assert.doesNotMatch(thrown({ tokens: 24497 }), /at least/);
   assert.match(thrown({}), /· cost not measured$/, "an absent figure is still not a zero");
+  assert.match(thrown({ reason: "paused", tokens: 1800 }), /: the mission was paused · 1\.8k tokens lost$/, "a turn the pause cut says why, not the code");
 });
 
 test("a turn charged to several budgets says which budget each line is, so one spend does not read as two", () => {
