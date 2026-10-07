@@ -1,41 +1,44 @@
 /* ================================ agents ================================
-   A card says what the agent is doing, for how long, and whether it is stuck, and offers only the controls that make sense for
-   an agent in that state. The left rail repeats the group's tone; the words say the same thing, because colour alone is not a
-   cue. Prefixes: ag- (page), agent- (card). */
+   A card says what the agent is doing, for how long, how heavy its turns are and whether it is stuck, and offers only the controls
+   that make sense for an agent in that state. What differs between seats is what leads the card (the name, the state, the figures);
+   what differs between states is how the card stands: a seat in a turn is lit (a ring that breathes, a wash from above, a step up), a
+   seat that needs you has a stripe down its edge, and a seat that has finished recedes onto the quieter ground. The words say the
+   same thing, because colour alone is not a cue. Prefixes: ag- (page), agent- (card). */
 
 .ag-group { margin-top: var(--s5); }
 .ag-group:first-of-type { margin-top: 0; }
-.ag-group-head { display: flex; align-items: baseline; flex-wrap: wrap; gap: var(--s0) var(--s3); margin: 0 var(--s0) var(--s2); }
-.ag-group-head h3 { margin: 0; font: var(--tx-section); color: var(--text-dim); }
-.ag-count { font: var(--tx-meta); color: var(--muted); font-variant-numeric: tabular-nums; }
+.ag-group-head { display: flex; align-items: center; flex-wrap: wrap; gap: var(--s1) var(--s2-5); margin: 0 var(--s0) var(--s2-5); }
+.ag-group-head h3 { margin: 0; font: 650 16px/1.3 var(--sans); letter-spacing: var(--k-track-title); color: var(--text); }
 .ag-group-hint { font: var(--tx-meta); color: var(--muted); }
 
 .ag-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr)); gap: var(--s3); }
 
 /* ---- the card ---- */
 
-.agent-card { display: flex; flex-direction: column; gap: var(--s2); cursor: pointer; border-left: 3px solid transparent; min-width: 0; }
-.agent-card:hover { border-color: var(--line-strong); }
-.agent-card[data-group="help"] { border-left-color: var(--bad); }
-.agent-card[data-group="working"] { border-left-color: var(--ok); }
-.agent-card[data-group="paused"] { border-left-color: var(--line-control); }
-.agent-card[data-group="help"]:hover { border-left-color: var(--bad); }
-.agent-card[data-group="working"]:hover { border-left-color: var(--ok); }
-.agent-card[data-group="paused"]:hover { border-left-color: var(--line-control); }
+.agent-card { display: flex; flex-direction: column; gap: var(--s2-5); min-width: 0; padding: var(--s4); }
+.agent-card .avatar { box-shadow: 0 0 0 2px var(--panel), 0 0 0 3.5px color-mix(in srgb, var(--tint, var(--accent)) 55%, transparent); }
+.agent-card[data-group="working"] { border-color: color-mix(in srgb, var(--ok) 38%, var(--line)); background-image: linear-gradient(to bottom, color-mix(in srgb, var(--ok) 8%, transparent), transparent 96px); box-shadow: var(--k-hl), var(--k-shadow-2); }
+.agent-card[data-group="working"] .avatar { position: relative; box-shadow: 0 0 0 2px var(--panel), 0 0 0 3.5px var(--ok); }
+.agent-card[data-group="help"] { border-color: color-mix(in srgb, var(--bad) 35%, var(--line)); box-shadow: inset 3px 0 0 var(--bad), var(--k-hl), var(--k-shadow-1); }
+.agent-card[data-group="paused"] { border-style: dashed; border-color: var(--line-control); }
+/* A finished seat recedes: the quieter ground, no shadow, its name a step down. It still opens, and it lifts like any card when it is pointed at. */
+.agent-card[data-life="COMPLETED"] { background: var(--panel-2); box-shadow: none; }
+.agent-card[data-life="COMPLETED"] .avatar { box-shadow: 0 0 0 2px var(--panel-2), 0 0 0 3.5px var(--line-strong); }
+.agent-card[data-life="COMPLETED"] .agent-who b, .agent-card[data-life="COMPLETED"] .agent-state b { font-weight: 500; color: var(--text-dim); }
 
-.agent-head { display: flex; align-items: center; gap: var(--s2); }
+.agent-head { display: flex; align-items: center; gap: var(--s3); }
 .agent-who { flex: 1 1 auto; min-width: 0; }
-.agent-who b { font-size: 15px; }
+.agent-who b { font: 650 16px/1.3 var(--sans); letter-spacing: var(--k-track-tight); }
 /* A real button so the card is reachable by keyboard without wrapping its controls in another control; styled down to the bare name. */
 .agent-open { display: block; max-width: 100%; padding: 0; border: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.agent-open:focus-visible { outline-offset: 1px; border-radius: 4px; }
-.agent-who .role { font: var(--tx-meta); color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.agent-head .pill { flex: none; }
+.agent-open:focus-visible { outline-offset: 1px; border-radius: var(--k-r-xs); }
+.agent-who .role, .ag-who .role { display: block; font: var(--tx-meta); color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.agent-head .pill { flex: none; align-self: flex-start; }
 
 /* What it is doing: the state and how long on one line, then what it is up to. A tool call is a path or a command, so it is mono
    and clipped; anything else wraps up to two lines and the tooltip has the rest. */
 .agent-state { display: flex; flex-direction: column; gap: var(--s0); min-width: 0; }
-.agent-state b { font-weight: 600; font-variant-numeric: tabular-nums; }
+.agent-state b { font-weight: 600; }
 .agent-detail {
   font-size: 13px; line-height: 1.4; color: var(--text-dim); overflow-wrap: anywhere;
   display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden;
@@ -53,17 +56,42 @@
 .agent-worry.bad { background: color-mix(in srgb, var(--bad) 10%, transparent); }
 .agent-worry.bad .icon { color: var(--bad); }
 
-.agent-meta { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s1) var(--s3); font: var(--tx-meta); color: var(--muted); font-variant-numeric: tabular-nums; }
+/* Its tokens: the shape of its last turns beside the figure, and against its own budget where it has one. */
+.agent-spend { display: grid; gap: var(--s2); padding-top: var(--s2-5); border-top: 1px solid var(--line); }
+.agent-spend-top { display: flex; align-items: center; justify-content: space-between; gap: var(--s3); }
+.agent-fig { display: grid; gap: var(--s0); font-size: 13px; color: var(--text-dim); text-align: right; }
+.agent-fig b { font: 650 16px/1.2 var(--sans); letter-spacing: var(--k-track-tight); color: var(--text); }
+.agent-of { color: var(--muted); }
+
+.agent-meta { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s1) var(--s3); font: var(--tx-meta); color: var(--muted); }
 .agent-meta .chip { margin: 0; }
 .agent-left.warn { color: var(--warn); }
 
-.agent-controls { display: flex; flex-wrap: wrap; gap: var(--s2); margin-top: var(--s1); }
+.agent-controls { display: flex; flex-wrap: wrap; gap: var(--s2); }
+.agent-card .agent-controls { margin-top: var(--s1); }
 .agent-hint { margin: 0; font: var(--tx-meta); color: var(--muted); }
+
+/* ---- the same seats as rows ---- */
+
+.ag-table { background: var(--panel); border: 1px solid var(--line); border-radius: var(--r-lg); overflow: hidden; }
+.ag-table tr[data-group="working"] td:first-child { box-shadow: inset 3px 0 0 var(--ok); }
+.ag-table tr[data-group="help"] td:first-child { box-shadow: inset 3px 0 0 var(--bad); }
+.ag-table tr[data-life="COMPLETED"] td { color: var(--text-dim); }
+.ag-who { display: flex; align-items: center; gap: var(--s2-5); min-width: 0; }
+.ag-who > span { min-width: 0; }
+.ag-t-now { width: 40%; }
+.ag-t-now .agent-detail { -webkit-line-clamp: 1; line-clamp: 1; }
+.ag-table td.num b { display: block; font-weight: 600; }
+.ag-table td.num .prog { margin-top: var(--s1); min-width: 72px; }
+.ag-table .agent-controls { justify-content: flex-end; flex-wrap: nowrap; }
 
 /* ---- loading ---- */
 
 .ag-skel { cursor: default; pointer-events: none; }
-.sk-ag-av { width: 30px; height: 30px; border-radius: 9px; }
-.sk-ag-name { width: 40%; height: 12px; }
-.sk-ag-l1 { width: 55%; height: 12px; }
-.sk-ag-l2 { width: 80%; height: 10px; }
+
+@media (max-width: 900px) {
+  .ag-t-now { display: none; }
+}
+@media (max-width: 620px) {
+  .ag-table .agent-controls { flex-wrap: wrap; justify-content: flex-start; }
+}

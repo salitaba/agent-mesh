@@ -186,6 +186,48 @@ export function stateText(a: AgentLike, c: StateContext): StateText {
   return { headline: l === "WAITING" ? "Waiting for mail" : "Idle", detail: loading && !c.last ? "Loading its last turn." : lastTurnText(c.last, c.now) };
 }
 
+/**
+ * The tokens of an agent's most recent turns, oldest first: the series a card draws beside its totals. `steps` is newest first, as
+ * `/steps` gives it. A turn still running counts what it has spent so far. Nothing is invented: an agent with no turn in the loaded
+ * history has an empty series, and the card draws a dashed baseline.
+ */
+export function turnSeries(
+  steps: ReadonlyArray<{ agentId: string; status?: string; tokens?: number; liveTokens?: number }>,
+  agentId: string,
+  n = 12,
+): number[] {
+  const mine = steps.filter((s) => s.agentId === agentId).slice(0, n);
+  return mine
+    .map((s) => (s.status === "running" ? s.liveTokens ?? s.tokens : s.tokens))
+    .map((v) => (typeof v === "number" && Number.isFinite(v) && v >= 0 ? v : 0))
+    .reverse();
+}
+
+export interface SeatBudget {
+  used: number;
+  limit: number;
+  ratio: number;
+}
+
+/**
+ * Each seat's own token budget, from the ledger `/status` carries (`agent:<goal>/<seat>`). A seat with no limit, or a limit that is
+ * not a positive number, has none here: the card then shows its tokens alone and draws no meter against nothing.
+ */
+export function seatBudgets(budgets: ReadonlyArray<{ key?: string; limit?: number | null; consumed?: number; limitKind?: string }> | undefined): Map<string, SeatBudget> {
+  const out = new Map<string, SeatBudget>();
+  for (const b of budgets ?? []) {
+    const m = /^agent:[^/]+\/(.+)$/.exec(String(b?.key ?? ""));
+    const limit = b?.limit;
+    if (!m || (b.limitKind ?? "tokens") !== "tokens" || typeof limit !== "number" || !(limit > 0)) continue;
+    const used = typeof b.consumed === "number" && b.consumed > 0 ? b.consumed : 0;
+    out.set(m[1]!, { used, limit, ratio: used / limit });
+  }
+  return out;
+}
+
+/** From this many seats a page offers its list as rows as well as cards: thirty cards are a wall, and a column of rows is read down. */
+export const DENSE_FROM = 9;
+
 /** "31.0k tokens · 4 turns": the cheap totals, only the ones the roster carries. */
 export function totalsText(a: AgentLike): string {
   const bits: string[] = [];
