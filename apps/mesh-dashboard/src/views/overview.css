@@ -23,6 +23,8 @@
 .ov-hero-lead { flex: 1 1 0; min-width: 0; display: grid; gap: var(--s2); justify-items: start; }
 .ov-headline { margin: 0; display: grid; gap: var(--s1); }
 .ov-headline > b { font: 650 30px/1.1 var(--sans); letter-spacing: var(--k-track-display); text-wrap: balance; }
+/* A sentence of a dozen words is not a display line: past a short one the headline steps down a size and keeps its weight. */
+.ov-headline > b.long { font-size: 24px; line-height: 1.2; letter-spacing: var(--k-track-title); }
 .ov-headline > span { font: 400 18px/1.4 var(--sans); letter-spacing: var(--k-track-tight); color: var(--text-dim); text-wrap: pretty; }
 .ov-goal { margin: 0; max-width: 80ch; font-size: 15px; color: var(--text-dim); display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden; }
 .ov-goal .caps { margin-right: var(--s2); }
@@ -44,9 +46,9 @@
 .ov-seg i.done { background: var(--ok); box-shadow: none; }
 .ov-seg i.skipped { background: color-mix(in srgb, var(--ok) 40%, var(--sunken)); box-shadow: none; }
 .ov-seg i.claimed { background: var(--warn); box-shadow: none; }
-.ov-seats { display: flex; align-items: center; padding-left: var(--s2); }
-.ov-seat { position: relative; display: inline-grid; margin-left: calc(var(--s1) * -1); border-radius: var(--r-sm); background: var(--panel); box-shadow: 0 0 0 2px var(--panel); }
-.ov-seat.on { z-index: 1; box-shadow: 0 0 0 2px var(--panel), 0 0 0 4px color-mix(in srgb, var(--ok) 70%, transparent); }
+.ov-seats { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s1-5); }
+.ov-seat { position: relative; display: inline-grid; border-radius: var(--r-sm); }
+.ov-seat.on { box-shadow: 0 0 0 2px var(--panel), 0 0 0 3.5px var(--ok); }
 .ov-seat.more { width: 26px; height: 26px; place-items: center; background: var(--panel-2); border: 1px solid var(--line); font: 600 11px/1 var(--sans); color: var(--muted); }
 
 /* Right now: a few plain lines, each marked by the seat or the kind of thing it is about, the last always answering "does it need me". */
@@ -133,6 +135,20 @@ details.ov-note { display: block; }
 .tl-sub { font-size: 12px; line-height: 16px; }
 .tl-time { padding-top: 6px; font-size: 12px; line-height: 16px; white-space: nowrap; }
 
+/* ---------- talking to each other (collabcard.tsx): one row for each open session, its two edges drawn as meters ---------- */
+.cb-row { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--s2-5); padding: var(--s4) 0; border-top: 1px solid var(--line); }
+.card-head + .cb-row { padding-top: var(--s1); border-top: 0; }
+.cb-row:last-child { padding-bottom: 0; }
+.cb-head { display: flex; align-items: center; gap: var(--s2); }
+/* The topic is free text from the opening agent: one line, so it cannot push the meters down the card. */
+.cb-topic { flex: 1; min-width: 0; font: 600 15px/1.3 var(--sans); letter-spacing: var(--k-track-tight); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cb-who { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s1-5) var(--s2); font-size: 13px; color: var(--muted); }
+.cb-seat { display: inline-flex; align-items: center; gap: var(--s1-5); color: var(--text); }
+.cb-meters { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--s2) var(--s6); }
+.cb-meter { display: grid; gap: var(--s1-5); }
+.cb-meter-top { display: flex; justify-content: space-between; gap: var(--s2); font-size: 13px; color: var(--text-dim); }
+.cb-meter-top b { font-weight: 600; color: var(--text); font-variant-numeric: tabular-nums; }
+
 /* ---------- the grid under the hero ---------- */
 /* The goal card is as tall as it is and spans both rows. The second row takes whatever it adds, so the first row stays as tall as
    the latest work and the two cards on the left sit one under the other with the same gap as everywhere else. */
@@ -156,12 +172,14 @@ details.ov-note { display: block; }
   .ov-hero-top, .ov-now, .ov-note { padding-left: var(--s4); padding-right: var(--s4); }
   .ov-hero-top { gap: var(--s3); }
   .ov-headline > b { font-size: 24px; }
+  .ov-headline > b.long { font-size: 20px; }
   .ov-headline > span { font-size: 16px; }
   .ov-acts { padding-left: 0; }
   .ov-acts > button.primary, .ov-acts > button.soft:not(.menu-btn) { flex: 1 1 auto; justify-content: center; }
   .stat-cell, .stat-cell:first-child, .stat-cell:nth-child(odd), .stat-cell:last-child { padding: var(--s3-5) var(--s4); }
   .stat-cell:nth-child(even) { border-left: 1px solid var(--line); }
   .ov-files { grid-template-columns: minmax(0, 1fr); }
+  .cb-meters { grid-template-columns: minmax(0, 1fr); }
   .tl-row { grid-template-columns: 28px minmax(0, 1fr); }
   .tl-row > :last-child { grid-column: 2; justify-self: start; }
 }

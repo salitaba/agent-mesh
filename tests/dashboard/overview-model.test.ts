@@ -564,6 +564,8 @@ test("every phase of the mission has a mark, and only a mission with agents in a
   assert.equal(heroLook("needs-you").icon, "alert");
   assert.equal(heroLook("failed").icon, "alert");
   assert.notEqual(heroLook("parked").icon, heroLook("done").icon, "a parked mission and a delivered one do not share a shape");
+  assert.equal(heroLook("quiet").icon, heroLook("running").icon, "a mission that is live but still wears the live mark without moving");
+  assert.equal(heroLook("quiet").live, false);
 });
 
 test("the seats stack in the roster's order with the busy ones lit, and the human is not a seat", () => {

@@ -14,11 +14,12 @@
  * means one of them has gone quiet.
  * ---------------------------------------------------------------------- */
 import React, { useMemo } from "react";
-import { AgentAvatar, Pill, useNow, type PillTone } from "./components";
+import { AgentAvatar, Pill, Progress, agentColor, useNow, type PillTone } from "./components";
 import { foldCollabs, pressedFirst, type CollabPressure, type CollabThread } from "./collab";
 import { ago, dur } from "./format";
 import { useMesh } from "./store";
 import { Panel } from "./views/Panel";
+import "./views/overview.css";
 
 /** Green while there is room, amber at 75%, red at 90% — the tones the rest of
  *  the console already uses for a budget running out. */
@@ -28,59 +29,56 @@ const TONE: Record<CollabPressure["tone"], PillTone> = {
   bad: "blocked",
 };
 
+/** One of the two edges as a labelled meter: what it counts, where it stands in words, and the bar. The tone is the pair's, not the bar's own. */
 function Meter({ label, ratio, value, tone }: {
   label: string; ratio: number; value: string; tone: CollabPressure["tone"];
 }): React.JSX.Element {
   return (
-    <div className="bar-row">
-      <span className="lbl">{label}</span>
-      <div className={`track${tone === "ok" ? "" : ` ${tone}`}`}>
-        <div style={{ transform: `scaleX(${ratio})` }} />
-      </div>
-      <span className="num">{value}</span>
+    <div className="cb-meter">
+      <div className="cb-meter-top"><span>{label}</span><b>{value}</b></div>
+      <Progress value={ratio} max={1} label={label} tone={tone === "ok" ? undefined : tone} valueText={value} />
     </div>
   );
 }
 
-function CollabRow({ t, p }: { t: CollabThread; p: CollabPressure }): React.JSX.Element {
+function CollabRow({ t, p, roleOf }: { t: CollabThread; p: CollabPressure; roleOf: (id: string) => string }): React.JSX.Element {
   // The opener first, then whoever else is in the room. Ordering by arrival
   // rather than alphabetically because "who started this" is the useful half.
   const others = t.participants.filter((a) => a !== t.openedBy);
+  const seat = (a: string): React.JSX.Element => (
+    <span className="cb-seat"><AgentAvatar id={a} color={agentColor(roleOf(a))} size="sm" /><b>{a}</b></span>
+  );
   return (
-    <div className="collab-row">
-      <div className="collab-head">
-        <span className="collab-topic">{t.topic || t.threadId}</span>
+    <div className="cb-row">
+      <div className="cb-head">
+        <span className="cb-topic" title={t.topic || t.threadId}>{t.topic || t.threadId}</span>
         <Pill tone={TONE[p.tone]} pulse={p.tone === "bad"}>
           {p.tone === "bad" ? "at the edge" : p.tone === "warn" ? "running long" : "open"}
         </Pill>
       </div>
-      <div className="collab-who">
-        <AgentAvatar id={t.openedBy} size="sm" />
-        <span className="mono">{t.openedBy}</span>
-        {others.length ? <span className="muted">with</span> : <span className="muted">— no one has answered</span>}
-        {others.map((a) => (
-          <React.Fragment key={a}>
-            <AgentAvatar id={a} size="sm" />
-            <span className="mono">{a}</span>
-          </React.Fragment>
-        ))}
-        <span className="muted">· opened {ago(t.openedAt)}</span>
+      <div className="cb-who">
+        {seat(t.openedBy)}
+        {others.length ? <span>with</span> : <span>— no one has answered</span>}
+        {others.map((a) => <React.Fragment key={a}>{seat(a)}</React.Fragment>)}
+        <span>· opened {ago(t.openedAt)}</span>
       </div>
-      <Meter
-        label="exchanges"
-        ratio={p.exchangeRatio}
-        tone={p.tone}
-        value={t.maxExchanges ? `${t.exchanges} / ${t.maxExchanges}` : `${t.exchanges}`}
-      />
-      <Meter
-        label="time box"
-        ratio={p.timeRatio}
-        tone={p.tone}
-        // Past the edge the watchdog has not swept yet: the session is still
-        // OPEN in the log but is already over, and saying "0s left" would read
-        // as a session with a moment to spare.
-        value={p.leftMs > 0 ? `${dur(p.leftMs)} left` : Number.isFinite(p.leftMs) ? "past its edge" : "no box"}
-      />
+      <div className="cb-meters">
+        <Meter
+          label="exchanges"
+          ratio={p.exchangeRatio}
+          tone={p.tone}
+          value={t.maxExchanges ? `${t.exchanges} / ${t.maxExchanges}` : `${t.exchanges}`}
+        />
+        <Meter
+          label="time box"
+          ratio={p.timeRatio}
+          tone={p.tone}
+          // Past the edge the watchdog has not swept yet: the session is still
+          // OPEN in the log but is already over, and saying "0s left" would read
+          // as a session with a moment to spare.
+          value={p.leftMs > 0 ? `${dur(p.leftMs)} left` : Number.isFinite(p.leftMs) ? "past its edge" : "no box"}
+        />
+      </div>
     </div>
   );
 }
@@ -101,10 +99,12 @@ export function CollabCard(): React.JSX.Element | null {
  *  a ticking `useNow` in the Overview re-renders it once a second forever. */
 function CollabBoard({ threads }: { threads: CollabThread[] }): React.JSX.Element {
   const now = useNow(1000);
+  const { status } = useMesh();
   const open = pressedFirst(threads, now);
+  const roles = useMemo(() => new Map<string, string>(((status?.agents ?? []) as Array<{ id?: string; role?: string }>).map((a) => [String(a.id), String(a.role ?? "")])), [status]);
   return (
     <Panel id="ov-collab" title="Talking to each other" meta={`${open.length} open`}>
-      {open.map(({ t, p }) => <CollabRow key={t.threadId} t={t} p={p} />)}
+      {open.map(({ t, p }) => <CollabRow key={t.threadId} t={t} p={p} roleOf={(id) => roles.get(id) ?? ""} />)}
     </Panel>
   );
 }

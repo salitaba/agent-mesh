@@ -31,7 +31,7 @@ export function GoalChecks({ goal, arts, openArt }: { goal: any; arts: any[]; op
   const sum = checksSummary(criteria);
   return (
     <Panel id="ov-goal" className="ov-goalcard" title="Goal checks" meta={sum.total ? `${sum.done} of ${sum.total} mandatory evidenced` : undefined}>
-      {sum.total ? <Progress value={sum.done} max={sum.total} label="Mandatory checks evidenced" tone={sum.done === sum.total ? "ok" : undefined} /> : null}
+      {sum.total ? <Progress value={sum.done} max={sum.total} label="Mandatory checks evidenced" tone="ok" /> : null}
       {goalNeedsItsCard(String(goal?.description || "")) ? <GoalText text={String(goal?.description || "")} /> : null}
       {criteria.length ? (
         <ul className="ov-checks">

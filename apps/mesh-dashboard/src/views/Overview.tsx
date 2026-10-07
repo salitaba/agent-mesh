@@ -225,7 +225,8 @@ export default function Overview(): React.JSX.Element {
     lastBoot: status.lastBoot,
     spend,
   });
-  const stale = serverDown;
+  // The figures are the last the console read when the server stopped answering and when the project's own process stopped: both are "last known".
+  const stale = serverDown || facts.projectDown !== null;
   // What waits for the person, beyond the headline: what the attention list asks them to look at, and notices (which hold nothing, and are still for them).
   const forYou = attention.filter((a) => a.tone !== "info" || a.kind === "notices").length;
   const live = rightNowInput(status, { phase: state.phase, now: 0, forYou, steps: runningSteps });

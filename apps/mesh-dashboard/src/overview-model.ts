@@ -470,7 +470,7 @@ export function splitHeadline(text: string): { lead: string; rest: string } {
 }
 
 /** The names of the icons the hero draws; every one is in the console's registry (icons.tsx), which the compiler checks where they are drawn. */
-export type HeroIcon = "refresh" | "alert" | "cost" | "check" | "pause" | "ring" | "dot";
+export type HeroIcon = "refresh" | "alert" | "cost" | "check" | "pause" | "dot";
 
 /**
  * The mark at the head of the hero: a shape for each state, so the state reads without telling hues apart. Only a mission with agents
@@ -483,7 +483,7 @@ export function heroLook(phase: MissionPhase): { icon: HeroIcon; live: boolean }
     case "ceiling": return { icon: "cost", live: false };
     case "done": return { icon: "check", live: false };
     case "paused": case "parked": return { icon: "pause", live: false };
-    case "quiet": return { icon: "ring", live: false };
+    case "quiet": return { icon: "dot", live: false };
     case "running": return { icon: "dot", live: true };
   }
 }

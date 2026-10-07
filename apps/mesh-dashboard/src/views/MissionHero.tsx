@@ -31,6 +31,9 @@ export function NextButton({ step, run }: { step: NextStep; run: (a: HeroAction)
   );
 }
 
+/** A headline's first sentence longer than this is set a size smaller: the display size is for a short line, not for a sentence. */
+const LONG_LEAD = 44;
+
 /** What each of the four figures is drawn with beside its number: a slot as tall as the avatars, so the four lines under it line up. */
 function Visual({ children }: { children?: React.ReactNode }): React.JSX.Element {
   return <div className="stat-vis">{children}</div>;
@@ -109,7 +112,7 @@ function AgentsKpi({ seats, agents }: { seats: HeroProps["seats"]; agents: HeroP
       <Visual>
         {shown.length ? (
           <div className="ov-seats" role="img" aria-label={`${shown.length + more} seats: ${names}${more ? ` and ${more} more` : ""}`}>
-            {shown.map((s) => <span key={s.id} className={`ov-seat${s.working ? " on lit" : ""}`}><AgentAvatar id={s.id} color={agentColor(s.role)} size="sm" /></span>)}
+            {shown.map((s) => <span key={s.id} className={`ov-seat${s.working ? " on" : ""}`}><AgentAvatar id={s.id} color={agentColor(s.role)} size="sm" /></span>)}
             {more ? <span className="ov-seat more">+{more}</span> : null}
           </div>
         ) : null}
@@ -209,7 +212,7 @@ export function MissionHero(p: HeroProps): React.JSX.Element {
         <IconTile icon={look.icon} tone={tone} size="lg" live={look.live && !p.stale} />
         <div className="ov-hero-lead">
           <p className="ov-headline">
-            <b>{lead}</b>
+            <b className={lead.length > LONG_LEAD ? "long" : undefined}>{lead}</b>
             {rest ? <> <span>{rest}</span></> : null}
           </p>
           {p.stale ? <Pill tone="bad" dot={false}>Last known state</Pill> : null}
