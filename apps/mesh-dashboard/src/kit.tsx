@@ -397,7 +397,7 @@ function Gallery(): React.JSX.Element {
                 <AgentAvatar id="human" /><AgentAvatar id="developer" size="sm" color={agentColor("developer")} /><AgentAvatar id="qa" size="lg" color={agentColor("qa")} />
               </div>
             </Spec>
-            <Spec name="Zone note" note="said once above a run of times"><span className="caps">Just happened<ZoneNote /></span></Spec>
+            <Spec name="Zone note" short note="said once above a run of times"><span className="caps">Just happened<ZoneNote /></span></Spec>
             <Spec name="Rows" note="what the Overview lists">
               <div className="gal-col wide"><EventRow e={SAMPLE_EVENT} onOpen={() => undefined} /><StepMini s={SAMPLE_STEP} onOpen={() => undefined} /></div>
             </Spec>
