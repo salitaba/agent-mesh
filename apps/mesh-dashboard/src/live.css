@@ -50,3 +50,6 @@ i.sev-mark.routine { box-sizing: border-box; border: 1.5px solid var(--muted); }
 
 /* An icon button that opens something has the ground a pressed one has while what it opened is open. */
 .icon-btn[aria-expanded="true"] { color: var(--k-accent-ink); background: var(--k-accent-soft); }
+
+/* A table wider than its column scrolls inside its own frame, and the frame is a tab stop (markdown.ts), so its ring is drawn inside it. */
+.md-table:focus-visible { outline-offset: -2px; }

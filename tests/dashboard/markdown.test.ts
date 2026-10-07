@@ -71,7 +71,7 @@ test("GFM tables: header, body, alignment, escaped pipes and ragged rows", () =>
     "",
     "after",
   ].join("\n"));
-  assert.match(html, /<div class="md-table"><table><thead><tr><th>Artifact<\/th><th class="al-r">Size<\/th><th class="al-c">Note<\/th><\/tr><\/thead>/);
+  assert.match(html, /<div class="md-table" tabindex="0" role="region" aria-label="Table"><table><thead><tr><th>Artifact<\/th><th class="al-r">Size<\/th><th class="al-c">Note<\/th><\/tr><\/thead>/);
   assert.match(html, /<td><code>ArchitectureDocument<\/code><\/td><td class="al-r">12<\/td><td class="al-c">a \| b<\/td>/);
   assert.match(html, /<tr><td>ADR<\/td><td class="al-r">3<\/td><td class="al-c"><\/td><\/tr>/, "a short row is padded");
   assert.doesNotMatch(html, /extra/, "cells past the header are dropped, as GFM does");

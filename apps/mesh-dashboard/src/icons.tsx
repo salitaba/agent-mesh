@@ -28,6 +28,9 @@ const ICONS = {
   lock: (<><rect x="4.5" y="9" width="11" height="8" rx="2" /><path d="M7 9V6.5a3 3 0 0 1 6 0V9" /></>),
   graph: (<><circle cx="5" cy="5.5" r="2" /><circle cx="15" cy="7" r="2" /><circle cx="9.5" cy="15" r="2" /><path d="M6.9 6l6.2.8M14 8.9l-3.2 4.4M8.2 13.5L5.6 7.4" /></>),
   files: (<><path d="M5 3h6l4 4v10H5z" /><path d="M11 3v4h4" /></>),
+  // What a file is, on the Files page: a patch of code, and a report that says how something went.
+  code: (<path d="M7 6.2L3.4 10 7 13.8M13 6.2l3.6 3.8-3.6 3.8M11.2 4.2L8.8 15.8" />),
+  report: (<><path d="M5 3h6l4 4v10H5z" /><path d="M11 3v4h4" /><path d="M7.7 14v-2.2M10 14V9.8M12.3 14v-3.4" /></>),
   product: (<><path d="M10 2.5l6.8 3.4v8.2L10 17.5l-6.8-3.4V5.9z" /><path d="M3.2 5.9L10 9.3l6.8-3.4M10 9.3v8.2" /></>),
   cost: (<path d="M3.5 16.5h13M5.5 16.5v-5M10 16.5v-12M14.5 16.5V8" />),
   designer: (<><path d="M3.5 16.5l.7-3.4 9-9a1.6 1.6 0 0 1 2.3 0l.4.4a1.6 1.6 0 0 1 0 2.3l-9 9z" /><path d="M11.6 5.9l2.5 2.5" /></>),
