@@ -479,6 +479,12 @@ test("nothing is hidden by the stylesheet to be shown later: what arrives as the
   const css = fs.readFileSync(path.join(SITE, "assets", "site.css"), "utf8");
   const outside = withoutBlock(withoutBlock(css, "@media (prefers-reduced-motion: no-preference)"), "@media print");
   assert.ok(!/\.rv\b/.test(outside), "no rule hides anything outside the block for a visitor who allows motion");
+  // The only things the stylesheet makes invisible on its own: the radio buttons behind the two segmented controls (they are used,
+  // not seen) and the back-to-top button, which only the script makes.
+  const invisible = [...outside.replace(/\/\*[\s\S]*?\*\//g, "").matchAll(/([^{}]+)\{([^{}]*)\}/g)]
+    .filter((m) => /\bopacity: 0;|\bvisibility: hidden;/.test(m[2]!))
+    .map((m) => m[1]!.trim().replace(/\s+/g, " "));
+  assert.deepEqual(invisible, [".tab-input, .billing-input", ".to-top:not(.is-shown)"], "nothing else is made invisible by the stylesheet alone");
   assert.match(/@media print \{[\s\S]*?\n\}/.exec(css)![0], /\.rv \{ opacity: 1 !important; transform: none !important; \}/, "and a page printed half-way down is printed whole");
   assert.match(css, /\n  \.rv \{ opacity: 0; transform: translateY\(8px\);/, "a rise of eight pixels and a fade");
   assert.match(css, /\n  \.rv\.rv-in \{ opacity: 1; transform: none; \}/);

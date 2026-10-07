@@ -812,6 +812,38 @@ test("the header is pinned by the script and carries the scrolled class while th
   }
 });
 
+test("the header settles once a frame however many scroll events come in, and is right at once on a page that starts part-way down", () => {
+  const run = (scrollY: number) => {
+    const doc = parsePage(page(pages, "contact/index.html").html);
+    const listeners = new Map<string, Array<() => void>>();
+    const frames: Array<() => void> = [];
+    const win = {
+      innerHeight: 800,
+      scrollY,
+      matchMedia: () => ({ matches: true }),
+      addEventListener: (type: string, fn: () => void) => listeners.set(type, [...(listeners.get(type) ?? []), fn]),
+      requestAnimationFrame: (fn: () => void) => frames.push(fn),
+      scrollTo: () => undefined,
+      setTimeout,
+      clearTimeout,
+    };
+    vm.runInNewContext(SCRIPT, { document: doc, navigator: {}, window: win }, { filename: "site.js" });
+    return { header: doc.querySelector(".site-header")!, win, frames, scroll: () => (listeners.get("scroll") ?? []).forEach((fn) => fn()) };
+  };
+  assert.equal(run(900).header.className, "site-header is-live is-scrolled", "a page that is already down shows its line before any scroll event");
+  assert.equal(run(0).header.className, "site-header is-live");
+  const r = run(0);
+  r.win.scrollY = 300;
+  r.scroll();
+  const queued = r.frames.length;
+  r.scroll();
+  r.scroll();
+  assert.equal(r.frames.length, queued, "the scroll events of one frame wait for the same frame");
+  assert.equal(r.header.className, "site-header is-live", "and nothing changes until it comes");
+  r.frames.splice(0).forEach((fn) => fn());
+  assert.equal(r.header.className, "site-header is-live is-scrolled");
+});
+
 interface Arriving {
   doc: FakeDocument;
   /** The classes of every piece of the page the script hid to let it arrive. */
@@ -874,6 +906,9 @@ test("a piece arrives once, when the reader gets to it, and the script then take
   const r = arriving();
   const tile = r.doc.querySelector(".tiles")!.children.filter((c) => !c.isText)[2]!;
   assert.equal(tile.className, "tile rv rv-2");
+  // A browser tells an observer about every piece it starts to watch, in view or not: that first word does not bring a piece in.
+  (r.observer()!.callback as unknown as (entries: unknown[]) => void)([{ isIntersecting: false, target: tile }]);
+  assert.equal(tile.className, "tile rv rv-2", "a piece that is not in view stays as it is when the observer first reports on it");
   r.see(tile);
   assert.equal(tile.className, "tile rv rv-2 rv-in", "in view: the stylesheet moves it from 8 px down and clear to where it is");
   assert.ok(!r.observer()!.observed.includes(tile), "and it is not watched again");
