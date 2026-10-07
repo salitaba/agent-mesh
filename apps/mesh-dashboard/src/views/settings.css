@@ -82,6 +82,9 @@
   .lic-limits .stat-cell + .stat-cell { border-top: 1px solid var(--line); }
 }
 @media (max-width: 760px) {
+  /* A field is typed into with a thumb, and a phone zooms a page whose field is under 16px when it takes focus. */
+  .hs-row .hs-input input { min-height: 44px; font-size: 16px; }
+  .hs-row .hs-link { display: inline-flex; align-items: center; min-height: 44px; }
   .hs-row { grid-template-columns: minmax(0, 1fr); }
   .hs-cmds li { grid-template-columns: minmax(0, 1fr); }
   .hs-bar { bottom: var(--s2); }

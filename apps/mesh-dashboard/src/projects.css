@@ -39,6 +39,8 @@
 @media (max-width: 560px) {
   .proj-picker { top: auto; bottom: 0; left: 0; right: 0; transform: none; width: auto; max-height: 88vh; border-radius: var(--k-r-xl) var(--k-r-xl) 0 0; border-bottom: 0; animation-name: sheet-in; }
   .proj-picker-foot { flex-direction: column; align-items: stretch; }
+  .proj-picker-row { min-height: 44px; }
+  .proj-picker-path input.txt { min-height: 44px; font-size: 16px; }
   .proj-picker-acts { justify-content: flex-end; }
 }
 
@@ -52,6 +54,10 @@
   .stat-strip.pj-kpis { display: flex; }
   .pj-kpis .stat-cell { flex: 1 1 0; }
   .pj-kpis .stat-cell.pj-spend { flex-grow: 2; }
+}
+/* Two by two below that, and a figure left alone on the last row takes the row. */
+@media (max-width: 900px) {
+  .pj-kpis .stat-cell:last-child:nth-child(odd) { grid-column: 1 / -1; }
 }
 .pj-group + .pj-group { margin-top: var(--s5); }
 .pj-group .group-h { display: flex; align-items: center; gap: var(--s2); margin: 0 var(--s0) var(--s2-5); }
@@ -78,4 +84,5 @@
   .pj-kpis { margin-bottom: var(--s3); }
   /* Starting, opening, closing or removing a project is pressed with a thumb. */
   .pj-page button { min-height: 44px; }
+  .pj-page .pj-path .copy-btn.compact { min-width: 44px; min-height: 44px; }
 }

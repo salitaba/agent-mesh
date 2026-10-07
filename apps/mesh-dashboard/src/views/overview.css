@@ -189,4 +189,8 @@ details.ov-note { display: block; }
   .cb-meters { grid-template-columns: minmax(0, 1fr); }
   .tl-row { grid-template-columns: 28px minmax(0, 1fr); }
   .tl-row > :last-child { grid-column: 2; justify-self: start; }
+  /* A disclosure and an evidence chip are pressed with a thumb. They name their page: the shared sheet loads after this one. */
+  .ov .ov-note > summary, .ov .ov-ad > summary { align-items: center; min-height: 44px; padding-top: 0; }
+  .ov .ov-ad > summary::before { margin-top: 0; }
+  .ov .ov-ev .chip { min-height: 44px; padding: 0 var(--s3); }
 }

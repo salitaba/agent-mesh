@@ -107,7 +107,10 @@
   .dc-answer input.txt, .dc-row input.txt { min-height: 44px; font-size: 16px; }
   .dc-acts > button.small, .dc-row > button.small, .dc-refs button.small, .dc-supports button.small, .ib-outcome button.small { min-height: 44px; }
   .ib .tabs .tab-btn { min-height: 44px; }
-  .dc-tech > summary, .ib-done > summary { display: flex; align-items: center; min-height: 44px; }
+  /* The shared sheet loads after this one and sets a summary at 28px with a heavier selector, so these name their page to outrank it. */
+  .dc .dc-tech > summary, .ib .ib-done > summary { display: flex; align-items: center; min-height: 44px; }
+  .dc .chip-toggle { min-width: 44px; min-height: 44px; justify-content: center; }
+  .dc button.linklike { min-height: 44px; }
   .dc-skip { margin-left: 0; }
   .ib-answered { grid-template-columns: auto minmax(0, 1fr); }
   .ib-answered .icon-btn { grid-column: 2; justify-self: start; }
