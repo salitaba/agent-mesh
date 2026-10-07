@@ -221,7 +221,7 @@ test("the address of a workspace can be copied where the browser will copy, and 
   const running = (o: Partial<ConstructorParameters<typeof Visit>[1]> = {}) => visit("account", { routes: world((x) => { paid(x); x.workspaces = [workspace()]; }).routes, manualTimers: true, ...o });
 
   const none = await running();
-  assert.equal(none.doc.querySelectorAll("button").filter((b) => b.className === "copy").length, 0, "on an address that is not secure the browser will not copy, and a control that cannot is not offered");
+  assert.equal(none.doc.querySelectorAll("button").filter((b) => b.className.split(/\s+/).includes("copy")).length, 0, "on an address that is not secure the browser will not copy, and a control that cannot is not offered");
 
   const v = await running({ clipboard: "works" });
   const copy = v.button("workspaces", "Copy");

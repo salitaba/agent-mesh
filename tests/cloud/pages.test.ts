@@ -374,6 +374,28 @@ test("what a finger has to hit is as tall as a button on a phone: the buttons, t
   assert.equal(value(".ws .ws-auto .check", "min-height"), "44px", "and so is the offer to open a workspace when it is ready");
 });
 
+test("the stylesheet is held to its budget, and whatever it moves it stills for a person who asked for stillness", () => {
+  const css = read(path.join(ASSETS, "app.css"));
+  // The stylesheet stands between a visitor and the first paint of every page, so what it weighs is what a phone on a poor connection waits for.
+  // The brief of the UI kit sets 34 KB, uncompressed, for all of it: the kit's block, the icons and the rules of every page.
+  const budget = 34 * 1024;
+  assert.ok(Buffer.byteLength(css) <= budget, `app.css is ${Buffer.byteLength(css)} bytes, and its budget is ${budget}`);
+
+  // Every animation is one a keyframes rule defines here (a misspelt name moves nothing and no test would see it) ...
+  const defined = new Set([...css.matchAll(/@keyframes\s+([\w-]+)/g)].map((m) => m[1]!));
+  const used = [...css.matchAll(/[\s;{]animation:\s*([\w-]+)/g)].map((m) => m[1]!);
+  assert.ok(used.length > 0 && defined.size > 0, "the stylesheet animates something (the spinners, the skeleton, the pulse of a workspace that is starting)");
+  for (const name of used) assert.ok(defined.has(name), `${name} is animated and defined nowhere`);
+
+  // ... and a visitor who asked their system for less motion gets none of it: the animations end where they start, the transitions are instant,
+  // and a jump to a section is a jump. `!important`, because the rules it overrides are more specific than a bare `*`.
+  const still = cssRules(css).find((r) => r.at.includes("prefers-reduced-motion: reduce") && r.selectors.includes("*"));
+  assert.ok(still, "there is a rule for prefers-reduced-motion that reaches every element");
+  for (const [property, value] of [["animation-duration", ".001ms"], ["animation-iteration-count", "1"], ["transition-duration", ".001ms"], ["scroll-behavior", "auto"]] as const) {
+    assert.equal(declared(still, property), `${value} !important`, property);
+  }
+});
+
 test("no page states a period or a count the service could change: those are filled in from its settings", () => {
   const number = /\b\d+\s*(?:days?|hours?|minutes?|weeks?|months?)\b|\b(?:one|two|three|four|five|six|seven|ten|twelve|fourteen|twenty|thirty|sixty|ninety)[\s-]+(?:days?|hours?|minutes?|weeks?)\b/i;
   const withoutPolicy = (n: FakeNode): string[] => (n.isText ? [n.textContent] : n.attrs.has("data-policy") || n.className.split(/\s+/).includes("owner-term") || n.tag === "script" || n.tag === "noscript" ? [] : n.children.flatMap(withoutPolicy));

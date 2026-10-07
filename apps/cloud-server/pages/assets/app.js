@@ -1317,7 +1317,7 @@
     const canCopy = () => typeof navigator !== "undefined" && Boolean(navigator.clipboard) && typeof navigator.clipboard.writeText === "function";
 
     function copyButton(w, card) {
-      const press = el("button", { type: "button", class: "copy", "aria-label": `Copy the address of ${w.name}` }, "Copy");
+      const press = el("button", { type: "button", class: "btn btn-quiet btn-small copy", "aria-label": `Copy the address of ${w.name}` }, "Copy");
       press.addEventListener("click", async () => {
         let said = "Copied the address.";
         try {
