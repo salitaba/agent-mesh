@@ -10,22 +10,40 @@
       640  ← same phone tier as 620; converge on 620  (JS mirror: PHONE)
       620  phone — topbar collapses
       560  minimum supported width
-   801 is the deliberate complement of 800 (things that apply only above the
-   drawer). New rules pick from this list; 640/860 are legacy strays. */
+   801 is the deliberate complement of 800. New rules pick from this list; 640/860 are legacy strays.
+
+   How this file is laid out. The tokens first: the console's own names (--panel, --text, --accent ...) are the kit's roles
+   (--k-*, the generated block below) where the idea is the same, so one value is written once. Then the foundations (type,
+   links, focus, selection, scrollbars), the shell (sidebar, top bar, project strip), and the primitives in the order
+   components.tsx declares them: buttons, fields, badges, cards, tables, banners, empty and loading states, menus, tabs,
+   dialogs, drawers, toasts, the palette. Last, the drawer content the Steps and Agents views share (vitals, the step view).
+
+   The type ramp is 11 12 13 14 15 16 18 20 24 30. 24 is the one step added to the nine the spec lists: the page title and the
+   figure a card leads with. It is there because a page title 4px above its section titles did not read as a title.
+
+   A control documents its states where it is styled (default, hover, pressed, focus, disabled, loading, invalid). The
+   classes .is-hover, .is-active and .is-focus draw the same state without the pointer, so the gallery (kit.html) and a
+   screenshot show the production rule and not a copy of it. */
 :root {
-  --bg: #131211;
+  /* Surfaces, lines and text: the kit's roles under the names the views already use. */
+  --bg: var(--k-bg);
+  /* The frame the page sits in (sidebar, top bar, project strip). The kit has no step between the page and a card for it. */
   --bg-2: #181715;
-  --panel: #1b1a18;
-  --panel-2: #22211e;
-  --line: #302e2a;
-  --line-strong: #45423b;
-  /* Boundary of an interactive control (input, select, textarea). Held at >=3:1
-     against --bg-2 for WCAG 1.4.11, which neither --line (1.17:1) nor
-     --line-strong (1.79:1) reaches. */
-  --line-control: #7a746a;
-  --text: #efece6;
-  --text-dim: #aaa59c;
-  --muted: #a39e95;
+  --panel: var(--k-surface);
+  --panel-2: var(--k-surface-2);
+  --sunken: var(--k-sunken);
+  --line: var(--k-line);
+  --line-strong: var(--k-line-strong);
+  /* Boundary of an interactive control (input, select, textarea). Held at >=3:1 against every surface for WCAG 1.4.11, which
+     neither --line nor --line-strong reaches. */
+  --line-control: var(--k-line-control);
+  /* Three steps of text, each with a job (the kit's ink, ink-2 and muted): --text for what a block is about (names, values),
+     --text-dim for the sentence that explains it (a lead, a first column), --muted for what labels and dates it. */
+  --text: var(--k-ink);
+  --text-dim: var(--k-ink-2);
+  --muted: var(--k-muted);
+  /* The two blues the views draw with. The kit's --k-accent is the brand blue for a fill; the console's light accent is that
+     blue taken down a notch because views set it as text on its own tint (tests/build/console-palette.test.ts). */
   --accent: #7ba0ff;
   --accent-2: #9db8ff;
   --ok: #43d6a0;
@@ -37,7 +55,7 @@
   --info: #56b6c2;
   /* Readable text laid over a saturated fill. Not the same as --bg: these
      must flip per theme independently of the page background. */
-  --text-on-accent: #0e1220;
+  --text-on-accent: var(--k-on-accent);
   --text-on-hot: #16070a;
   /* Agent role identity. The first five alias core tokens so they flip with
      the theme for free; pm/explorer have no semantic equivalent. */
@@ -55,7 +73,7 @@
      legs where time actually bought something. */
   --phase-prep: #6f695f;
   --phase-wait: #8c867b;
-  --scrim: rgba(8,7,6,.58);
+  --scrim: var(--k-scrim);
   --paper: #ffffff;
   /* Elevation inside the drawer. --panel is a card on the *page*; the drawer's
      own background is already --bg-2, so a card there needs its own step or it
@@ -63,7 +81,10 @@
      above the drawer, --sunken below it (wells, hairline grids, meters). */
   --drawer: #181715;
   --raised: #24231f;
-  --sunken: #0e0d0c;
+  /* A wash of the ink: the hover and the press of anything that has no surface of its own (a ghost button, a nav row, a menu
+     row), so it shows on the page, on a card and on the frame alike. --panel-2 would vanish on white. */
+  --wash: color-mix(in srgb, var(--text) 6%, transparent);
+  --wash-2: color-mix(in srgb, var(--text) 11%, transparent);
   /* Spacing scale. The four in-between steps are not decoration: 2/6/10 carry
      the hairline nudges and row paddings this UI actually uses, and without a
      name for them every such rule fell back to a raw px and drifted (7, 9, 11
@@ -75,9 +96,9 @@
      no name for. Named so future rules reach for it instead of retyping 14px.
      The named drift below it (5/7/9/11px) is NOT a step — those are snapped
      onto 6/6/10/12, which is what the rules above always meant. */
-  --r-sm: 6px; --r: 10px; --r-lg: 14px;
-  --shadow: 0 8px 28px rgba(0,0,0,.45);
-  --overlay: rgb(0 0 0 / .25);
+  --r-sm: var(--k-r-sm); --r: var(--k-r-md); --r-lg: var(--k-r-lg); --r-xl: var(--k-r-xl);
+  /* What a popover, a dialog or a drawer floats on (rung 4). A menu or a tooltip uses --k-shadow-3 directly. */
+  --shadow: var(--k-shadow-4);
   /* One elevation ladder for every fixed/stuck layer. Values are the numbers
      the rules already used; 40 is one deliberate tier shared by the drawer,
      the project crash banner and the designer popovers, which never stack. */
@@ -89,14 +110,17 @@
   --z-toasts: 60; --z-picker: 61;
   /* Above the picker: a confirm can be raised from inside one. */
   --z-confirm-scrim: 69; --z-confirm: 70;
+  /* A tooltip names a control, so it is above whatever the control sits in. */
+  --z-tip: 90;
   /* The room left under the last card of a view, and the gap toasts keep from the bottom edge. It was 60px while a floating
      "ask designer" button owned the corner; that button is in the top bar now, so the corner is the page's again. */
   --dock-clear: var(--s6);
   --mono: ui-monospace, "Cascadia Code", "JetBrains Mono", Consolas, monospace;
-  --sans: -apple-system, "Segoe UI", system-ui, Roboto, "Helvetica Neue", sans-serif;
+  --sans: var(--k-font);
   /* Typography tiers. One token per tier (weight size/line-height family) so
      rules and one-off sites share a ladder instead of repeating 11/12/13px
      literals. Color stays separate — pair with .muted for metadata. */
+  --tx-page: 650 24px/1.15 var(--sans);
   --tx-title: 600 20px/1.25 var(--sans);
   --tx-section: 600 13px/1.35 var(--sans);
   --tx-label: 600 12px/1.35 var(--sans);
@@ -116,15 +140,14 @@
    already failing on four of five surfaces with no tint at all. Each value below
    now clears 4.6:1 at a 14% self-tint over --sunken, the darkest surface, which
    makes it safe on every lighter one too. Re-derive with the same target before
-   changing any of them by eye. */
+   changing any of them by eye. The surfaces, lines and text of the light theme are the kit's own (--k-*, which the
+   kit block below flips); what is written here is what the console keeps for itself. */
 [data-theme="light"] {
-  --bg: #f5f3ee; --bg-2: #fbfaf8; --panel: #ffffff; --panel-2: #f8f6f1;
-  --line: #e4e0d9; --line-strong: #d3cdc2; --line-control: #837d72;
-  --text: #1c1b1a; --text-dim: #54504a; --muted: #5d5a55;
+  /* The page is a step deeper than the kit's: a white card has to lift off it, and the sidebar (the brand's paper) frames it. */
+  --bg: #f5f3ee; --bg-2: #fbfaf8;
   --accent: #2655ca; --accent-2: #2350be;
   --ok: #0a6b49; --warn: #7c5808; --bad: #a53349; --rej: #924918; --info: #24676e;
   /* Dark text on the light-theme accent/bad fills drops below 4.5:1. */
-  --text-on-accent: #ffffff;
   --text-on-hot: #ffffff;
   --role-pm: #7b3fb8;
   --role-explorer: #1b6962;
@@ -137,9 +160,6 @@
      stay distinguishable without borders doing all the work. */
   --drawer: #fbfaf8;
   --raised: #ffffff;
-  --sunken: #efece5;
-  --shadow: 0 8px 28px rgba(48,36,16,.14);
-  --scrim: rgba(48,36,16,.35);
   color-scheme: light;
 }
 
@@ -224,8 +244,10 @@
 }
 /* @kit:tokens end */
 
+/* ============ foundations ============ */
 * { box-sizing: border-box; }
 html, body { margin: 0; height: 100%; }
+html { -webkit-text-size-adjust: 100%; }
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
 
 /* Bypass block (WCAG 2.4.1). position: fixed in BOTH states on purpose: #app is
@@ -237,92 +259,53 @@ html, body { margin: 0; height: 100%; }
 .skip-link:focus {
   width: auto; height: auto; margin: 0; overflow: visible; clip: auto;
   top: var(--s2); left: var(--s2); z-index: var(--z-overlay);
-  padding: 8px var(--s3-5); border-radius: var(--r-sm);
-  background: var(--panel); color: var(--text);
-  border: 1px solid var(--accent); font: inherit; cursor: pointer;
+  padding: 0 var(--s3-5); min-height: 36px; border-radius: var(--r);
+  background: var(--panel); color: var(--text); box-shadow: var(--k-shadow-3);
+  border: 1px solid var(--accent); font: 600 14px var(--sans); cursor: pointer;
 }
-::selection { background: color-mix(in srgb, var(--accent) 32%, transparent); }
+::selection { background: color-mix(in srgb, var(--k-accent) 25%, transparent); }
 /* Focus ring is a BASELINE, not an allowlist. The old rule enumerated ~16
    selectors, so every control nobody remembered to add — links, inputs,
    summary, [tabindex], any new button variant — focused invisibly. Anything
    needing different geometry overrides below with higher specificity. */
-:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+:is(:focus-visible, .is-focus) { outline: 2px solid var(--accent); outline-offset: 2px; }
 input, textarea { caret-color: var(--accent); }
-.bar-strip-stat b, .kpi b, .bar-row .num, .mono, code, kbd { font-variant-numeric: tabular-nums; }
+/* Thin scrollbars everywhere: scrollbar-width is not inherited, so it is asked of every box. */
+* { scrollbar-width: thin; scrollbar-color: var(--line-strong) transparent; }
 body {
   font: 15px/1.5 var(--sans);
-  background: radial-gradient(1200px 700px at 85% -10%, color-mix(in srgb, var(--accent) 7%, transparent), transparent 60%), var(--bg);
+  /* Quieter than it was: the wash of the blue from above is felt behind the top bar and gone by the first card. */
+  background: radial-gradient(900px 520px at 82% -8%, color-mix(in srgb, var(--accent) 5%, transparent), transparent 70%), var(--bg);
   color: var(--text);
   -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  /* Every figure lines up: a count that ticks, a column of tokens, a clock. Opt out with .prose where digits sit in a sentence. */
+  font-variant-numeric: tabular-nums;
+  /* A weight the family does not have is a weight the browser must not invent. */
+  font-synthesis: none;
+  -webkit-tap-highlight-color: transparent;
 }
-/* The top row is `auto`, not `56px`. A fixed track pins the header's height
-   regardless of what it contains, so once #topbar wrapped (narrow widths, long
-   goal) its second row rendered *outside* the track and painted over #view —
-   buttons on top of headings at every width the wrap block was meant to serve.
-   `auto` lets the track follow the header; #topbar keeps the 56px identity as a
-   min-height, and #view starts wherever the header actually ends. */
-#app { display: grid; grid-template-columns: 232px 1fr; grid-template-rows: auto 1fr; grid-template-areas: "side top" "side main"; height: 100vh; }
+h1, h2, h3, h4 { text-wrap: balance; letter-spacing: var(--k-track-title); }
+p { text-wrap: pretty; }
+.prose { font-variant-numeric: proportional-nums; }
+a { color: var(--accent-2); text-decoration-thickness: 1px; text-underline-offset: 3px; text-decoration-color: color-mix(in srgb, currentColor 45%, transparent); }
+a:hover { text-decoration-color: currentColor; }
+.muted { color: var(--muted); }
+code, kbd, .mono { font-variant-numeric: tabular-nums; }
+code { font: 13px var(--mono); background: var(--panel-2); border: 1px solid var(--line); border-radius: var(--k-r-xs); padding: 0 var(--s1-5); }
+/* A key: raised by its 2px lower edge, the way the cap of one is. Set one with <Kbd> (components.tsx), which also says Ctrl on a
+   machine that has no ⌘. */
+kbd { display: inline-flex; align-items: center; justify-content: center; min-width: 20px; height: 20px; padding: 0 var(--s1-5); font: 500 12px/1 var(--mono); color: var(--text-dim); background: var(--panel-2); border: 1px solid var(--line-strong); border-bottom-width: 2px; border-radius: var(--k-r-xs); white-space: nowrap; }
+.keys { display: inline-flex; align-items: center; gap: 3px; flex: none; }
+/* Type utilities, so a view says what a thing is instead of repeating its recipe: a small label in capitals, a headline figure,
+   a column of numbers. The figure is the sans at 650, tabular; monospace is for ids, paths, code and JSON. */
+.caps { font: 600 11px/1.3 var(--sans); letter-spacing: var(--k-track-caps); text-transform: uppercase; color: var(--muted); }
+.fig { font: 650 24px/1.1 var(--sans); letter-spacing: var(--k-track-title); }
+.fig.lg { font-size: 30px; letter-spacing: var(--k-track-display); }
+.fig.sm { font-size: 16px; letter-spacing: var(--k-track-tight); }
+.num { text-align: right; }
+.hidden { display: none; }
 
-/* ---------- sidebar ---------- */
-/* A search field, then four groups under small-caps labels, each row an icon and a name. The ground is --bg-2 so the sidebar
-   reads as the frame and the page as the thing inside it. */
-#sidebar { grid-area: side; display: flex; flex-direction: column; gap: var(--s1); background: var(--bg-2); border-right: 1px solid var(--line); padding: var(--s4) var(--s3) var(--s3); overflow-y: auto; }
-/* WS9 focus mode: the shell hides its own sidebar and reclaims the grid column
-   (a display:none item still leaves its track, and its menu opener behind). */
-#app.focus-mode { grid-template-columns: 0 1fr; }
-#app.focus-mode #sidebar, #app.focus-mode #btn-menu { display: none; }
-.brand { display: flex; flex-direction: column; gap: var(--s1); padding: var(--s1) var(--s2) var(--s3); }
-.brand .wordmark { display: block; color: var(--text); }
-.brand .sub { display: block; font: 12px var(--mono); color: var(--muted); max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-/* The palette's door. It is the fastest route to every view, agent and action, and it was reachable only by already knowing
-   the chord; a field-shaped button at the top of the sidebar says what it is. */
-.side-search { display: flex; align-items: center; gap: var(--s2); width: 100%; min-height: 36px; margin-bottom: var(--s1); padding: 0 var(--s2-5); background: var(--panel); border: 1px solid var(--line); border-radius: var(--r); color: var(--muted); font: 14px var(--sans); text-align: left; cursor: pointer; }
-.side-search:hover { border-color: var(--line-strong); color: var(--text-dim); }
-.side-search kbd { margin-left: auto; }
-#nav { display: flex; flex-direction: column; }
-.nav-group { display: flex; flex-direction: column; gap: var(--s0); }
-.nav-label { font: 600 11px/1.35 var(--sans); text-transform: uppercase; letter-spacing: .1em; color: var(--muted); padding: var(--s4) var(--s2-5) var(--s1); }
-.nav-group:first-child .nav-label { padding-top: var(--s2); }
-.tab {
-  display: flex; align-items: center; gap: var(--s2-5); width: 100%; min-height: 36px; text-align: left;
-  background: none; border: 0; color: var(--text-dim); font: 500 14px/1.3 var(--sans); padding: var(--s1-5) var(--s2-5);
-  border-radius: var(--r); cursor: pointer; position: relative;
-}
-.tab .icon { flex: none; opacity: .8; }
-/* --panel and --bg-2 are BOTH #ffffff-ish in light, so `background: var(--panel)`
-   on a --bg-2 ground painted the colour already underneath it: the hover
-   existed in dark only. --sunken steps the other way and is real on both
-   grounds. Deliberately neutral rather than accent-tinted -- .tab.active below
-   is an accent wash at 13%, and an 8% accent hover 5 points away from it would
-   make a merely-hovered nav item read as half-selected. */
-.tab:hover { background: var(--sunken); color: var(--text); }
-.tab:hover .icon { opacity: 1; }
-.tab.active { background: color-mix(in srgb, var(--accent) 13%, transparent); color: var(--text); font-weight: 600; }
-.tab.active .icon { color: var(--accent-2); opacity: 1; }
-.tab.active::before { content: ""; position: absolute; left: calc(var(--s3) * -1); top: 22%; height: 56%; width: 3px; border-radius: 3px; background: var(--accent); }
-.tab-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-/* The digit that jumps here. Always printed it was fourteen identical little keys; shown on hover and focus it is a hint
-   exactly when someone is looking at that row. */
-.tab-key { margin-left: auto; opacity: 0; transition: opacity .12s; }
-.tab:hover .tab-key, .tab:focus-visible .tab-key { opacity: 1; }
-.nav-badge { margin-left: auto; min-width: 20px; padding: 0 var(--s1-5); border-radius: 10px; background: var(--bad); color: var(--text-on-hot); font: 700 12px/20px var(--sans); text-align: center; }
-.nav-badge ~ .tab-key { margin-left: 0; }
-/* Only the cases the baseline cannot express: the ring has to land on a child
-   because the focusable element itself is not the visible shape. */
-.tbl tr.clickable:focus-visible td {
-  outline: 2px solid var(--accent); outline-offset: 2px;
-}
-.ev:focus-visible { outline-offset: -2px; }
-.group-h { font: var(--tx-section); text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin: var(--s3-5) 2px 8px; }
-.group-h:first-of-type { margin-top: 0; }
-.view-sub { font-size: 13px; color: var(--muted); margin: -8px 2px var(--s3-5); max-width: 90ch; }
-.page-actions { margin-left: auto; display: flex; flex-wrap: wrap; gap: var(--s2); align-items: center; }
-/* A destructive action sat flush against ordinary ones and only turned red on
-   hover, so "Reset to zero" looked exactly like "See what agents did" until the
-   pointer was already on it. Give it a rest-state colour and push it off the
-   end of the safe group so it cannot be hit on the way to a neighbour. */
-.page-actions > .danger { margin-left: var(--s4); }
-button.small.danger { color: color-mix(in srgb, var(--bad) 72%, var(--text-dim)); border-color: color-mix(in srgb, var(--bad) 32%, var(--line)); }
 /* Collapsing only the duration left `animation-iteration-count: infinite`
    intact, so every pulse/spinner still looped forever — thousands of .01ms
    cycles a second, which is worse for a motion-sensitive reader than the
@@ -337,28 +320,153 @@ button.small.danger { color: color-mix(in srgb, var(--bad) 72%, var(--text-dim))
     scroll-behavior: auto !important;
   }
 }
-/* Three icon buttons on a hairline: theme, help, sign out. They were a stack of labelled buttons that took a third of the
-   sidebar's height to say what an icon says. Each is a full 36px target and names itself with aria-label. */
-.side-foot { margin-top: auto; display: flex; gap: var(--s1-5); padding: var(--s3) var(--s1) 0; border-top: 1px solid var(--line); }
-.icon-btn { flex: 1 1 0; display: inline-flex; align-items: center; justify-content: center; min-width: 36px; min-height: 36px; padding: 0; background: none; border: 1px solid transparent; border-radius: var(--r); color: var(--text-dim); cursor: pointer; }
-.icon-btn:hover { background: var(--sunken); color: var(--text); }
-.icon-btn[aria-pressed="true"] { color: var(--accent-2); }
-/* .ghost and .small are one density in two tones — quiet chrome vs actionable
-   chip — and nothing else separates them: same border, same 12px, same radius,
-   same --text-dim. Their padding had drifted to 5px 9px and 3px 10px, two
-   spellings of the same intent and neither on the scale. Both now use
-   --s1/--s2-5. That does not change .small's height — min-height:24px still
-   dominates 4px+12px of content, and it stays exactly on the WCAG 2.5.8 floor
-   — but .ghost gains the same explicit floor, which it did not have. The size
-   is shared on purpose: the next small button should pick a tone, not invent a
-   third padding. */
-button.ghost { background: none; border: 1px solid var(--line); color: var(--text-dim); border-radius: var(--r-sm); padding: var(--s1) var(--s2-5); font: 13px var(--sans); cursor: pointer; display: inline-flex; align-items: center; min-height: 24px; }
-button.ghost:hover { color: var(--text); border-color: var(--line-strong); }
+/* Things arrive, once: opacity, and a short rise where the thing has somewhere to rise from. */
+@keyframes fade-in { from { opacity: 0; } }
+@keyframes rise-in { from { opacity: 0; transform: translateY(8px); } }
+@keyframes menu-in { from { opacity: 0; transform: translateY(-4px); } }
+@keyframes menu-in-up { from { opacity: 0; transform: translateY(4px); } }
+@keyframes spin { to { transform: rotate(360deg); } }
 
-/* ---------- topbar ---------- */
-/* Left: where the mission stands (one word) and what it is for. Middle: two numbers. Right: the one thing to do about it,
+/* ============ shell ============ */
+/* The top row is `auto`, not `56px`. A fixed track pins the header's height
+   regardless of what it contains, so once #topbar wrapped (narrow widths, long
+   goal) its second row rendered *outside* the track and painted over #view —
+   buttons on top of headings at every width the wrap block was meant to serve.
+   `auto` lets the track follow the header; #topbar keeps its identity as a
+   min-height, and #view starts wherever the header actually ends. */
+#app { display: grid; grid-template-columns: 232px 1fr; grid-template-rows: auto 1fr; grid-template-areas: "side top" "side main"; height: 100vh; }
+
+/* ---------- sidebar ---------- */
+/* A search field, then four groups under small-caps labels, each row an icon and a name. The ground is --bg-2 so the sidebar
+   reads as the frame and the page as the thing inside it. */
+#sidebar { grid-area: side; display: flex; flex-direction: column; gap: var(--s1); background: var(--bg-2); border-right: 1px solid var(--line); padding: var(--s4) var(--s3) var(--s3); overflow-y: auto; }
+/* WS9 focus mode: the shell hides its own sidebar and reclaims the grid column
+   (a display:none item still leaves its track, and its menu opener behind). */
+#app.focus-mode { grid-template-columns: 0 1fr; }
+#app.focus-mode #sidebar, #app.focus-mode #btn-menu { display: none; }
+.brand { display: flex; flex-direction: column; gap: var(--s1); padding: var(--s1) var(--s2) var(--s3); }
+.brand .wordmark { display: block; color: var(--text); }
+/* The goal's id is for the person who needs to quote it, so it sits under the name as a quiet line and does not compete with it. */
+.brand .sub { display: block; font: 11px/1.3 var(--mono); letter-spacing: 0; color: var(--muted); max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* The palette's door. It is the fastest route to every view, agent and action, and it was reachable only by already knowing
+   the chord; a field-shaped button at the top of the sidebar says what it is. */
+.side-search { display: flex; align-items: center; gap: var(--s2); width: 100%; min-height: 36px; margin-bottom: var(--s1); padding: 0 var(--s2) 0 var(--s2-5); background: var(--panel); border: 1px solid var(--line-strong); border-radius: var(--r); box-shadow: var(--k-hl), var(--k-shadow-1); color: var(--muted); font: 14px var(--sans); text-align: left; cursor: pointer; transition: border-color var(--k-dur-1), box-shadow var(--k-dur-1), color var(--k-dur-1); }
+.side-search:hover, .side-search.is-hover { border-color: var(--line-control); color: var(--text-dim); }
+.side-search .keys, .side-search > kbd { margin-left: auto; }
+.side-search .icon { flex: none; }
+#nav { display: flex; flex-direction: column; }
+.nav-group { display: flex; flex-direction: column; gap: var(--s0); }
+.nav-label { font: 600 11px/1.3 var(--sans); letter-spacing: var(--k-track-caps); text-transform: uppercase; color: var(--muted); padding: var(--s4) var(--s2-5) var(--s1); }
+.nav-group:first-child .nav-label { padding-top: var(--s2); }
+.tab {
+  position: relative; display: flex; align-items: center; gap: var(--s2-5); width: 100%; min-height: 36px; text-align: left;
+  background: none; border: 0; color: var(--text-dim); font: 500 14px/1.3 var(--sans); padding: 0 var(--s2-5);
+  border-radius: var(--r); cursor: pointer; transition: background-color var(--k-dur-1) var(--k-ease), color var(--k-dur-1) var(--k-ease);
+}
+.tab .icon { flex: none; color: var(--muted); transition: color var(--k-dur-1) var(--k-ease); }
+/* The hover is a wash of the ink: --panel and --bg-2 are both near-white in light, so a surface step would show in dark only. */
+.tab:hover, .tab.is-hover { background: var(--wash); color: var(--text); }
+.tab:hover .icon, .tab.is-hover .icon { color: var(--text-dim); }
+.tab:active { background: var(--wash-2); }
+/* One cue for where you are: the selection's own ground and ink, the icon in the same ink, and a 2px mark inside the row. */
+.tab.active { background: var(--k-accent-soft); color: var(--k-accent-ink); font-weight: 600; }
+.tab.active .icon { color: var(--k-accent-ink); }
+.tab.active::before { content: ""; position: absolute; left: 0; top: 9px; bottom: 9px; width: 2px; border-radius: 2px; background: var(--k-accent); }
+.tab-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* The digit that jumps here. Always printed it was fourteen identical little keys; shown on hover and focus it is a hint
+   exactly when someone is looking at that row. */
+.tab-key { margin-left: auto; height: 18px; min-width: 18px; padding: 0 var(--s1); font-size: 11px; opacity: 0; transition: opacity var(--k-dur-1); }
+.tab:hover .tab-key, .tab:focus-visible .tab-key { opacity: 1; }
+.nav-badge { margin-left: auto; min-width: 20px; height: 20px; padding: 0 var(--s1-5); border-radius: var(--k-r-pill); background: var(--bad); color: var(--text-on-hot); font: 650 12px/20px var(--sans); text-align: center; }
+.nav-badge ~ .tab-key { margin-left: 0; }
+/* Only the cases the baseline cannot express: the ring has to land on a child
+   because the focusable element itself is not the visible shape. */
+.tbl tr.clickable:focus-visible td {
+  outline: 2px solid var(--accent); outline-offset: 2px;
+}
+.ev:focus-visible { outline-offset: -2px; }
+.group-h { font: var(--tx-section); text-transform: uppercase; letter-spacing: var(--k-track-caps); color: var(--muted); margin: var(--s3-5) 2px 8px; }
+.group-h:first-of-type { margin-top: 0; }
+.view-sub { font: 14px/1.5 var(--sans); color: var(--muted); margin: calc(var(--s2) * -1) 2px var(--s4); max-width: 72ch; }
+.page-actions { margin-left: auto; display: flex; flex-wrap: wrap; gap: var(--s2); align-items: center; }
+/* A destructive action sat flush against ordinary ones and only turned red on
+   hover, so "Reset to zero" looked exactly like "See what agents did" until the
+   pointer was already on it. Give it a rest-state colour and push it off the
+   end of the safe group so it cannot be hit on the way to a neighbour. */
+.page-actions > .danger { margin-left: var(--s4); }
+/* Icon buttons in a row: the theme, help and sign-out, each a full pointer target that names itself with aria-label and a tooltip. */
+.side-foot { margin-top: auto; display: flex; gap: var(--s1); padding: var(--s3) var(--s1) 0; border-top: 1px solid var(--line); }
+
+/* ---------- the project strip ----------
+   Host-level chrome: one row above everything, spanning both grid columns, so it survives every project switch and never
+   looks like part of the mission it happens to be showing. The row only exists when a registry does (`#app.with-tabs`), so
+   single-mesh `curule serve` keeps its 2-row layout. It sits in a trough (the sunken ground) and the project in front is the
+   one tab raised out of it, so the strip reads as a switch between places and not as a browser's tabs. Under it, in the flow,
+   a notice when the active project is broken or the host is not answering, which pushes the console down instead of covering it. */
+#app.with-tabs { grid-template-rows: auto auto 1fr; grid-template-areas: "tabs tabs" "side top" "side main"; }
+#ptabs-bar { grid-area: tabs; display: flex; flex-direction: column; min-width: 0; background: var(--sunken); border-bottom: 1px solid var(--line); }
+.ptabs-nav { display: flex; align-items: center; gap: var(--s1); min-width: 0; padding: var(--s1) var(--s2); }
+/* The way to every project at once. It carries the count of the ones that need a person, so a crash in a tab you are not
+   looking at still shows from any page. */
+.pj-home { flex: none; display: inline-flex; align-items: center; gap: var(--s1-5); height: 36px; margin: 0; padding: 0 var(--s3) 0 var(--s2-5); background: none; border: 1px solid transparent; border-radius: var(--r); color: var(--text-dim); font: 500 14px var(--sans); cursor: pointer; transition: background-color var(--k-dur-1), color var(--k-dur-1); }
+.pj-home:hover, .pj-home.is-hover { color: var(--text); background: var(--wash); }
+.pj-home[aria-current="page"] { color: var(--k-accent-ink); background: var(--k-accent-soft); font-weight: 600; }
+.pj-count { min-width: 18px; height: 18px; padding: 0 var(--s1-5); border-radius: 9px; background: var(--bad); color: var(--text-on-hot); font: 650 11px/18px var(--sans); text-align: center; }
+/* Tabs scroll sideways when there are more than fit; the edges fade where there is more to see. The scrollbar is hidden
+   (it would take a third of the strip): the fades say so, the wheel and Tab move it, and the Projects page lists them all. */
+.ptabs-scroll { position: relative; flex: 0 1 auto; min-width: 0; display: flex; padding-left: var(--s1-5); margin-left: var(--s1); border-left: 1px solid var(--line-strong); }
+.ptabs-scroll::before, .ptabs-scroll::after { content: ""; position: absolute; top: 0; bottom: 0; width: 28px; z-index: var(--z-raise); pointer-events: none; opacity: 0; transition: opacity var(--k-dur-1); }
+.ptabs-scroll::before { left: var(--s1-5); background: linear-gradient(to right, var(--sunken), transparent); }
+.ptabs-scroll::after { right: 0; background: linear-gradient(to left, var(--sunken), transparent); }
+.ptabs-scroll[data-fade-start="true"]::before, .ptabs-scroll[data-fade-end="true"]::after { opacity: 1; }
+.ptabs { flex: 0 1 auto; display: flex; align-items: center; gap: var(--s1); margin: 0; padding: var(--s0) var(--s0); list-style: none; min-width: 0; overflow-x: auto; overflow-y: hidden; scrollbar-width: none; }
+.ptabs::-webkit-scrollbar { display: none; }
+.ptabs-empty { align-self: center; padding-left: var(--s1-5); font-size: 13px; white-space: nowrap; }
+/* scroll-margin: a tab brought into view stops short of the fade at the edge, not under it. */
+.ptab { flex: none; display: flex; align-items: center; min-width: 0; max-width: 252px; height: 38px; border-radius: var(--r); border: 1px solid transparent; position: relative; scroll-margin-inline: 32px; transition: background-color var(--k-dur-1), box-shadow var(--k-dur-1), border-color var(--k-dur-1); }
+.ptab:hover { background: var(--wash); }
+/* The project in front is raised out of the trough: the card's own surface, its hairline and rung 1. */
+.ptab.on { background: var(--panel); border-color: var(--line); box-shadow: var(--k-hl), var(--k-shadow-1); }
+.ptab.drop { outline: 2px solid var(--accent); outline-offset: -2px; }
+.ptab-main { display: flex; align-items: center; gap: var(--s2); min-width: 0; height: 100%; padding: 0 var(--s1) 0 var(--s2-5); background: none; border: 0; border-radius: var(--r); color: var(--text-dim); font: 14px var(--sans); text-align: left; cursor: pointer; }
+.ptab.on .ptab-main { color: var(--text); }
+/* The ring is drawn inside: this strip is overflow-y: hidden, which would clip an outline drawn around it. */
+.ptab-main:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+/* The name above, the state under it: two lines in one tab, the second quiet. */
+.ptab-text { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.ptab-name { font: 600 13px/1.25 var(--sans); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Shape, then word, then colour: a solid dot runs, a ring is closed, a triangle is broken, a padlock is locked, a pair of
+   bars is parked, so the state is readable without telling hues apart. The word goes first at narrow widths; the shape stays. */
+.ptab-ico { flex: none; display: inline-grid; place-items: center; width: 22px; height: 22px; border-radius: var(--k-r-sm); color: var(--muted); }
+.ptab[data-tone="ok"] .ptab-ico { color: var(--ok); background: color-mix(in srgb, var(--ok) 12%, transparent); }
+.ptab[data-tone="warn"] .ptab-ico { color: var(--warn); background: color-mix(in srgb, var(--warn) 12%, transparent); }
+.ptab[data-tone="bad"] .ptab-ico { color: var(--bad); background: color-mix(in srgb, var(--bad) 12%, transparent); }
+.ptab[data-state="starting"] .ptab-ico .icon { animation: spin 1.1s linear infinite; }
+.ptab-meta { display: flex; align-items: baseline; gap: var(--s1-5); font: 11px/1.25 var(--sans); color: var(--muted); white-space: nowrap; }
+.ptab[data-tone="bad"] .ptab-state { color: var(--bad); }
+.ptab[data-tone="warn"] .ptab-state { color: var(--warn); }
+.ptab-state { text-transform: capitalize; }
+.ptab-rss { font-variant-numeric: tabular-nums; }
+.ptab-rss::before { content: "·"; margin-right: var(--s1-5); }
+.ptab-x { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; margin-right: var(--s1-5); padding: 0; background: none; border: 0; border-radius: var(--k-r-sm); color: var(--muted); cursor: pointer; opacity: 0; transition: opacity var(--k-dur-1), background-color var(--k-dur-1), color var(--k-dur-1); }
+.ptab:hover .ptab-x, .ptab.on .ptab-x, .ptab-x:focus-visible { opacity: 1; }
+.ptab-x:hover { color: var(--bad); background: color-mix(in srgb, var(--bad) 14%, transparent); }
+.ptab-add { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; margin-left: var(--s1); padding: 0; background: none; border: 1px solid transparent; border-radius: var(--r); color: var(--muted); cursor: pointer; transition: background-color var(--k-dur-1), color var(--k-dur-1); }
+.ptab-add:hover { color: var(--text); background: var(--wash); }
+/* A notice under the strip: the active project crashed, or the host is not answering. In the flow, so it moves the console
+   down rather than lying over its top bar. */
+.ptabs-notice { margin: 0; border-radius: 0; border-width: 1px 0 0; }
+.ptabs-notice .banner-body { flex-basis: 320px; }
+/* The host's words behind a disclosure. The text is shown whole once opened: a box that scrolls inside a card is a second
+   place to get lost in, and it would need a tab stop of its own. */
+.pj-why { font-size: 13px; }
+.pj-why summary { display: inline-flex; align-items: center; min-height: 24px; cursor: pointer; color: var(--accent-2); }
+.pj-why pre { margin: var(--s1-5) 0 0; padding: var(--s2) var(--s2-5); background: var(--sunken); border: 1px solid var(--line); border-radius: var(--r-sm); font: 12px/1.5 var(--mono); color: var(--text); white-space: pre-wrap; overflow-wrap: anywhere; }
+
+/* ---------- top bar ---------- */
+/* Left: where the mission stands (one word) and what it is for. Middle: two readouts. Right: the one thing to do about it,
    then the rest. Only the goal text shrinks; it truncates before anything else gives way. */
-#topbar { grid-area: top; position: relative; z-index: var(--z-ctx); display: flex; align-items: center; flex-wrap: wrap; gap: var(--s2) var(--s4); padding: var(--s2-5) var(--s5); min-height: 60px; border-bottom: 1px solid var(--line); background: color-mix(in srgb, var(--bg-2) 80%, transparent); backdrop-filter: blur(6px); min-width: 0; }
+#topbar { grid-area: top; position: relative; z-index: var(--z-ctx); display: flex; align-items: center; flex-wrap: wrap; gap: var(--s2) var(--s4); padding: var(--s2) var(--s5); min-height: 64px; border-bottom: 1px solid var(--line); background: color-mix(in srgb, var(--bg-2) 82%, transparent); backdrop-filter: blur(8px); min-width: 0; }
 #btn-menu { display: none; }
 /* The host's own pages (a host with no project, the Projects page) have no mission to describe: the bar keeps only the menu opener
    a phone needs and gives its height back everywhere else. */
@@ -370,77 +478,48 @@ button.ghost:hover { color: var(--text); border-color: var(--line-strong); }
    plus min-width:0 means it asks for little, grows into whatever is left, and
    truncates rather than pushing the actions onto a second row. */
 #goal-strip { display: flex; align-items: center; min-width: 0; flex: 1 1 220px; }
-.goal-text { display: flex; flex-direction: column; min-width: 0; line-height: 1.3; }
-#top-goal { font: 600 15px/1.3 var(--sans); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
-#top-criteria { font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.goal-text { display: flex; flex-direction: column; gap: 1px; min-width: 0; line-height: 1.3; }
+#top-goal { font: 600 15px/1.3 var(--sans); letter-spacing: var(--k-track-tight); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+#top-criteria { font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 /* The one word for where the mission stands: tone says whether to look, the dot moves only while agents are mid-turn. */
-.mission-chip { display: inline-flex; align-items: center; gap: var(--s1-5); flex: none; padding: var(--s1) var(--s3) var(--s1) var(--s2-5); border-radius: 999px; font: 600 13px/1.2 var(--sans); }
-.mission-chip .dot { width: 8px; height: 8px; border-radius: 50%; background: currentColor; flex: none; }
+.mission-chip { --tone: var(--text-dim); display: inline-flex; align-items: center; gap: var(--s1-5); flex: none; height: 26px; padding: 0 var(--s3) 0 var(--s2-5); border-radius: var(--k-r-pill); font: 600 13px/1 var(--sans); color: var(--tone); background: color-mix(in srgb, var(--tone) 14%, transparent); border: 1px solid color-mix(in srgb, var(--tone) 24%, transparent); }
+.mission-chip .dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; flex: none; }
 .mission-chip .dot.pulse { box-shadow: 0 0 0 0 color-mix(in srgb, currentColor 60%, transparent); animation: pulse 2.2s infinite; }
-.mission-chip.ok { color: var(--ok); background: color-mix(in srgb, var(--ok) 14%, transparent); }
-.mission-chip.warn { color: var(--warn); background: color-mix(in srgb, var(--warn) 14%, transparent); }
-.mission-chip.bad { color: var(--bad); background: color-mix(in srgb, var(--bad) 14%, transparent); }
-.mission-chip.neutral { color: var(--text-dim); background: color-mix(in srgb, var(--text-dim) 12%, transparent); }
+.mission-chip.ok { --tone: var(--ok); }
+.mission-chip.warn { --tone: var(--warn); }
+.mission-chip.bad { --tone: var(--bad); }
+.mission-chip.neutral { --tone: var(--text-dim); }
 @keyframes pulse { 70% { box-shadow: 0 0 0 8px transparent; } }
 .server-banner { margin-bottom: var(--s3); display: flex; align-items: center; gap: var(--s2); flex-wrap: wrap; }
-/* Telemetry, not decoration: a labelled number behind a hairline. Spent carries a meter because a budget is the one figure
-   with a ceiling, and a bar says how close it is faster than two numbers do. */
-.bar-strip { display: flex; align-items: center; gap: var(--s4); flex: none; }
-.bar-strip-stat { display: flex; flex-direction: column; align-items: flex-start; gap: var(--s0); line-height: 1.2; min-width: 0; padding-left: var(--s4); border-left: 1px solid var(--line); }
-.bar-strip-stat:first-child { padding-left: 0; border-left: 0; }
-.bar-strip-stat b { font: 600 15px var(--mono); }
-.bar-strip-stat b .muted { font-weight: 400; }
-.bar-strip-stat > span { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
-.bar-strip-stat .meter { position: relative; display: block; width: 100%; height: 3px; margin-top: var(--s0); border-radius: 2px; background: var(--line); overflow: hidden; }
-.bar-strip-stat .meter::after { content: ""; position: absolute; inset: 0; background: var(--accent); transform-origin: left center; transform: scaleX(var(--p, 0)); }
+/* Telemetry, not decoration: two readouts in a well (sunken is how this UI says "read, do not press"), each a label over a figure.
+   Spent carries a meter because a budget is the one figure with a ceiling, and a bar says how close it is faster than two numbers do. */
+.bar-strip { display: flex; align-items: stretch; gap: var(--s5); flex: none; padding: var(--s1) var(--s3-5); border-radius: var(--r); background: var(--sunken); border: 1px solid var(--line); }
+.bar-strip-stat { display: flex; flex-direction: column; align-items: flex-start; gap: 1px; min-width: 0; line-height: 1.2; }
+.bar-strip-stat:not(:first-child) { padding-left: var(--s5); border-left: 1px solid var(--line-strong); }
+.bar-strip-stat > .k { font: 600 11px/1.2 var(--sans); letter-spacing: var(--k-track-caps); text-transform: uppercase; color: var(--muted); }
+.bar-strip-stat b { display: block; white-space: nowrap; font: 650 15px/1.2 var(--sans); letter-spacing: var(--k-track-tight); color: var(--text); }
+.bar-strip-stat b .of { font-weight: 500; color: var(--muted); }
+.bar-strip-stat b .live { display: inline-block; width: 6px; height: 6px; margin-right: var(--s1-5); border-radius: 50%; vertical-align: 2px; background: var(--ok); animation: pulse 2.2s infinite; }
+.bar-strip-stat .meter { position: relative; display: block; width: 100%; min-width: 88px; height: 4px; margin-top: 0; border-radius: var(--k-r-pill); background: var(--line-strong); overflow: hidden; }
+.bar-strip-stat .meter::after { content: ""; position: absolute; inset: 0 auto 0 0; width: calc(var(--p, 0) * 100%); border-radius: inherit; background: var(--accent); transition: width var(--k-dur-3) var(--k-ease); }
 .bar-strip-stat .meter.warn::after { background: var(--warn); }
 .bar-strip-stat .meter.bad::after { background: var(--bad); }
 .top-actions { display: flex; align-items: center; gap: var(--s2); flex: none; margin-left: auto; }
-button.soft { display: inline-flex; align-items: center; gap: var(--s1-5); min-height: 34px; background: var(--panel); border: 1px solid var(--line-strong); color: var(--text); border-radius: var(--r-sm); padding: var(--s1-5) var(--s3); font: 500 14px var(--sans); cursor: pointer; }
-button.soft:hover { border-color: var(--accent); color: var(--accent-2); }
-button.soft.danger:hover { border-color: var(--bad); color: var(--bad); }
-
-/* Menu button (components.tsx Menu). Positioned, not fixed: the panel belongs
-   to its trigger and must travel with it. --z-ctx is the layer for chrome that
-   opens over the page but stays under drawers, dialogs and toasts. */
-.menu-wrap { position: relative; display: inline-flex; }
-.menu-btn { display: inline-flex; align-items: center; justify-content: center; min-width: 36px; padding-inline: var(--s2); }
-.menu-btn[aria-expanded="true"] { border-color: var(--accent); color: var(--accent-2); }
-.menu-panel { position: absolute; z-index: var(--z-ctx); min-width: 232px;
-  display: flex; flex-direction: column; gap: var(--s0); padding: var(--s1);
-  background: var(--bg-2); border: 1px solid var(--line-strong); border-radius: var(--r); box-shadow: var(--shadow); }
-.menu-panel.bottom { top: calc(100% + var(--s1)); }
-.menu-panel.top { bottom: calc(100% + var(--s1)); }
-.menu-panel.right { right: 0; }
-.menu-panel.left { left: 0; }
-/* 40px rows: these are the touch targets that replaced 44px buttons, and a
-   menu is exactly where a thumb is least accurate. */
-.menu-item { position: relative; display: flex; align-items: center; gap: var(--s2-5); width: 100%; min-height: 40px; text-align: left;
-  background: none; border: 0; border-radius: var(--r-sm); color: var(--text); font: 14px var(--sans);
-  padding: var(--s2) var(--s2-5); cursor: pointer; white-space: pre; }
-.menu-item .icon { flex: none; color: var(--text-dim); }
-/* A destructive action is set apart by a rule, so it is never the row under the thumb on the way to an ordinary one. */
-.menu-item.separated { margin-top: var(--s1-5); }
-.menu-item.separated::before { content: ""; position: absolute; left: var(--s2); right: var(--s2); top: calc(var(--s1-5) / -2 - 1px); height: 1px; background: var(--line); }
-/* Tint rather than a plate: composites over whatever ground is beneath it, so
-   it survives --panel and --bg-2 collapsing to the same white in light. Matches
-   .ptree-row:hover (7%) and .fv-code .fv-line:hover (6%) in views/product.css and views/files.css.
-   .menu-item.danger:hover below is (0,3,0) and keeps its red wash. */
-.menu-item:hover { background: color-mix(in srgb, var(--accent) 8%, transparent); color: var(--accent-2); }
-.menu-item:hover .icon { color: inherit; }
-.menu-item.danger:hover { color: var(--bad); background: color-mix(in srgb, var(--bad) 12%, transparent); }
 /* 801-1280: the topbar stays one row. The goal truncates first, the spend stat yields, and the secondary actions keep
    their accessible name through aria-label while showing only their icon. The upper bound is 1280, not 1200: the sidebar
    takes 232px off the top of every one of these widths. */
 @media (min-width: 801px) and (max-width: 1280px) {
   #topbar { gap: var(--s2) var(--s3); padding: var(--s2) var(--s3-5); }
+  /* The chip, the readout and three icons come first; the goal asks for 140 and takes what is left, so the row does not wrap at 820. */
+  #goal-strip { flex-basis: 140px; }
   .bar-strip-stat.spent { display: none; }
+  .bar-strip { gap: var(--s4); }
   .top-actions { gap: var(--s1-5); }
   .top-actions .act-lbl { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
 }
 
 /* ---------- status strip (halted mission preempts everything) ---------- */
-.status-strip { display: flex; align-items: center; gap: var(--s2-5); flex-wrap: wrap; border: 1px solid var(--line-strong); border-radius: var(--r); padding: 12px var(--s3-5); margin-bottom: var(--s3); font-size: 15px; background: var(--panel); }
+.status-strip { --tone: var(--text-dim); display: flex; align-items: center; gap: var(--s2-5); flex-wrap: wrap; border: 1px solid color-mix(in srgb, var(--tone) 30%, var(--line)); border-radius: var(--r); padding: var(--s3) var(--s3-5); margin-bottom: var(--s3); font-size: 15px; background: color-mix(in srgb, var(--tone) 8%, var(--panel)); }
 .status-strip b { font-size: 15px; }
 /* Every tint lifts the surface, and --muted was calibrated against --panel: on
    the .ok strip it measures 4.17:1, on .warn 4.11:1 — both under 4.5. The
@@ -448,9 +527,9 @@ button.soft.danger:hover { border-color: var(--bad); color: var(--bad); }
    it, so it steps up to --text-dim (5.0:1 on the brightest tint) rather than
    staying the dimmest text in the console. */
 .status-strip .muted { color: var(--text-dim); }
-.status-strip.bad { background: color-mix(in srgb, var(--bad) 12%, var(--panel)); border-color: color-mix(in srgb, var(--bad) 45%, var(--line)); }
-.status-strip.warn { background: color-mix(in srgb, var(--warn) 11%, var(--panel)); border-color: color-mix(in srgb, var(--warn) 45%, var(--line)); }
-.status-strip.ok { background: color-mix(in srgb, var(--ok) 10%, var(--panel)); border-color: color-mix(in srgb, var(--ok) 40%, var(--line)); }
+.status-strip.bad { --tone: var(--bad); }
+.status-strip.warn { --tone: var(--warn); }
+.status-strip.ok { --tone: var(--ok); }
 
 /* ---------- main / views ---------- */
 /* The bottom padding is deeper than the top on purpose: the FAB is fixed over
@@ -460,86 +539,365 @@ button.soft.danger:hover { border-color: var(--bad); color: var(--bad); }
 #view { grid-area: main; overflow: auto; padding: var(--s5) var(--s6) var(--dock-clear); scroll-behavior: smooth; }
 #view:focus { outline: none; }
 #view:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+/* A route change is a 120ms fade of the page that arrives, nothing that moves: the person's target stays where it was. */
+:where(#view) > :where(:not(.sr-only, .view-loading)) { animation: fade-in var(--k-dur-1) var(--k-ease) backwards; }
 .view-title { display: flex; align-items: baseline; flex-wrap: wrap; gap: var(--s2) var(--s3); margin: 2px 2px var(--s3-5); }
-.view-title h2 { margin: 0; font: var(--tx-title); }
+.view-title h2 { margin: 0; font: var(--tx-page); letter-spacing: var(--k-track-title); }
 .grid { display: grid; gap: var(--s3); }
 .grid.kpis { grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); }
 .grid.two { grid-template-columns: 1.25fr 1fr; }
 @media (max-width: 1100px) { .grid.two { grid-template-columns: 1fr; } }
 
-.card { background: linear-gradient(180deg, var(--panel), color-mix(in srgb, var(--panel) 88%, var(--bg))); border: 1px solid var(--line); border-radius: var(--r-lg); padding: var(--s3-5) 16px; }
-.card h3 { margin: 0 0 var(--s2-5); font-size: 13px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
+/* ============ surfaces ============ */
+/* Rung 1: a card sits on the page. The lit top edge is how it is seen in dark, where a shadow alone does not read. Static text
+   blocks are not cards and stay flat; a card that can be pressed (.interactive) is rung 2 on hover. */
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--r-lg); padding: var(--s4) var(--s5); box-shadow: var(--k-hl), var(--k-shadow-1); }
+/* The sign-in card (firstrun.css draws its shape) floats one rung above the page: the first thing a person sees is not a flat box. */
+.si-card { box-shadow: var(--k-hl), var(--k-shadow-2); }
+.card h3 { margin: 0 0 var(--s3); font: var(--tx-section); text-transform: uppercase; letter-spacing: var(--k-track-caps); color: var(--muted); }
+.card.interactive, a.card, button.card { cursor: pointer; transition: box-shadow var(--k-dur-1) var(--k-ease), border-color var(--k-dur-1) var(--k-ease), transform var(--k-dur-1) var(--k-ease); }
+.card.interactive:hover, .card.interactive.is-hover, a.card:hover, button.card:hover { border-color: var(--line-strong); box-shadow: var(--k-hl), var(--k-shadow-2); transform: translateY(-1px); }
+.card.interactive:active, .card.interactive.is-active, a.card:active, button.card:active { transform: none; box-shadow: var(--k-hl), var(--k-shadow-1); }
+button.card { display: block; width: 100%; font: inherit; color: inherit; text-align: left; }
+a.card { display: block; color: inherit; text-decoration: none; }
+/* The header pattern: a title, what it is about or how many at the right, and where there is room for it, a hairline. */
+.card-head { display: flex; align-items: center; flex-wrap: wrap; gap: var(--s1-5) var(--s3); margin: 0 0 var(--s3); }
+.card-head h3 { margin: 0; }
+.card-meta { font: var(--tx-meta); color: var(--muted); }
+.card-acts { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s2); margin-left: auto; }
+.card-head.ruled { padding-bottom: var(--s3); border-bottom: 1px solid var(--line); }
+/* A figure and what it measures. The figure is the sans at 650, tabular; its label is a small one in capitals. */
 .kpi { display: flex; flex-direction: column; gap: var(--s0); }
-.kpi b { font: 650 20px var(--mono); letter-spacing: -.5px; }
-.kpi small { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .07em; }
-.kpi .delta { color: var(--text-dim); font: 13px var(--mono); }
+.kpi b { font: 650 24px/1.1 var(--sans); letter-spacing: var(--k-track-title); }
+.kpi small { color: var(--muted); font: 600 11px/1.3 var(--sans); text-transform: uppercase; letter-spacing: var(--k-track-caps); }
+.kpi .delta { color: var(--text-dim); font: 500 13px var(--sans); }
 
-.progress { height: 7px; border-radius: 5px; background: var(--line); overflow: hidden; margin-top: var(--s2); }
-.progress > div { height: 100%; border-radius: 5px; background: linear-gradient(90deg, var(--accent), var(--ok)); transform-origin: left center; transition: transform .5s ease; }
+/* A labelled figure (components.tsx Stat): a small label in capitals over a figure in the sans at 650, tabular, with what it is out of
+   in the quiet ink and a line of detail under it. The same classes work on a dt and a dd where the markup is a definition list. */
+.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: var(--s4) var(--s5); margin: 0; }
+.stat { display: flex; flex-direction: column; gap: var(--s0); min-width: 0; }
+.stat-k { font: 600 11px/1.3 var(--sans); letter-spacing: var(--k-track-caps); text-transform: uppercase; color: var(--muted); }
+.stat-v { margin: 0; font: 650 24px/1.15 var(--sans); letter-spacing: var(--k-track-title); color: var(--text); overflow-wrap: anywhere; }
+.stat-u { font: 500 14px var(--sans); letter-spacing: 0; color: var(--muted); }
+.stat-s { font: 13px/1.4 var(--sans); color: var(--muted); }
+.stat.lg .stat-v { font-size: 30px; letter-spacing: var(--k-track-display); }
+.stat.sm .stat-v { font-size: 16px; letter-spacing: var(--k-track-tight); }
+.stat.ok .stat-v { color: var(--ok); }
+.stat.warn .stat-v { color: var(--warn); }
+.stat.bad .stat-v { color: var(--bad); }
+/* Facts about one thing: the name, then the value, on a grid that lines up. */
+dl.kv { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: var(--s1-5) var(--s4); margin: 0; font-size: 14px; }
+.kv dt { color: var(--muted); }
+.kv dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+/* Rows of a list that is not a table: a hairline between, 48 high (.dense 36), the one under the pointer lit, the chosen one in the selection's ground. */
+.rows { list-style: none; margin: 0; padding: 0; }
+.rows > * { display: flex; align-items: center; gap: var(--s3); min-height: 48px; padding: var(--s2) var(--s3); border-bottom: 1px solid var(--line); }
+.rows > :last-child { border-bottom: 0; }
+.rows.dense > * { min-height: 36px; padding-block: var(--s1); }
+.rows > .clickable { cursor: pointer; transition: background-color var(--k-dur-1) var(--k-ease); }
+.rows > .clickable:is(:hover, .is-hover) { background: var(--panel-2); }
+.rows > .on { background: var(--k-accent-soft); }
+/* Code, a path or a payload set apart: the mono in a sunken well. */
+pre.code { margin: 0; padding: var(--s3); background: var(--sunken); border: 1px solid var(--line); border-radius: var(--r-sm); font: 13px/1.55 var(--mono); color: var(--text); overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; tab-size: 2; }
+/* A disclosure: a chevron that turns, a summary the width of its row. */
+details.disc > summary { display: flex; align-items: center; gap: var(--s1-5); min-height: 28px; list-style: none; cursor: pointer; border-radius: var(--r-sm); color: var(--text-dim); font: 500 14px var(--sans); }
+details.disc > summary::-webkit-details-marker { display: none; }
+details.disc > summary::before { content: ""; flex: none; width: 14px; height: 14px; background: currentColor; -webkit-mask: var(--chev) center / contain no-repeat; mask: var(--chev) center / contain no-repeat; transition: transform var(--k-dur-1) var(--k-ease); }
+details.disc[open] > summary::before { transform: rotate(90deg); }
+details.disc > summary:hover { color: var(--text); }
 
-/* Shared chip/pill base: the hairline and muted text are identical across the
-   family, so they live here once; each variant keeps only what differs
-   (display, radius, padding, font, fill). */
-.chip, .sbx-chip, .chip-toggle { border: 1px solid var(--line); color: var(--text-dim); }
-/* WCAG 2.2 AA 2.5.8 wants 24x24 for a pointer target. .chip-toggle already had
-   it; the other clickable chips and the row actions were 17-21px tall, so the
-   smallest, densest controls were the hardest to hit. Padding is untouched —
-   only the box floor changes, so nothing reflows on desktop. */
-button.chip, .row-actions button {
-  min-height: 24px; display: inline-flex; align-items: center;
-}
-.chip-toggle { background: var(--panel); }
-/* 14% is the CEILING for a self-tinted chip, and both palettes are derived from
-   it. The washes here had drifted across twelve values (8,9,10,11,12,13,14,15,
-   16,18,20,22) for one idea; the four loudest put their own text below 4.5:1 in
-   light theme. Staying at or under 14% is what keeps that guarantee true -- the
-   hue carries the meaning, not the strength of the wash. */
-.pill { display: inline-flex; align-items: center; gap: 6px; border-radius: 20px; padding: 1px 10px 1px 6px; font: 600 12px var(--sans); border: 1px solid transparent; white-space: nowrap; }
-.pill::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
-.pill.idle      { color: var(--text-dim); background: color-mix(in srgb, var(--text-dim) 10%, transparent); }
-.pill.thinking,
-.pill.working,
-.pill.awakened,
-.pill.observing,
-.pill.requesting,
-.pill.reviewing { color: var(--ok);   background: color-mix(in srgb, var(--ok) 11%, transparent); }
-.pill.waiting   { color: var(--warn); background: color-mix(in srgb, var(--warn) 11%, transparent); }
-.pill.blocked   { color: var(--bad);  background: color-mix(in srgb, var(--bad) 12%, transparent); }
-.pill.failed    { color: var(--bad);  background: color-mix(in srgb, var(--bad) 12%, transparent); }
-.pill.suspended { color: var(--muted); background: color-mix(in srgb, var(--muted) 10%, transparent); }
-.pill.completed { color: var(--info); background: color-mix(in srgb, var(--info) 12%, transparent); }
-.pill.starting  { color: var(--muted); background: color-mix(in srgb, var(--muted) 10%, transparent); }
-.pill.running-pulse::before { animation: blink 1.1s infinite; }
-@keyframes blink { 50% { opacity: .25; } }
-
-.chip { display: inline-block; font: 12px var(--mono); background: var(--panel-2); border-radius: var(--r-sm); padding: 1px 6px; margin: 2px 3px 2px 0; }
-.chip.hot { color: var(--accent-2); border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); }
-/* The plan gate's warn tone, shared by the drawer's stale badge and the card's
-   stale chip. 11% stays under the 14% ceiling above. */
-.chip.warn { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 40%, var(--line)); background: color-mix(in srgb, var(--warn) 11%, transparent); }
-/* The card's progress chip: the digits move as the agent works, and proportional
-   numerals would reflow the foot one digit at a time. */
-.chip.plan-chip { font-variant-numeric: tabular-nums; }
-
-table.tbl { width: 100%; border-collapse: collapse; font-size: 14px; }
-.tbl th { text-align: left; font: 600 12px var(--sans); text-transform: uppercase; letter-spacing: .06em; color: var(--muted); padding: var(--s1-5) var(--s2-5); border-bottom: 1px solid var(--line); }
-.tbl td { padding: 6px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+/* ============ tables ============ */
+table.tbl { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 14px; }
+.tbl th { text-align: left; font: 600 12px/1.3 var(--sans); text-transform: uppercase; letter-spacing: var(--k-track-caps); color: var(--muted); padding: var(--s2) var(--s3); background: var(--panel-2); border-bottom: 1px solid var(--line); white-space: nowrap; }
+.tbl th:first-child { border-top-left-radius: var(--r-sm); }
+.tbl th:last-child { border-top-right-radius: var(--r-sm); }
+.tbl td { padding: var(--s2-5) var(--s3); border-bottom: 1px solid var(--line); vertical-align: top; }
+/* The first column names the row. */
+.tbl td:first-child { color: var(--text-dim); font-weight: 500; }
+.tbl.dense td { padding-block: var(--s1-5); }
+.tbl tr:last-child td { border-bottom: 0; }
 .tbl tr.clickable { cursor: pointer; }
 /* The ring is drawn on the cells above; a <tr> outline renders as a detached
    box in several engines, so suppress the baseline one here. */
 .tbl tr.clickable:focus-visible { outline: none; }
-.tbl tr.clickable:hover td { background: var(--panel-2); }
+.tbl tr.clickable:hover td, .tbl tr.clickable.is-hover td { background: var(--panel-2); }
+.tbl tr.on td, .tbl tr[aria-selected="true"] td { background: var(--k-accent-soft); }
+.tbl td.num, .tbl th.num { text-align: right; }
 .tbl td.mono, .mono { font-family: var(--mono); font-size: 13px; }
 
-.muted { color: var(--muted); }
+
+/* ============ buttons ============
+   Button (components.tsx) renders a real <button> whose class is its variant, so the rules are element-scoped. One recipe for the
+   shapes, :where() so a view's own rule needs no extra class to win; each variant sets what differs.
+     primary  the one thing to do: the accent fill, lit from above, 0.5px down when pressed
+     soft     secondary: the surface, a hairline and rung 1 (small and banner-act are the same look, smaller)
+     ghost    no ground until it is pointed at
+     danger   a modifier: quiet red on soft and small, a red fill on primary (the confirmation of a destructive act)
+     linklike a link that does something
+   States: default, hover (a step toward the pointer, shadow up for primary), pressed (0.5px down, no shadow), focus-visible
+   (the baseline ring), disabled (half, no shadow, not-allowed) and loading (aria-busy: a spinner replaces the icon, the label stays). */
+:where(button.primary, button.soft, button.small, button.ghost, :is(button, a).banner-act) {
+  display: inline-flex; align-items: center; justify-content: center; gap: var(--s2);
+  min-height: 36px; padding: 0 var(--s3-5); border: 1px solid transparent; border-radius: var(--r);
+  font: 600 14px/1.2 var(--sans); letter-spacing: var(--k-track-tight); white-space: nowrap; text-decoration: none;
+  cursor: pointer; -webkit-user-select: none; user-select: none;
+  transition: background-color var(--k-dur-1) var(--k-ease), border-color var(--k-dur-1) var(--k-ease), color var(--k-dur-1) var(--k-ease), box-shadow var(--k-dur-1) var(--k-ease), transform var(--k-dur-1) var(--k-ease);
+}
+:where(button.primary, button.soft, button.small, button.ghost, :is(button, a).banner-act) > .icon { flex: none; }
+button.primary { background: var(--k-accent); color: var(--k-on-accent); box-shadow: var(--k-hl), var(--k-shadow-1); }
+button.primary:is(:hover, .is-hover):not(:disabled) { background: var(--k-accent-hover); box-shadow: var(--k-hl), var(--k-shadow-2); }
+button.primary:is(:active, .is-active):not(:disabled) { background: var(--k-accent-press); box-shadow: none; transform: translateY(.5px); }
+:is(button.soft, button.small, :is(button, a).banner-act) { background: var(--panel); color: var(--text); border-color: var(--line-strong); box-shadow: var(--k-hl), var(--k-shadow-1); }
+:is(button.soft, button.small, :is(button, a).banner-act):is(:hover, .is-hover):not(:disabled) { background: var(--panel-2); border-color: var(--line-control); }
+:is(button.soft, button.small, :is(button, a).banner-act):is(:active, .is-active):not(:disabled) { background: var(--sunken); box-shadow: none; transform: translateY(.5px); }
+/* A small one is a row action, a filter, a chip you can press. 28px is above the 24px pointer floor, and phones get 44. */
+:where(button.small, :is(button, a).banner-act) { min-height: 28px; padding: 0 var(--s2-5); gap: var(--s1-5); border-radius: var(--r-sm); font-size: 13px; }
+button.ghost { background: transparent; color: var(--text-dim); }
+button.ghost:is(:hover, .is-hover):not(:disabled) { background: var(--wash); color: var(--text); }
+button.ghost:is(:active, .is-active):not(:disabled) { background: var(--wash-2); transform: translateY(.5px); }
+/* A destructive action is quiet until it is the confirmation: red text and a red-tinged edge, and the fill only on primary. */
+:is(button.soft, button.small, :is(button, a).banner-act).danger { color: var(--bad); border-color: color-mix(in srgb, var(--bad) 32%, var(--line-strong)); }
+:is(button.soft, button.small, :is(button, a).banner-act).danger:is(:hover, .is-hover):not(:disabled) { color: var(--bad); background: color-mix(in srgb, var(--bad) 8%, var(--panel)); border-color: var(--bad); }
+button.primary.danger { background: var(--bad); color: var(--text-on-hot); }
+button.primary.danger:is(:hover, .is-hover):not(:disabled) { background: color-mix(in srgb, var(--bad) 86%, var(--text)); }
+button.primary.danger:is(:active, .is-active):not(:disabled) { background: color-mix(in srgb, var(--bad) 72%, var(--text)); }
+:is(button.primary, button.soft, button.small, button.ghost, :is(button, a).banner-act):disabled { opacity: .5; box-shadow: none; cursor: not-allowed; }
+/* Busy: the control is working. It stays in the layout and in the tab order (a disabled button drops the focus a keyboard user is on). */
+:is(button.primary, button.soft, button.small, button.ghost, :is(button, a).banner-act)[aria-busy="true"] { cursor: progress; }
+:is(button.primary, button.soft, button.small, button.ghost, :is(button, a).banner-act)[aria-busy="true"] > .icon { display: none; }
+:is(button.primary, button.soft, button.small, button.ghost, :is(button, a).banner-act)[aria-busy="true"]::before { content: ""; flex: none; width: 14px; height: 14px; border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%; animation: spin .7s linear infinite; }
+:is(button.small, :is(button, a).banner-act)[aria-busy="true"]::before { width: 12px; height: 12px; }
+button.lg { min-height: 44px; padding: 0 var(--s5); font-size: 15px; }
+button.linklike { display: inline; background: none; border: 0; padding: var(--s1-5) 0; margin-top: calc(var(--s1) - var(--s1-5)); margin-bottom: calc(var(--s1-5) * -1); font: 500 13px/1.4 var(--sans); color: var(--accent-2); text-align: left; cursor: pointer; text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 3px; text-decoration-color: color-mix(in srgb, currentColor 40%, transparent); }
+button.linklike:hover { text-decoration-color: currentColor; }
+button.linklike:disabled { opacity: .5; cursor: not-allowed; }
+.menu-btn { min-width: 36px; padding-inline: var(--s2); }
+.menu-btn[aria-expanded="true"] { background: var(--sunken); border-color: var(--line-control); }
+/* An icon on its own: a full pointer target that names itself with aria-label and a tooltip. */
+.icon-btn { display: inline-flex; align-items: center; justify-content: center; flex: none; width: 36px; height: 36px; padding: 0; background: none; border: 1px solid transparent; border-radius: var(--r); color: var(--text-dim); cursor: pointer; transition: background-color var(--k-dur-1) var(--k-ease), color var(--k-dur-1) var(--k-ease), transform var(--k-dur-1) var(--k-ease); }
+.icon-btn:is(:hover, .is-hover) { background: var(--wash); color: var(--text); }
+.icon-btn:is(:active, .is-active) { background: var(--wash-2); transform: translateY(.5px); }
+.icon-btn[aria-pressed="true"] { color: var(--k-accent-ink); background: var(--k-accent-soft); }
+.icon-btn.sm { width: 28px; height: 28px; border-radius: var(--r-sm); }
+.icon-btn:disabled { opacity: .5; cursor: not-allowed; }
+#btn-signout { margin-left: auto; }
+@media (pointer: coarse), (max-width: 620px) {
+  :where(button.primary, button.soft, button.small, button.ghost, :is(button, a).banner-act) { min-height: 44px; }
+  .icon-btn, .icon-btn.sm { width: 44px; height: 44px; }
+}
+
+/* ============ tooltip ============
+   A name for a control that has only a glyph. It waits a moment on hover (400ms; none while another was just open), shows at
+   once for a keyboard focus, can be pointed at (WCAG 1.4.13) and goes on Escape. It is drawn at the foot of <body>, so no
+   overflow:auto above the control can clip it. Light is the inverse of the page (it reads as a label, not a card); dark is a
+   raised surface with a hairline, because a white label in a dark console is a flash. */
+:root { --tip-bg: var(--k-surface-2); --tip-fg: var(--k-ink); --tip-line: var(--k-line-strong); }
+[data-theme="light"] { --tip-bg: var(--k-ink); --tip-fg: var(--k-bg); --tip-line: transparent; }
+.tip { position: fixed; z-index: var(--z-tip); display: flex; align-items: center; gap: var(--s2); max-width: 280px; padding: var(--s1-5) var(--s2-5); background: var(--tip-bg); color: var(--tip-fg); border: 1px solid var(--tip-line); border-radius: var(--r-sm); box-shadow: var(--k-shadow-3); font: 500 12px/1.4 var(--sans); letter-spacing: 0; animation: fade-in var(--k-dur-2) var(--k-ease); }
+.tip kbd { height: 18px; min-width: 18px; padding: 0 var(--s1); font-size: 11px; color: inherit; background: color-mix(in srgb, var(--tip-fg) 14%, transparent); border-color: color-mix(in srgb, var(--tip-fg) 28%, transparent); }
+.tip b { font-weight: 600; }
+.tip .tip-sub { display: block; opacity: .85; margin-top: 2px; }
+.tip > span { min-width: 0; }
+
+/* ============ fields ============
+   Input, TextArea and Select (components.tsx). The edge is --line-control (>=3:1, the only thing that says "type here"); hover
+   darkens it, focus turns it to the accent with the kit's ring, invalid turns it red (aria-invalid, with a sentence under it
+   that says what is wrong) and disabled drops to the quiet surface. */
+input.search, input.txt, select.sel, textarea.txt {
+  min-height: 36px; padding: 0 var(--s3); background: var(--panel); color: var(--text); border: 1px solid var(--line-control); border-radius: var(--r);
+  font: 14px/1.4 var(--sans);
+  transition: border-color var(--k-dur-1) var(--k-ease), box-shadow var(--k-dur-1) var(--k-ease), background-color var(--k-dur-1) var(--k-ease);
+}
+textarea.txt { padding: var(--s2) var(--s3); min-height: 72px; line-height: 1.5; resize: vertical; }
+input.txt.mono, textarea.txt.mono { font-family: var(--mono); font-size: 13px; }
+input.search:is(:hover, .is-hover), input.txt:is(:hover, .is-hover), select.sel:is(:hover, .is-hover), textarea.txt:is(:hover, .is-hover) { border-color: color-mix(in srgb, var(--line-control) 62%, var(--text)); }
+input.search:is(:focus-visible, .is-focus), input.txt:is(:focus-visible, .is-focus), select.sel:is(:focus-visible, .is-focus), textarea.txt:is(:focus-visible, .is-focus) { outline: none; border-color: var(--k-accent); box-shadow: var(--k-ring); }
+:is(input.search, input.txt, select.sel, textarea.txt)[aria-invalid="true"] { border-color: var(--bad); }
+:is(input.search, input.txt, select.sel, textarea.txt)[aria-invalid="true"]:is(:focus-visible, .is-focus) { box-shadow: 0 0 0 3px color-mix(in srgb, var(--bad) 28%, transparent); }
+:is(input.search, input.txt, select.sel, textarea.txt):disabled { background: var(--panel-2); color: var(--muted); border-color: var(--line-strong); cursor: not-allowed; }
+input.search::placeholder, input.txt::placeholder, textarea.txt::placeholder { color: var(--muted); opacity: 1; }
+input.search { min-width: 220px; }
+/* The native arrow is replaced by two strokes of the field's own muted ink, so it follows the theme. */
+select.sel {
+  appearance: none; -webkit-appearance: none; padding-right: 34px; cursor: pointer;
+  background-image:
+    linear-gradient(to bottom left, transparent calc(50% - .75px), var(--muted) calc(50% - .75px), var(--muted) calc(50% + .75px), transparent calc(50% + .75px)),
+    linear-gradient(to bottom right, transparent calc(50% - .75px), var(--muted) calc(50% - .75px), var(--muted) calc(50% + .75px), transparent calc(50% + .75px));
+  background-size: 5px 5px, 5px 5px; background-position: calc(100% - 18px) 50%, calc(100% - 13px) 50%; background-repeat: no-repeat;
+}
+/* A truncated list has to say so, or "200 rows" reads as "that is everything". */
+.list-more { font-size: 13px; color: var(--text-dim); padding: var(--s3) var(--s2) var(--s1); border-top: 1px solid var(--line); }
+.list-more b { color: var(--text); font-variant-numeric: tabular-nums; }
+
+/* The label above, the hint below, and under a field that is wrong the sentence that says what to do. */
+form.stack { display: flex; flex-direction: column; gap: var(--s3); }
+.field { display: flex; flex-direction: column; gap: var(--s1-5); }
+.field > label, .field > .lbl { font: 600 13px/1.35 var(--sans); color: var(--text-dim); }
+.field input, .field select, .field textarea { width: 100%; }
+.field .hint { font: 13px/1.4 var(--sans); color: var(--muted); }
+.field .err { display: flex; align-items: flex-start; gap: var(--s1-5); font: 13px/1.4 var(--sans); color: var(--bad); }
+.field .err .icon { flex: none; margin-top: var(--s0); }
+/* The answer a form gives under its button: what was recorded, or why it was not. */
+.form-out { font-size: 13px; color: var(--muted); }
+.form-out.bad { color: var(--bad); }
+.row { display: flex; gap: var(--s2); align-items: center; }
+.row-edit { display: grid; grid-template-columns: 1fr 2fr auto auto; gap: var(--s2); align-items: center; margin: var(--s1-5) 0; }
+/* A grid item's default min-width is auto, so the two text inputs refuse to go
+   below their intrinsic width and the row overflows its panel rather than
+   sharing the space. The panel is width-clamped independently of the viewport,
+   so this has to be container-agnostic -- a media query would miss it. */
+.row-edit > .txt { min-width: 0; }
+.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: var(--s2-5); }
+.grid3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: var(--s2-5); }
+@media (max-width: 900px) { .grid3, .grid2 { grid-template-columns: 1fr; } }
+
+/* Checkbox, radio and switch are drawn: a box or a disc in the field's own edge, the accent when on, a tick or a dot that
+   scales in. The 24px label row is the hit area (44 on a phone), the native control stays the one that is focused and read. */
+input[type="checkbox"], input[type="radio"] {
+  appearance: none; -webkit-appearance: none; flex: none; display: inline-grid; place-content: center; width: 18px; height: 18px; margin: 0;
+  background: var(--panel); border: 1px solid var(--line-control); border-radius: var(--k-r-xs); cursor: pointer; vertical-align: middle;
+  transition: background-color var(--k-dur-1) var(--k-ease), border-color var(--k-dur-1) var(--k-ease), box-shadow var(--k-dur-1) var(--k-ease);
+}
+input[type="radio"] { border-radius: 50%; }
+input[type="checkbox"]::before, input[type="radio"]::before { content: ""; transform: scale(0); transition: transform var(--k-dur-1) var(--k-ease); }
+input[type="checkbox"]::before { width: 12px; height: 12px; background: var(--k-on-accent); -webkit-mask: var(--tick) center / contain no-repeat; mask: var(--tick) center / contain no-repeat; }
+input[type="radio"]::before { width: 8px; height: 8px; border-radius: 50%; background: var(--k-on-accent); }
+input[type="checkbox"]:indeterminate::before { transform: scale(1); -webkit-mask-image: var(--dash); mask-image: var(--dash); }
+input[type="checkbox"]:checked::before, input[type="radio"]:checked::before { transform: scale(1); }
+input[type="checkbox"]:is(:checked, :indeterminate), input[type="radio"]:checked { background: var(--k-accent); border-color: var(--k-accent); }
+input[type="checkbox"]:is(:hover, .is-hover), input[type="radio"]:is(:hover, .is-hover) { border-color: color-mix(in srgb, var(--line-control) 62%, var(--text)); }
+input[type="checkbox"]:is(:checked, :indeterminate):is(:hover, .is-hover), input[type="radio"]:checked:is(:hover, .is-hover) { background: var(--k-accent-hover); border-color: var(--k-accent-hover); }
+input[type="checkbox"]:is(:focus-visible, .is-focus), input[type="radio"]:is(:focus-visible, .is-focus) { outline: 2px solid var(--accent); outline-offset: 2px; }
+input[type="checkbox"]:disabled, input[type="radio"]:disabled { opacity: .5; cursor: not-allowed; }
+input[type="checkbox"][aria-invalid="true"], input[type="radio"][aria-invalid="true"] { border-color: var(--bad); }
+:root {
+  --tick: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='M2.4 6.3l2.5 2.5 4.7-5.2' fill='none' stroke='black' stroke-width='1.9' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  --chev: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3E%3Cpath d='M7.5 4.5L13 10l-5.5 5.5' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  --dash: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='M2.6 6h6.8' fill='none' stroke='black' stroke-width='1.9' stroke-linecap='round'/%3E%3C/svg%3E");
+}
+/* The switch is the same native checkbox (role="switch"), drawn as a track with a thumb. */
+input[type="checkbox"][role="switch"] { width: 34px; height: 20px; border-width: 0; border-radius: var(--k-r-pill); background: var(--line-strong); place-content: stretch; padding: 2px; justify-items: start; }
+input[type="checkbox"][role="switch"]::before { width: 16px; height: 16px; border-radius: 50%; background: var(--k-surface); -webkit-mask: none; mask: none; transform: none; box-shadow: var(--k-shadow-1); transition: transform var(--k-dur-1) var(--k-ease); }
+input[type="checkbox"][role="switch"]:checked { background: var(--k-accent); }
+input[type="checkbox"][role="switch"]:checked::before { transform: translateX(14px); }
+input[type="checkbox"][role="switch"]:is(:hover, .is-hover):not(:checked) { background: var(--line-control); }
+label.chk { display: inline-flex; align-items: center; gap: var(--s2); min-height: 24px; font: 14px/1.4 var(--sans); color: var(--text); text-transform: none; letter-spacing: 0; cursor: pointer; }
+label.chk:has(:disabled) { cursor: not-allowed; color: var(--muted); }
+.chk-hint { display: block; font: 13px/1.4 var(--sans); color: var(--muted); }
+label.chk.has-hint { align-items: flex-start; }
+label.chk.has-hint > input { margin-top: 2px; }
+@media (pointer: coarse), (max-width: 620px) { label.chk, label:has(> input[type="checkbox"]), label:has(> input[type="radio"]) { min-height: 44px; } }
+
+/* ============ badges ============
+   One recipe for a word with a state: 22 high, a pill, 12/600, the status colour as the text on a 14% tint of itself with a
+   hairline at 24% (14% is the ceiling, and both palettes are derived from it). Neutral is the quiet surface. A 6px dot says
+   "state" in shape as well as colour, and a live one pulses. */
+.pill { --tone: var(--text-dim); display: inline-flex; align-items: center; gap: var(--s1-5); height: 22px; padding: 0 var(--s2) 0 var(--s2-5); border-radius: var(--k-r-pill); font: 600 12px/1 var(--sans); white-space: nowrap; color: var(--tone); background: color-mix(in srgb, var(--tone) 14%, transparent); border: 1px solid color-mix(in srgb, var(--tone) 24%, transparent); }
+.pill::before { content: ""; flex: none; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.pill.ok, .pill.thinking, .pill.working, .pill.awakened, .pill.observing, .pill.requesting, .pill.reviewing { --tone: var(--ok); }
+.pill.warn, .pill.waiting { --tone: var(--warn); }
+.pill.bad, .pill.blocked, .pill.failed { --tone: var(--bad); }
+.pill.info, .pill.completed { --tone: var(--info); }
+.pill.accent { --tone: var(--k-accent-ink); background: var(--k-accent-soft); border-color: color-mix(in srgb, var(--k-accent) 28%, transparent); }
+/* Neutral is the surface, the muted ink and a hairline: nothing to say, said quietly. */
+.pill.neutral, .pill.idle, .pill.suspended, .pill.starting { --tone: var(--muted); background: var(--panel-2); border-color: var(--line); }
+.pill.running-pulse::before { box-shadow: 0 0 0 0 color-mix(in srgb, currentColor 60%, transparent); animation: pulse 2.2s infinite; }
+.pill.no-dot::before { display: none; }
+.pill.no-dot { padding-left: var(--s2); }
+.otag { --tone: var(--oc); display: inline-flex; align-items: center; gap: var(--s1-5); height: 22px; padding: 0 var(--s2) 0 var(--s2-5); border-radius: var(--k-r-pill); font: 600 12px/1 var(--sans); white-space: nowrap; color: var(--tone); background: color-mix(in srgb, var(--tone) 14%, transparent); border: 1px solid color-mix(in srgb, var(--tone) 24%, transparent); }
+.otag::before { content: ""; flex: none; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.otag.o-live::before, .st-row.o-live .otag::before { animation: blink 1.1s infinite; }
+@keyframes blink { 50% { opacity: .25; } }
+
+/* A chip is a tag: a capability, a status word, an id. Quiet, square-shouldered and 22 high; mono only where it is an id. */
+.chip, .sbx-chip, .chip-toggle { border: 1px solid var(--line); color: var(--text-dim); }
+button.chip, .row-actions button { min-height: 24px; display: inline-flex; align-items: center; }
+.chip { display: inline-flex; align-items: center; min-height: 22px; font: 500 12px/1.2 var(--sans); background: var(--panel-2); border-radius: var(--r-sm); padding: 0 var(--s2); margin: 2px 3px 2px 0; }
+.chip.mono { font-family: var(--mono); }
+.chip.hot { color: var(--accent-2); background: var(--k-accent-soft); border-color: color-mix(in srgb, var(--accent) 35%, var(--line)); }
+/* The plan gate's warn tone, shared by the drawer's stale badge and the card's stale chip. 11% stays under the 14% ceiling above. */
+.chip.warn { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 40%, var(--line)); background: color-mix(in srgb, var(--warn) 11%, transparent); }
+/* The card's progress chip: the digits move as the agent works, and proportional numerals would reflow the foot one digit at a time. */
+.chip.plan-chip { font-variant-numeric: tabular-nums; }
+button.chip { cursor: pointer; }
+button.chip:hover { color: var(--text); border-color: var(--line-strong); }
+.chips { display: flex; flex-wrap: wrap; gap: var(--s1-5); }
+/* A toggle chip is a filter or a choice that stays visible: the surface and a hairline off, the selection's ground on. */
+.chip-toggle, .fchip { display: inline-flex; align-items: center; gap: var(--s1-5); min-height: 28px; padding: 0 var(--s2-5); border-radius: var(--k-r-pill); background: var(--panel); border: 1px solid var(--line-strong); font: 500 13px/1.2 var(--sans); color: var(--text-dim); cursor: pointer; transition: background-color var(--k-dur-1) var(--k-ease), border-color var(--k-dur-1) var(--k-ease), color var(--k-dur-1) var(--k-ease); }
+.chip-toggle:is(:hover, .is-hover):not(:disabled), .fchip:is(:hover, .is-hover):not(:disabled) { color: var(--text); border-color: var(--line-control); background: var(--panel-2); }
+.chip-toggle.on, .fchip.on { color: var(--k-accent-ink); border-color: color-mix(in srgb, var(--k-accent) 45%, var(--line)); background: var(--k-accent-soft); }
+.chip-toggle.bad { color: var(--bad); border-color: color-mix(in srgb, var(--bad) 45%, var(--line)); background: color-mix(in srgb, var(--bad) 10%, transparent); }
+.chip-toggle.bad:hover { border-color: var(--bad); }
+/* A filter chip that sets --oc (the outcome palette on Steps) tints itself with it when it is on. */
+.fchip.on { color: var(--oc, var(--k-accent-ink)); border-color: color-mix(in srgb, var(--oc, var(--k-accent)) 50%, var(--line)); background: color-mix(in srgb, var(--oc, var(--k-accent)) 11%, var(--panel)); }
+.fchip-n { color: var(--muted); font-variant-numeric: tabular-nums; }
+.fchip.on .fchip-n { color: inherit; }
+.fchip-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--oc); flex: none; }
+/* A filter with nothing behind it reads as empty without fading its text below contrast. */
+.fchip:disabled { color: var(--muted); border-style: dashed; cursor: default; }
+.fchip:disabled .fchip-dot { opacity: .5; }
+
+/* A segmented control: one choice of a few, always visible. A trough, and the chosen one raised out of it. */
+.seg { display: inline-flex; padding: 3px; gap: 2px; border: 1px solid var(--line); border-radius: var(--r); background: var(--sunken); }
+.seg button { min-height: 28px; padding: 0 var(--s2-5); border: 0; border-radius: calc(var(--r) - 3px); background: transparent; color: var(--text-dim); font: 500 13px/1.2 var(--sans); cursor: pointer; transition: background-color var(--k-dur-1) var(--k-ease), color var(--k-dur-1) var(--k-ease), box-shadow var(--k-dur-1) var(--k-ease); }
+.seg button:is(:hover, .is-hover) { color: var(--text); }
+.seg button:is([aria-pressed="true"], [aria-selected="true"]) { background: var(--panel); color: var(--text); font-weight: 600; box-shadow: var(--k-hl), var(--k-shadow-1); }
+@media (pointer: coarse), (max-width: 620px) { .seg button { min-height: 40px; } }
+
+/* Copy and id: an icon that says what happened, and an id that keeps both its ends. */
+.copy-btn { gap: var(--s1); }
+.copy-btn .icon { flex: none; }
+/* Icon-only: a full 24px target, quiet until pointed at. */
+.copy-btn.compact { display: inline-flex; align-items: center; justify-content: center; flex: none; min-width: 24px; min-height: 24px; padding: 0; background: none; border: 1px solid transparent; border-radius: var(--r-sm); color: var(--muted); cursor: pointer; box-shadow: none; }
+.copy-btn.compact:hover { color: var(--text); background: var(--wash); }
+.idchip { display: inline-flex; align-items: center; gap: var(--s0); min-width: 0; max-width: 100%; }
+/* The shared `code` rule draws a boxed chip; an id in a row is plain text. The ellipsis is the second line of defence, for a
+   container narrower than even the clipped id. */
+.idchip code { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; background: none; border: 0; padding: 0; font: 12px var(--mono); color: var(--text-dim); }
+/* A caret that turns when its row opens. */
+.icon.caret { transition: transform var(--k-dur-1) var(--k-ease); }
+.icon.caret.turned { transform: rotate(90deg); }
+
+/* The icon set: one grid, one line weight. Every stroke is 1.5px wherever the icon is drawn (a 14px one beside an 18px one
+   would otherwise differ by a third), and a solid shape (play, stop, a dot) keeps its fill. */
+.icon { flex: none; }
+.icon :where(path, circle, rect, line, polyline, polygon) { vector-effect: non-scaling-stroke; }
+
+
+/* ============ banners ============
+   A notice, written through components.tsx Banner: a 20px icon in the tone's colour, the sentence in 600 and its detail in the
+   dimmer ink, and the actions that answer it at the end (under the text on a phone). The edge and the ground are the tone at
+   30% and 8% of itself over the panel, so the same banner reads on the page, on a card and in a drawer. `bad` is announced at
+   once (role="alert"), the rest politely. Written without an icon (an older call site) it is a block of text on the same ground. */
+.banner { --tone: var(--text-dim); border: 1px solid color-mix(in srgb, var(--tone) 30%, var(--line)); border-radius: var(--r); padding: var(--s3) var(--s3-5); font-size: 14px; line-height: 1.5; background: color-mix(in srgb, var(--tone) 8%, var(--panel)); }
+.banner.info { --tone: var(--accent-2); }
+.banner.ok { --tone: var(--ok); }
+.banner.warn { --tone: var(--warn); }
+.banner.bad { --tone: var(--bad); }
+.banner.has-icon { display: flex; align-items: flex-start; gap: var(--s3); margin-bottom: var(--s3); }
+.banner-icon { flex: none; display: grid; place-items: center; width: 20px; height: 20px; margin-top: 1px; color: var(--tone); }
+.banner-body { flex: 1 1 260px; min-width: 0; color: var(--text-dim); }
+.banner-body b { font-weight: 600; color: var(--text); }
+.banner-text { color: var(--text-dim); }
+.banner-acts { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s2); margin-left: auto; align-self: center; }
+.verdict { --tone: var(--text-dim); border-radius: var(--r-sm); padding: var(--s2) var(--s3); font-size: 14px; margin: var(--s1-5) 0; color: var(--tone); background: color-mix(in srgb, var(--tone) 10%, transparent); }
+.verdict.ok { --tone: var(--ok); }
+.verdict.bad { --tone: var(--bad); }
+.verdict.warn { --tone: var(--warn); }
+ul.errs { margin: var(--s1-5) 0; padding-left: 18px; font-size: 14px; color: var(--bad); }
+/* On a phone the actions take their own row, under the words (the icon's 20px and the gap beside it are left clear). */
+@media (max-width: 620px) { .banner-acts { flex-basis: calc(100% - 32px); margin-left: 32px; align-self: flex-start; } }
+
+/* ============ empty, error and loading ============
+   components.tsx EmptyState / ErrorState: an icon tile (the selection's ground and ink, 56px), what is missing in a 600 line, a
+   muted sentence at most 44 characters wide, and the one next move. An error is the same shape with the tile in the bad tone. */
 .empty { display: flex; flex-direction: column; align-items: center; gap: var(--s2); color: var(--muted); padding: var(--s6) var(--s4); text-align: center; }
 .empty .big { font-size: 30px; opacity: .5; }
-/* components.tsx EmptyState / ErrorState: an icon in a quiet disc, what is missing in plain words, then the next move. */
-.empty-icon { display: grid; place-items: center; width: 44px; height: 44px; border-radius: 50%; background: var(--sunken); border: 1px solid var(--line); color: var(--text-dim); }
-.empty.bad .empty-icon { color: var(--bad); background: color-mix(in srgb, var(--bad) 12%, var(--sunken)); border-color: color-mix(in srgb, var(--bad) 35%, var(--line)); }
-.empty-title { color: var(--text); font: 600 15px var(--sans); }
-.empty-body { margin: 0; max-width: 52ch; color: var(--muted); font-size: 14px; }
-.empty-acts { display: flex; flex-wrap: wrap; justify-content: center; gap: var(--s2); margin-top: var(--s1); }
+.empty-icon { display: grid; place-items: center; width: 56px; height: 56px; margin-bottom: var(--s1); border-radius: var(--r-lg); background: var(--k-accent-soft); color: var(--k-accent-ink); border: 1px solid color-mix(in srgb, var(--k-accent) 18%, transparent); }
+.empty.bad .empty-icon { color: var(--bad); background: color-mix(in srgb, var(--bad) 10%, var(--panel)); border-color: color-mix(in srgb, var(--bad) 22%, transparent); }
+.empty-title { color: var(--text); font: 600 16px/1.3 var(--sans); letter-spacing: var(--k-track-tight); text-wrap: balance; }
+.empty-body { margin: 0; max-width: 44ch; color: var(--muted); font-size: 14px; line-height: 1.5; }
+.empty-acts { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: var(--s2) var(--s3); margin-top: var(--s2); }
 /* viewboundary.tsx: the error's own first line sits under the explanation, in the mono face, and may be long. */
 .view-crash-msg { display: block; margin-top: var(--s2); font-size: 12px; overflow-wrap: anywhere; }
 /* viewboundary.tsx ViewLoading: the shape of a page while a view's file arrives. It is invisible for the first 150ms so a view that loads at once does not flash. */
@@ -549,41 +907,283 @@ table.tbl { width: 100%; border-collapse: collapse; font-size: 14px; }
 .view-loading-title { width: 220px; max-width: 60%; height: 22px; }
 .view-loading-line { width: 380px; max-width: 90%; height: 12px; }
 .view-loading-blocks { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--s3); margin-top: var(--s2); }
-.view-loading-blocks .sk { height: 96px; border-radius: var(--r); }
+.view-loading-blocks .sk { height: 96px; border-radius: var(--r-lg); }
 @keyframes view-loading-in { to { opacity: 1; } }
 @media (max-width: 620px) { .view-loading-blocks { grid-template-columns: 1fr; } }
+/* A skeleton is a block in the shape of what is coming, with a light that sweeps across it every 1.4s. Under reduced motion it
+   is a still block. Size it with .sk-line / .sk-block / .sk-round or the width and height of the one that stands for the content. */
+.sk { display: block; border-radius: var(--r-sm); background: linear-gradient(90deg, var(--sunken) 0%, color-mix(in srgb, var(--text) 7%, var(--sunken)) 45%, var(--sunken) 90%) 100% 0 / 220% 100% no-repeat, var(--sunken); animation: sk-sweep 1.4s var(--k-ease-io) infinite; }
+@keyframes sk-sweep { to { background-position: 0 0; } }
+.sk-line { height: 12px; width: 100%; }
+.sk-text { display: grid; gap: var(--s2); width: 100%; }
+.sk-block { height: 72px; width: 100%; border-radius: var(--r); }
+.sk-round { border-radius: 50%; }
+@media (prefers-reduced-motion: reduce) { .sk { animation: none; background: var(--sunken); } }
 
-/* ---------- agent avatar (the card itself is in views/agents.css) ---------- */
-.avatar { width: 30px; height: 30px; border-radius: 9px; display: grid; place-items: center; font: 700 14px var(--mono); color: var(--text-on-accent); background: var(--accent); flex: none; }
-/* Tinted variant: identity colour passed as --tint, mixed here so callers
-   never hand-append hex alpha (which breaks on var() references). */
-.avatar.tinted { background: color-mix(in srgb, var(--tint) 13%, transparent); color: var(--tint); border: 1px solid color-mix(in srgb, var(--tint) 33%, transparent); }
-.row-actions button { font: 12px var(--sans); padding: 3px 10px; border-radius: 6px; border: 1px solid var(--line); background: var(--panel-2); color: var(--text-dim); cursor: pointer; }
-.row-actions button:hover { color: var(--text); border-color: var(--accent); }
+/* ============ progress and meters ============
+   The track is the sunken ground and a pill; the fill is the accent, or the status colour when the figure beside it says so,
+   and it animates its width in 300ms. Always set it beside the figure it draws: a bar is never the only signal. */
+.prog { display: block; height: 6px; border-radius: var(--k-r-pill); background: var(--sunken); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--line) 70%, transparent); overflow: hidden; }
+.prog.lg { height: 8px; }
+.prog > i { display: block; height: 100%; width: calc(var(--p, 0) * 100%); border-radius: inherit; background: var(--k-accent); transition: width var(--k-dur-3) var(--k-ease); }
+.prog.ok > i { background: var(--ok); }
+.prog.warn > i { background: var(--warn); }
+.prog.bad > i { background: var(--bad); }
+/* The older bars (a plain div scaled by an inline transform) take the same look. */
+.progress { height: 6px; border-radius: var(--k-r-pill); background: var(--sunken); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--line) 70%, transparent); overflow: hidden; margin-top: var(--s2); }
+.progress > div { height: 100%; border-radius: inherit; background: var(--k-accent); transform-origin: left center; transition: transform var(--k-dur-3) var(--k-ease); }
+.track { height: 8px; background: var(--sunken); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--line) 70%, transparent); border-radius: var(--k-r-pill); overflow: hidden; }
+.track > div { height: 100%; background: var(--k-accent); border-radius: inherit; transform-origin: left center; transition: transform var(--k-dur-3) var(--k-ease); }
+/* A track that is filling toward something bad rather than just filling: the accent reads as neutral progress, which is wrong
+   for a meter whose far end closes a session. */
+.track.warn > div { background: var(--warn); }
+.track.bad > div { background: var(--bad); }
+/* A small chart is drawn in the colour it is given, so one rule sets the ink. */
+.spark, .ring { color: var(--k-accent); }
+.tone-ok { color: var(--ok); } .tone-warn { color: var(--warn); } .tone-bad { color: var(--bad); } .tone-info { color: var(--info); } .tone-muted { color: var(--muted); }
+.spark { display: block; overflow: visible; }
+.spark .line { fill: none; stroke: currentColor; stroke-width: 1.5px; stroke-linecap: round; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
+.spark .area { fill: color-mix(in srgb, currentColor 14%, transparent); stroke: none; }
+.spark .end { fill: currentColor; }
+.spark .base { stroke: var(--line-strong); stroke-width: 1px; stroke-dasharray: 2 3; vector-effect: non-scaling-stroke; }
+.ring { position: relative; display: inline-grid; place-items: center; flex: none; }
+.ring svg { display: block; transform: rotate(-90deg); overflow: visible; }
+.ring .track-c { fill: none; stroke: var(--line); stroke-width: var(--ring-w, 6px); }
+.ring .seg-c { fill: none; stroke: currentColor; stroke-width: var(--ring-w, 6px); stroke-linecap: butt; transition: stroke-dasharray var(--k-dur-3) var(--k-ease), stroke-dashoffset var(--k-dur-3) var(--k-ease); }
+.ring.round .seg-c { stroke-linecap: round; }
+.ring-label { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; line-height: 1.1; pointer-events: none; }
+.ring-label b { font: 650 16px/1.1 var(--sans); letter-spacing: var(--k-track-title); color: var(--text); }
+.ring-label small { margin-top: 1px; font: 11px/1.2 var(--sans); color: var(--muted); }
 
-/* ---------- events ---------- */
-/* --line is a 1.17:1 hairline against --bg-2. That is fine for dividing two
-   blocks of text, but a form field's edge is the only thing that says "you can
-   type here", and WCAG 1.4.11 asks 3:1 of it. --line-control is the same family
-   at the contrast a control boundary needs. */
-input.search, input.txt, select.sel, textarea.txt {
-  background: var(--bg-2); color: var(--text); border: 1px solid var(--line-control); border-radius: var(--r-sm);
-  padding: 6px 12px; font: 14px var(--sans);
+/* ============ avatar ============
+   The seat's letter in the sans, on its role colour. Tinted, the colour is the identity and the ground is a wash of it, passed as --tint. */
+.avatar { width: 30px; height: 30px; border-radius: var(--r); display: grid; place-items: center; font: 600 13px/1 var(--sans); color: var(--text-on-accent); background: var(--accent); flex: none; }
+.avatar.sm { width: 26px; height: 26px; font-size: 12px; border-radius: var(--r-sm); }
+.avatar.lg { width: 40px; height: 40px; font-size: 16px; }
+.avatar.tinted { background: color-mix(in srgb, var(--tint) 14%, transparent); color: var(--tint); border: 1px solid color-mix(in srgb, var(--tint) 30%, transparent); }
+.row-actions button { font: 500 12px var(--sans); padding: 3px 10px; border-radius: var(--r-sm); border: 1px solid var(--line); background: var(--panel-2); color: var(--text-dim); cursor: pointer; }
+.row-actions button:hover { color: var(--text); border-color: var(--line-control); }
+
+
+/* ============ menus ============
+   Menu (components.tsx): a panel on rung 3 that belongs to its trigger and travels with it. Rows are 36 high (44 on a phone, where a
+   thumb is least accurate), the row under the pointer or the keyboard is lit, a destructive one is set apart by a rule and
+   coloured, and a key hint sits at the right. It arrives in 180ms: opacity and 4px toward where it came from. */
+.menu-wrap { position: relative; display: inline-flex; }
+.menu-panel { position: absolute; z-index: var(--z-ctx); min-width: 232px;
+  display: flex; flex-direction: column; gap: var(--s0); padding: var(--s1);
+  background: var(--panel); border: 1px solid var(--line); border-radius: var(--r-lg); box-shadow: var(--k-hl), var(--k-shadow-3);
+  animation: menu-in var(--k-dur-2) var(--k-ease); }
+.menu-panel.bottom { top: calc(100% + var(--s1)); }
+.menu-panel.top { bottom: calc(100% + var(--s1)); animation-name: menu-in-up; }
+.menu-panel.right { right: 0; }
+.menu-panel.left { left: 0; }
+.menu-item { position: relative; display: flex; align-items: center; gap: var(--s2-5); width: 100%; min-height: 36px; text-align: left;
+  background: none; border: 0; border-radius: var(--r-sm); color: var(--text); font: 14px/1.3 var(--sans);
+  padding: 0 var(--s2-5); cursor: pointer; white-space: pre; transition: background-color var(--k-dur-1) var(--k-ease), color var(--k-dur-1) var(--k-ease); }
+.menu-item .icon { flex: none; color: var(--muted); }
+.menu-item .keys, .menu-item > kbd { margin-left: auto; }
+/* A destructive action is set apart by a rule, so it is never the row under the thumb on the way to an ordinary one. */
+.menu-item.separated { margin-top: var(--s1-5); }
+.menu-item.separated::before { content: ""; position: absolute; left: var(--s2); right: var(--s2); top: calc(var(--s1-5) / -2 - 1px); height: 1px; background: var(--line); }
+.menu-item:is(:hover, .is-hover) { background: var(--panel-2); }
+.menu-item:is(:hover, .is-hover) .icon { color: var(--text-dim); }
+/* The row the keyboard is on (and the one being pressed) is the selection's own ground, with an edge so it does not rest on colour alone. */
+.menu-item:is(:focus-visible, :active, .is-active) { outline: none; background: var(--k-accent-soft); color: var(--k-accent-ink); box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--k-accent) 50%, transparent); }
+.menu-item:is(:focus-visible, :active, .is-active) .icon { color: inherit; }
+.menu-item.danger { color: var(--bad); }
+.menu-item.danger .icon { color: inherit; }
+.menu-item.danger:is(:hover, .is-hover) { color: var(--bad); background: color-mix(in srgb, var(--bad) 10%, var(--panel)); }
+.menu-item.danger:is(:focus-visible, :active) { background: color-mix(in srgb, var(--bad) 14%, var(--panel)); color: var(--bad); box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--bad) 55%, transparent); }
+
+/* ============ tabs ============
+   Tabs (components.tsx): one vocabulary for every drawer and page. The text shifts from muted to ink and a 2px line in the accent
+   slides under the one that is selected (180ms), measured from the button so a count in a tab moves it with it. The segmented form
+   is a trough with the selected one raised out of it, and the same slide. Arrow keys move, as they always did. */
+.tabs { position: relative; display: flex; gap: var(--s1); border-bottom: 1px solid var(--line); margin: var(--s3) 0 var(--s2-5); }
+.tab-btn { position: relative; z-index: 1; display: inline-flex; align-items: center; gap: var(--s1-5); min-height: 36px; padding: 0 var(--s3); background: none; border: 0; border-radius: var(--r-sm) var(--r-sm) 0 0;
+  font: 500 14px/1.2 var(--sans); color: var(--muted); cursor: pointer; transition: color var(--k-dur-1) var(--k-ease), background-color var(--k-dur-1) var(--k-ease); }
+.tab-btn:is(:hover, .is-hover) { color: var(--text); background: var(--wash); }
+.tab-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.tab-btn.on { color: var(--text); }
+.tabs:not([data-ink]) .tab-btn.on { box-shadow: inset 0 -2px 0 var(--k-accent); }
+.tabs-ink { position: absolute; left: 0; bottom: -1px; height: 2px; width: var(--ink-w, 0px); transform: translateX(var(--ink-x, 0px)); background: var(--k-accent); border-radius: 2px 2px 0 0; pointer-events: none; transition: transform var(--k-dur-2) var(--k-ease), width var(--k-dur-2) var(--k-ease); }
+.tab-n { font: 600 11px/1 var(--sans); font-style: normal; padding: 3px var(--s1-5); border-radius: var(--k-r-pill); background: var(--panel-2); border: 1px solid var(--line); color: var(--muted); }
+.tab-btn.on .tab-n { background: var(--k-accent-soft); border-color: color-mix(in srgb, var(--k-accent) 25%, transparent); color: var(--k-accent-ink); }
+.tab-n.hot { background: color-mix(in srgb, var(--bad) 14%, transparent); border-color: color-mix(in srgb, var(--bad) 24%, transparent); color: var(--bad); }
+.seg { position: relative; }
+.seg[data-ink] button[aria-selected="true"] { background: transparent; box-shadow: none; }
+.seg > button { position: relative; z-index: 1; }
+.seg > .tabs-ink { z-index: 0; top: 3px; bottom: 3px; left: 0; height: auto; border-radius: calc(var(--r) - 3px); background: var(--panel); box-shadow: var(--k-hl), var(--k-shadow-1); transition: transform var(--k-dur-1) var(--k-ease), width var(--k-dur-1) var(--k-ease); }
+.tabpanel { padding-top: var(--s4); }
+.tabpanel:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; border-radius: var(--r); }
+.tab-btn { flex: none; }
+
+/* ============ dialogs ============
+   A dialog is rung 4 on a blurred scrim, 20px radius: a title row with a hairline under it, the body, and the actions at the end
+   on a quieter band. It arrives in 180ms (opacity and 0.98 scale). On a phone it is a sheet at the foot, where the thumb is.
+   .dlg-head, .dlg-body and .dlg-foot are shared by every dialog the console draws. */
+.confirm-scrim { position: fixed; inset: 0; background: var(--scrim); -webkit-backdrop-filter: blur(4px); backdrop-filter: blur(4px); z-index: var(--z-confirm-scrim); animation: fade-in var(--k-dur-2) var(--k-ease); }
+.confirm { position: fixed; z-index: var(--z-confirm); top: 12vh; left: 50%; transform: translateX(-50%);
+  width: min(480px, 92vw); max-height: 84vh; display: flex; flex-direction: column; overflow: hidden;
+  background: var(--panel); border: 1px solid var(--line); border-radius: var(--r-xl); box-shadow: var(--k-hl), var(--k-shadow-4);
+  animation: dialog-in var(--k-dur-2) var(--k-ease); }
+@keyframes dialog-in { from { opacity: 0; transform: translateX(-50%) scale(.98); } }
+@keyframes sheet-in { from { opacity: 0; transform: translateY(24px); } }
+.confirm form { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; }
+.dlg-head { display: flex; align-items: center; gap: var(--s2-5); padding: var(--s4) var(--s5); border-bottom: 1px solid var(--line); }
+.dlg-head h2, .confirm h2 { margin: 0; flex: 1; min-width: 0; font: 650 16px/1.3 var(--sans); letter-spacing: var(--k-track-title); color: var(--text); }
+.dlg-body { display: flex; flex-direction: column; gap: var(--s3); padding: var(--s4) var(--s5); overflow: auto; }
+.dlg-foot { display: flex; align-items: center; justify-content: flex-end; gap: var(--s2); padding: var(--s3) var(--s5); background: var(--panel-2); border-top: 1px solid var(--line); }
+/* The consequences are the content here, so they get body colour and real
+   leading rather than the dimmest text on the surface. */
+.confirm-body { display: flex; flex-direction: column; gap: var(--s2); }
+.confirm-body p { margin: 0; font-size: 14px; line-height: 1.55; color: var(--text-dim); }
+.confirm-field { display: flex; flex-direction: column; gap: var(--s1-5); }
+.confirm-field > span { font: 600 13px/1.35 var(--sans); color: var(--text-dim); }
+.confirm-field input, .confirm-field textarea { width: 100%; box-sizing: border-box; }
+.confirm-field textarea { resize: vertical; min-height: 9em; max-height: 50vh; line-height: 1.45; font-size: 13px; }
+.confirm-field small { font-size: 13px; }
+/* Cancel sits left of confirm and is the wider default target: the safe choice
+   should never be the harder one to hit. */
+.confirm-acts { margin-top: 0; }
+@media (max-width: 560px) {
+  /* A centred card at 12vh leaves the keyboard nowhere to go on a phone, and a
+     dialog that scrolls its own buttons off-screen cannot be confirmed. Dock it
+     to the bottom, where the thumb already is. */
+  .confirm { top: auto; bottom: 0; left: 0; right: 0; transform: none; width: auto;
+    max-height: 88vh; border-radius: var(--r-xl) var(--r-xl) 0 0; border-bottom: none; animation-name: sheet-in; }
+  .confirm-acts { flex-direction: column-reverse; align-items: stretch; }
+  .confirm-acts button { width: 100%; min-height: 44px; }
 }
-input.search:hover, input.txt:hover, select.sel:hover, textarea.txt:hover { border-color: var(--accent); }
-input.search::placeholder, input.txt::placeholder, textarea.txt::placeholder { color: var(--muted); opacity: 1; }
-input.search { min-width: 220px; }
-.txt:focus-visible, .search:focus-visible, .sel:focus-visible { outline: 2px solid var(--accent); }
-/* A truncated list has to say so, or "200 rows" reads as "that is everything". */
-.list-more { font-size: 13px; color: var(--text-dim); padding: var(--s3) var(--s2) var(--s1); border-top: 1px solid var(--line); }
-.list-more b { color: var(--text); font-variant-numeric: tabular-nums; }
+
+/* ============ drawer ============
+   The panel on the right: rung 4 on a blurred scrim, squared on its edge, in 240ms (opacity and 24px). Its title row is the
+   header (.drawer-head): the name, the close button, a hairline, and it stays put while the body scrolls. */
+.drawer {
+  position: fixed; top: 0; right: 0; width: min(560px, 92vw); height: 100vh; z-index: var(--z-overlay);
+  background: var(--drawer); border-left: 1px solid var(--line-strong); box-shadow: var(--k-hl), var(--k-shadow-4);
+  overflow: auto; padding: var(--s5) 22px 40px; animation: drawer-in var(--k-dur-3) var(--k-ease);
+}
+@keyframes drawer-in { from { opacity: 0; transform: translateX(24px); } }
+.drawer.hidden { display: block; transform: translateX(105%); pointer-events: none; }
+.drawer-back { margin-bottom: var(--s2-5); }
+#scrim { position: fixed; inset: 0; background: var(--scrim); -webkit-backdrop-filter: blur(4px); backdrop-filter: blur(4px); z-index: var(--z-scrim); animation: fade-in var(--k-dur-2) var(--k-ease); }
+.drawer h2 { margin: 0 0 var(--s1); font: 650 18px/1.3 var(--sans); letter-spacing: var(--k-track-title); display: flex; align-items: center; gap: var(--s2-5); }
+.drawer-head { position: sticky; top: calc(var(--s5) * -1); z-index: var(--z-sticky); display: flex; align-items: center; gap: var(--s2-5); margin: calc(var(--s5) * -1) -22px var(--s4); padding: var(--s3) 22px; background: color-mix(in srgb, var(--drawer) 94%, transparent); -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); border-bottom: 1px solid var(--line); }
+.drawer-head h2 { flex: 1; min-width: 0; margin: 0; }
+.drawer h3, .drawer h4 { margin: var(--s5) 0 var(--s1-5); font-size: 12px; text-transform: uppercase; letter-spacing: var(--k-track-caps); color: var(--muted); }
+.drawer pre { background: var(--sunken); border: 1px solid var(--line); border-radius: var(--r); padding: var(--s3); font: 13px var(--mono); overflow: auto; max-height: 340px; }
+.drawer pre.token-stream { white-space: pre-wrap; word-break: break-word; max-height: 420px; line-height: 1.6; }
+.close-x { margin-left: auto; flex: none; display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; padding: 0; background: none; border: 0; border-radius: var(--r); color: var(--muted); cursor: pointer; transition: background-color var(--k-dur-1) var(--k-ease), color var(--k-dur-1) var(--k-ease); }
+.close-x:hover { color: var(--text); background: var(--wash); }
+.close-x:active { background: var(--wash-2); }
+/* The help panel floats its close control instead of sitting it in a heading row. */
+.close-x.close-x-float { position: absolute; top: var(--s4); right: 18px; margin-left: 0; }
+
+/* ============ toasts ============
+   A notice that is not about where the person is: rung 3, a tone icon, a title and a line of detail, in 180ms from below. Toasts used
+   to sit at the FAB's exact coordinates with a higher z-index, so every "mission paused" / "wake failed" notice landed squarely on
+   top of the assistant button and its unread dot. They stack above the corner they own instead. */
+#toasts { position: fixed; right: 18px; bottom: var(--dock-clear); display: flex; flex-direction: column; gap: var(--s2); z-index: var(--z-toasts); max-width: 420px; }
+.toast { --tone: var(--accent-2); display: flex; align-items: flex-start; gap: var(--s2-5); background: var(--panel); border: 1px solid var(--line); border-radius: var(--r); padding: var(--s3) var(--s3-5); box-shadow: var(--k-hl), var(--k-shadow-3); font-size: 14px; animation: rise-in var(--k-dur-2) var(--k-ease); }
+.toast.ok { --tone: var(--ok); }
+.toast.bad { --tone: var(--bad); }
+.toast.warn { --tone: var(--warn); }
+.toast-ico { flex: none; margin-top: 1px; color: var(--tone); }
+.toast-body { min-width: 0; flex: 1; }
+.toast b { display: block; font: 600 14px/1.35 var(--sans); letter-spacing: var(--k-track-tight); color: var(--text); }
+.toast-msg { display: block; margin-top: var(--s0); font-size: 13px; line-height: 1.45; color: var(--text-dim); }
+/* Repeat count on a toast that fired again while still up: one card saying
+   "×3" instead of three identical cards stacked over the page. */
+.toast-n { margin-left: var(--s1-5); font: 600 12px var(--sans); letter-spacing: 0; color: var(--muted); }
+/* With a drawer open the right-hand corner is the step view's side column —
+   the inspector and the permission strip — and toasts sat on top of it. The
+   left corner is under the scrim, where nothing is being read. Phones keep the
+   full-width bar below. */
+@media (min-width: 801px) {
+  #drawer:not(.hidden) ~ #toasts { right: auto; left: 18px; }
+  /* Kept to the gutter the wide step drawer leaves where there is one (260px
+     at 1440): at the full 420px a toast reached into the ledger's first
+     column. Narrower screens have no gutter; 240px is the floor. */
+  #drawer:not(.hidden):has(.stepv) ~ #toasts { max-width: max(240px, calc(100vw - min(1180px, 96vw) - 36px)); }
+  #drawer:not(.hidden) ~ #toasts .toast-msg { overflow-wrap: anywhere; }
+}
+/* A button under the sentence, not a link buried in it: 32px clears the 24px pointer floor with room, because this is the one control a
+   person reaches for in a hurry. It spans the card on a phone, where it is a 44px bar (below). */
+.toast-act { display: inline-flex; align-items: center; justify-content: center; min-height: 32px; margin-top: var(--s2-5); padding: 0 var(--s3-5);
+  border: 1px solid color-mix(in srgb, var(--k-accent) 35%, var(--line-strong)); border-radius: var(--r-sm);
+  background: var(--k-accent-soft); color: var(--k-accent-ink);
+  font: 600 13px var(--sans); cursor: pointer; transition: background-color var(--k-dur-1), border-color var(--k-dur-1); }
+.toast-act:hover { border-color: var(--k-accent); }
+@keyframes toastdrop { from { transform: translateY(-8px); opacity: 0; } }
+/* Where notices span the width (a phone, a tablet held upright) they sat at the foot of the screen, on what the person was about to
+   press there: a decision card's "Send answer and resume", a form's Send. They sit under the top bar instead, over the part of the
+   page already scrolled past, as a grid item in the view's own cell, so they follow the bar's height. Two places keep the foot: an
+   open drawer, which covers the bar and starts with its title and first fields, and the Designer, whose undo, redo and checks are
+   in its header and whose own notices answer them (designer.css lifts them over its save bar). The action is a 44px target there. */
+@media (max-width: 800px) {
+  #toasts { position: static; grid-area: main; align-self: start; z-index: var(--z-notice); max-width: none; margin: var(--s2) var(--s3) 0; }
+  #toasts .toast { animation-name: toastdrop; }
+  #drawer:not(.hidden) ~ #toasts, body:has(.ms-bar) #toasts { position: fixed; left: 12px; right: 12px; margin: 0; z-index: var(--z-toasts); }
+  #drawer:not(.hidden) ~ #toasts .toast, body:has(.ms-bar) #toasts .toast { animation-name: rise-in; }
+  .toast-act { width: 100%; min-height: 44px; }
+}
+
+/* ============ command palette ============
+   The door to every view, agent and action (⌘K / Ctrl K): a dialog on rung 4, a search row that carries the focus, the results as
+   rows with an icon and where they go, grouped when nothing has been typed yet, the row that Enter would run lit in the selection's
+   colour, and the keys that drive it in the foot. */
+#palette-scrim { position: fixed; inset: 0; background: var(--scrim); -webkit-backdrop-filter: blur(4px); backdrop-filter: blur(4px); z-index: var(--z-palette-scrim); animation: fade-in var(--k-dur-2) var(--k-ease); }
+.palette { position: fixed; top: 12vh; left: 50%; transform: translateX(-50%); z-index: var(--z-palette);
+  width: min(620px, 92vw); max-height: 72vh; display: flex; flex-direction: column;
+  background: var(--panel); border: 1px solid var(--line); border-radius: var(--r-xl); box-shadow: var(--k-hl), var(--k-shadow-4); overflow: hidden; animation: dialog-in var(--k-dur-2) var(--k-ease); }
+.palette-search { flex: none; display: flex; align-items: center; gap: var(--s2-5); padding: 0 var(--s4); color: var(--muted); border-bottom: 1px solid var(--line); transition: border-color var(--k-dur-1), box-shadow var(--k-dur-1); }
+.palette-search:focus-within { color: var(--text-dim); border-bottom-color: var(--k-accent); box-shadow: 0 1px 0 var(--k-accent); }
+.palette-input { flex: 1; min-width: 0; height: 54px; border: 0; background: transparent; color: var(--text); font: 16px var(--sans); outline: none; }
+.palette-input::placeholder { color: var(--muted); }
+.palette-list { list-style: none; margin: 0; padding: var(--s2); overflow: auto; }
+.palette-group { padding: var(--s2-5) var(--s2-5) var(--s1); font: 600 11px/1.3 var(--sans); letter-spacing: var(--k-track-caps); text-transform: uppercase; color: var(--muted); }
+.palette-item { display: flex; align-items: center; gap: var(--s2-5); min-height: 40px; padding: 0 var(--s2-5); border-radius: var(--r);
+  cursor: pointer; font-size: 14px; color: var(--text-dim); }
+.palette-item .icon { flex: none; color: var(--muted); }
+.palette-item.on { background: var(--k-accent-soft); color: var(--k-accent-ink); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--k-accent) 28%, transparent); }
+.palette-item.on .icon { color: inherit; }
+.palette-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.palette-hint { flex: none; display: inline-flex; gap: var(--s1); margin-left: auto; }
+.palette-scope { flex: none; font: 600 11px/1 var(--sans); letter-spacing: var(--k-track-caps); text-transform: uppercase;
+  color: var(--muted); border: 1px solid var(--line); border-radius: var(--k-r-xs); padding: 3px 6px; }
+.palette-none { padding: var(--s5) var(--s3-5); text-align: center; color: var(--muted); font-size: 14px; }
+.palette-foot { flex: none; display: flex; align-items: center; gap: var(--s2-5); padding: var(--s2) var(--s4); background: var(--panel-2);
+  border-top: 1px solid var(--line); color: var(--muted); font-size: 12px; }
+.palette-foot span { display: inline-flex; align-items: center; gap: var(--s1); }
+@media (max-width: 560px) { .palette { top: 6vh; } .palette-foot { display: none; } }
+
+
+/* ============ forced colours ============
+   Windows High Contrast and the like drop shadows and swap every background for the system's. What survives is borders and
+   outlines, so what a primitive draws with a background says so here: the tick and the dot, the switch's track, the line under the
+   tabs, the fill of a meter, the field that has focus, the segment that is chosen. System colour keywords only. */
+@media (forced-colors: active) {
+  input[type="checkbox"]::before, input[type="radio"]::before { forced-color-adjust: none; background: CanvasText; }
+  input[type="checkbox"][role="switch"] { border: 1px solid CanvasText; }
+  input[type="checkbox"][role="switch"]:checked { forced-color-adjust: none; background: Highlight; }
+  input[type="checkbox"][role="switch"]:checked::before { background: HighlightText; }
+  .tabs-ink, .prog > i, .progress > div, .bar-strip-stat .meter::after { forced-color-adjust: none; background: Highlight; }
+  .prog, .bar-strip-stat .meter { border: 1px solid CanvasText; }
+  .seg button:is([aria-pressed="true"], [aria-selected="true"]) { outline: 2px solid Highlight; outline-offset: -2px; }
+  :is(input.search, input.txt, select.sel, textarea.txt):is(:focus-visible, .is-focus) { outline: 2px solid Highlight; outline-offset: 1px; }
+  .menu-item:is(:focus-visible, :active, .is-active), .palette-item.on { outline: 2px solid Highlight; outline-offset: -2px; }
+}
+
+/* ============ lists the views share: events, cost bars, escalations, the step row, outcome colours ============ */
 .ev-list { display: flex; flex-direction: column; }
 .ev { display: grid; grid-template-columns: 64px 110px 1fr; gap: var(--s2-5); align-items: baseline; padding: 6px 8px; border-bottom: 1px solid var(--line); cursor: pointer; animation: slidein .25s ease; }
 .ev:hover { background: var(--panel-2); }
 @keyframes slidein { from { transform: translateY(-4px); opacity: 0; } }
-.ev time { font: 12px var(--mono); color: var(--muted); }
+.ev time { font: 12px var(--sans); color: var(--muted); }
 .ev .seq { font: 12px var(--mono); color: var(--text-dim); }
-.ev .type { font: 600 13px var(--mono); }
+.ev .type { font: 600 13px var(--sans); }
 .ev .summary { font-size: 14px; color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ev.sev-alert { border-left: 2px solid var(--bad); padding-left: 6px; }
 .t-goal { color: var(--info); } .t-agent { color: var(--ok); } .t-message { color: var(--accent-2); }
@@ -591,21 +1191,13 @@ input.search { min-width: 220px; }
 .t-task { color: var(--text-dim); } .t-escalation { color: var(--bad); } .t-lease { color: var(--info); }
 .t-bad, .ev .type.message.rejected { color: var(--bad); }
 
-/* ---------- cost bars ---------- */
 .bar-row { display: grid; grid-template-columns: 180px 1fr 150px; gap: var(--s2-5); align-items: center; padding: 6px 0; }
 .bar-row .lbl { font: 13px var(--mono); color: var(--text-dim); }
 /* The per-agent / per-model detail is a second line of the label, not a wrapped
    continuation: as one string it broke wherever the 130px column ran out and
    stranded the "·" separator at the start of line two. */
 .bar-row .lbl-meta { display: block; }
-.track { height: 9px; background: var(--line); border-radius: var(--r-sm); overflow: hidden; }
-.track > div { height: 100%; background: linear-gradient(90deg, var(--accent), var(--accent-2)); border-radius: var(--r-sm); transform-origin: left center; transition: transform .6s; }
-.bar-row .num { font: 13px var(--mono); color: var(--muted); text-align: right; }
-/* A track that is filling toward something bad rather than just filling. The
-   accent gradient reads as neutral progress, which is wrong for a meter whose
-   far end closes a session. */
-.track.warn > div { background: var(--warn); }
-.track.bad > div { background: var(--bad); }
+.bar-row .num { font: 13px var(--sans); color: var(--muted); text-align: right; }
 
 /* ---------- escalations ---------- */
 .esc-next { background: var(--panel-2); border: 1px solid var(--line); border-radius: var(--r-sm); padding: var(--s2) var(--s3); font-size: 14px; margin-top: var(--s2); }
@@ -613,12 +1205,9 @@ input.search { min-width: 220px; }
 .esc-raw summary { cursor: pointer; font-size: 13px; color: var(--muted); }
 .esc-raw pre { background: var(--bg); border: 1px solid var(--line); border-radius: var(--r); padding: var(--s2-5); font: 12px var(--mono); overflow: auto; max-height: 180px; }
 
-/* ---------- steps (every agent turn, realtime) ---------- */
 .steps-mini { display: flex; flex-direction: column; gap: var(--s2); }
 .step-mini { display: flex; gap: var(--s2-5); align-items: center; padding: var(--s2) var(--s2-5); border: 1px solid var(--line); border-radius: var(--r); background: var(--bg-2); cursor: pointer; transition: border-color .15s; }
 .step-mini:hover { border-color: var(--accent); }
-.avatar.sm { width: 26px; height: 26px; font-size: 12px; border-radius: 8px; }
-.chip.mono { font-family: var(--mono); }
 
 /* ---------- steps v2: outcome colours ---------- */
 /* One palette drives pills, lane bars and row rails so the same colour always
@@ -633,35 +1222,11 @@ input.search { min-width: 220px; }
 .o-block { --oc: var(--warn); }
 .o-crash { --oc: var(--bad); }
 
-/* The outcome label. A dot and a sentence-case word in the outcome's colour, on a wash of it: the same shape as `.pill`, so a turn's
-   outcome and an agent's state read as one family. Capitals and a hairline made it the loudest thing in every row. */
-.otag {
-  display: inline-flex; align-items: center; gap: var(--s1-5); padding: 1px 10px 1px 8px; border-radius: 20px;
-  font: 600 12px var(--sans); color: var(--oc); background: color-mix(in srgb, var(--oc) 13%, transparent); white-space: nowrap;
-}
-.otag::before { content: ""; flex: none; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
-.otag.o-live::before, .st-row.o-live .otag::before { animation: blink 1.1s infinite; }
-
-/* ---------- drawer ---------- */
-.drawer {
-  position: fixed; top: 0; right: 0; width: min(560px, 92vw); height: 100vh; z-index: var(--z-overlay);
-  background: var(--drawer); border-left: 1px solid var(--line-strong); box-shadow: var(--shadow);
-  transform: translateX(0); transition: transform .22s ease; overflow: auto; padding: var(--s5) 22px 40px;
-}
-.drawer.hidden { display: block; transform: translateX(105%); pointer-events: none; }
-.drawer-back { margin-bottom: var(--s2-5); }
-#scrim { position: fixed; inset: 0; background: var(--scrim); z-index: var(--z-scrim); }
-.drawer h2 { margin: 0 0 var(--s1); font-size: 18px; display: flex; align-items: center; gap: var(--s2-5); }
-.drawer h3, .drawer h4 { margin: var(--s5) 0 var(--s1-5); font-size: 12px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
-.drawer pre { background: var(--sunken); border: 1px solid var(--line); border-radius: var(--r); padding: var(--s3); font: 13px var(--mono); overflow: auto; max-height: 340px; }
-.drawer pre.token-stream { white-space: pre-wrap; word-break: break-word; max-height: 420px; line-height: 1.6; }
 
 /* ---------- step drawer: header, tabs, sections ----------
    The step drawer is the one panel read under time pressure, so its header
    stays put while the body scrolls and every section carries a label instead
    of relying on the reader's memory of what order things came in. */
-.tabpanel { padding-top: var(--s4); }
-.tabpanel:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; border-radius: var(--r); }
 .step-sec { margin: 0 0 var(--s5); }
 .step-sec:last-child { margin-bottom: 0; }
 .step-sec > h4:first-child { margin-top: 0; }
@@ -671,7 +1236,7 @@ input.search { min-width: 220px; }
 .sec-stat { font-size: 12px; color: var(--muted); letter-spacing: .02em; }
 .sec-label { font: 600 12px var(--sans); text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
 .sec-note { font-size: 13px; margin: -2px 0 8px; max-width: 68ch; }
-.sec-tally { font: 600 12px var(--mono); color: var(--ok); padding: 1px 8px; border-radius: 20px;
+.sec-tally { font: 600 12px var(--sans); color: var(--ok); padding: 1px 8px; border-radius: 20px;
   background: color-mix(in srgb, var(--ok) 14%, transparent); white-space: nowrap; }
 .sec-tally.part { color: var(--warn); background: color-mix(in srgb, var(--warn) 14%, transparent); }
 .step-say { margin: 0; font-size: 15px; max-width: 68ch; }
@@ -725,7 +1290,7 @@ input.search { min-width: 220px; }
 /* ---------- KPI grid: cost, time, tool volume, ops landed ---------- */
 .kpi-tile { display: flex; flex-direction: column; gap: 3px; padding: 10px 12px; background: var(--raised); min-width: 0; }
 .kpi-l { font: 600 12px var(--sans); text-transform: uppercase; letter-spacing: .07em; color: var(--muted); }
-.kpi-v { font: 600 16px var(--mono); letter-spacing: -.01em; display: flex; align-items: baseline; gap: var(--s1-5); flex-wrap: wrap; min-width: 0; }
+.kpi-v { font: 650 16px var(--sans); letter-spacing: var(--k-track-tight); display: flex; align-items: baseline; gap: var(--s1-5); flex-wrap: wrap; min-width: 0; }
 .kpi-s { font: 400 12px var(--sans); color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .kpi-bar { display: block; height: 3px; border-radius: 2px; background: color-mix(in srgb, var(--accent-2) 22%, transparent); overflow: hidden; margin-top: var(--s0); }
 .kpi-bar i { display: block; height: 100%; background: var(--accent); border-radius: 2px; }
@@ -777,158 +1342,16 @@ input.search { min-width: 220px; }
 .op-miss { color: var(--muted); background: color-mix(in srgb, var(--muted) 14%, transparent); }
 .op-detail { font-size: 14px; color: var(--text-dim); margin-top: var(--s1); white-space: pre-wrap; word-break: break-word; }
 .op-fx { margin-top: var(--s1-5); display: flex; justify-content: flex-end; font-size: 13px; }
-.close-x { margin-left: auto; background: none; border: 0; color: var(--muted); font-size: 20px; cursor: pointer;
-  min-width: 32px; min-height: 32px; border-radius: var(--r); display: inline-flex; align-items: center; justify-content: center; }
-.close-x:hover { color: var(--text); background: var(--panel-2); }
-/* The help panel floats its close control instead of sitting it in a heading row. */
-.close-x.close-x-float { position: absolute; top: var(--s4); right: 18px; margin-left: 0; }
 
-/* ---------- command palette (WS10) ---------- */
-#palette-scrim { position: fixed; inset: 0; background: var(--scrim); z-index: var(--z-palette-scrim); }
-.palette { position: fixed; top: 12vh; left: 50%; transform: translateX(-50%); z-index: var(--z-palette);
-  width: min(560px, 92vw); max-height: 70vh; display: flex; flex-direction: column;
-  background: var(--drawer); border: 1px solid var(--line-strong); border-radius: var(--r); box-shadow: var(--shadow); overflow: hidden; }
-.palette-input { flex: none; width: 100%; border: 0; border-bottom: 1px solid var(--line-strong);
-  background: var(--panel-2); color: var(--text); font: 15px var(--sans); padding: 12px var(--s3-5); outline: none; }
-.palette-input:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
-.palette-list { list-style: none; margin: 0; padding: var(--s1-5); overflow: auto; }
-.palette-item { display: flex; align-items: center; gap: var(--s2); padding: 10px 10px; border-radius: var(--r-sm);
-  cursor: pointer; font-size: 14px; color: var(--text-dim); }
-.palette-item.on { background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--text); }
-.palette-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.palette-scope { flex: none; font: 600 11px var(--sans); text-transform: uppercase; letter-spacing: .06em;
-  color: var(--muted); border: 1px solid var(--line); border-radius: 4px; padding: 1px 6px; }
-.palette-none { padding: var(--s3-5); text-align: center; color: var(--muted); font-size: 14px; }
-.palette-foot { flex: none; display: flex; align-items: center; gap: var(--s1-5); padding: 6px 12px;
-  border-top: 1px solid var(--line); color: var(--muted); font-size: 12px; }
-.palette-foot kbd { margin-left: var(--s0); }
-
-/* ---------- toasts ---------- */
-/* Toasts used to sit at the FAB's exact coordinates with a higher z-index, so
-   every "mission paused" / "wake failed" notice landed squarely on top of the
-   assistant button and its unread dot. Stack above the corner it owns instead. */
-#toasts { position: fixed; right: 18px; bottom: var(--dock-clear); display: flex; flex-direction: column; gap: var(--s2); z-index: var(--z-toasts); max-width: 420px; }
-.toast { background: var(--panel); border: 1px solid var(--line-strong); border-radius: var(--r); padding: 10px var(--s3-5); box-shadow: var(--shadow); font-size: 14px; animation: toastin .2s ease; }
-.toast.ok { background: color-mix(in srgb, var(--ok) 8%, var(--panel)); } .toast.bad { background: color-mix(in srgb, var(--bad) 9%, var(--panel)); } .toast.warn { background: color-mix(in srgb, var(--warn) 9%, var(--panel)); }
-.toast b { display: block; font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--text-dim); margin-bottom: var(--s0); }
-.toast-msg { display: block; }
-/* Repeat count on a toast that fired again while still up: one card saying
-   "×3" instead of three identical cards stacked over the page. */
-.toast-n { margin-left: var(--s1-5); font: 600 12px var(--mono); letter-spacing: 0; text-transform: none; color: var(--muted); }
-/* With a drawer open the right-hand corner is the step view's side column —
-   the inspector and the permission strip — and toasts sat on top of it. The
-   left corner is under the scrim, where nothing is being read. Phones keep the
-   full-width bar below. */
-@media (min-width: 801px) {
-  #drawer:not(.hidden) ~ #toasts { right: auto; left: 18px; }
-  /* Kept to the gutter the wide step drawer leaves where there is one (260px
-     at 1440): at the full 420px a toast reached into the ledger's first
-     column. Narrower screens have no gutter; 240px is the floor. */
-  #drawer:not(.hidden):has(.stepv) ~ #toasts { max-width: max(240px, calc(100vw - min(1180px, 96vw) - 36px)); }
-  #drawer:not(.hidden) ~ #toasts .toast-msg { overflow-wrap: anywhere; }
-}
-/* Full-width so it is a target, not a link buried in a sentence; 28px clears
-   the 24px pointer floor with room, because this is the one control a user
-   reaches for in a hurry. */
-.toast-act { display: block; width: 100%; min-height: 28px; margin-top: var(--s2);
-  border: 1px solid color-mix(in srgb, var(--accent) 50%, var(--line-strong)); border-radius: var(--r-sm);
-  background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--text);
-  font: 600 13px var(--sans); cursor: pointer; }
-.toast-act:hover { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 22%, transparent); }
-@keyframes toastin { from { transform: translateY(8px); opacity: 0; } }
-@keyframes toastdrop { from { transform: translateY(-8px); opacity: 0; } }
-/* Where notices span the width (a phone, a tablet held upright) they sat at the foot of the screen, on what the person was about to
-   press there: a decision card's "Send answer and resume", a form's Send. They sit under the top bar instead, over the part of the
-   page already scrolled past, as a grid item in the view's own cell, so they follow the bar's height. Two places keep the foot: an
-   open drawer, which covers the bar and starts with its title and first fields, and the Designer, whose undo, redo and checks are
-   in its header and whose own notices answer them (designer.css lifts them over its save bar). The action is a 44px target there. */
-@media (max-width: 800px) {
-  #toasts { position: static; grid-area: main; align-self: start; z-index: var(--z-notice); max-width: none; margin: var(--s2) var(--s3) 0; }
-  #toasts .toast { animation-name: toastdrop; }
-  #drawer:not(.hidden) ~ #toasts, body:has(.ms-bar) #toasts { position: fixed; left: 12px; right: 12px; margin: 0; z-index: var(--z-toasts); }
-  #drawer:not(.hidden) ~ #toasts .toast, body:has(.ms-bar) #toasts .toast { animation-name: toastin; }
-  .toast-act { min-height: 44px; }
-}
-
-/* ---------- forms (controls + designer) ---------- */
-form.stack { display: flex; flex-direction: column; gap: var(--s2-5); }
-.field { display: flex; flex-direction: column; gap: var(--s1); }
-.field label { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
-.field input, .field select, .field textarea { width: 100%; }
-/* The answer a form gives under its button: what was recorded, or why it was not. */
-.form-out { font-size: 13px; color: var(--muted); }
-.form-out.bad { color: var(--bad); }
-.row { display: flex; gap: var(--s2); align-items: center; }
-.row-edit { display: grid; grid-template-columns: 1fr 2fr auto auto; gap: var(--s2); align-items: center; margin: var(--s1-5) 0; }
-/* A grid item's default min-width is auto, so the two text inputs refuse to go
-   below their intrinsic width and the row overflows its panel rather than
-   sharing the space. The panel is width-clamped independently of the viewport,
-   so this has to be container-agnostic -- a media query would miss it. */
-.row-edit > .txt { min-width: 0; }
-.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: var(--s2-5); }
-.grid3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: var(--s2-5); }
-@media (max-width: 900px) { .grid3, .grid2 { grid-template-columns: 1fr; } }
-button.primary { display: inline-flex; align-items: center; justify-content: center; gap: var(--s1-5); min-height: 34px; background: var(--accent); border: 1px solid transparent; color: var(--text-on-accent); font: 600 14px var(--sans); border-radius: var(--r-sm); padding: var(--s1-5) var(--s4); cursor: pointer; }
-/* brightness() is a one-way filter on a two-way palette: lightening the fill
-   moves it AWAY from the dark --text-on-accent in dark (emphasis) and TOWARDS
-   the white one in light (washing out, 6.34:1 -> 5.47:1). --accent-2 is themed
-   per side -- lighter than --accent in dark, darker in light -- so it reads as
-   "more" on both grounds. :not(:disabled) because .primary renders disabled at
-   eight call sites and there is no .primary:disabled rule, so the old filter
-   lit up dead buttons. */
-button.primary:hover:not(:disabled) { background: var(--accent-2); }
-button.primary:disabled, button.soft:disabled { opacity: .5; cursor: not-allowed; }
-button.small, button.ghost { gap: var(--s1-5); }
-/* 3px of vertical padding on a 12px line gave a 22px box — the most-used
-   button in the console sat just under the 24px pointer floor. The floor is a
-   min-height rather than more padding, so nothing already taller reflows. */
-button.small { font-size: 13px; padding: var(--s1) var(--s2-5); border-radius: var(--r-sm); border: 1px solid var(--line); background: var(--panel-2); color: var(--text-dim); cursor: pointer;
-  min-height: 24px; display: inline-flex; align-items: center; justify-content: center; }
-button.small:hover { color: var(--text); border-color: var(--accent); }
-button.small.danger:hover { color: var(--bad); border-color: var(--bad); }
-.verdict { border-radius: var(--r-sm); padding: var(--s2) var(--s3); font-size: 14px; margin: var(--s1-5) 0; }
-.verdict.ok { background: color-mix(in srgb, var(--ok) 10%, transparent); color: var(--ok); }
-.verdict.bad { background: color-mix(in srgb, var(--bad) 10%, transparent); color: var(--bad); }
-.verdict.warn { background: color-mix(in srgb, var(--warn) 10%, transparent); color: var(--warn); }
-ul.errs { margin: var(--s1-5) 0; padding-left: 18px; font-size: 14px; color: var(--bad); }
-label.chk { flex-direction: row; align-items: center; gap: var(--s1-5); font: 13px var(--sans); color: var(--text); text-transform: none; letter-spacing: 0; }
-.chips { display: flex; flex-wrap: wrap; gap: var(--s1-5); }
-.chip-toggle { display: inline-flex; align-items: center; gap: var(--s1-5); border-radius: 16px; padding: 3px 10px; font: 13px var(--sans); cursor: pointer; min-height: 24px; }
-.chip-toggle.on { color: var(--accent-2); border-color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, transparent); }
-.chip-toggle.bad { color: var(--bad); border-color: color-mix(in srgb, var(--bad) 45%, var(--line)); background: color-mix(in srgb, var(--bad) 10%, transparent); }
-.chip-toggle.bad:hover { border-color: var(--bad); }
-/* ---------- designer workbench ---------- */
-.hidden { display: none; }
-/* A notice. Written without an icon (an older call site) it is a block of text with a tinted ground; written through
-   components.tsx Banner it is a row: an icon tile, the sentence and its detail, and the actions that answer it. */
-.banner { border: 1px solid var(--line-strong); border-radius: var(--r); padding: var(--s3) var(--s3-5); font-size: 14px; line-height: 1.5; background: var(--panel); }
-.banner.ok { background: color-mix(in srgb, var(--ok) 8%, var(--panel)); border-color: color-mix(in srgb, var(--ok) 38%, var(--line)); }
-.banner.bad { background: color-mix(in srgb, var(--bad) 9%, var(--panel)); border-color: color-mix(in srgb, var(--bad) 42%, var(--line)); }
-.banner.warn { background: color-mix(in srgb, var(--warn) 9%, var(--panel)); border-color: color-mix(in srgb, var(--warn) 42%, var(--line)); }
-.banner.has-icon { display: flex; align-items: flex-start; gap: var(--s3); margin-bottom: var(--s3); }
-.banner-icon { flex: none; display: grid; place-items: center; width: 28px; height: 28px; border-radius: var(--r-sm); background: color-mix(in srgb, var(--accent) 13%, transparent); color: var(--accent-2); }
-.banner.ok .banner-icon { background: color-mix(in srgb, var(--ok) 16%, transparent); color: var(--ok); }
-.banner.warn .banner-icon { background: color-mix(in srgb, var(--warn) 16%, transparent); color: var(--warn); }
-.banner.bad .banner-icon { background: color-mix(in srgb, var(--bad) 16%, transparent); color: var(--bad); }
-.banner-body { flex: 1 1 260px; min-width: 0; padding-top: var(--s0); }
-.banner-body b { font-weight: 600; }
-.banner-text { color: var(--text-dim); }
-.banner-acts { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s2); margin-left: auto; align-self: center; }
-.banner-act { display: inline-flex; align-items: center; gap: var(--s1); font: 13px var(--sans); padding: var(--s1) var(--s2-5); border-radius: var(--r-sm); border: 1px solid var(--accent); background: color-mix(in srgb, var(--accent) 12%, transparent); color: var(--accent-2); cursor: pointer; margin-left: var(--s1-5); text-decoration: none; }
-.banner-act:hover { background: color-mix(in srgb, var(--accent) 22%, transparent); }
-code { font: 13px var(--mono); background: var(--panel-2); border: 1px solid var(--line); border-radius: 4px; padding: 0 6px; }
-kbd { font: 11px var(--mono); border: 1px solid var(--line-strong); border-bottom-width: 2px; border-radius: 4px; padding: 1px 6px; background: var(--panel-2); }
 .help table td { padding: var(--s1) var(--s3) var(--s1) 0; }
 /* A key and its alternative stay on one line: "⌘K / Ctrl K" broke across two. */
 .help table td:first-child, .help kbd { white-space: nowrap; }
 .help p { max-width: 56ch; }
 
-::-webkit-scrollbar { width: 10px; height: 10px; }
-::-webkit-scrollbar-thumb { background: var(--line-control); border-radius: 6px; border: 2px solid var(--bg); }
-::-webkit-scrollbar-track { background: transparent; }
+
 @media (max-width: 800px) {
   #app { grid-template-columns: 0 1fr; }
-  #sidebar { position: fixed; z-index: var(--z-sidebar); height: 100vh; width: min(288px, 86vw); transform: translateX(-105%); transition: transform .2s; box-shadow: var(--shadow); }
+  #sidebar { position: fixed; z-index: var(--z-sidebar); height: 100vh; width: min(288px, 86vw); transform: translateX(-105%); transition: transform var(--k-dur-3) var(--k-ease); box-shadow: var(--k-shadow-4); }
   #sidebar.open { transform: none; }
   #btn-menu { display: inline-flex; align-items: center; }
   #topbar { gap: var(--s2); padding: var(--s2) var(--s3); }
@@ -952,6 +1375,10 @@ kbd { font: 11px var(--mono); border: 1px solid var(--line-strong); border-botto
   .row-actions button, button.small { min-height: 32px; }
   /* The Message panel's recipient chips are the way to address a seat on a phone, so they are full touch targets. */
   .send-chips .chip-toggle { min-height: 44px; }
+  /* The project strip stays, the words go: a shape and a name is what a narrow screen can carry without a second row. */
+  #app.with-tabs { grid-template-columns: 0 1fr; }
+  .ptab { max-width: 176px; height: 36px; }
+  .ptab-meta { display: none; }
 }
 
 /* Phone: the header stops being a bar. Measured at 390px the old layout was four rows, 138px tall, and the document
@@ -967,6 +1394,8 @@ kbd { font: 11px var(--mono); border: 1px solid var(--line-strong); border-botto
   /* Full basis plus a later order: the goal wraps to its own row as a unit
      rather than being squeezed between the controls. */
   #goal-strip { order: 2; flex: 1 1 100%; }
+  .pj-home .pj-home-label { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+  .pj-home { padding: 0 var(--s2-5); }
 }
 
 /* ============ observability: vitals, phase rail, causality ============ */
@@ -1000,7 +1429,7 @@ kbd { font: 11px var(--mono); border: 1px solid var(--line-strong); border-botto
   background: var(--line); border: 1px solid var(--line); border-radius: var(--r-sm); overflow: hidden; }
 .vital { display: flex; flex-direction: column; gap: var(--s0); padding: var(--s2) var(--s3);
   background: color-mix(in srgb, var(--sunken) 55%, var(--vitals-fill)); }
-.vital b { font: 600 16px var(--mono); letter-spacing: -.02em; }
+.vital b { font: 650 16px var(--sans); letter-spacing: var(--k-track-title); }
 .vital.lead b { font-size: 20px; line-height: 1.1; }
 .vital span { font-size: 12px; color: var(--muted); letter-spacing: .04em; }
 .vital.warn b { color: var(--warn); }
@@ -1019,7 +1448,7 @@ kbd { font: 11px var(--mono); border: 1px solid var(--line-strong); border-botto
 .prail-track { position: relative; height: 10px; border-radius: 3px; background: var(--sunken); }
 .prail-fill { position: absolute; top: 0; bottom: 0; min-width: 2px; border-radius: 3px; background: var(--leg, var(--text-dim)); transition: left .3s ease, width .3s ease; }
 .prail-fill.open { animation: pulse-soft 1.6s ease-in-out infinite; }
-.prail-ms { font: 600 12px var(--mono); font-variant-numeric: tabular-nums; color: var(--text-dim); text-align: right; white-space: nowrap; }
+.prail-ms { font: 600 12px var(--sans); font-variant-numeric: tabular-nums; color: var(--text-dim); text-align: right; white-space: nowrap; }
 /* The longest leg is the answer to "why was this slow", so it is the only row
    that runs at full strength; the others recede instead of competing with it.
    tabular-nums above is load-bearing: useTick(500) rewrites these digits twice
@@ -1060,22 +1489,10 @@ kbd { font: 11px var(--mono); border: 1px solid var(--line-strong); border-botto
 .agent-vitals { display: grid; grid-template-columns: repeat(4, 1fr); gap: var(--s2); margin: var(--s2-5) 0 var(--s1-5); }
 .avital { display: flex; flex-direction: column; gap: 1px; padding: 6px 10px; border-radius: var(--r-sm);
   background: var(--bg-2); border: 1px solid var(--line); }
-.avital b { font: 600 16px var(--mono); }
+.avital b { font: 650 16px var(--sans); letter-spacing: var(--k-track-tight); }
 .avital span { font-size: 12px; color: var(--muted); }
 .avital.warn b { color: var(--warn); }
 .avital.bad b { color: var(--bad); }
-
-.tabs { display: flex; gap: var(--s0); border-bottom: 1px solid var(--line); margin: var(--s3) 0 var(--s2-5); }
-.tab-btn { background: none; border: none; border-bottom: 2px solid transparent; padding: var(--s2) var(--s3);
-  font: 500 14px var(--sans); color: var(--muted); cursor: pointer; display: inline-flex; align-items: center; gap: 6px;
-  transition: color .15s ease, border-color .15s ease; }
-.tab-btn:hover { color: var(--text); border-bottom-color: var(--line-strong); }
-.tab-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; border-radius: var(--r-sm) var(--r-sm) 0 0; }
-.tab-btn.on { color: var(--text); font-weight: 600; border-bottom-color: var(--accent); }
-.tab-n { font: 600 11px var(--mono); font-style: normal; padding: 1px 6px; border-radius: 20px;
-  background: var(--panel); color: var(--muted); }
-.tab-btn.on .tab-n { background: color-mix(in srgb, var(--accent) 16%, transparent); color: var(--accent-2); }
-.tab-n.hot { background: color-mix(in srgb, var(--bad) 14%, transparent); color: var(--bad); }
 
 .idle-box { padding: var(--s3-5); border: 1px dashed var(--line); border-radius: var(--r); font-size: 14px; margin: var(--s2) 0; }
 .now-task { margin: var(--s2) 0; font-size: 14px; }
@@ -1102,13 +1519,13 @@ kbd { font: 11px var(--mono); border: 1px solid var(--line-strong); border-botto
 .lw-now.fail .lw-now-k, .lw-now.fail .lw-now-w { color: var(--bad); }
 .lw-now-n { flex: none; font-size: 14px; color: var(--text); }
 .lw-now-t { min-width: 0; flex: 0 1 auto; font-size: 13px; color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.lw-now-w { flex: none; margin-left: auto; font: 12px var(--mono); font-variant-numeric: tabular-nums; color: var(--muted); }
+.lw-now-w { flex: none; margin-left: auto; font: 12px var(--sans); font-variant-numeric: tabular-nums; color: var(--muted); }
 .lw-dl-head { display: flex; align-items: baseline; gap: var(--s2); flex-wrap: wrap; font-size: 13px; margin-bottom: var(--s1); }
 .lw-dl-left { color: var(--lw, var(--text)); font-weight: 600; font-variant-numeric: tabular-nums; }
 .lw-dl-ext { font: 600 11px var(--sans); text-transform: uppercase; letter-spacing: .05em; padding: 1px 6px; border-radius: 20px;
   color: var(--info); background: color-mix(in srgb, var(--info) 14%, transparent); }
 .lw-dl-hard { color: var(--text-dim); font-variant-numeric: tabular-nums; }
-.lw-dl-el { margin-left: auto; font: 12px var(--mono); font-variant-numeric: tabular-nums; }
+.lw-dl-el { margin-left: auto; font: 12px var(--sans); font-variant-numeric: tabular-nums; }
 .lw-dl-track { position: relative; height: 8px; border-radius: 3px; background: var(--sunken); }
 .lw-dl-fill { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 3px; background: var(--lw, var(--text-dim)); opacity: .75; transition: width .3s ease; }
 .lw-dl-mark { position: absolute; top: -3px; bottom: -3px; width: 2px; margin-left: -1px; background: var(--text); border-radius: 1px; }
@@ -1144,7 +1561,6 @@ kbd { font: 11px var(--mono); border: 1px solid var(--line-strong); border-botto
   .vitals-nums, .agent-vitals { grid-template-columns: repeat(2, 1fr); }
   .tabs { overflow-x: auto; scrollbar-width: none; }
   .tabs::-webkit-scrollbar { display: none; }
-  .tab-btn { flex: none; }
   .sbx-rt { margin-left: 0; width: 100%; }
 }
 
@@ -1171,7 +1587,7 @@ kbd { font: 11px var(--mono); border: 1px solid var(--line-strong); border-botto
 /* `bad` here is a refusal, so it wears the refused orange like every other one. */
 .oplat-row.bad .oplat-bar i { background: var(--rej); }
 .oplat-row.bad .oplat-name { color: var(--rej); }
-.oplat-ms { font: 600 12px var(--mono); }
+.oplat-ms { font: 600 12px var(--sans); }
 .oplat-x { font: 600 11px var(--sans); text-transform: uppercase; letter-spacing: .05em; color: var(--rej); }
 
 /* ---------------------------------------------------------------------- *
@@ -1207,41 +1623,6 @@ kbd { font: 11px var(--mono); border: 1px solid var(--line-strong); border-botto
 
 /* version row: the artifact drawer still draws it */
 .fv-versions { display: flex; align-items: center; gap: var(--s1-5); flex-wrap: wrap; margin: var(--s2) 0 var(--s0); }
-
-/* ── Confirm dialog ───────────────────────────────────────────────────────
-   Replaces window.confirm/prompt. Above every other layer on purpose: a
-   confirmation can be raised from inside a drawer, the palette or the project
-   picker, and it must never open behind the thing that asked for it. */
-.confirm-scrim { position: fixed; inset: 0; background: var(--scrim); z-index: var(--z-confirm-scrim); }
-.confirm { position: fixed; z-index: var(--z-confirm); top: 12vh; left: 50%; transform: translateX(-50%);
-  width: min(480px, 92vw); background: var(--bg-2); border: 1px solid var(--line-strong);
-  border-radius: var(--r); box-shadow: var(--shadow); }
-.confirm form { display: flex; flex-direction: column; gap: var(--s3); padding: var(--s4); }
-.confirm h2 { margin: 0; font: 600 16px var(--sans); color: var(--text); }
-/* The consequences are the content here, so they get body colour and real
-   leading rather than the dimmest text on the surface. */
-.confirm-body { display: flex; flex-direction: column; gap: var(--s2); }
-.confirm-body p { margin: 0; font-size: 14px; line-height: 1.55; color: var(--text-dim); }
-.confirm-field { display: flex; flex-direction: column; gap: var(--s1); }
-.confirm-field > span { font: 600 13px var(--sans); color: var(--text-dim); }
-.confirm-field input, .confirm-field textarea { width: 100%; box-sizing: border-box; }
-.confirm-field textarea { resize: vertical; min-height: 9em; max-height: 50vh; line-height: 1.45; font-size: 13px; }
-.confirm-field small { font-size: 13px; }
-/* Cancel sits left of confirm and is the wider default target: the safe choice
-   should never be the harder one to hit. */
-.confirm-acts { display: flex; justify-content: flex-end; gap: var(--s2); margin-top: var(--s1); }
-.confirm-acts button { min-height: 30px; }
-.confirm-acts button[disabled] { opacity: .5; cursor: not-allowed; }
-
-@media (max-width: 560px) {
-  /* A centred card at 12vh leaves the keyboard nowhere to go on a phone, and a
-     dialog that scrolls its own buttons off-screen cannot be confirmed. Dock it
-     to the bottom, where the thumb already is. */
-  .confirm { top: auto; bottom: 0; left: 0; right: 0; transform: none; width: auto;
-    max-height: 88vh; overflow: auto; border-radius: var(--r) var(--r) 0 0; border-bottom: none; }
-  .confirm-acts { flex-direction: column-reverse; }
-  .confirm-acts button { width: 100%; min-height: 44px; }
-}
 
 /* ---------- step view: wide, single-scroll, inspector ----------
    Replaces the five-tab step drawer. The reader's four jobs — follow the

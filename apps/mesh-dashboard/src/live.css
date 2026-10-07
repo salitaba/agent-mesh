@@ -1,60 +1,6 @@
-/* Small pieces the live views share (Events, Steps, Agents, Graph and their panels): copy affordances, a turning caret, a segmented
-   control, the severity mark and the loading placeholder. Imported by components.tsx, so it is always loaded. */
-
-/* ---------- copy ---------- */
-
-.copy-btn { gap: var(--s1); }
-.copy-btn .icon { flex: none; }
-
-/* Icon-only: a full 24px target, quiet until pointed at. */
-.copy-btn.compact {
-  display: inline-flex; align-items: center; justify-content: center; flex: none;
-  min-width: 24px; min-height: 24px; padding: 0;
-  background: none; border: 1px solid transparent; border-radius: var(--r-sm);
-  color: var(--muted); cursor: pointer;
-}
-.copy-btn.compact:hover { color: var(--text); background: var(--sunken); }
-
-.idchip { display: inline-flex; align-items: center; gap: var(--s0); min-width: 0; max-width: 100%; }
-/* The shared `code` rule draws a boxed chip; an id in a row is plain text. The ellipsis is the second line of defence, for a
-   container narrower than even the clipped id. */
-.idchip code {
-  min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-  background: none; border: 0; padding: 0; font: 12px var(--mono); color: var(--text-dim);
-}
-
-/* ---------- a caret that turns when its row opens ---------- */
-
-.icon.caret { transition: transform .15s; }
-.icon.caret.turned { transform: rotate(90deg); }
-
-/* ---------- segmented control: one choice of a few, always visible ---------- */
-
-.seg { display: inline-flex; padding: var(--s0); border: 1px solid var(--line-strong); border-radius: 999px; background: var(--bg-2); }
-.seg button {
-  min-height: 24px; padding: 0 var(--s2-5); border: 0; border-radius: 999px; background: transparent;
-  color: var(--text-dim); font: 500 12px var(--sans); cursor: pointer;
-}
-.seg button:hover { color: var(--text); }
-.seg button[aria-pressed="true"] { background: color-mix(in srgb, var(--accent) 16%, transparent); color: var(--accent-2); font-weight: 600; }
-
-/* ---------- filter chip: a toggle that is also the legend for what it filters ----------
-   A chip that sets `--oc` (the outcome palette on Steps) tints itself with it when it is on; one that does not is the accent.
-   Text is always a full token: a faded count on a tinted chip is what failed contrast. */
-
-.fchip {
-  display: inline-flex; align-items: center; gap: var(--s1-5); min-height: 28px; padding: 0 var(--s2-5);
-  border: 1px solid var(--line-strong); border-radius: 999px; background: var(--panel);
-  color: var(--text-dim); font: 500 13px var(--sans); cursor: pointer;
-}
-.fchip:hover:not(:disabled) { color: var(--text); border-color: var(--line-control); }
-.fchip-n { color: var(--muted); font-variant-numeric: tabular-nums; }
-.fchip-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--oc); flex: none; }
-.fchip.on { color: var(--oc, var(--accent-2)); border-color: var(--oc, var(--accent)); background: color-mix(in srgb, var(--oc, var(--accent)) 11%, var(--panel)); }
-.fchip.on .fchip-n { color: inherit; }
-/* A filter with nothing behind it reads as empty without fading its text below contrast. */
-.fchip:disabled { color: var(--muted); border-style: dashed; cursor: default; }
-.fchip:disabled .fchip-dot { opacity: .5; }
+/* Small pieces the live views share (Events, Steps, Agents, Graph and their panels): the severity mark, a tool call in flight, the agent
+   controls and the zone note. Imported by components.tsx, so it is always loaded. The primitives that used to live here (the copy
+   and id chips, the turning caret, the segmented control, the filter chip and the skeleton) are in styles.css with the others. */
 
 /* ---------- severity: a triangle, a dot, a ring. Colour is never the only cue. ---------- */
 
@@ -80,8 +26,3 @@ i.sev-mark.routine { box-sizing: border-box; border: 1.5px solid var(--muted); }
 /* On a line of its own, above rows. */
 .zone-line { margin: 0 0 var(--s1-5); }
 .zone-line .zone-note { margin-left: 0; }
-
-/* ---------- loading placeholder ---------- */
-
-.sk { display: block; border-radius: 4px; background: color-mix(in srgb, var(--line) 80%, transparent); animation: shimmer 1.4s ease-in-out infinite; }
-@keyframes shimmer { 50% { opacity: .45; } }

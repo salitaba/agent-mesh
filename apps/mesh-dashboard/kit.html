@@ -4,11 +4,9 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="color-scheme" content="light dark" />
-  <!-- The browser's own chrome (a phone's address bar) takes the colour of the top bar, in whichever theme is showing. -->
-  <meta name="theme-color" content="#181715" />
-  <!-- The sign-in page answers to anyone who can reach the host. It is not something to find through a search. -->
+  <!-- The kit gallery: every primitive of the console in every state, in both themes. It shows no data and asks for no sign-in. -->
   <meta name="robots" content="noindex" />
-  <title>Curule</title>
+  <title>Curule console kit</title>
   <script>
     // Theme bootstrap (UIR-07). Runs before first paint so a returning
     // light-theme user never sees the dark flash that a post-mount
@@ -18,12 +16,7 @@
       try {
         var saved = localStorage.getItem("mesh-theme");
         var sys = window.matchMedia && window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
-        var theme = (saved === "light" || saved === "dark") ? saved : sys;
-        document.documentElement.dataset.theme = theme;
-        // --bg-2 in each theme; tests/build/console-palette.test.ts keeps these two in step with the stylesheet, and shell.tsx
-        // reads the stylesheet when the theme is switched by hand.
-        var m = document.querySelector('meta[name="theme-color"]');
-        if (m) m.setAttribute("content", theme === "light" ? "#fbfaf8" : "#181715");
+        document.documentElement.dataset.theme = (saved === "light" || saved === "dark") ? saved : sys;
       } catch (e) { /* keep the dark fallback written on <html> */ }
     })();
   </script>
@@ -31,7 +24,7 @@
 </head>
 <body>
   <div id="root"></div>
-  <noscript><p style="font: 16px/1.5 system-ui, sans-serif; padding: 24px; max-width: 60ch">The Curule console is a web application and needs JavaScript. Turn it on for this address and reload the page.</p></noscript>
-  <script type="module" src="/src/main.tsx"></script>
+  <noscript><p style="font: 16px/1.5 system-ui, sans-serif; padding: 24px; max-width: 60ch">The kit gallery is drawn by the console's own components and needs JavaScript. Turn it on for this address and reload the page.</p></noscript>
+  <script type="module" src="/src/kit.tsx"></script>
 </body>
 </html>

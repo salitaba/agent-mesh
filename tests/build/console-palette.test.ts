@@ -14,6 +14,10 @@
  *
  * It also pins the neutrals the console shares with the brand (paper, panel, ink, line), so the site and the product stay one
  * family, and that no colour literal appears in the stylesheets outside those blocks.
+ *
+ * The console's surfaces, lines and text are the kit's roles under the console's names (--panel is var(--k-surface), --text-dim is
+ * the kit's second ink), so a pair is resolved through the generated kit block too: if the kit's value moves, the pairs here are
+ * recomputed against it. The accent, the status colours and the page ground of the light theme are the console's own literals.
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -59,8 +63,14 @@ function declarations(body: string): Record<string, string> {
 }
 
 const css = read("apps/mesh-dashboard/src/styles.css");
-const dark = declarations(block(css, ":root"));
-const light = { ...dark, ...declarations(block(css, '[data-theme="light"]')) };
+const KIT_BLOCK = /\/\* @kit:tokens begin[\s\S]*?@kit:tokens end \*\//;
+// The console names its surfaces, lines and text after the kit's roles (--panel is var(--k-surface)), so a name is resolved through the
+// generated kit block as well as through the console's own two blocks: the kit's dark values, then the console's own dark ones, and in
+// light the kit's light values and then the console's own light ones over them.
+const kitText = KIT_BLOCK.exec(css)![0];
+const own = css.replace(KIT_BLOCK, "");
+const dark = { ...declarations(block(kitText, ":root")), ...declarations(block(own, ":root")) };
+const light = { ...dark, ...declarations(block(kitText, '[data-theme="light"]')), ...declarations(block(own, '[data-theme="light"]')) };
 const brand = (() => {
   const text = read("brand/tokens.css");
   const lightBrand = declarations(block(text, ":root"));
@@ -81,6 +91,8 @@ function colour(theme: Record<string, string>, name: string): Rgb {
   assert.ok(value !== undefined, `${name} is defined`);
   return toRgb(value);
 }
+/** The six-digit hex a name resolves to, lower case. */
+const hex = (theme: Record<string, string>, name: string): string => `#${colour(theme, name).map((n) => n.toString(16).padStart(2, "0")).join("")}`;
 
 for (const [name, theme] of [["dark", dark], ["light", light]] as const) {
   test(`${name}: text, links and control edges clear WCAG on every surface`, () => {
@@ -113,18 +125,29 @@ for (const [name, theme] of [["dark", dark], ["light", light]] as const) {
 }
 
 test("the console shares its neutrals with the brand: paper, panel, ink and line", () => {
-  assert.equal(light["--bg-2"], brand.light["--curule-paper"], "the light sidebar is the brand paper");
-  assert.equal(light["--panel"], brand.light["--curule-panel"]);
-  assert.equal(light["--text"], brand.light["--curule-ink"]);
-  assert.equal(light["--muted"], brand.light["--curule-muted"]);
-  assert.equal(light["--line"], brand.light["--curule-line"]);
-  assert.equal(dark["--bg"], brand.dark["--curule-paper"], "the dark ground is the brand's dark surface");
-  assert.equal(dark["--panel"], brand.dark["--curule-panel"]);
-  assert.equal(dark["--text"], brand.dark["--curule-ink"]);
-  assert.equal(dark["--line"], brand.dark["--curule-line"]);
-  assert.equal(dark["--accent"], brand.dark["--curule-blue"], "the dark accent is the brand blue");
+  assert.equal(hex(light, "--bg-2"), brand.light["--curule-paper"], "the light sidebar is the brand paper");
+  assert.equal(hex(light, "--panel"), brand.light["--curule-panel"]);
+  assert.equal(hex(light, "--text"), brand.light["--curule-ink"]);
+  assert.equal(hex(light, "--muted"), brand.light["--curule-muted"]);
+  assert.equal(hex(light, "--line"), brand.light["--curule-line"]);
+  assert.equal(hex(dark, "--bg"), brand.dark["--curule-paper"], "the dark ground is the brand's dark surface");
+  assert.equal(hex(dark, "--panel"), brand.dark["--curule-panel"]);
+  assert.equal(hex(dark, "--text"), brand.dark["--curule-ink"]);
+  assert.equal(hex(dark, "--line"), brand.dark["--curule-line"]);
+  assert.equal(hex(dark, "--accent"), brand.dark["--curule-blue"], "the dark accent is the brand blue");
   // The light accent is the brand blue taken down a notch, because as text on its own tint the brand blue itself is 3.9:1.
   assert.ok(contrast(colour(light, "--accent"), toRgb(brand.light["--curule-blue"]!)) < 1.3, "close to the brand blue");
+});
+
+test("the browser's own chrome takes the colour of the top bar, in each theme", () => {
+  // index.html cannot read the stylesheet before it loads, so it carries the two colours; they are --bg-2, the ground of the frame.
+  const page = read("apps/mesh-dashboard/index.html");
+  assert.match(page, /<meta name="theme-color" content="#[0-9a-f]{6}" \/>/i, "a theme-color meta is in the head");
+  const bootstrap = /theme === "light" \? "(#[0-9a-f]{6})" : "(#[0-9a-f]{6})"/i.exec(page);
+  assert.ok(bootstrap, "the pre-paint script sets it from the theme");
+  assert.equal(bootstrap![1]!.toLowerCase(), hex(light, "--bg-2"), "light");
+  assert.equal(bootstrap![2]!.toLowerCase(), hex(dark, "--bg-2"), "dark");
+  assert.ok(page.includes(`content="${hex(dark, "--bg-2")}"`), "the dark colour is the one written in the meta, before the script runs");
 });
 
 /** Every stylesheet under the console's source, so a new one is covered the day it is added. */
@@ -134,8 +157,6 @@ function stylesheets(dir: string): string[] {
     return e.isDirectory() ? stylesheets(rel) : e.name.endsWith(".css") ? [rel] : [];
   });
 }
-
-const KIT_BLOCK = /\/\* @kit:tokens begin[\s\S]*?@kit:tokens end \*\//;
 
 test("no colour literal appears in the console's stylesheets outside the token blocks", () => {
   const files = stylesheets("apps/mesh-dashboard/src");

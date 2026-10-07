@@ -1,10 +1,22 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import type { ButtonHTMLAttributes, InputHTMLAttributes, KeyboardEvent as ReactKeyboardEvent, ReactNode, RefObject, SelectHTMLAttributes, TextareaHTMLAttributes } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import type { ButtonHTMLAttributes, CSSProperties, InputHTMLAttributes, KeyboardEvent as ReactKeyboardEvent, ReactNode, RefObject, SelectHTMLAttributes, TextareaHTMLAttributes } from "react";
 import { ago, localTime, opsSummary, outcomeOf, plainEvent, plainLifecycle, plainReason, pillCls, zoneLabel, OUTCOME_META, STEP_PLAIN, type OutcomeInput } from "./format";
 import { evClass, evSeverity, EventSummary } from "./events";
 import type { NameOf } from "./eventmodel";
 import { Icon, type IconName } from "./icons";
 import type { TimelineEvent, TurnStep } from "./store";
+import { Kbd } from "./ui/kbd";
+import { Tooltip } from "./ui/tooltip";
+import { useScrolls } from "./ui/scroll-stop";
+
+/* The kit's smaller primitives live in ui/ and are exported from here, so a view imports every primitive from one place and
+   the gallery (kit.tsx) and its test read one list. */
+export { Kbd, isMac } from "./ui/kbd";
+export { Tooltip } from "./ui/tooltip";
+export { Checkbox, Radio, Switch, Field } from "./ui/controls";
+export { Skeleton, SkeletonText, Progress } from "./ui/feedback";
+export { Sparkline, Ring } from "./ui/charts";
+export { Stat } from "./ui/stat";
 
 /**
  * The Curule logo: the name drawn as strokes, its first letter the mark (a ring held open, with one seat filled at the end of the arc). The letters take the
@@ -169,6 +181,8 @@ export function rowKey<T extends Element = HTMLElement>(open: () => void): (e: R
   };
 }
 
+/** A status in words, from the strings the API gives (running, ok, waiting, blocked, failed), as a badge (styles.css "badges"). `running`
+ *  pulses its dot; `pulse` makes any other do the same. For a turn use OutcomePill: it says what the turn produced. */
 export function StatusPill({ status, pulse }: { status: string; pulse?: boolean }): React.JSX.Element {
   const map: Record<string, string> = { running: "awakened", ok: "completed", waiting: "waiting", blocked: "failed", failed: "failed" };
   return (
@@ -187,6 +201,7 @@ export function OutcomePill({ step }: { step: OutcomeInput }): React.JSX.Element
   return <span className={`otag ${meta.cls}`} title={meta.hint}>{meta.label}</span>;
 }
 
+/** An agent's lifecycle (IDLE, WORKING, WAITING, ...) in plain words, as a badge; `pulse` is for the one that is live right now. */
 export function LifecyclePill({ lifecycle, pulse }: { lifecycle: string; pulse?: boolean }): React.JSX.Element {
   return (
     <span className={`pill ${pillCls(lifecycle)}${pulse ? " running-pulse" : ""}`}>
@@ -229,6 +244,8 @@ export function EventRow({ e, onOpen, nameOf }: { e: TimelineEvent; onOpen: (seq
   );
 }
 
+/** One turn as a row: who, why, when, what it did, and its outcome at the end. The whole row opens the step; Enter and Space do too.
+ *  States: default, hover, focus-visible. */
 export function StepMini({ s, onOpen }: { s: TurnStep; onOpen: (turnId: string) => void }): React.JSX.Element {
   const open = () => onOpen(s.turnId);
   return (
@@ -243,10 +260,10 @@ export function StepMini({ s, onOpen }: { s: TurnStep; onOpen: (turnId: string) 
   );
 }
 
-/** The one avatar primitive. `color` is a CSS color or token reference; the
- *  tint is derived in CSS (color-mix) so token refs work and both themes flip. */
-export function AgentAvatar({ id, color, size }: { id: string; color?: string; size?: "sm" }): React.JSX.Element {
-  const cls = `avatar${size === "sm" ? " sm" : ""}${color ? " tinted" : ""}`;
+/** The one avatar primitive: the seat's letter on its role colour (30px; `sm` 26, `lg` 40). `color` is a CSS color or token
+ *  reference; the tint is derived in CSS (color-mix) so token refs work and both themes flip. */
+export function AgentAvatar({ id, color, size }: { id: string; color?: string; size?: "sm" | "lg" }): React.JSX.Element {
+  const cls = `avatar${size ? ` ${size}` : ""}${color ? " tinted" : ""}`;
   return (
     <span className={cls} style={color ? ({ "--tint": color } as React.CSSProperties) : undefined}>
       {((id || "?")[0].toUpperCase())}
@@ -255,25 +272,26 @@ export function AgentAvatar({ id, color, size }: { id: string; color?: string; s
 }
 
 /* ---------------- layout & control primitives ----------------
-   Every variant below maps to a rule that already exists in styles.css or
-   designer/designer.css; the line refs are load-bearing, keep them honest.
-   The CSS is element-scoped (button.small, input.txt), so these MUST render
-   the real element — a styled <div role="button"> would render unstyled. */
+   Every variant below maps to a rule in styles.css (the sections are named for the primitives). The CSS is element-scoped
+   (button.small, input.txt), so these MUST render the real element: a styled <div role="button"> would render unstyled. */
 
-/** button.primary (styles.css:449) · button.soft (129) · button.small (451)
- *  · button.ghost (103) · .banner-act (469) · linklike (designer.css:189).
- *  `danger` only has rules paired with soft/small (131, 453), so the type
- *  forbids it elsewhere rather than silently rendering an inert class. */
-type BtnBase = Omit<ButtonHTMLAttributes<HTMLButtonElement>, "className"> & { icon?: IconName };
+/** The shapes of a button, all real <button>s whose class is the variant (styles.css "buttons"):
+ *  primary (the one thing to do) · soft (secondary) · small (a row action) · ghost (no ground until pointed at) ·
+ *  banner-act (the action of a Banner) · linklike (a link that does something).
+ *  `danger` is a tone: red text on soft and small, the red fill on primary (the confirmation of a destructive act).
+ *  `loading` is "working": aria-busy, a spinner in place of the icon, the label stays, and a press does nothing until it ends.
+ *  `size="lg"` is the 44px one for a form's one button.
+ *  States: default, hover, pressed, focus-visible, disabled, loading. */
+type BtnBase = Omit<ButtonHTMLAttributes<HTMLButtonElement>, "className"> & { icon?: IconName; loading?: boolean; size?: "lg" };
 type BtnProps =
-  | (BtnBase & { variant: "soft" | "small"; danger?: boolean; extra?: string })
-  | (BtnBase & { variant: "primary" | "ghost" | "linklike" | "banner-act"; danger?: never; extra?: string });
+  | (BtnBase & { variant: "primary" | "soft" | "small"; danger?: boolean; extra?: string })
+  | (BtnBase & { variant: "ghost" | "linklike" | "banner-act"; danger?: never; extra?: string });
 
 /** `icon` draws a leading glyph from the console's icon set; the label still carries the name, so the icon is decoration. */
-export function Button({ variant, danger, extra, type, icon, children, ...rest }: BtnProps): React.JSX.Element {
-  const cls = `${variant}${danger ? " danger" : ""}${extra ? ` ${extra}` : ""}`;
+export function Button({ variant, danger, extra, size, loading, type, icon, children, onClick, ...rest }: BtnProps): React.JSX.Element {
+  const cls = `${variant}${danger ? " danger" : ""}${size ? ` ${size}` : ""}${extra ? ` ${extra}` : ""}`;
   return (
-    <button type={type ?? "button"} className={cls} {...rest}>
+    <button type={type ?? "button"} className={cls} aria-busy={loading || undefined} onClick={loading ? (e) => e.preventDefault() : onClick} {...rest}>
       {icon ? <Icon name={icon} size={variant === "small" || variant === "banner-act" ? 14 : 16} /> : null}
       {children}
     </button>
@@ -281,14 +299,18 @@ export function Button({ variant, danger, extra, type, icon, children, ...rest }
 }
 
 /** A square, icon-only button. The icon is decoration and `label` is the name, so the control is announced for what it
- *  does. `pressed` is for a toggle (theme). 36px square: a full pointer target where a labelled button would not fit. */
-export function IconButton({ icon, label, pressed, onClick, id, title }: {
-  icon: IconName; label: string; pressed?: boolean; onClick: () => void; id?: string; title?: string;
+ *  does; a tooltip says it to the pointer too (`title` is the longer wording when the label is not enough, `keys` the shortcut).
+ *  `pressed` is for a toggle (theme). 36px square (28 with `size="sm"`, 44 on a phone): a full pointer target where a labelled
+ *  button would not fit. States: default, hover, pressed, focus-visible, selected (`pressed`), disabled. */
+export function IconButton({ icon, label, pressed, onClick, id, title, keys, size, disabled, extra }: {
+  icon: IconName; label: string; pressed?: boolean; onClick: () => void; id?: string; title?: string; keys?: string; size?: "sm"; disabled?: boolean; extra?: string;
 }): React.JSX.Element {
   return (
-    <button type="button" id={id} className="icon-btn" aria-label={label} title={title ?? label} aria-pressed={pressed} onClick={onClick}>
-      <Icon name={icon} size={18} />
-    </button>
+    <Tooltip content={title ?? label} keys={keys}>
+      <button type="button" id={id} className={`icon-btn${size ? ` ${size}` : ""}${extra ? ` ${extra}` : ""}`} aria-label={label} aria-pressed={pressed} disabled={disabled} onClick={onClick}>
+        <Icon name={icon} size={size === "sm" ? 16 : 18} />
+      </button>
+    </Tooltip>
   );
 }
 
@@ -308,15 +330,25 @@ export type MenuItem = {
   icon?: IconName;
   /** Draw a divider above this row: a destructive action is set apart from the ordinary ones. */
   separated?: boolean;
+  /** The shortcut that does the same thing, as a chord ("mod+k"), drawn as keys at the end of the row. */
+  hint?: string;
 };
 
-export function Menu({ id, label, title, items, align = "right", placement = "bottom", extra }: {
+/** A button that opens a panel of actions, drawn at 180ms under (or over, `placement="top"`) its trigger. The panel is `role="menu"` and
+ *  the trigger carries `aria-haspopup` and `aria-expanded`. Opened by a person it takes focus on its first item; the arrow keys, Home
+ *  and End move, Escape closes and puts focus back on the trigger, and so does choosing a row. Tab leaves it and it closes behind you.
+ *  States of a row: default, hover (the quiet ground), keyboard focus and pressed (the selection's ground, with an edge), `danger` (red,
+ *  set apart by `separated`). */
+export function Menu({ id, label, title, items, align = "right", placement = "bottom", extra, defaultOpen }: {
   id?: string; label: ReactNode; title?: string; items: MenuItem[]; align?: "left" | "right";
   /** Which side of the trigger the panel opens on. A trigger at the foot of the screen opens upward. */
   placement?: "bottom" | "top";
   extra?: string;
+  /** Starts open (the gallery draws it so): the keyboard is not pulled into a menu the person did not open. */
+  defaultOpen?: boolean;
 }): React.JSX.Element {
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(!!defaultOpen);
+  const byPerson = useRef(false);
   const wrap = useRef<HTMLDivElement | null>(null);
   const btn = useRef<HTMLButtonElement | null>(null);
 
@@ -333,10 +365,10 @@ export function Menu({ id, label, title, items, align = "right", placement = "bo
 
   // A menu you have to tab into is a menu the keyboard cannot use.
   useEffect(() => {
-    if (open) wrap.current?.querySelector<HTMLButtonElement>('[role="menuitem"]')?.focus();
+    if (open && byPerson.current) wrap.current?.querySelector<HTMLButtonElement>('[role="menuitem"]')?.focus();
   }, [open]);
 
-  const close = (restore: boolean) => { setOpen(false); if (restore) btn.current?.focus(); };
+  const close = (restore: boolean) => { setOpen(false); byPerson.current = false; if (restore) btn.current?.focus(); };
 
   const onKeyDown = (e: ReactKeyboardEvent<HTMLDivElement>) => {
     if (e.key === "Escape") { e.stopPropagation(); close(true); return; }
@@ -364,7 +396,7 @@ export function Menu({ id, label, title, items, align = "right", placement = "bo
   return (
     <div className="menu-wrap" ref={wrap} onKeyDown={onKeyDown} onBlur={onBlur}>
       <button ref={btn} id={id} type="button" className={`soft menu-btn${extra ? ` ${extra}` : ""}`} title={title} aria-label={title}
-        aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen(!open)}>{label}</button>
+        aria-haspopup="menu" aria-expanded={open} onClick={() => { byPerson.current = !open; setOpen(!open); }}>{label}</button>
       {open ? (
         <div className={`menu-panel ${align} ${placement}`} role="menu">
           {items.map((it, i) => (
@@ -375,6 +407,7 @@ export function Menu({ id, label, title, items, align = "right", placement = "bo
               onClick={() => { close(true); it.onClick(); }}>
               {it.icon ? <Icon name={it.icon} /> : null}
               {it.label}
+              {it.hint ? <Kbd keys={it.hint} /> : null}
             </button>
           ))}
         </div>
@@ -383,52 +416,64 @@ export function Menu({ id, label, title, items, align = "right", placement = "bo
   );
 }
 
-/** .card (styles.css:155) with its `.card h3` header (156). `variant` is a
- *  free-form append for the card-scoped rules that already exist — kpi (157),
- *  graph-wrap (213), esc-raw (275), pulse (330) and the ms-* cards in
- *  designer.css. Grep before inventing one. */
-export function Card({ title, actions, variant, style, children }: {
-  title?: ReactNode; actions?: ReactNode; variant?: string;
+/** A card (styles.css "surfaces"): the page's rung 1, 14px radius, a hairline and a short shadow. `title` is its heading, `meta` what it is
+ *  about or how many at the end of the heading row, `actions` the buttons that belong to it (beside the heading, not inside it, so a
+ *  screen reader does not read them as part of its name). `interactive` is a card that can be pressed: rung 2 on hover. `variant` is
+ *  a free-form append for the card-scoped rules that already exist (graph-wrap, esc-raw, the ms-* cards); grep before inventing one.
+ *  States: default, hover and pressed when interactive, focus-visible when it is a button or a link. */
+export function Card({ title, meta, actions, interactive, variant, style, children }: {
+  title?: ReactNode; meta?: ReactNode; actions?: ReactNode; interactive?: boolean; variant?: string;
   style?: React.CSSProperties; children?: ReactNode;
 }): React.JSX.Element {
   return (
-    <div className={`card${variant ? ` ${variant}` : ""}`} style={style}>
-      {title != null ? <h3>{title}{actions ? <span className="page-actions">{actions}</span> : null}</h3> : null}
+    <div className={`card${interactive ? " interactive" : ""}${variant ? ` ${variant}` : ""}`} style={style}>
+      {title != null || actions || meta ? (
+        <div className="card-head">
+          {title != null ? <h3>{title}</h3> : null}
+          {meta ? <span className="card-meta">{meta}</span> : null}
+          {actions ? <div className="card-acts">{actions}</div> : null}
+        </div>
+      ) : null}
       {children}
     </div>
   );
 }
 
-/** input.txt / input.search (styles.css:235,239). `mono` is the shared
- *  font utility at 191, not a form-specific class. */
+/** input.txt / input.search (styles.css "fields"). A text field's edge is the one that clears 3:1; focus turns it to the accent with a ring;
+ *  `aria-invalid` turns it red. `mono` is for an id, a path or a number a person types (13px mono), not for words. Give it a name:
+ *  wrap it in a Field (label, hint, error wired for you) or pass an aria-label.
+ *  States: default, hover, focus, disabled, invalid. */
 export function Input({ search, mono, extra, ...rest }: Omit<InputHTMLAttributes<HTMLInputElement>, "className"> & { search?: boolean; mono?: boolean; extra?: string }): React.JSX.Element {
   return <input className={`${search ? "search" : "txt"}${mono ? " mono" : ""}${extra ? ` ${extra}` : ""}`} {...rest} />;
 }
 
-/** textarea.txt (styles.css:235). */
-export function TextArea({ mono, ...rest }: Omit<TextareaHTMLAttributes<HTMLTextAreaElement>, "className"> & { mono?: boolean }): React.JSX.Element {
-  return <textarea className={`txt${mono ? " mono" : ""}`} {...rest} />;
+/** textarea.txt (styles.css "fields"): the same states as Input; it grows by dragging its corner, not by itself. */
+export function TextArea({ mono, extra, ...rest }: Omit<TextareaHTMLAttributes<HTMLTextAreaElement>, "className"> & { mono?: boolean; extra?: string }): React.JSX.Element {
+  return <textarea className={`txt${mono ? " mono" : ""}${extra ? ` ${extra}` : ""}`} {...rest} />;
 }
 
-/** select.sel (styles.css:235). */
-export function Select(props: Omit<SelectHTMLAttributes<HTMLSelectElement>, "className">): React.JSX.Element {
-  return <select className="sel" {...props} />;
+/** select.sel (styles.css "fields"): the native control with the console's own caret; the same states as Input. */
+export function Select({ extra, ...rest }: Omit<SelectHTMLAttributes<HTMLSelectElement>, "className"> & { extra?: string }): React.JSX.Element {
+  return <select className={`sel${extra ? ` ${extra}` : ""}`} {...rest} />;
 }
 
-/** The literal set of .pill tone rules (styles.css:167-179). Anything outside
- *  it renders an unstyled pill, so the union is the guard. */
+/** The tones a .pill has a rule for (styles.css "badges"). The first row is a status in words (ok, warn, bad, info), the accent is
+ *  the selection's own colour, neutral is the quiet one; the rest are the agent lifecycle's names and fold into those. Anything
+ *  outside the set renders an unstyled pill, so the union is the guard. */
 export type PillTone =
+  | "neutral" | "accent" | "ok" | "warn" | "bad" | "info"
   | "idle" | "thinking" | "working" | "awakened" | "observing" | "requesting"
   | "reviewing" | "waiting" | "blocked" | "failed" | "suspended" | "completed" | "starting";
 
-/** Raw-tone pill. Prefer StatusPill / LifecyclePill / OutcomePill when the
- *  tone is derived from domain state — this is for the literal call sites. */
-export function Pill({ tone, pulse, children }: { tone: PillTone; pulse?: boolean; children: ReactNode }): React.JSX.Element {
-  return <span className={`pill ${tone}${pulse ? " running-pulse" : ""}`}>{children}</span>;
+/** A badge: a word with a state, 22px, a pill, a 6px dot that says "state" in shape as well as colour. `pulse` is for a live one.
+ *  Prefer StatusPill / LifecyclePill / OutcomePill when the tone is derived from domain state: this is for the literal call sites.
+ *  `dot={false}` drops the dot where the word is enough. */
+export function Pill({ tone, pulse, dot = true, children }: { tone: PillTone; pulse?: boolean; dot?: boolean; children: ReactNode }): React.JSX.Element {
+  return <span className={`pill ${tone}${pulse ? " running-pulse" : ""}${dot ? "" : " no-dot"}`}>{children}</span>;
 }
 
-/** .chip (styles.css:183) + .chip.hot (184) / .chip.mono (288) / .chip.warn.
- *  Renders a <button> when clickable so keyboard users get it for free. */
+/** A tag: a capability, a status word, an id, 22px and quiet. `hot` is the selection's colour, `warn` the plan gate's, `mono` for an id or
+ *  a path (words are set in the sans). Renders a <button> when clickable so keyboard users get it for free. */
 export function Chip({ hot, mono, warn, onClick, title, style, children }: {
   hot?: boolean; mono?: boolean; warn?: boolean; onClick?: () => void; title?: string;
   style?: React.CSSProperties; children: ReactNode;
@@ -438,9 +483,10 @@ export function Chip({ hot, mono, warn, onClick, title, style, children }: {
   return <span className={cls} title={title} style={style}>{children}</span>;
 }
 
-/** .tabs / .tab-btn / .tab-n (styles.css:579-586). One tab vocabulary for every
- *  drawer: roving tabindex + arrow keys, so the strip behaves like a real
- *  tablist instead of a row of buttons that happen to carry role="tab". */
+/** Tabs (styles.css "tabs"). One tab vocabulary for every drawer and page: roving tabindex + arrow keys, so the strip behaves like
+ *  a real tablist instead of a row of buttons that happen to carry role="tab". A 2px line in the accent slides under the selected
+ *  tab (180ms); `variant="segmented"` is a trough with the selected tab raised out of it, the same slide at 120ms.
+ *  States: default, hover, selected, focus-visible; a `badge` is a count (`badgeHot` when it is news). */
 export interface TabDef {
   id: string;
   label: string;
@@ -449,9 +495,31 @@ export interface TabDef {
   badgeHot?: boolean;
 }
 
-export function Tabs({ tabs, value, onChange, idPrefix, label }: {
-  tabs: TabDef[]; value: string; onChange: (id: string) => void; idPrefix: string; label?: string;
+/** Tabs with panels (TabPanel), the selected one underlined by a line that slides to it (`variant="segmented"` is the same as a thumb in
+ *  a trough). One tab stop: the arrow keys, Home and End move the selection and the focus together. A count on a tab is measured, so
+ *  the line follows it when it widens. Choosing one of a few with no panel is a Segmented. States: default, hover, selected, focus-visible. */
+export function Tabs({ tabs, value, onChange, idPrefix, label, variant }: {
+  tabs: TabDef[]; value: string; onChange: (id: string) => void; idPrefix: string; label?: string; variant?: "line" | "segmented";
 }): React.JSX.Element {
+  const list = useRef<HTMLDivElement | null>(null);
+  const [ink, setInk] = useState<{ x: number; w: number } | null>(null);
+  const segmented = variant === "segmented";
+  // The indicator is measured from the selected button, so a count that widens a tab moves it with it. A layout effect: the line is
+  // placed before the first paint, and a tab strip that reflows (fonts arriving, a resize) is measured again.
+  const sig = tabs.map((t) => `${t.id}:${String(t.badge ?? "")}`).join("|");
+  useLayoutEffect(() => {
+    const el = list.current;
+    if (!el) return;
+    const measure = (): void => {
+      const on = el.querySelector<HTMLElement>('[role="tab"][aria-selected="true"]');
+      setInk(on ? { x: on.offsetLeft, w: on.offsetWidth } : null);
+    };
+    measure();
+    if (typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [value, sig]);
   const move = (delta: number) => {
     const i = tabs.findIndex((t) => t.id === value);
     const next = tabs[(i + delta + tabs.length) % tabs.length];
@@ -467,7 +535,14 @@ export function Tabs({ tabs, value, onChange, idPrefix, label }: {
     else if (e.key === "End") { e.preventDefault(); onChange(tabs[tabs.length - 1].id); }
   };
   return (
-    <div className="tabs" role="tablist" aria-label={label}>
+    <div
+      ref={list}
+      className={segmented ? "seg" : "tabs"}
+      role="tablist"
+      aria-label={label}
+      data-ink={ink ? "" : undefined}
+      style={ink ? ({ "--ink-x": `${ink.x}px`, "--ink-w": `${ink.w}px` } as CSSProperties) : undefined}
+    >
       {tabs.map((t) => (
         <button
           key={t.id}
@@ -477,7 +552,7 @@ export function Tabs({ tabs, value, onChange, idPrefix, label }: {
           aria-selected={t.id === value}
           aria-controls={`${idPrefix}-panel-${t.id}`}
           tabIndex={t.id === value ? 0 : -1}
-          className={`tab-btn${t.id === value ? " on" : ""}`}
+          className={segmented ? undefined : `tab-btn${t.id === value ? " on" : ""}`}
           title={t.hint}
           onClick={() => onChange(t.id)}
           onKeyDown={onKey}
@@ -485,6 +560,21 @@ export function Tabs({ tabs, value, onChange, idPrefix, label }: {
           {t.label}
           {t.badge != null ? <em className={`tab-n${t.badgeHot ? " hot" : ""}`}>{t.badge}</em> : null}
         </button>
+      ))}
+      {ink ? <span className="tabs-ink" aria-hidden="true" /> : null}
+    </div>
+  );
+}
+
+/** One choice of a few, always visible, as buttons that carry `aria-pressed` (a filter, a range, a view mode). For panels use Tabs.
+ *  The chosen one is raised out of a trough. States: default, hover, pressed (chosen), focus-visible. */
+export function Segmented<T extends string>({ options, value, onChange, label }: {
+  options: ReadonlyArray<{ id: T; label: ReactNode; hint?: string }>; value: T; onChange: (id: T) => void; label: string;
+}): React.JSX.Element {
+  return (
+    <div className="seg" role="group" aria-label={label}>
+      {options.map((o) => (
+        <button key={o.id} type="button" aria-pressed={o.id === value} title={o.hint} onClick={() => onChange(o.id)}>{o.label}</button>
       ))}
     </div>
   );
@@ -502,7 +592,7 @@ export function TabPanel({ idPrefix, id, children }: { idPrefix: string; id: str
 /** The one failed-to-load state. Views used to swallow fetch errors and then
  *  render their empty state, which reads as "the mesh has nothing" when the
  *  truth is "the console never heard back" — an operator cannot tell a quiet
- *  mesh from a dead one. `.empty` (styles.css:221) is the shared shell. */
+ *  mesh from a dead one. `.empty` (styles.css "empty, error and loading") is the shared shell. */
 export function ErrorState({ what, detail, onRetry }: { what: string; detail?: string; onRetry?: () => void }): React.JSX.Element {
   return (
     <div className="empty bad" role="alert">
@@ -612,93 +702,160 @@ export interface ConfirmRequest {
  */
 export type ConfirmFn = (req: ConfirmRequest) => Promise<string | null>;
 
+/**
+ * A dialog on rung 4 (styles.css "dialogs"): a blurred scrim, a 20px panel in 180ms, a title row with a hairline, the body, and the
+ * actions at the end on a quieter band. Focus moves in, Tab stays in, Escape and the scrim close it and focus goes back to
+ * what opened it (useDismissable). On a phone it is a sheet at the foot. `onSubmit` makes it a form (Enter submits); `role` is
+ * `alertdialog` when it interrupts to ask. States: open, and what it holds.
+ */
+interface DialogProps {
+  title: ReactNode; children?: ReactNode; actions?: ReactNode; onSubmit?: (e: React.FormEvent<HTMLFormElement>) => void;
+  role?: "dialog" | "alertdialog"; describedBy?: string; labelId?: string;
+}
+
+/** The dialog's panel on its own: the title row, the body and the actions band, with no scrim and no focus handling. Dialog is this
+ *  inside the behaviour; the gallery draws it alone to show it. */
+export function DialogPanel({ title, children, actions, onSubmit, role = "dialog", describedBy, labelId = "dialog-title", panelRef }: DialogProps & { panelRef?: RefObject<HTMLDivElement | null> }): React.JSX.Element {
+  // On a short screen the body scrolls under the title and the actions; a body that scrolls takes a tab stop, so a keyboard can read it.
+  const body = useRef<HTMLDivElement | null>(null);
+  const scrolls = useScrolls(body);
+  return (
+    <div className="confirm" role={role} aria-modal="true" aria-labelledby={labelId} aria-describedby={describedBy} ref={panelRef}>
+      <form onSubmit={onSubmit ?? ((e) => e.preventDefault())}>
+        <header className="dlg-head"><h2 id={labelId}>{title}</h2></header>
+        <div className="dlg-body" ref={body} tabIndex={scrolls ? 0 : undefined}>{children}</div>
+        {actions ? <footer className="dlg-foot confirm-acts">{actions}</footer> : null}
+      </form>
+    </div>
+  );
+}
+
+/** A dialog on a blurred scrim: it arrives in 180ms, keeps Tab inside it, closes on Escape or a click on the scrim, and gives the focus
+ *  back to what had it. The title names it; `actions` are the band at the foot (the one to do is last, and primary). */
+export function Dialog({ onClose, ...panel }: DialogProps & { onClose: () => void }): React.JSX.Element {
+  const ref = useDismissable<HTMLDivElement>(true, onClose);
+  return (
+    <>
+      <div className="confirm-scrim" onClick={onClose} />
+      <DialogPanel {...panel} panelRef={ref} />
+    </>
+  );
+}
+
+/** A question that asks before a move that cannot be undone, or that costs something: a Dialog with a title, the sentences that say what
+ *  happens, and a button that says what it does (not "OK"). `danger` makes the button red; `require` arms it only once a person has
+ *  typed a name (match) or a reason (any text). The answer is the typed text, or null when cancelled. Cancel has the focus unless a
+ *  field does. */
 export function ConfirmDialog({ req, onResolve }: { req: ConfirmRequest; onResolve: (v: string | null) => void }): React.JSX.Element {
   const [text, setText] = useState("");
   const cancel = useCallback(() => onResolve(null), [onResolve]);
-  const ref = useDismissable<HTMLDivElement>(true, cancel);
   const need = req.require;
   // A `match` guard is the point of the dialog, so it is checked exactly: no
   // case folding, only the surrounding whitespace a copy-paste drags along.
   const armed = !need ? true : need.kind === "match" ? text.trim() === need.value : text.trim().length > 0;
   const descId = "confirm-body";
   return (
-    <>
-      <div className="confirm-scrim" onClick={cancel} />
-      <div className="confirm" role="alertdialog" aria-modal="true" aria-labelledby="confirm-title" aria-describedby={req.body?.length ? descId : undefined} ref={ref}>
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            if (armed) onResolve(text.trim());
-          }}
-        >
-          <h2 id="confirm-title">{req.title}</h2>
-          {req.body?.length ? (
-            <div id={descId} className="confirm-body">
-              {req.body.map((p, i) => (
-                <p key={i}>{p}</p>
-              ))}
-            </div>
+    <Dialog
+      title={req.title}
+      role="alertdialog"
+      labelId="confirm-title"
+      describedBy={req.body?.length ? descId : undefined}
+      onClose={cancel}
+      onSubmit={(e) => {
+        e.preventDefault();
+        if (armed) onResolve(text.trim());
+      }}
+      actions={
+        <>
+          <Button variant="soft" onClick={cancel}>
+            {req.cancelLabel ?? "Cancel"}
+          </Button>
+          {/* A destructive confirmation is the red fill: the one place that colour is a button. */}
+          <Button variant="primary" danger={req.danger} type="submit" disabled={!armed}>
+            {req.confirmLabel ?? "Confirm"}
+          </Button>
+        </>
+      }
+    >
+      {req.body?.length ? (
+        <div id={descId} className="confirm-body">
+          {req.body.map((p, i) => (
+            <p key={i}>{p}</p>
+          ))}
+        </div>
+      ) : null}
+      {need ? (
+        <label className="confirm-field">
+          <span>{need.label}</span>
+          {need.kind === "text" && need.multiline ? (
+            <TextArea
+              value={text}
+              onChange={(e) => setText(e.target.value)}
+              /* Enter is a new line here, so confirming from the keyboard is Ctrl or Cmd with it. */
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && (e.ctrlKey || e.metaKey) && armed) {
+                  e.preventDefault();
+                  onResolve(text.trim());
+                }
+              }}
+              placeholder={need.placeholder}
+              rows={9}
+              autoComplete="off"
+              spellCheck={false}
+              mono
+            />
+          ) : (
+            <Input
+              value={text}
+              onChange={(e) => setText(e.target.value)}
+              placeholder={need.kind === "match" ? need.value : need.placeholder}
+              /* The guard is the whole point — never let a password manager or
+                 the browser's own history pre-arm it. */
+              autoComplete="off"
+              spellCheck={false}
+              aria-describedby={need.kind === "match" ? "confirm-hint" : undefined}
+            />
+          )}
+          {need.kind === "match" ? (
+            <small id="confirm-hint" className="muted">
+              {/* Says what is still missing rather than only greying the button:
+                  a disabled control with no reason given is a dead end. */}
+              {armed ? "matches — the action is armed" : `type ${need.value} exactly to continue`}
+            </small>
           ) : null}
-          {need ? (
-            <label className="confirm-field">
-              <span>{need.label}</span>
-              {need.kind === "text" && need.multiline ? (
-                <TextArea
-                  value={text}
-                  onChange={(e) => setText(e.target.value)}
-                  /* Enter is a new line here, so confirming from the keyboard is Ctrl or Cmd with it. */
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" && (e.ctrlKey || e.metaKey) && armed) {
-                      e.preventDefault();
-                      onResolve(text.trim());
-                    }
-                  }}
-                  placeholder={need.placeholder}
-                  rows={9}
-                  autoComplete="off"
-                  spellCheck={false}
-                  mono
-                />
-              ) : (
-                <input
-                  value={text}
-                  onChange={(e) => setText(e.target.value)}
-                  placeholder={need.kind === "match" ? need.value : need.placeholder}
-                  /* The guard is the whole point — never let a password manager or
-                     the browser's own history pre-arm it. */
-                  autoComplete="off"
-                  spellCheck={false}
-                  aria-describedby={need.kind === "match" ? "confirm-hint" : undefined}
-                />
-              )}
-              {need.kind === "match" ? (
-                <small id="confirm-hint" className="muted">
-                  {/* Says what is still missing rather than only greying the button:
-                      a disabled control with no reason given is a dead end. */}
-                  {armed ? "matches — the action is armed" : `type ${need.value} exactly to continue`}
-                </small>
-              ) : null}
-            </label>
-          ) : null}
-          <div className="confirm-acts">
-            <Button variant="soft" onClick={cancel}>
-              {req.cancelLabel ?? "Cancel"}
-            </Button>
-            {/* Split rather than a computed `variant`: `danger` is only legal on
-                the soft/small arms of BtnProps, and a ternary defeats that check. */}
-            {req.danger ? (
-              <Button variant="soft" danger type="submit" disabled={!armed}>
-                {req.confirmLabel ?? "Confirm"}
-              </Button>
-            ) : (
-              <Button variant="primary" type="submit" disabled={!armed}>
-                {req.confirmLabel ?? "Confirm"}
-              </Button>
-            )}
-          </div>
-        </form>
+        </label>
+      ) : null}
+    </Dialog>
+  );
+}
+
+/**
+ * One notice, in the corner: a tone icon, a title, a line of detail, and the one action that answers it. It arrives in 180ms from
+ * below and goes by itself (the store times it). `count` is how many times it fired while it was up. States: info, ok, warn, bad.
+ */
+export function ToastCard({ kind, title, msg, count, action }: { kind?: "ok" | "warn" | "bad" | string; title: ReactNode; msg: ReactNode; count?: number; action?: { label: string; run: () => void } }): React.JSX.Element {
+  return (
+    <div className={`toast ${kind ?? ""}`}>
+      <Icon className="toast-ico" name={kind === "ok" ? "check" : kind === "bad" || kind === "warn" ? "alert" : "info"} size={18} />
+      <div className="toast-body">
+        <b>{title}{count && count > 1 ? <span className="toast-n">×{count}</span> : null}</b>
+        <span className="toast-msg">{msg}</span>
+        {action ? <button type="button" className="toast-act" onClick={action.run}>{action.label}</button> : null}
       </div>
-    </>
+    </div>
+  );
+}
+
+/** The title row of a panel on the right: its name, the close button beside it (not inside the heading, so it is not read as part
+ *  of the name), a hairline, and it stays put while the body scrolls. drawers.tsx's DrawerHeader is this with the store's close. */
+export function DrawerHead({ children, onClose }: { children: ReactNode; onClose: () => void }): React.JSX.Element {
+  return (
+    <header className="drawer-head">
+      <h2 id="drawer-title">{children}</h2>
+      <button type="button" className="close-x" aria-label="Close panel" title="Close (Esc)" onClick={onClose}>
+        <Icon name="x" size={16} />
+      </button>
+    </header>
   );
 }
 
@@ -730,18 +887,23 @@ export function CopyButton({ text, label = "Copy", what, compact, title }: { tex
   const name = what ? `${label} ${what}` : label;
   const icon: IconName = state === "done" ? "check" : state === "fail" ? "alert" : "copy";
   const shown = state === "done" ? "Copied" : state === "fail" ? "Can't copy" : label;
+  // An icon-only button says what it does in a tooltip, and what happened in the same place once it has.
+  const tip = state === "fail" ? "The browser would not allow copying here. Select the text and copy it by hand." : state === "done" ? "Copied" : title ?? (compact ? name : undefined);
+  const button = (
+    <button
+      type="button"
+      className={compact ? "copy-btn compact" : "small copy-btn"}
+      onClick={() => void go()}
+      aria-label={state === "idle" && (compact || what) ? name : undefined}
+      title={compact ? undefined : tip}
+    >
+      <Icon name={icon} size={14} />
+      {compact ? null : <span>{shown}</span>}
+    </button>
+  );
   return (
     <>
-      <button
-        type="button"
-        className={compact ? "copy-btn compact" : "small copy-btn"}
-        onClick={() => void go()}
-        aria-label={state === "idle" && (compact || what) ? name : undefined}
-        title={state === "fail" ? "The browser would not allow copying here. Select the text and copy it by hand." : title ?? (compact ? name : undefined)}
-      >
-        <Icon name={icon} size={14} />
-        {compact ? null : <span>{shown}</span>}
-      </button>
+      {compact ? <Tooltip content={tip}>{button}</Tooltip> : button}
       <span className="sr-only" role="status">{state === "done" ? "Copied" : state === "fail" ? "Could not copy" : ""}</span>
     </>
   );

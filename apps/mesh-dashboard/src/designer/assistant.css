@@ -2,10 +2,7 @@
  * ChatDock is eager (the shell renders it on every view), so this sheet rides the eager chunk; the Designer's own sheets (designer.css,
  * topology.css, inspector.css) load with the lazy Designer view. Tokens only. */
 
-/* A text button that reads as a sentence. It is shared: the Overview and the step views use it, and it used to be defined in the Designer's sheet, which
-   only reached them because this module loads it eagerly. The padding grows the hit area to 24px (WCAG 2.5.8) without moving the baseline. */
-button.linklike { background: none; border: 0; padding: 6px 0; margin-top: calc(var(--s1) - 6px); margin-bottom: -6px; font-size: 13px; color: var(--accent-2); cursor: pointer; text-align: left; }
-button.linklike:hover { text-decoration: underline; }
+/* The text button that reads as a sentence (button.linklike) is a primitive: it is styled in styles.css with the other buttons. */
 
 /* ---------- designer chat ---------- */
 .ms-hint { font-size: 12px; color: var(--muted); }

@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { fmt } from "../format";
 import { Button, ErrorState } from "../components";
-import { CloseX } from "../drawers";
+import { DrawerHeader } from "../drawers";
 import { plainGoal } from "../format";
 import { useMesh } from "../store";
 import "./overview.css";
@@ -39,7 +39,7 @@ export function ReplayDrawer({ goalId }: { goalId: string }): React.JSX.Element 
   const mission = (d?.budgets ?? []).find((b: any) => String(b.key).startsWith("mission:"));
   return (
     <div className="replay">
-      <h2 id="drawer-title">Replay <CloseX /></h2>
+      <DrawerHeader>Replay</DrawerHeader>
       {state.phase === "loading" ? <p className="muted" role="status">Rebuilding the mission from its event log. This can take a while on a long run.</p> : null}
       {state.phase === "error" ? <ErrorState what="the replay" detail={state.why} onRetry={() => setAttempt((n) => n + 1)} /> : null}
       {d ? (
