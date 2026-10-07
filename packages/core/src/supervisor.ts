@@ -9204,7 +9204,7 @@ export class Supervisor {
         // figure the turn has: cronlite's twentieth run ended its mission under a developer turn whose backend the shutdown
         // tore down, 24,497 tokens in, and the ledger, the end-of-run report and the console's cost view recorded none of
         // them. It is a lower bound (the call in flight when the stop came is not in it), and it is said so.
-        const streamed = usage === undefined ? this.liveTurnTokens.get(turnId) : undefined;
+        const streamed = this.liveTurnTokens.get(turnId);
         // The operator asked for this ending (`interruptTurn`). Whatever the
         // runtime's abort came back as — its own `InterruptedTurnError`, the
         // forced settle's AbortError, a timeout the stop raced — the cause is
@@ -9254,6 +9254,9 @@ export class Supervisor {
           // failure ladder) but says what actually stopped it. An operator stop
           // says so, with the operator's reason.
           detail: (operatorStop ? operatorStopDetail(operatorStop) : shutdownStop ? shutdownStopDetail(msg, this.missionOver()) : (budgetStop ?? msg)).slice(0, 200),
+          // The call's own figure when it reported one; else what the stream had reached; else nothing. A count of 0 is no
+          // measurement (a usage frame sent before the first model call finished), and an unmeasured turn says so by having no
+          // `tokens` at all: an invented 0 reads as "this turn was free".
           ...(usage ? { tokens: usage.total, usage } : streamed !== undefined && streamed > 0 ? { tokens: streamed, partial: true } : {}),
         };
         // Failure handling first, so the note below states what is true AFTER

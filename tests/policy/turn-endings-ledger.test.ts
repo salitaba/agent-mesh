@@ -227,6 +227,17 @@ const ENDINGS: Ending[] = [
     }),
   },
   {
+    name: "backend unreachable after the stream reported a count of 0: nothing was measured, and a zero is not invented",
+    discard: "failed",
+    known: undefined,
+    streaming: true,
+    first: () => ({
+      liveUsage: [{ input: 0, output: 0, total: 0 }],
+      throwKind: "backend_unreachable",
+      throwMessage: "backend unreachable at claude:abc (session torn down)",
+    }),
+  },
+  {
     name: "output.error: the runtime answered with an error AND a usage figure",
     discard: "failed",
     known: 1000,
