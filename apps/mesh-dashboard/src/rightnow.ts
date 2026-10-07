@@ -108,41 +108,59 @@ function forYouLine(forYou: number, crashed: readonly string[], blocked: readonl
   return [attention, trouble(crashed, blocked)].filter(Boolean).join(" ") || "Nothing is waiting for you.";
 }
 
+/** What a line is about, so the page can mark it: a seat in a turn, who is next, who waits, requests open, nobody, and the person. */
+export type RightNowKind = "working" | "queue" | "waiting" | "asked" | "idle" | "you";
+
+export interface RightNowRow {
+  text: string;
+  kind: RightNowKind;
+  /** The seat the line is about when one stands out: the one that has been in its turn the longest. */
+  seat?: string;
+  /** The last line only: something is waiting for the person, so the page marks it. */
+  look?: boolean;
+}
+
 /**
- * The lines to show, or none. Only a mission that is live and moving or resting between turns has a "right now": a paused, parked,
- * delivered or halted one is already said by its headline, and an idle one by what explains it (`idleCause`).
+ * The lines to show, or none, each with what it is about. Only a mission that is live and moving or resting between turns has a
+ * "right now": a paused, parked, delivered or halted one is already said by its headline, and an idle one by what explains it
+ * (`idleCause`).
  */
-export function rightNow(i: RightNowInput): string[] {
+export function rightNowRows(i: RightNowInput): RightNowRow[] {
   if (i.phase !== "running" && i.phase !== "quiet") return [];
   const turns = inTurn(i);
   const waiting = i.agents.filter((a) => String(a.lifecycle).toUpperCase() === "WAITING" && !turns.some((t) => t.id === a.id)).map((a) => a.id);
   const queued = [...new Set(i.queued)].filter((id) => !turns.some((t) => t.id === id));
   const unanswered = i.openRequests !== null && i.openRequests > 0 ? asked(i.openRequests) : "";
-  const lines: string[] = [];
+  const rows: RightNowRow[] = [];
 
   if (turns.length > 0) {
-    lines.push(workingLine(turns));
+    rows.push({ text: workingLine(turns), kind: "working", seat: turns[0]!.id });
     const rest = queued.length
       ? `Next in line: ${some(queued)}.`
       : waiting.length
         ? `${some(waiting)} ${are(waiting.length)} waiting for mail.`
         : "";
     const second = [rest, unanswered].filter(Boolean).join(" ");
-    if (second) lines.push(second);
+    if (second) rows.push({ text: second, kind: queued.length ? "queue" : waiting.length ? "waiting" : "asked" });
   } else {
     // Nobody is in a turn. A seat that is queued is about to be; otherwise nothing will happen until something does, and that is the
     // one thing worth saying plainly, with the two things a person can do about it.
     const everyone = waiting.length > 0 && waiting.length === i.agents.filter((a) => lifecycleOf(a) !== "COMPLETED").length;
-    if (queued.length) lines.push(`Nobody is working this moment. Next in line: ${some(queued)}.`);
+    if (queued.length) rows.push({ text: `Nobody is working this moment. Next in line: ${some(queued)}.`, kind: "queue" });
     else if (waiting.length) {
-      lines.push(`${everyone ? "Everyone is waiting for mail" : `${some(waiting)} ${are(waiting.length)} waiting for mail`}: nothing is queued. If it stays that way, send a message or wake an agent.`);
-    } else lines.push("Nobody is working and nothing is queued. If it stays that way, send a message or wake an agent.");
-    if (unanswered) lines.push(unanswered);
+      rows.push({ text: `${everyone ? "Everyone is waiting for mail" : `${some(waiting)} ${are(waiting.length)} waiting for mail`}: nothing is queued. If it stays that way, send a message or wake an agent.`, kind: "waiting" });
+    } else rows.push({ text: "Nobody is working and nothing is queued. If it stays that way, send a message or wake an agent.", kind: "idle" });
+    if (unanswered) rows.push({ text: unanswered, kind: "asked" });
   }
 
-  lines.push(forYouLine(i.forYou, i.agents.filter((a) => lifecycleOf(a) === "FAILED").map((a) => a.id), i.agents.filter((a) => lifecycleOf(a) === "BLOCKED").map((a) => a.id)));
-  return lines;
+  const crashed = i.agents.filter((a) => lifecycleOf(a) === "FAILED").map((a) => a.id);
+  const blocked = i.agents.filter((a) => lifecycleOf(a) === "BLOCKED").map((a) => a.id);
+  rows.push({ text: forYouLine(i.forYou, crashed, blocked), kind: "you", look: i.forYou > 0 || crashed.length + blocked.length > 0 });
+  return rows;
 }
+
+/** The lines alone: `rightNowRows` without what each is about. */
+export const rightNow = (i: RightNowInput): string[] => rightNowRows(i).map((r) => r.text);
 
 /**
  * The input, read off a `/status` payload. Everything is optional because a server predates some of it, and a missing figure is

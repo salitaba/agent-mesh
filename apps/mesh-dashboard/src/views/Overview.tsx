@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { zoneLabel } from "../format";
 import { useMesh, type View } from "../store";
-import { Button, ErrorState, EventRow, PageHeader, Pill, StepMini } from "../components";
+import { Button, ErrorState, IconTile, PageHeader, Pill, Skeleton } from "../components";
 import { ArtifactDrawer, StepDrawer } from "../drawers";
 import { latestArtifactSeq } from "../files";
 import { CollabCard } from "../collabcard";
@@ -13,7 +12,7 @@ import { useToolApprovals } from "../useToolApprovals";
 import { escalationText, holdsOf } from "../escalation-card";
 import { orderDecisions, toolRequestsBySeat, type LoadState } from "../inbox-model";
 import type { HeroAction, MissionAction } from "../mission";
-import { buildAttention, bufferIsBehind, bySeq, capacityWaits, checksSummary, heroNote, missionRead, standingBlocks, type FixTarget } from "../overview-model";
+import { buildAttention, bufferIsBehind, bySeq, capacityWaits, checkSegments, checksSummary, heroLook, heroNote, missionRead, splitHeadline, standingBlocks, type FixTarget } from "../overview-model";
 import { rightNowInput } from "../rightnow";
 import { HOST_SPEND_CEILING_REASON, liveMissionVerdict, terminalMissionVerdict, verdictText } from "../../../../packages/protocol/src/catalog";
 import { AttentionList } from "./AttentionList";
@@ -22,6 +21,7 @@ import { MissionHero } from "./MissionHero";
 import { Panel } from "./Panel";
 import { ReplayDrawer } from "./ReplayDrawer";
 import { Shipped } from "./Shipped";
+import { EventTimeline, WorkTimeline } from "./Timeline";
 import "./overview.css";
 
 /** How many of the newest events the page asks for when its buffer stops short of the log. */
@@ -154,15 +154,25 @@ export default function Overview(): React.JSX.Element {
   // it: no figure, check or failure about a mission that is not there yet. The skeleton is for a mission on its way, not a stopped one.
   if (!missionRead(status)) {
     const busy = state.phase === "loading";
+    const look = heroLook(state.phase);
     return (
       <div className="ov">
         <PageHeader title="Overview" />
         {serverDown ? (
           <ErrorState what="the overview" detail="The server stopped answering. It may be restarting." onRetry={() => void refreshStatus()} />
         ) : (
-          <section className="ov-hero" aria-busy={busy || undefined} aria-label="Mission status">
-            <p className="ov-headline" role="status">{state.headline}</p>
-            {busy ? <div className="ov-skel" aria-hidden="true"><i className="big" /><i className="mid" /><i className="short" /></div> : null}
+          <section className={`ov-hero ${state.tone} ${state.phase}`} aria-busy={busy || undefined} aria-label="Mission status">
+            <div className="ov-hero-top">
+              <IconTile icon={look.icon} tone={state.tone} size="lg" />
+              <div className="ov-hero-lead">
+                <p className="ov-headline" role="status"><b>{splitHeadline(state.headline).lead}</b>{splitHeadline(state.headline).rest ? <> <span>{splitHeadline(state.headline).rest}</span></> : null}</p>
+              </div>
+            </div>
+            {busy ? (
+              <div className="stat-strip" aria-hidden="true">
+                {[0, 1, 2, 3].map((i) => <div key={i} className="stat-cell ov-skel"><Skeleton w={56} h={11} /><Skeleton w={96} h={24} /><Skeleton w="100%" h={8} /><Skeleton w="60%" h={13} /></div>)}
+              </div>
+            ) : null}
           </section>
         )}
       </div>
@@ -170,6 +180,8 @@ export default function Overview(): React.JSX.Element {
   }
 
   const checks = checksSummary(goal.acceptanceCriteria);
+  const seats: any[] = (status.agents || []).filter((a: any) => a?.id && a.id !== "human");
+  const roleOf = (id: string): string => String(seats.find((a) => a.id === id)?.role ?? "");
   const ledger = (status.budgets || []).find((b: any) => String(b.key).startsWith("mission:") && b.limitKind === "tokens");
   const spend = hostSpend ? { usd: hostSpend.usd, ceilingUsd: hostSpend.ceilingUsd, parked: hostSpend.parked } : null;
   const delivered = goal.status === "COMPLETED";
@@ -227,6 +239,8 @@ export default function Overview(): React.JSX.Element {
         goalText={String(goal.description || "").replace(/\s*\n+\s*/g, " ").trim()}
         note={note}
         checks={checks}
+        marks={checkSegments(goal.acceptanceCriteria)}
+        seats={seats}
         goal={goal}
         tokens={ledger ? { consumed: ledger.consumed ?? 0, limit: ledger.limit ?? 0 } : null}
         events={status.eventCount ?? 0}
@@ -252,9 +266,7 @@ export default function Overview(): React.JSX.Element {
           {stepsErr && !steps.length ? (
             <div className="ov-retry">Could not load recent work. <Button variant="small" icon="refresh" onClick={() => setAttempt((n) => n + 1)}>Try again</Button></div>
           ) : steps.length ? (
-            <div className="steps-mini">
-              {steps.slice(0, 5).map((s) => <StepMini key={s.turnId} s={s} onOpen={(t) => openDrawer(<StepDrawer turnId={t} steps={steps} />)} />)}
-            </div>
+            <WorkTimeline steps={steps.slice(0, 5)} roleOf={roleOf} onOpen={(t) => openDrawer(<StepDrawer turnId={t} steps={steps} />)} />
           ) : stepsLoaded ? (
             <p className="ov-empty">No work yet.</p>
           ) : <p className="ov-empty">Loading recent work.</p>}
@@ -264,15 +276,13 @@ export default function Overview(): React.JSX.Element {
           id="ov-events" className="ov-events" title="Just happened"
           meta={sseState === "reconnecting"
             ? "Live updates paused while reconnecting. This list may be stale."
-            : behind && tailFailed ? "These are older events: the latest could not be loaded." : `Times are in ${zoneLabel()}.`}
+            : behind && tailFailed ? "These are older events: the latest could not be loaded." : undefined}
           actions={<Button variant="small" onClick={() => setView("events")}>All events</Button>}
         >
           {/* The mini-feed hands off to the console rather than opening a drawer over the Overview: the events page is where an
               event can actually be read, and arriving there with it selected keeps the stream in view. */}
           {timeline.length ? (
-            <div className="ev-list">
-              {timeline.slice(-8).reverse().map((e) => <EventRow key={e.seq || e.id} e={e} nameOf={nameOf} onOpen={(s) => openDetail("event", String(s), "events")} />)}
-            </div>
+            <EventTimeline events={timeline.slice(-8).reverse()} nameOf={nameOf} onOpen={(s) => openDetail("event", String(s), "events")} />
           ) : <p className="ov-empty">No events yet.</p>}
         </Panel>
       </div>

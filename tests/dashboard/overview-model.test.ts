@@ -7,18 +7,24 @@ import {
   bufferIsBehind,
   bySeq,
   capacityWaits,
+  checkSegments,
   checksSummary,
   checkView,
+  eventLook,
   evidenceChips,
+  fileIcon,
   filesByStatus,
   goalNeedsItsCard,
+  heroLook,
   heroNote,
   idleCause,
   missionClock,
   missionRead,
   nameOfUri,
+  seatStack,
   shortRef,
   sortFiles,
+  splitHeadline,
   standingBlocks,
   workspaceOf,
   type AttentionInput,
@@ -524,4 +530,98 @@ test("the Overview draws a mission only once the status names its goal; before t
   const s = describeMission(factsFromStatus(starting));
   assert.equal(s.phase, "loading");
   assert.match(s.headline, /starting/);
+});
+
+/* ------------------------------- how the hero looks -------------------------------- */
+
+test("the headline is cut after its first sentence, and says nothing different from mission.ts", () => {
+  assert.deepEqual(splitHeadline("Parked. Nothing runs on its own until you start the mission."), { lead: "Parked.", rest: "Nothing runs on its own until you start the mission." });
+  assert.deepEqual(splitHeadline("3 decisions waiting on you. The mission is paused until they are answered."), { lead: "3 decisions waiting on you.", rest: "The mission is paused until they are answered." });
+  assert.deepEqual(splitHeadline("1 agent working."), { lead: "1 agent working.", rest: "" }, "one sentence is a lead and nothing after it");
+  assert.deepEqual(splitHeadline("  Delivered. Every mandatory check is evidenced.  "), { lead: "Delivered.", rest: "Every mandatory check is evidenced." });
+  assert.deepEqual(splitHeadline("A spend of $50.00 was reached."), { lead: "A spend of $50.00 was reached.", rest: "" }, "a full stop inside a number is not a sentence");
+  assert.deepEqual(splitHeadline(""), { lead: "", rest: "" });
+  const long = `${"word ".repeat(30)}end. And more.`;
+  assert.equal(splitHeadline(long).lead, long, "a first sentence past 80 characters is not a title: the headline stays whole");
+  // Whatever the mission says, the two halves are the same words: nothing is added, dropped or reordered.
+  for (const f of [{}, { goalStatus: "COMPLETED" }, { goalStatus: "ACTIVE", working: 2 }, { goalStatus: "ACTIVE", parked: true }, { goalStatus: "PAUSED" }, { goalStatus: "FAILED" }, { goalStatus: "ESCALATED", blockingDecisions: 2 }]) {
+    const state = describeMission({ ...BASE_FACTS, ...f });
+    const { lead, rest } = splitHeadline(state.headline);
+    assert.equal(rest ? `${lead} ${rest}` : lead, state.headline, JSON.stringify(f));
+  }
+});
+
+const BASE_FACTS: MissionFacts = {
+  hasStatus: true, serverDown: false, projectDown: null, goalStatus: "ACTIVE", parked: false, blockingDecisions: 0, seatHeldDecisions: [], advisoryDecisions: 0,
+  hostCeilingTripped: false, working: 1, waiting: 0, runningSteps: 1, hasHistory: true, startupSeats: 3, goalWritten: true,
+};
+
+test("every phase of the mission has a mark, and only a mission with agents in a turn moves", () => {
+  const phases = ["loading", "offline", "down", "ceiling", "needs-you", "failed", "done", "paused", "parked", "stalled", "quiet", "running"] as const;
+  for (const p of phases) assert.ok(heroLook(p).icon, p);
+  assert.deepEqual(phases.filter((p) => heroLook(p).live), ["running"]);
+  assert.equal(heroLook("done").icon, "check");
+  assert.equal(heroLook("needs-you").icon, "alert");
+  assert.equal(heroLook("failed").icon, "alert");
+  assert.notEqual(heroLook("parked").icon, heroLook("done").icon, "a parked mission and a delivered one do not share a shape");
+});
+
+test("the seats stack in the roster's order with the busy ones lit, and the human is not a seat", () => {
+  const roster = [
+    { id: "human", role: "human", lifecycle: "STARTING" },
+    { id: "pm", role: "product-manager", lifecycle: "WAITING" },
+    { id: "architect", role: "architect", lifecycle: "THINKING" },
+    { id: "qa", role: "qa", lifecycle: "COMPLETED" },
+  ];
+  const s = seatStack(roster);
+  assert.deepEqual(s.shown.map((x) => x.id), ["pm", "architect", "qa"]);
+  assert.deepEqual(s.shown.map((x) => x.working), [false, true, false]);
+  assert.equal(s.more, 0);
+  assert.deepEqual(seatStack(undefined), { shown: [], more: 0 });
+  assert.deepEqual(seatStack([]), { shown: [], more: 0 });
+});
+
+test("a roster too long to stack keeps the seats in a turn in view, in roster order, and counts the rest", () => {
+  const roster = Array.from({ length: 30 }, (_, i) => ({ id: `s${i}`, role: "developer", lifecycle: i === 25 || i === 28 ? "WORKING" : "IDLE" }));
+  const s = seatStack(roster, 7);
+  assert.equal(s.shown.length, 7);
+  assert.equal(s.more, 23);
+  assert.ok(s.shown.some((x) => x.id === "s25" && x.working) && s.shown.some((x) => x.id === "s28" && x.working), "the busy seats are not hidden by the long roster");
+  assert.deepEqual(s.shown.map((x) => x.id), ["s0", "s1", "s2", "s3", "s4", "s25", "s28"], "the rest of the room goes to the seats at the head of the roster");
+  const busy = Array.from({ length: 12 }, (_, i) => ({ id: `b${i}`, role: "qa", lifecycle: "THINKING" }));
+  assert.equal(seatStack(busy, 5).shown.length, 5, "more busy seats than room: still only as many as fit");
+});
+
+test("one segment for each mandatory check, in the goal's order, as the checklist marks them", () => {
+  const criteria = [
+    { id: "a", mandatory: true, status: "EVIDENCED" },
+    { id: "b", mandatory: true, status: "ASSERTED" },
+    { id: "c", mandatory: false, status: "EVIDENCED" },
+    { id: "d", mandatory: true, status: "WAIVED" },
+    { id: "e", mandatory: true, status: "UNSATISFIED" },
+  ];
+  assert.deepEqual(checkSegments(criteria), ["done", "claimed", "skipped", "todo"], "an optional check is not a segment");
+  assert.deepEqual(checkSegments(undefined), []);
+  assert.deepEqual(checkSegments([]), []);
+  // The bar and the figure beside it count the same checks.
+  assert.equal(checkSegments(criteria).filter((m) => m === "done" || m === "skipped").length, checksSummary(criteria).done);
+});
+
+test("a row of the log shows the icon of what happened, and colour only for a fault or a completion", () => {
+  assert.deepEqual(eventLook("message.sent", "notice"), { icon: "message", tone: "neutral" });
+  assert.deepEqual(eventLook("agent.created", "notice"), { icon: "agents", tone: "neutral" });
+  assert.deepEqual(eventLook("artifact.versioned", "notice"), { icon: "files", tone: "neutral" });
+  assert.deepEqual(eventLook("task.completed", "notice"), { icon: "steps", tone: "ok" });
+  assert.deepEqual(eventLook("review.approved", "notice"), { icon: "approve", tone: "ok" });
+  assert.deepEqual(eventLook("patch.merged", "notice"), { icon: "files", tone: "ok" });
+  assert.deepEqual(eventLook("budget.spent", "routine"), { icon: "cost", tone: "neutral" });
+  assert.deepEqual(eventLook("something.new", "notice"), { icon: "dot", tone: "neutral" }, "a kind this build does not know is a dot, not a gap");
+  // A fault is a triangle in the bad tone whatever it is about: a crash is never a quiet icon among the rest.
+  for (const type of ["agent.failed", "message.rejected", "review.rejected", "goal.escalated"]) assert.deepEqual(eventLook(type, "alert"), { icon: "alert", tone: "bad" }, type);
+});
+
+test("a patch is code and every other kind of file is a document", () => {
+  assert.equal(fileIcon("CodePatch"), "code");
+  assert.equal(fileIcon("patch"), "code");
+  for (const t of ["ArchitectureDocument", "ReleasePlan", "ResearchReport", "RequirementsDoc", "", undefined, null]) assert.equal(fileIcon(t), "files", String(t));
 });
