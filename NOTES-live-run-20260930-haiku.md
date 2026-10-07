@@ -6,7 +6,7 @@ with no model or traced to a line. Open items, and the things a fix deliberately
 the fixed build then found eight more (N1–N8), fixed the same way: §8. A fourth run on that build found
 five more (F1–F4, M1), also fixed: §9. The standing loop's runs follow (every four hours to §21, once a day from §22 on, at the operator's request): §10 (G1–G3, G5, G6),
 §11 (H1–H4), §12 (J1, J3, J4), §13 (L1), §14 (L2–L5), §15 (P1–P3), §16 (Q1–Q4), §17 (R1–R4), §19 (T1–T5), §20 (U1–U5, V1),
-§21 (W1–W4), §22 (X1–X4), §23 (Y1–Y3), §24 (Z1–Z4) and §25 (AA1–AA4, AA6, AB1). §18 is not a run: it records the rename to Curule.
+§21 (W1–W4), §22 (X1–X4), §23 (Y1–Y3), §24 (Z1–Z4), §25 (AA1–AA4, AA6, AB1) and §26 (AC1–AC3). §18 is not a run: it records the rename to Curule.
 
 **Naming.** Sections 0 to 17 were written while the product was called Agent Mesh, and they keep that name and the
 `mesh <command>` spelling of its command line. The product is now called **Curule** and its command is `curule`; `mesh` still runs
@@ -2142,3 +2142,99 @@ prompts and the dialog copy (18 and 5): every one now fails a test, but the equi
 - **A fix that adds an `await` to the end of every turn changes the timing of every turn.** AA6's flush was one line in the `finally`, and a test that counts escalation cards saw the order of two background
   paths change. Await only when there is something to wait for, so the common case keeps the timing the rest of the suite was written against.
 - **A report that prints the operator's whole message is a report about the operator.** Nothing was wrong with the criterion; the report only has to say that it exists and where to read it.
+
+## 26. The twentieth run, on the `badc5a5` build: three findings (AC1, AC2, AC3), and two prompt fixes of the last run that did not hold
+
+The sixteenth cycle of the standing loop (the fourth at the daily cadence): the routine fired at 03:19 UTC on 2026-10-07. The same mission, SPEC, mesh config, model and clean
+launch environment, on the branch at `badc5a5`: every fix of §0–§25, the second pass over the console, the account pages and the site, and the fixes after it. Round 1 03:23:55 to
+03:35:07 UTC (the host exited at 03:35:16), round 2 03:40:14 to 03:47:29 (last event 03:48:04, host exited by 03:48:42): 32 turns, 753.4k billed tokens (about $3.29 at list price;
+round 1 449.0k, round 2 304.4k), every turn on `claude-haiku-4-5`, 671 events, no escalation and no failed agent. Round 1 ran headless (`curule run --no-tui`); the reopen went through
+a parked console, and the restart after the kill ran on the same state directory. Against run 19 (35 turns, 762.6k) it cost about the same for three fewer turns. One run, so the
+rates are illustrative.
+
+| When | What | Result |
+|---|---|---|
+| 03:23:53 | `curule run` | five seats start (pm and architect activated) |
+| 03:32:03 | the patch merged (the tech lead approved at 03:31:51.8, took it MERGEABLE at 03:32:01.2 and MERGED at 03:32:03.1) | 11 s after the approval |
+| 03:33:30 | QA's report passed (`quality-verified`); QA had claimed its task at 03:32:20.8 and completed it at 03:33:33.1 | |
+| 03:34:07 | the last of six criteria evidenced (the pm accepted `quality-verified`, `library-contract-met` and `cli-contract-met` in 4 s) | 10 min 14 s after the launch (run 19: 9 min 51 s); 18 turns, 449.0k billed |
+| 03:35:02 | goal met: the developer closed the task it still held, on the watchdog's wake at 03:34:55 | 55 s and a 9.9k-token turn after the last criterion |
+| 03:40:14 | operator reopen: three defects with the output each must give, and 19 numbered checks, **no paragraph telling the seats what to do with them** | four criteria withdrawn and the `operator-feedback-…` one minted; all five seats revived |
+| 03:41:15 | `kill -9` of the host with the architect, the developer and the tech lead one second into their turns | three open turns |
+| 03:41:18 | restart, 3 s after the kill | the three open turns closed as interrupted, seven budget holds released ("abandoned: the process that held it ended before settling it"), recovery wakes for the architect, the developer, the tech lead and QA; the reaper stopped two of the three seat processes at 03:41:21.5 (3892, 3902; 3992 had exited) |
+| 03:43:46 | the developer completed the reopen's task (claimed 03:41:27.8) and asked for review | 2 min 19 s of work |
+| 03:45:01 | the tech lead approved at 03:44:56.5 and the patch merged | 4 s after the approval |
+| 03:46:25 | QA's report passed (`quality-verified`) | the pm accepted the operator criterion at 03:46:39.9 |
+| 03:47:29 | goal met again | **7 min 15 s after the reopen**, 6 min 11 s after the restart (run 19: 8 min 1 s and 6 min 58 s); round 2: 14 turns, 304.4k billed |
+| 03:48:04 | the developer's turn, begun 03:47:05, was stopped by the shutdown 24,497 tokens in | AC1: no spend recorded |
+
+**Quality** (the oracle of §2): round 1 scored 2964/3016 raw (98.3%) and 2963/3007 stratified (98.5%), against run 19's round 1 at 68.1% and 99.0%: the product's own suite was 64/64, the
+CLI probes 23/23. Its 52 failures are three families: **a schedule that can fire is refused as impossible** (`0 0 29-31 6 *`: June has a 29th and a 30th; 42 of the 52), **a month name that contains an L, in a list, is refused as Quartz syntax** (`JUL,7`, `JUL,*/2`; 6 of the 52), and **a value that is not a plain number is
+accepted, read as its leading digits** (`1.5`, `0x10`, `+5` and `1-2-3`, the four rejections the SPEC's grammar implies and does not list and the same four as run 19; 4 of the 52). The refusal of `*` as a list
+item (the defect of thirteen of the fifteen runs §25 counted) did not occur. The reopen quoted the three families, an example with its required output for each, and listed 19 commands with the output
+each must print. The final product scored **3040/3043 raw (99.9%) and 3023/3031 stratified (99.7%)**, its own suite 76/76 (12 regression tests the developer added): the three that remain
+are `3-JUL/1`, `JUN-JUL/4` and `MAR-JUL/3`, a month name containing an L **in a range with a step**, which the operator's two named forms (`JUL,7`, `JUL,*/2`) did not cover and the fix did
+not generalise to. 14 of 32 turns (43.8%, 23.9% of the billed tokens) changed no durable state (run 19: 51.4% and 29.6%).
+
+**Earlier fixes, checked live**:
+
+| Fix | Live |
+|---|---|
+| AA1 | exercised, not refused: seven `mesh_reply` calls, six completed, and the seventh (the pm's, at the end) met a closed bridge after the goal had completed. None was refused for an id |
+| AA2 | held: the reopen's 6,918-character reason is one 286-character line of the run report, "… (+6957 more characters in the criterion)" |
+| AA3 | **did not hold, a seventh run**: the product's `package.json` declares `"license": "MIT"` and `"author": "cronlite contributors"`. The sentence ("the product's licence, author … are not yours to choose") is in the developer's prompt |
+| AA4 | **held, without the paragraph, in substance and not in form**: QA wrote one script of the 19 checks and ran it, and its report covers all 19, grouped under the three defects with the required result and a mark; it does not give each check's printed output as a block of its own (run 19's, which had the paragraph, did). The patch passed them (what the developer ran before asking for review is not in the log), and the product went from 98.3% to 99.9% |
+| AA6 | **not exercised**: no owner was woken for a verdict the ruling seat's turn had already followed up |
+| AB1 | **did not hold in round 1, a sixth run**: QA's verification turn was 11 shell commands, one file read and the report. It called `mesh_artifact_read` **zero times**, so the architecture's constraints (and the RequirementsDoc's numbered rejections) were never opened. Its report ran the developer's 64 tests and six CLI commands and states, with no command, "all CronParseError messages correctly name the offending field and value"; the oracle failed 52 of 3,016 checks |
+| W1 | held: two handover turns billed 10.0k and 9.8k (the developer's at 03:46:52, the pm's at 03:47:03), three rotations |
+| W2 | held: QA claimed at 03:32:20.8 and the claim stood until its report had passed (03:33:30) |
+| B21, B22, M1 | held: three open turns closed as interrupted ("abandoned by server restart"), seven budget holds released, the reopen withdrew the four criteria it named |
+| B23 | **exercised for the eighth time**: at 03:41:21.5, "claude runtime: stopped 2 seat process(es) left running by a mesh process that died (pid 3510): 3892, 3902" |
+| Y1 | **not exercised**: the pm's last turn (03:47:13 to 03:47:37) ran across the goal's completion and its `mesh_reply` and `mesh_done` met a closed bridge (`mesh bus unreachable: fetch failed`), which is not the dead-bridge-then-no-call case the `Stop` hook is for |
+| Z1 to Z4, Y2, Y3, X1 to X4, U1 to U5, T2, T3, T5, R1 to R3, Q1 to Q4, J1, J3, H1, H2, L5, P1, V1 | **not exercised**: nothing here asked for what they guard |
+
+| # | Finding | Now | Where it is pinned |
+|---|---|---|---|
+| AC1 | **A turn the shutdown stopped, whose call had reported no usage, recorded no tokens.** The mission had ended and the host was shutting down when the developer's turn (begun 03:47:05, a rotation's first turn) was stopped at 03:48:04 under a torn-down backend, 24,497 tokens into its stream. `turn.discarded` carried no `tokens`, the seat's note said "(spend unmeasured)", and the ledger, the end-of-run report and the console's cost view counted none of them. The supervisor already keeps the turn's running count (`liveTurnTokens`, in the unit the turn is billed in) | when the stopped call reported nothing, that count is recorded as `tokens` with `partial: true`: it is a lower bound (the call in flight when the stop came is not in it). The seat's note says "having spent at least N tokens"; the event line, the observability summary and the console say "at least N tokens lost". A stop that reports its own usage is unchanged, a stream that had produced nothing records nothing (absent, never an invented 0), and a process killed outright still leaves nothing to record | `tests/policy/turn-endings-ledger.test.ts` (five rows for the endings a shutdown, a timeout and a death make, one of them a stream that had reported a count of 0, and the `partial` assertion), `tests/core/turnlife-unfinished-note.test.ts`, `tests/observability/summarize-coverage.test.ts`, `tests/dashboard/eventline.test.ts`; 8 mutants of the figure's source, the flag and the three renderings: two survived the first pass (a count of 0 recorded as a measurement, and a lookup that repeated a check the next expression already made) and became a ledger row and a deleted line, and every one now fails a test |
+| AC2 | **A seat woken for mail nothing else woke it for was told nothing, and the turn it bought was reported as idle work.** The floor under the wake gates (`STALE_MAIL_MS`, 240 s) said "mail has been waiting unread and nothing you subscribe to woke you for it". QA's was woken at 03:31:55 with two announcements it had not subscribed to and nothing owed (its briefing said "you owe no answers and are waiting on nobody"), wrote a status into its reply text (which nothing reads) and ended with `mesh_done`, the ending that closes a task a seat holds. The turn's own summary was replaced by "⚠ turn only done — no work was produced while the mission has unmet criteria; the watchdog will rotate to another driver", and that line was in the seat's memory for its next four turns (four turns: 29.9k, 13.9k, 38.8k and 13.4k tokens) | the wake lists what is waiting by kind and sender ("2 announcements (INFORM) from pm, tech-lead"), says whether any of it asks something of the seat (an ask, work handed over or an adverse verdict, the operator's mail, anything classed `interrupt`) and, when none does, says so, names `mesh_wait` as the ending that fits ("mesh_done closes a task you hold") and marks the reason `asksNothing`. A turn woken that way that only waited or finished and changed nothing is recorded as "read the mail that had been waiting — none of it asked anything of you" (the seat's own summary follows) with no warning. It still counts as a turn that changed nothing (the watchdog's retry is armed as before), a turn that did work is described by its work, and a floor wake with an ask in its box is judged as before | `tests/scheduler/floor-wake-note.test.ts` (7 tests, one of them a floor wake on a manual clock) and `tests/core/floor-wake-readonly-turn.test.ts` (4: the read turn, the seat's own words, the control without the flag, the control that did work); 12 mutants (the call site, the flag, the four kinds of ask, the sender bound, the announcement label, and the supervisor's flag, warning, model's words and effects test), all killed |
+| AC3 | **QA again ran the developer's suite and a few commands, and the developer fixed the case it was shown and not the rule.** The prose of the last run (AB1) was not read (zero `mesh_artifact_read`), and AA4 had shown what a seat does follow: a numbered list of commands with the output each must print. The reopen of this run named `JUL,7` and `JUL,*/2`; the fix covers them and not `JUN-JUL/4` or `3-JUL/1`. The oracle's four malformed numbers are not in the SPEC's rejection list: the grammar implies them | `roles/qa.md`: with no operator list, QA writes one from the contract before it runs anything, in the operator list's form (numbered commands, each with the output it must print): every rejection and its near-miss, every worked example, every enumeration member, every "every X must Y" sentence, each MUST of the `RequirementsDoc`, each testable constraint of the `ArchitectureDocument`, and the wrong spellings of each kind of value the contract defines (signed, fractional, prefixed, repeated, truncated); run in order in the turn, reported line by line, and a line with no command is NOT TESTED and keeps the report from passing. `roles/developer.md`: a failure, a block or a reopen's check names one instance, and the lines to run before re-versioning are every other place the same rule applies | the sentences, in `tests/config/role-prompts-owner-decisions.test.ts` (15 mutants of them, all killed). **A prompt, so the next run's round 1 is the live check**: whether QA's report is a list with printed outputs, and the oracle's rejection score |
+
+What each does and why is in `docs/protocol.md` (`turn.discarded`'s `partial`), `docs/runtime.md` (the shutdown's spend; the floor wake's note; the list QA writes) and `roles/`; the commit messages carry the evidence.
+
+### Not fixed, and the honest limits
+
+- **AA3 and AB1 are the third and fourth prompt sentences that did not change what a seat did, and AC3 is a fifth.** Both were in the prompts and neither was acted on: the manifest was written as it had been for six runs,
+  and QA never opened the document the sentence points at. AA4's list worked in two runs. AC3 asks QA for a list of its own in that form, and it still begins with reading (the contract, and the two documents). If the
+  next round 1 shows the same report, the lever is in the mesh and not the prompt: put the approved RequirementsDoc's numbered rejections and worked examples into QA's briefing at its verification wake, so the list
+  is handed to it; and for AA3 strip or refuse a manifest's `license` and `author` that no goal, task or operator named. Neither is built.
+- **A floor wake does not say how old the mail is, and a seat acts on mail that events have overtaken.** At 03:46:19 the architect was woken by the floor for mail several minutes old, reviewed the patch (merged at 03:45:01) and
+  sent the developer a REQUEST (28k tokens) to claim and fix the three defects: a request for work that was done. The run report ends with it ("architect → developer (REQUEST) — never answered"). The age is known to the scheduler.
+- **The tech lead created three subtasks for the work the developer already held as one task** (03:26:09 to 03:27:39: "Implement cronlite Parser and Core Library Logic", "… nextRun/nextRuns and CLI", "Create cronlite Test Suite
+  and Package"): nobody picked them up and the run report lists them under LEFT UNFINISHED. Three of the 12 ops of that turn were refused, one for a capability no seat can match.
+- **The last criterion was evidenced at 03:34:07 and the goal completed at 03:35:02**, when the developer closed the task it still held: a watchdog wake (9.9k tokens) 55 s after the work was done. The note it was woken with
+  says what to call. Nothing in the mesh closes a task whose work all of the criteria have evidenced.
+- **The spend of a turn the process did not survive is not recorded and cannot be**: the three turns the `kill -9` cut (the architect's, the developer's and the tech lead's) are discarded as "abandoned by server restart: … its spend was never recorded". AC1 covers a stop that reaches the supervisor. Writing the running count to the log while a turn runs
+  would cover the other, at the cost of an event per debounce; not built.
+- **The three remaining oracle failures** (0.1%) are the class AC3's developer rule is for.
+- **QA approved both of its own reports** (B10, listed as such in the run report): no other seat could review a `TestReport`.
+- **One run.**
+
+### Verification
+
+| | tests | pass | fail | cancelled | skipped |
+|---|---|---|---|---|---|
+| this round, first full run (AC1 to AC3) | 5865 | 5863 | 0 | 0 | 2 |
+| this round, final (the AC1 follow-up's test; the test run: 4 min 37 s) | 5866 | 5864 | 0 | 0 | 2 |
+
+`npm run typecheck` is clean and `npm run lint` has 0 errors (210 warnings, one rule, as in §25). Tests added: 20 (8 for AC1: five ledger rows and three tests; 11 for AC2; one net for AC3, whose old test was replaced by one and a second added). Before the full runs, the packages each finding touches were run on their own after each change (policy, core, observability, dashboard and scheduler: 2,821 tests for AC1, 3,001 with the protocol tests for AC2). Mutation checks, each reverted: AC1 (8 mutants, two of which survived the first pass and are described above), AC2 (12) and the prompts (15): every one now fails a test. The first full run had no failure, which §25's had (a timing test that counted escalation cards): nothing here adds an `await` to the end of a turn.
+
+### Worth keeping from this round
+
+- **A sentence in a prompt has no grip on a seat that does not read what it points at.** QA's verification turn ran eleven shell commands and read one file; the sentence told it to open two documents first. The same prompt
+  produced 19 of 19 when the operator wrote the list, and the report here still gave them as one grouped block, so a list the seat is *handed* is followed and one it is told to make is the open question.
+- **A warning written for one case is read in every other.** "No work was produced … the watchdog will rotate to another driver" is true of a driver that was asked for work and false of a seat that was asked to read. The
+  scheduler knew which it was when it raised the wake; the end of the turn did not. Carry what the wake was for to where the turn is judged.
+- **The operator's named instance is not the rule.** Two forms of the L-in-a-month-name defect were listed with their required outputs, both pass, and the sibling forms still fail. The list was the right instrument and
+  too short; the developer is now told to lengthen it, and whether that holds is the next run's.
+- **A shutdown is a stop the mesh can account for and a crash is not.** The turn the shutdown tore down had a measured stream of 24,497 tokens and the log said "unmeasured": the number existed in memory, one field away. A
+  lower bound, labelled as one, is more useful than nothing and less wrong than a zero.

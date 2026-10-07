@@ -3,7 +3,7 @@
 What changed between versions, for whoever runs Curule. The format follows [Keep a Changelog](https://keepachangelog.com).
 There is no supported downgrade: the event log is append-only and a newer build may append events an older one does
 not know ([docs/operations.md](docs/operations.md#upgrade)). The fixes from the live Haiku runs (`NOTES-live-run-20260930-haiku.md`,
-sections 1 to 24) are described there, run by run.
+sections 1 to 26) are described there, run by run.
 
 ## Unreleased
 
@@ -286,6 +286,24 @@ their first mission, an operator who leaves a mission running. What each surface
 
 ### Fixed
 
+- **A turn the shutdown stopped, whose call had reported no usage, recorded no tokens.** The twentieth run's mission ended under a
+  developer turn whose backend the shutdown tore down 24,497 tokens in, and the ledger, the end-of-run report and the console's
+  cost view had none of them ("spend unmeasured"). The running count the turn's stream had reached is recorded as `tokens` on
+  `turn.discarded` with `partial: true`, and the seat's note, the event line and the console say "at least N tokens". A stop that
+  reports its own usage is unchanged, and a process killed outright still leaves nothing to record.
+- **The wake for mail nothing else woke a seat for told it nothing, and the turn it bought was reported as idle work.** The note
+  now lists what is waiting by kind and sender, says whether any of it asks something of the seat (an ask, work handed over, the
+  operator's mail, anything classed `interrupt`) and, when none does, that `mesh_wait` is the ending that fits (`mesh_done` closes
+  a task the seat holds). A turn woken that way that only waited or finished is recorded as "read the mail that had been waiting"
+  and carries no warning, where the twentieth run's QA seat had its own summary replaced by "no work was produced … the watchdog
+  will rotate to another driver" and carried that line through its next four turns.
+- **QA's prompt asks for a list it writes itself, and the developer's for the rule behind a failure.** With no operator list, QA
+  writes one from the contract before it runs anything (numbered commands, each with the output it must print: every rejection
+  and its near-miss, every example, every enumeration member, every "every X must Y", the `RequirementsDoc`'s MUSTs, the
+  architecture's constraints, and the wrong spellings of each kind of value) and reports each line as the operator's list is
+  reported. A developer who is sent a failure extends it into the places the same rule applies before it asks for review. The
+  twentieth run's QA ran the developer's 64 tests and six CLI commands again, and its reopen fix covered `JUL` and not `JUN-JUL`.
+  Prompts, not enforcement: the next run is the check.
 - **A reply that named the message under `replyTo` was refused as "unknown messageId".** `mesh_reply`, `mesh_respond`,
   `mesh_discharge` and `mesh_withdraw` take `messageId`, and a seat answering a message writes `replyTo` (what the message calls
   it, and what `mesh_send` names its own); the refusal named no key and quoted no value. They read `replyTo` as the id when
