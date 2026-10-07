@@ -1473,16 +1473,22 @@ test("what the front page says about model usage is shown for a service that sel
   }
 });
 
-test("the plans have a shape while they are read, and a reader who cannot see it is told they are loading", async () => {
+test("the plans have a shape while they are read, from the moment the page starts, and a reader who cannot see it is told they are loading", async () => {
   const w = world((x) => (x.signedIn = false));
   let during: string[][] = [];
+  let asking: string[] = [];
   const v = new Visit("home", { routes: w.routes });
+  w.answers.set("GET /api/session", () => {
+    asking = v.$("plans").children.map((n) => n.className);
+    return { json: { account: null } };
+  });
   w.answers.set("GET /api/plans", () => {
     const kids = v.$("plans").children;
     during = [kids.map((n) => n.className), [v.text("plans")], kids.map((n) => n.getAttribute("aria-hidden") ?? "")];
     return { json: PLANS };
   });
   await v.start();
+  assert.deepEqual(asking, ["sk sk-plan", "sk sk-plan", "sr"], "the shape is there while the session is still being read, which is the first thing a slow connection waits for");
   assert.deepEqual(during[0], ["sk sk-plan", "sk sk-plan", "sr"], "the shape of two cards, and a line for a reader of the page");
   assert.deepEqual(during[1], ["Loading the plans."], "the line is the only text, and it is read out: the region is polite");
   assert.deepEqual(during[2], ["true", "true", ""], "the shapes are for the eye, the line is not");
