@@ -216,7 +216,7 @@ export function MissionHero(p: HeroProps): React.JSX.Element {
             {rest ? <> <span>{rest}</span></> : null}
           </p>
           {p.stale ? <Pill tone="bad" dot={false}>Last known state</Pill> : null}
-          {p.goalText ? <p className="ov-goal" title={p.goalText}><span className="caps">Goal</span>{p.goalText}</p> : null}
+          {p.goalText ? <p className="ov-goal" title={p.goalText}><span className="caps">Goal</span><span className="ov-goal-line">{p.goalText}</span></p> : null}
         </div>
         <div className="ov-acts">
           {p.next.map((n) => <NextButton key={n.action} step={n} run={p.run} />)}

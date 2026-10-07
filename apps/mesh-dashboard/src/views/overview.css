@@ -26,8 +26,9 @@
 /* A sentence of a dozen words is not a display line: past a short one the headline steps down a size and keeps its weight. */
 .ov-headline > b.long { font-size: 24px; line-height: 1.2; letter-spacing: var(--k-track-title); }
 .ov-headline > span { font: 400 18px/1.4 var(--sans); letter-spacing: var(--k-track-tight); color: var(--text-dim); text-wrap: pretty; }
-.ov-goal { margin: 0; max-width: 80ch; font-size: 15px; color: var(--text-dim); display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden; }
-.ov-goal .caps { margin-right: var(--s2); }
+/* The label hangs: a goal that runs to a second line starts it under the words, not under the label. */
+.ov-goal { margin: 0; max-width: 80ch; display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: baseline; gap: var(--s2); font-size: 15px; color: var(--text-dim); }
+.ov-goal-line { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden; }
 .ov-acts { flex: 0 1 auto; display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: var(--s2); max-width: 440px; }
 .ov-hero.stale .stat-v { color: var(--text-dim); font-weight: 500; }
 
@@ -48,8 +49,10 @@
 .ov-seg i.claimed { background: var(--warn); box-shadow: none; }
 .ov-seats { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s1-5); }
 .ov-seat { position: relative; display: inline-grid; border-radius: var(--r-sm); }
-.ov-seat.on { box-shadow: 0 0 0 2px var(--panel), 0 0 0 3.5px var(--ok); }
-.ov-seat.more { width: 26px; height: 26px; place-items: center; background: var(--panel-2); border: 1px solid var(--line); font: 600 11px/1 var(--sans); color: var(--muted); }
+.ov-seat.on { box-shadow: 0 0 0 1px var(--panel), 0 0 0 2.5px var(--ok); }
+/* In the stack the avatars are a size down, so a roster of seven (and the count of the rest) fits the cell of a laptop screen on one row. */
+.ov-seats .avatar { width: 22px; height: 22px; font-size: 11px; }
+.ov-seat.more { width: 22px; height: 22px; place-items: center; background: var(--panel-2); border: 1px solid var(--line); font: 600 10px/1 var(--sans); color: var(--muted); }
 
 /* Right now: a few plain lines, each marked by the seat or the kind of thing it is about, the last always answering "does it need me". */
 .ov-now, .ov-note { padding: var(--s3-5) var(--s6); border-top: 1px solid var(--line); }
@@ -162,6 +165,10 @@ details.ov-note { display: block; }
   .ov-grid { grid-template-columns: minmax(0, 1fr); grid-template-rows: none; grid-template-areas: "work" "goal" "events"; }
   .ov-hero-top { flex-wrap: wrap; }
   .ov-acts { flex-basis: 100%; max-width: none; justify-content: flex-start; padding-left: calc(48px + var(--s4)); }
+  /* Four figures are about 200px each from here down: two by two, so a roster of seats and a sentence under a meter have room. */
+  .ov-hero .stat-strip { grid-auto-flow: row; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .ov-hero .stat-cell:first-child, .ov-hero .stat-cell:nth-child(odd) { padding-left: var(--s6); border-left: 0; }
+  .ov-hero .stat-cell:nth-child(n + 3) { border-top: 1px solid var(--line); }
 }
 @media (max-width: 900px) {
   .stat-strip { grid-auto-flow: row; grid-template-columns: repeat(2, minmax(0, 1fr)); }

@@ -583,15 +583,19 @@ test("the seats stack in the roster's order with the busy ones lit, and the huma
   assert.deepEqual(seatStack([]), { shown: [], more: 0 });
 });
 
-test("a roster too long to stack keeps the seats in a turn in view, in roster order, and counts the rest", () => {
+test("a roster too long to stack keeps the seats in a turn in view, in roster order, and counts the rest beside them", () => {
   const roster = Array.from({ length: 30 }, (_, i) => ({ id: `s${i}`, role: "developer", lifecycle: i === 25 || i === 28 ? "WORKING" : "IDLE" }));
   const s = seatStack(roster, 7);
-  assert.equal(s.shown.length, 7);
-  assert.equal(s.more, 23);
+  assert.equal(s.shown.length, 6, "the count is the seventh chip: one fewer seat than the row holds");
+  assert.equal(s.more, 24);
+  assert.equal(s.shown.length + 1, 7);
   assert.ok(s.shown.some((x) => x.id === "s25" && x.working) && s.shown.some((x) => x.id === "s28" && x.working), "the busy seats are not hidden by the long roster");
-  assert.deepEqual(s.shown.map((x) => x.id), ["s0", "s1", "s2", "s3", "s4", "s25", "s28"], "the rest of the room goes to the seats at the head of the roster");
+  assert.deepEqual(s.shown.map((x) => x.id), ["s0", "s1", "s2", "s3", "s25", "s28"], "the rest of the room goes to the seats at the head of the roster");
   const busy = Array.from({ length: 12 }, (_, i) => ({ id: `b${i}`, role: "qa", lifecycle: "THINKING" }));
-  assert.equal(seatStack(busy, 5).shown.length, 5, "more busy seats than room: still only as many as fit");
+  assert.equal(seatStack(busy, 5).shown.length, 4, "more busy seats than room: still only as many as fit");
+  const seven = Array.from({ length: 7 }, (_, i) => ({ id: `t${i}`, role: "qa", lifecycle: "IDLE" }));
+  assert.deepEqual(seatStack(seven, 7), { shown: seven.map((x) => ({ id: x.id, role: "qa", working: false })), more: 0 }, "a roster that fits the row is drawn whole, with no count");
+  assert.equal(seatStack([...seven, { id: "t7", role: "qa", lifecycle: "IDLE" }], 7).more, 2, "one seat over the row: the count takes a chip, so it says two");
 });
 
 test("one segment for each mandatory check, in the goal's order, as the checklist marks them", () => {

@@ -496,19 +496,21 @@ export interface SeatChip {
 }
 
 /**
- * The seats as a stack of avatars: the roster in its own order (a seat's place in the mesh is stable), the ones in a turn lit. When
- * there are more seats than fit, the ones that are working are kept before the rest, so a long roster never hides who is busy; `more`
- * is how many are left out. The human is not a seat.
+ * The seats as a stack of avatars: the roster in its own order (a seat's place in the mesh is stable), the ones in a turn lit. `max` is
+ * how many chips fit in the row, the "+N" one included: a roster that fits is drawn whole, and a longer one is drawn with a chip fewer
+ * so the count sits beside the seats and does not wrap onto a row of its own. The seats that are working are kept before the rest, so
+ * a long roster never hides who is busy; `more` is how many are left out. The human is not a seat.
  */
 export function seatStack(agents: ReadonlyArray<{ id: string; role?: string; lifecycle?: string }> | undefined, max = 7): { shown: SeatChip[]; more: number } {
   const seats: SeatChip[] = (agents ?? [])
     .filter((a) => a?.id && a.id !== "human")
     .map((a) => ({ id: String(a.id), role: String(a.role ?? ""), working: RUNNING.has(String(a.lifecycle ?? "").toUpperCase()) }));
   if (seats.length <= max) return { shown: seats, more: 0 };
+  const room = Math.max(1, max - 1);
   const keep = new Set<string>();
-  for (const s of seats) if (s.working && keep.size < max) keep.add(s.id);
-  for (const s of seats) if (keep.size < max) keep.add(s.id);
-  return { shown: seats.filter((s) => keep.has(s.id)), more: seats.length - max };
+  for (const s of seats) if (s.working && keep.size < room) keep.add(s.id);
+  for (const s of seats) if (keep.size < room) keep.add(s.id);
+  return { shown: seats.filter((s) => keep.has(s.id)), more: seats.length - room };
 }
 
 /** One mark for each mandatory check, in the goal's order: the segments of the bar under the figure. */
