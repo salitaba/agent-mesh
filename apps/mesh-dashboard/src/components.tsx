@@ -303,12 +303,14 @@ export function Button({ variant, danger, extra, size, loading, type, icon, chil
  *  does; a tooltip says it to the pointer too (`title` is the longer wording when the label is not enough, `keys` the shortcut).
  *  `pressed` is for a toggle (theme). 36px square (28 with `size="sm"`, 44 on a phone): a full pointer target where a labelled
  *  button would not fit. States: default, hover, pressed, focus-visible, selected (`pressed`), disabled. */
-export function IconButton({ icon, label, pressed, onClick, id, title, keys, size, disabled, extra }: {
+export function IconButton({ icon, label, pressed, onClick, id, title, keys, size, disabled, extra, expanded, controls, haspopup }: {
   icon: IconName; label: string; pressed?: boolean; onClick: () => void; id?: string; title?: string; keys?: string; size?: "sm"; disabled?: boolean; extra?: string;
+  /** For a button that opens something (a panel, a popover): whether it is open, what it controls and what kind of thing it opens. */
+  expanded?: boolean; controls?: string; haspopup?: "dialog" | "menu";
 }): React.JSX.Element {
   return (
     <Tooltip content={title ?? label} keys={keys}>
-      <button type="button" id={id} className={`icon-btn${size ? ` ${size}` : ""}${extra ? ` ${extra}` : ""}`} aria-label={label} aria-pressed={pressed} disabled={disabled} onClick={onClick}>
+      <button type="button" id={id} className={`icon-btn${size ? ` ${size}` : ""}${extra ? ` ${extra}` : ""}`} aria-label={label} aria-pressed={pressed} aria-expanded={expanded} aria-controls={controls} aria-haspopup={haspopup} disabled={disabled} onClick={onClick}>
         <Icon name={icon} size={size === "sm" ? 16 : 18} />
       </button>
     </Tooltip>
@@ -712,16 +714,18 @@ export type ConfirmFn = (req: ConfirmRequest) => Promise<string | null>;
 interface DialogProps {
   title: ReactNode; children?: ReactNode; actions?: ReactNode; onSubmit?: (e: React.FormEvent<HTMLFormElement>) => void;
   role?: "dialog" | "alertdialog"; describedBy?: string; labelId?: string;
+  /** 640 wide instead of 480, for a dialog that holds a text area or a grid of choices. */
+  wide?: boolean;
 }
 
 /** The dialog's panel on its own: the title row, the body and the actions band, with no scrim and no focus handling. Dialog is this
  *  inside the behaviour; the gallery draws it alone to show it. */
-export function DialogPanel({ title, children, actions, onSubmit, role = "dialog", describedBy, labelId = "dialog-title", panelRef }: DialogProps & { panelRef?: RefObject<HTMLDivElement | null> }): React.JSX.Element {
+export function DialogPanel({ title, children, actions, onSubmit, role = "dialog", describedBy, labelId = "dialog-title", wide, panelRef }: DialogProps & { panelRef?: RefObject<HTMLDivElement | null> }): React.JSX.Element {
   // On a short screen the body scrolls under the title and the actions; a body that scrolls takes a tab stop, so a keyboard can read it.
   const body = useRef<HTMLDivElement | null>(null);
   const scrolls = useScrolls(body);
   return (
-    <div className="confirm" role={role} aria-modal="true" aria-labelledby={labelId} aria-describedby={describedBy} ref={panelRef}>
+    <div className={`confirm${wide ? " wide" : ""}`} role={role} aria-modal="true" aria-labelledby={labelId} aria-describedby={describedBy} ref={panelRef}>
       <form onSubmit={onSubmit ?? ((e) => e.preventDefault())}>
         <header className="dlg-head"><h2 id={labelId}>{title}</h2></header>
         <div className="dlg-body" ref={body} tabIndex={scrolls ? 0 : undefined}>{children}</div>

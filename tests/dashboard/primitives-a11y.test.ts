@@ -16,7 +16,9 @@ const tooltip = read("ui/tooltip.tsx");
 const controls = read("ui/controls.tsx");
 const feedback = read("ui/feedback.tsx");
 const scrollStop = read("ui/scroll-stop.tsx");
+const search = read("ui/search.tsx");
 const styles = read("styles.css");
+const live = read("live.css");
 
 /** The source of one exported function: from its declaration to the closing brace at the start of a line. */
 function bodyOf(source: string, name: string): string {
@@ -32,6 +34,26 @@ test("an icon button has a name, and a tooltip that says it", () => {
   assert.match(body, /aria-label=\{label\}/, "the glyph alone is not a name");
   assert.match(body, /<Tooltip content=\{title \?\? label\}/, "the tooltip is the same words, or a fuller title");
   assert.match(body, /aria-pressed=\{pressed\}/, "a toggle says whether it is on");
+});
+
+test("an icon button that opens something says whether it is open and what it controls, and is drawn open", () => {
+  const body = bodyOf(components, "IconButton");
+  for (const part of ["aria-expanded={expanded}", "aria-controls={controls}", "aria-haspopup={haspopup}"]) assert.ok(body.includes(part), `IconButton has ${part}`);
+  assert.match(live, /\.icon-btn\[aria-expanded="true"\] \{[^}]*background: var\(--k-accent-soft\)/, "open has the ground a pressed one has");
+});
+
+test("a search box is one search field named for what it searches, with a clear button named for what it does", () => {
+  assert.match(search, /type="search" aria-label=\{label\}/, "a search field, named by the page");
+  assert.match(search, /aria-label="Clear the search"/, "the way to empty it says so");
+  assert.match(search, /aria-hidden="true"><Kbd>/, "the key is drawn, not read: the field's name already says what it is");
+  assert.match(components, /export \{ SearchField \} from "\.\/ui\/search";/);
+  assert.match(live, /\.srch:focus-within \.srch-hint \{ opacity: 0; \}/, "the key leaves while the person types");
+  assert.match(live, /\.srch-clear \{ width: 40px; height: 40px; \}/, "the clear button is a thumb's target on a phone");
+});
+
+test("a wide dialog is the same dialog, 640 wide, and it is the panel that says so", () => {
+  assert.match(bodyOf(components, "DialogPanel"), /className=\{`confirm\$\{wide \? " wide" : ""\}`\}/);
+  assert.match(live, /\.confirm\.wide \{ width: min\(640px, 92vw\); \}/);
 });
 
 test("a tooltip is described-by, can be pointed at, goes on Escape and is not shown for a touch or a click", () => {

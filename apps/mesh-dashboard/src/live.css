@@ -44,3 +44,9 @@ i.sev-mark.routine { box-sizing: border-box; border: 1.5px solid var(--muted); }
   .srch > input.search { min-height: 44px; }
   .srch-clear { width: 40px; height: 40px; }
 }
+
+/* A dialog that holds a text area or a grid of choices (the Designer's import and templates) is wider than a question. */
+.confirm.wide { width: min(640px, 92vw); }
+
+/* An icon button that opens something has the ground a pressed one has while what it opened is open. */
+.icon-btn[aria-expanded="true"] { color: var(--k-accent-ink); background: var(--k-accent-soft); }

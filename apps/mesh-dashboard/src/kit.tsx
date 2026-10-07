@@ -321,6 +321,7 @@ function Gallery(): React.JSX.Element {
                 <IconButton icon="help" label="Keyboard shortcuts and help" keys="?" onClick={() => undefined} />
                 <IconButton icon="sign-out" label="Sign out" onClick={() => undefined} />
                 <IconButton icon="bell" label="Notifications on" pressed onClick={() => undefined} />
+                <IconButton icon="help" label="Keyboard shortcuts, open" expanded controls="gal-keys" haspopup="dialog" onClick={() => undefined} />
                 <IconButton icon="x" label="Close" size="sm" onClick={() => undefined} />
                 <IconButton icon="trash" label="Delete (not allowed here)" disabled onClick={() => undefined} />
                 <IconButton icon="refresh" label="Refresh" extra="is-hover" onClick={() => undefined} />
@@ -566,6 +567,15 @@ function Gallery(): React.JSX.Element {
                 <div className="confirm-scrim" />
                 <DialogPanel title="Start the mission?" role="dialog" labelId="gal-dlg" actions={<><Button variant="soft">Cancel</Button><Button variant="primary" icon="play">Start the mission</Button></>}>
                   <p style={{ margin: 0, color: "var(--text-dim)" }}>This is a scripted team. It makes no model calls and spends nothing, and it runs until it finishes or you park the mission.</p>
+                </DialogPanel>
+              </div>
+            </Spec>
+            <Spec name="Dialog, wide" wide note="640 instead of 480, for a text area or a grid of choices">
+              <div className="gal-stage short">
+                <div className="confirm-scrim" />
+                <DialogPanel wide title="Import a mesh.yaml" role="dialog" labelId="gal-dlg3" actions={<><Button variant="soft">Cancel</Button><Button variant="primary" icon="check">Replace the draft</Button></>}>
+                  <p style={{ margin: 0, color: "var(--text-dim)" }}>Paste the whole file. The draft is replaced, and you can undo that.</p>
+                  <TextArea rows={3} aria-label="mesh.yaml" placeholder="mesh:&#10;  id: my-team" />
                 </DialogPanel>
               </div>
             </Spec>
