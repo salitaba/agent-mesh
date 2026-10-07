@@ -290,6 +290,35 @@ test("the sign-in pages are one shell: the form first, and beside it the same th
   assert.match(read(SCRIPT), /Its files are kept\./, "what the account says of a paused workspace");
 });
 
+// ---- the documents, and the page that is not there ----
+
+test("a document has a table of contents that names its headings and goes to them, and the table is not itself a heading", () => {
+  for (const name of ["terms", "privacy"]) {
+    const { all } = pages().find((p) => p.name === name)!;
+    const toc = all.find((n) => n.tag === "nav" && n.className === "toc")!;
+    assert.ok(toc, `${name} has one`);
+    assert.equal(attr(toc, "aria-label"), "On this page");
+    const headings = all.filter((n) => n.tag === "h2");
+    assert.deepEqual(
+      toc.querySelectorAll("a").map((a) => [a.textContent, attr(a, "href")]),
+      headings.map((h) => [h.textContent, `#${attr(h, "id")}`]),
+      `${name}: one link for each heading, in its order, to the heading`,
+    );
+    assert.ok(toc.querySelector("p.toc-h") && toc.querySelectorAll("h1, h2, h3").length === 0, `${name}: its title is not a heading, or the document would have a heading that is not a part of it`);
+    assert.equal(all.filter((n) => n.tag === "article").length, 1, `${name}: the text is one article`);
+  }
+});
+
+test("the page that is not there is a mark, what happened, and the way back, and the mark is for the eye", () => {
+  const { all } = pages().find((p) => p.name === "404")!;
+  const lost = all.find((n) => n.className === "wrap lost")!;
+  assert.ok(lost);
+  const mark = lost.querySelector("svg")!;
+  assert.deepEqual([attr(mark, "aria-hidden"), mark.textContent], ["true", ""]);
+  assert.equal(lost.children.filter((n) => !n.isText)[0], mark, "it comes first");
+  assert.ok(lost.querySelector("h1") && lost.querySelector(".btn-row"));
+});
+
 // ---- what the pages say ----
 
 test("the stylesheet is drawn from the kit: it carries the kit's block, writes no colour of its own, and uses no token that nothing defines", () => {

@@ -223,8 +223,8 @@ meter::-moz-meter-bar { border-radius: var(--k-r-pill); background: var(--k-acce
 /* ---------------------------------------------------------------- the sign-in family: a form, and beside it what a workspace is */
 .auth { display: grid; gap: 32px; padding-block: clamp(28px, 6vh, 64px); }
 .auth-main { width: 100%; max-width: 28rem; margin-inline: auto; }
-.auth-main h1, .narrow h1 { margin-bottom: 8px; font-size: clamp(1.75rem, 1.3rem + 1.6vw, 2.25rem); letter-spacing: var(--k-track-title); }
-.auth-main .lede, .narrow .lede { margin-bottom: 28px; color: var(--k-muted); }
+.auth-main h1 { margin-bottom: 8px; font-size: clamp(1.75rem, 1.3rem + 1.6vw, 2.25rem); letter-spacing: var(--k-track-title); }
+.auth-main .lede { margin-bottom: 28px; color: var(--k-muted); }
 .auth-main .btn-row { flex-direction: column; gap: 8px; }
 .auth-main .btn-row .btn, .auth-main form > .btn { width: 100%; min-height: 44px; }
 .auth-main .card { margin-top: 20px; }
@@ -244,8 +244,6 @@ meter::-moz-meter-bar { border-radius: var(--k-r-pill); background: var(--k-acce
   .auth-points strong { color: var(--k-ink); font-size: 1rem; letter-spacing: var(--k-track-tight); }
   .auth-points span { color: var(--k-muted); font-size: .9375rem; }
 }
-.narrow { width: min(100% - 2 * var(--gutter), 28rem); margin: clamp(32px, 8vh, 96px) auto 0; }
-.narrow .card { margin-top: 20px; }
 .card { padding: clamp(20px, 4vw, 32px); border: 1px solid var(--k-line); border-radius: var(--k-r-lg); background: var(--k-surface); box-shadow: var(--k-hl), var(--k-shadow-2); }
 .aside { margin-top: 20px; color: var(--k-muted); font-size: .9375rem; }
 /* A link in a line of its own is a target: its hit area is taller than its text, without moving the lines around it. */
@@ -380,9 +378,9 @@ body[data-page="home"] main { background: var(--k-glow) top / 100% 520px no-repe
 .plan .price small { margin-left: 4px; color: var(--k-muted); font-size: .9375rem; font-weight: 500; letter-spacing: 0; }
 .plan > p { margin: 0; color: var(--k-muted); }
 .plan ul { display: grid; gap: 10px; margin: 0 0 6px; padding: 16px 0 0; border-top: 1px solid var(--k-line); list-style: none; color: var(--k-ink-2); font-size: .9375rem; }
-.plan:only-child { max-width: 28rem; }
 .plan li { position: relative; padding-left: 28px; }
 .plan li::before { --n: 0; --s: 16px; position: absolute; left: 2px; top: .25em; color: var(--k-accent-ink); }
+.plan:only-child { max-width: 28rem; }
 .plans + p { margin-top: 16px; }
 .plan .btn { width: 100%; min-height: 44px; margin-top: auto; }
 /* What is in the account's balance: the figure that is spent from, large, and what it is made of. */
@@ -431,12 +429,30 @@ tfoot > tr > * { background: var(--k-surface-2); font-weight: 650; }
 .sk-tiles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-top: 16px; }
 .sk-tiles .sk { height: 84px; }
 .sk-card { height: 200px; margin-top: 40px; }
-.prose { width: min(100% - 2 * var(--gutter), 42rem); margin: clamp(32px, 6vh, 64px) auto 0; }
-.prose h1 { margin-bottom: 8px; }
-.prose h1 + .todo { margin-top: 16px; }
-.prose h2 { margin: 32px 0 10px; }
-.prose ul { display: grid; gap: 6px; padding-left: 1.25rem; margin-bottom: 1em; }
+/* ---------------------------------------------------------------- documents, and the page that is not there */
+.doc { display: grid; gap: 32px; padding-top: clamp(32px, 6vh, 64px); }
+.toc { display: none; }
+@media (min-width: 1000px) {
+  .doc { grid-template-columns: 13rem minmax(0, 42rem); justify-content: center; gap: 56px; }
+  .toc { position: sticky; top: 92px; display: block; align-self: start; }
+}
+.toc-h { margin: 0 0 12px; color: var(--k-muted); font-size: .6875rem; font-weight: 650; letter-spacing: var(--k-track-caps); text-transform: uppercase; }
+.toc ol { display: grid; gap: 2px; margin: 0; padding: 0; list-style: none; border-left: 1px solid var(--k-line); }
+.toc a { display: block; margin-left: -1px; padding: 6px 12px; border-left: 1px solid transparent; color: var(--k-muted); font-size: .875rem; text-decoration: none; }
+.toc a:hover { border-left-color: var(--k-accent); color: var(--k-ink); }
+.prose h1 { margin-bottom: 12px; font-size: clamp(2rem, 1.5rem + 2vw, 2.75rem); }
+.prose h1 + p { color: var(--k-ink-2); font-size: 1.125rem; }
+.prose h2 { margin: 48px 0 12px; padding-top: 24px; border-top: 1px solid var(--k-line); scroll-margin-top: 84px; }
+.prose p, .prose li { line-height: 1.7; }
+.prose ul { display: grid; gap: 8px; margin: 0 0 1em; padding-left: 1.25rem; }
 .todo { padding: 10px 14px; border: 1px dashed var(--k-warn); border-radius: var(--k-r-md); color: var(--k-warn); font-size: .9375rem; }
+.lost { display: grid; justify-items: center; padding-top: clamp(48px, 12vh, 112px); text-align: center; }
+.lost-mark { width: 72px; height: 72px; margin-bottom: 24px; }
+.lost-mark .ink { stroke: var(--k-ink); }
+.lost-mark .seat { fill: var(--k-accent); }
+.lost h1 { margin-bottom: 8px; font-size: clamp(1.75rem, 1.3rem + 1.6vw, 2.25rem); letter-spacing: var(--k-track-title); }
+.lost .lede { max-width: 28rem; margin-bottom: 28px; color: var(--k-muted); }
+.lost .btn-row { justify-content: center; }
 
 /* ---------------------------------------------------------------- phones and fingers */
 @media (max-width: 720px) {
