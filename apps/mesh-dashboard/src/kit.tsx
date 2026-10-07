@@ -421,7 +421,7 @@ function Gallery(): React.JSX.Element {
               <div className="kpi"><b>49.3k</b><small>of 2.0M tokens</small></div>
               <Progress value={49300} max={2000000} label="Mission token budget" valueText="49.3k of 2.0M tokens" size="lg" />
             </Card>
-            <Card title="A block with its own job" variant="titled" meta="12 of 18"><p style={{ margin: 0 }}>The title is a sentence at 15px, for a card that is a part of the page and not a label above a figure.</p></Card>
+            <Card title="A block with its own job" meta="12 of 18"><p style={{ margin: 0 }}>A card's title is a sentence at 15px: it names the block, and a label above a figure is a Stat's.</p></Card>
             <Card title="Pressable" interactive meta="hover it"><p style={{ margin: 0 }}>Rung 2 on hover, a pixel up, pressed back down.</p></Card>
             <Card title="Pressable, hovered" interactive variant="is-hover"><p style={{ margin: 0 }}>The hover state, held for the picture.</p></Card>
           </div>
