@@ -895,6 +895,15 @@ ul.errs { margin: var(--s1-5) 0; padding-left: 18px; font-size: 14px; color: var
 .empty .big { font-size: 30px; opacity: .5; }
 .empty-icon { display: grid; place-items: center; width: 56px; height: 56px; margin-bottom: var(--s1); border-radius: var(--r-lg); background: var(--k-accent-soft); color: var(--k-accent-ink); border: 1px solid color-mix(in srgb, var(--k-accent) 18%, transparent); }
 .empty.bad .empty-icon { color: var(--bad); background: color-mix(in srgb, var(--bad) 10%, var(--panel)); border-color: color-mix(in srgb, var(--bad) 22%, transparent); }
+/* An icon tile (IconTile): a glyph on the ground of its tone, the selection's own by default. 40px, sm 28, lg 48; a live one breathes a ring. The
+   ground of a status tone is its tint over the panel (opaque), so the glyph clears contrast on a card and on a tinted hero alike. */
+.tile { --tone: var(--k-accent-ink); display: inline-grid; place-items: center; flex: none; width: 40px; height: 40px; border-radius: var(--k-r-md); color: var(--tone); background: var(--k-accent-soft); border: 1px solid color-mix(in srgb, var(--k-accent) 18%, transparent); }
+.tile.sm { width: 28px; height: 28px; border-radius: var(--k-r-sm); }
+.tile.lg { width: 48px; height: 48px; border-radius: var(--k-r-lg); }
+.tile.ok { --tone: var(--ok); } .tile.warn { --tone: var(--warn); } .tile.bad { --tone: var(--bad); } .tile.info { --tone: var(--info); } .tile.neutral { --tone: var(--muted); }
+.tile:is(.ok, .warn, .bad, .info) { background: color-mix(in srgb, var(--tone) 14%, var(--panel)); border-color: color-mix(in srgb, var(--tone) 24%, transparent); }
+.tile.neutral { background: var(--panel-2); border-color: var(--line); }
+.tile.live { box-shadow: 0 0 0 0 color-mix(in srgb, var(--tone) 45%, transparent); animation: pulse 2.2s infinite; }
 .empty-title { color: var(--text); font: 600 16px/1.3 var(--sans); letter-spacing: var(--k-track-tight); text-wrap: balance; }
 .empty-body { margin: 0; max-width: 44ch; color: var(--muted); font-size: 14px; line-height: 1.5; }
 .empty-acts { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: var(--s2) var(--s3); margin-top: var(--s2); }
@@ -1372,7 +1381,7 @@ ul.errs { margin: var(--s1-5) 0; padding-left: 18px; font-size: 14px; color: var
   .bar-row .num { text-align: left; }
   .respond-form .row { flex-direction: column; align-items: stretch; }
   .respond-form .primary { min-height: 44px; }
-  .row-actions button, button.small { min-height: 32px; }
+  .row-actions button { min-height: 32px; }
   /* The Message panel's recipient chips are the way to address a seat on a phone, so they are full touch targets. */
   .send-chips .chip-toggle { min-height: 44px; }
   /* The project strip stays, the words go: a shape and a name is what a narrow screen can carry without a second row. */

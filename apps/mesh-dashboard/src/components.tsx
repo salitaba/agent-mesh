@@ -271,6 +271,20 @@ export function AgentAvatar({ id, color, size }: { id: string; color?: string; s
   );
 }
 
+/** The tones a tile can take: the status colours, and the quiet one. With none it is the selection's own colour (the accent). */
+export type TileTone = "ok" | "warn" | "bad" | "info" | "neutral";
+
+/** An icon on the ground of its tone, 40px (`sm` 28, `lg` 48): the mark at the head of a card, a row or an empty state. The selection's
+ *  colour by default; `tone` says a status. `live` breathes a ring, for a thing that is running right now. The glyph is decoration: the
+ *  words beside it say what it is. States: default, live. */
+export function IconTile({ icon, tone, size, live }: { icon: IconName; tone?: TileTone; size?: "sm" | "lg"; live?: boolean }): React.JSX.Element {
+  return (
+    <span className={`tile${size ? ` ${size}` : ""}${tone ? ` ${tone}` : ""}${live ? " live" : ""}`} aria-hidden="true">
+      <Icon name={icon} size={size === "sm" ? 16 : size === "lg" ? 24 : 20} />
+    </span>
+  );
+}
+
 /* ---------------- layout & control primitives ----------------
    Every variant below maps to a rule in styles.css (the sections are named for the primitives). The CSS is element-scoped
    (button.small, input.txt), so these MUST render the real element: a styled <div role="button"> would render unstyled. */
@@ -663,7 +677,7 @@ export function agentColor(role: string): string {
     {
       architect: "var(--role-architect)", developer: "var(--role-developer)",
       qa: "var(--role-qa)", security: "var(--role-security)",
-      "tech-lead": "var(--role-tech-lead)", pm: "var(--role-pm)",
+      "tech-lead": "var(--role-tech-lead)", pm: "var(--role-pm)", "product-manager": "var(--role-pm)",
       explorer: "var(--role-explorer)",
     }[role] || "var(--accent)"
   );
