@@ -59,6 +59,11 @@ test("the title row of a panel is not a second banner: the page has one, the top
   assert.doesNotMatch(read("evdetail.tsx"), /<header/, "nor is the event's title row");
 });
 
+test("a titled card sets its title as a sentence, and the gallery draws one", () => {
+  assert.match(live, /\.card\.titled > \.card-head h3 \{[^}]*text-transform: none/);
+  assert.match(read("kit.tsx"), /<Card [^>]*variant="titled"/);
+});
+
 test("a wide dialog is the same dialog, 640 wide, and it is the panel that says so", () => {
   assert.match(bodyOf(components, "DialogPanel"), /className=\{`confirm\$\{wide \? " wide" : ""\}`\}/);
   assert.match(live, /\.confirm\.wide \{ width: min\(640px, 92vw\); \}/);

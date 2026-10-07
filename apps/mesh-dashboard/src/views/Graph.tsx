@@ -249,7 +249,7 @@ export default function Graph(): React.JSX.Element {
         </div>
       </Card>
 
-      <Card title="Most active links" meta={lines.shown.length ? `${lines.shown.length} of ${lines.drawable.length}` : undefined}>
+      <Card variant="titled" title="Most active links" meta={lines.shown.length ? `${lines.shown.length} of ${lines.drawable.length}` : undefined}>
         {lines.shown.length ? (
           <ul className="gr-links">
             {lines.shown.map((e, i) => {

@@ -36,7 +36,7 @@
 
 .ms-checks-anchor { position: relative; display: inline-flex; }
 .ms-pop { position: absolute; top: calc(100% + var(--s2)); right: 0; z-index: var(--z-overlay); width: min(520px, calc(100vw - 2 * var(--s4))); max-height: min(70dvh, 560px); overflow: auto; display: flex; flex-direction: column; gap: var(--s3); padding: var(--s4); background: var(--panel); border: 1px solid var(--line); border-radius: var(--r-lg); box-shadow: var(--k-hl), var(--k-shadow-3); animation: menu-in var(--k-dur-2) var(--k-ease); }
-.ms-pop h3, .ms-slide h3, .ms-sheet h3, .ms-guide h3, .ms-dialog h3 { margin: 0; font: 650 16px/1.3 var(--sans); letter-spacing: var(--k-track-title); text-transform: none; color: var(--text); }
+.ms-pop h3, .ms-slide h3, .ms-sheet h3, .ms-guide h3 { margin: 0; font: 650 16px/1.3 var(--sans); letter-spacing: var(--k-track-title); text-transform: none; color: var(--text); }
 .ms-pop h4, .ms-sheet h4 { margin: 0 0 var(--s1-5); font: 600 13px var(--sans); color: var(--text); }
 .ms-pop-head, .ms-slide-head, .ms-sheet-head { display: flex; align-items: center; justify-content: space-between; gap: var(--s2); }
 .ms-pop-status { margin: 0; font: var(--tx-value); color: var(--text); }
@@ -140,9 +140,6 @@ body:has(.ms-bar) #toasts { bottom: calc(var(--dock-clear) + var(--ms-bar-h, 0px
 .ms-slide { position: fixed; top: 0; right: 0; z-index: var(--z-slide); width: min(620px, 94vw); height: 100dvh; display: flex; flex-direction: column; gap: var(--s3); padding: var(--s4) var(--s5); overflow: auto; background: var(--drawer); border-left: 1px solid var(--line-strong); box-shadow: var(--k-hl), var(--k-shadow-4); animation: drawer-in var(--k-dur-3) var(--k-ease); }
 .ms-slide-meta { display: flex; align-items: center; justify-content: space-between; gap: var(--s2); flex-wrap: wrap; }
 .yaml-pane { flex: 1 1 auto; min-height: 220px; margin: 0; padding: var(--s3) var(--s4); overflow: auto; white-space: pre; font: 13px/1.6 var(--mono); color: var(--text-dim); background: var(--sunken); border: 1px solid var(--line); border-radius: var(--r); tab-size: 2; }
-.ms-dialog-body { display: flex; flex-direction: column; gap: var(--s3); }
-.ms-dialog .ms-hint { margin: 0; }
-.ms-dialog textarea { width: 100%; }
 .ms-templates.stacked { grid-template-columns: 1fr; width: 100%; }
 
 /* ---------- the inspector as a drawer, and the bar on narrower screens ---------- */

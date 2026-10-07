@@ -45,7 +45,7 @@
 
 /* ---- rows ---- */
 
-.evc-bucket { position: sticky; top: 0; z-index: var(--z-raise); display: flex; align-items: baseline; justify-content: space-between; gap: var(--s3); margin: 0; padding: var(--s2) var(--s4); background: color-mix(in srgb, var(--panel-2) 92%, transparent); -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); border-bottom: 1px solid var(--line); font: 600 11px/1.3 var(--sans); letter-spacing: var(--k-track-caps); text-transform: uppercase; color: var(--muted); }
+.evc-bucket { position: sticky; top: 0; z-index: var(--z-raise); display: flex; align-items: baseline; justify-content: space-between; gap: var(--s3); margin: 0; padding: var(--s2) var(--s4); background: color-mix(in srgb, var(--panel-2) 92%, transparent); -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); border-bottom: 1px solid var(--line); font: 600 13px/1.3 var(--sans); letter-spacing: var(--k-track-tight); text-transform: none; color: var(--text-dim); }
 .evc-bucket-n { font-weight: 500; letter-spacing: 0; text-transform: none; }
 
 .evc-row { position: relative; display: grid; grid-template-columns: 62px 26px minmax(0, 1fr) minmax(0, 150px); align-items: center; column-gap: var(--s3); width: 100%; min-height: 42px; padding: var(--s1) var(--s4); text-align: left; background: none; border: 0; border-bottom: 1px solid var(--line); color: var(--text); font: 14px var(--sans); cursor: pointer; transition: background-color var(--k-dur-1) var(--k-ease); }
@@ -114,7 +114,7 @@
 .evd-raw { display: flex; align-items: center; flex-wrap: wrap; gap: var(--s2); margin: 0; min-width: 0; }
 
 .evd-sec { padding-top: var(--s4); border-top: 1px solid var(--line); }
-.evd-sec h4, .jt-head h4 { margin: 0 0 var(--s2); font: 600 11px/1.3 var(--sans); letter-spacing: var(--k-track-caps); text-transform: uppercase; color: var(--muted); }
+.evd-sec h4, .jt-head h4 { margin: 0 0 var(--s2); font: 600 14px/1.3 var(--sans); letter-spacing: var(--k-track-tight); text-transform: none; color: var(--text); }
 .evd-sec-head { display: flex; align-items: center; flex-wrap: wrap; gap: var(--s2); margin-bottom: var(--s2); }
 .evd-sec-head h4 { margin: 0; margin-right: auto; }
 .evd-n { margin-left: var(--s1-5); color: var(--text-dim); }

@@ -64,7 +64,7 @@ span.caret { color: var(--ok); animation: blink 1s steps(1) infinite; }
 .sv-walk .sv-walk-more { margin: 0 var(--s2) 0 var(--s1); font-size: 12px; }
 .sv-ident { display: flex; align-items: center; gap: var(--s3); min-width: 0; margin-top: var(--s3); }
 .sv-who { display: flex; flex-direction: column; gap: 2px; min-width: 0; line-height: 1.15; }
-.sv-who b { font: 650 18px/1.15 var(--sans); letter-spacing: var(--k-track-title); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sv-who b { font: 650 18px/1.2 var(--sans); letter-spacing: var(--k-track-title); overflow-wrap: anywhere; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden; }
 .sv-id { font: 12px var(--mono); color: var(--muted); }
 /* The verdict of the turn, in the pill the rest of the console uses for it: a dot in its colour and a word. */
 .sstat-badge { --sc: var(--muted); display: inline-flex; align-items: center; gap: var(--s1-5); height: 22px; padding: 0 var(--s2-5) 0 var(--s2); border: 0; border-radius: var(--k-r-pill);
@@ -356,27 +356,14 @@ span.caret { color: var(--ok); animation: blink 1s steps(1) infinite; }
 .causal-link:hover { text-decoration-color: currentColor; }
 .live-ops { display: flex; flex-direction: column; gap: var(--s1-5); margin: var(--s2-5) 0; }
 .live-ops-h { font-size: 13px; }
+/* A card of one op, as the live view draws it before the ledger exists: written by the model and not applied yet. */
+.op { display: flex; flex-direction: column; gap: var(--s1); padding: var(--s2-5) var(--s3); background: var(--panel); border: 1px solid var(--line); border-left: 3px solid var(--line-strong); border-radius: var(--r); }
+.op-head { display: flex; gap: var(--s2-5); align-items: baseline; }
+.op-name { flex: 1; min-width: 0; font: 600 14px var(--sans); letter-spacing: var(--k-track-tight); }
+.op-detail { margin-top: var(--s1); font-size: 14px; color: var(--text-dim); white-space: pre-wrap; word-break: break-word; }
 .op-live { border-style: dashed; opacity: .92; }
 .op-pending { font: 600 12px var(--sans); text-transform: none; letter-spacing: 0; color: var(--warn); }
 .op-ghost { display: flex; justify-content: center; padding: var(--s2); background: var(--sunken); border-radius: var(--r); }
-.live-prose { font-size: 14px; color: var(--text-dim); white-space: pre-wrap; max-height: 140px; overflow: auto; margin: var(--s1) 0; }
-
-/* A card of one op, as the live view draws it before the ledger exists. */
-.op-list { display: flex; flex-direction: column; gap: var(--s2); margin-top: var(--s1); }
-.op { display: flex; gap: var(--s2-5); padding: var(--s2-5) var(--s3); background: var(--panel); border: 1px solid var(--line); border-left: 3px solid var(--line-strong); border-radius: var(--r); }
-.op-landed { border-left-color: var(--ok); }
-.op-nofx { border-left-color: var(--muted); }
-.op-na { border-left-color: color-mix(in srgb, var(--muted) 50%, transparent); }
-.op-idx { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; margin-top: 1px; border-radius: 50%; font: 500 11px var(--sans); color: var(--muted); background: color-mix(in srgb, var(--muted) 14%, transparent); }
-.op-landed .op-idx { color: var(--ok); background: color-mix(in srgb, var(--ok) 14%, transparent); }
-.op-body { flex: 1; min-width: 0; }
-.op-head { display: flex; gap: var(--s2-5); align-items: baseline; }
-.op-name { flex: 1; min-width: 0; font: 600 14px var(--sans); letter-spacing: var(--k-track-tight); }
-.op-ok, .op-miss { padding: var(--s0) var(--s2); border-radius: var(--k-r-pill); font: 600 12px var(--sans); letter-spacing: 0; text-transform: none; white-space: nowrap; }
-.op-ok { color: var(--ok); background: color-mix(in srgb, var(--ok) 14%, transparent); }
-.op-miss { color: var(--muted); background: color-mix(in srgb, var(--muted) 14%, transparent); }
-.op-detail { margin-top: var(--s1); font-size: 14px; color: var(--text-dim); white-space: pre-wrap; word-break: break-word; }
-.op-fx { margin-top: var(--s1-5); display: flex; justify-content: flex-end; font-size: 13px; }
 
 /* --- what it was doing, while it did it (liveview.tsx): the tone classes carry one hue each, the same three the vitals use --- */
 .lw-ok   { --lw: var(--ok); }
