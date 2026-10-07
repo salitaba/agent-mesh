@@ -149,6 +149,7 @@ b, strong { font-weight: 650; }
 .wrap { width: min(100% - 2 * var(--gutter), var(--max)); margin-inline: auto; }
 .section { padding-block: var(--section); }
 .section:not(.band, .tint, .cta, [hidden]) + .section:not(.band, .tint, .cta) { padding-top: 0; }
+.section:has(> .wrap > p:only-child) { padding-block: 48px; }
 .band, .tint { border-block: 1px solid var(--line); }
 .band { background: var(--band); }
 .tint { background: color-mix(in srgb, var(--soft) 60%, var(--bg)); }
@@ -268,7 +269,8 @@ main:has(.hero) .section-head .eyebrow::before { counter-increment: sec; content
 /* A card a link points at says so inside its border: it does not move. */
 .card:target, .doc-card:target, .plan:target { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
 .card { display: flex; flex-direction: column; padding: 24px; }
-.card h3 { margin: 16px 0 8px; }
+.card h3 { margin: 0 0 8px; }
+.card > .mark + h3 { margin-top: 16px; }
 .grid { gap: 16px; }
 @media (min-width: 900px) { .grid-3 { grid-template-columns: var(--c3); } }
 /* Icons: drawn on 24 units, shown at 20 on a 1.5 px line; in a card, on a tile of their tone. */
@@ -499,7 +501,7 @@ main:has(.hero) .section-head .eyebrow::before { counter-increment: sec; content
 .price .amount { display: block; font-size: 2.75rem; font-weight: 650; line-height: 1.05; letter-spacing: var(--k-track-display); }
 .price .per { display: block; margin-top: 6px; color: var(--muted); font-size: .875rem; line-height: 1.45; }
 .plan-limits { display: grid; grid-template-columns: var(--c3); gap: 1px; margin: 20px 0 0; align-self: start; overflow: hidden; border: 1px solid var(--line); border-radius: var(--k-r-md); background: var(--line); }
-.plan-limits div { display: flex; flex-direction: column-reverse; padding: 10px 6px; background: var(--k-sunken); text-align: center; }
+.plan-limits div { display: flex; flex-direction: column-reverse; justify-content: flex-end; padding: 10px 6px; background: var(--k-sunken); text-align: center; }
 .plan-limits dt { color: var(--muted); font-size: .75rem; line-height: 1.3; }
 .plan-limits dd { margin: 0; font-size: 1.375rem; font-weight: 650; line-height: 1.3; font-variant-numeric: tabular-nums; }
 .plan-includes { margin: 20px 0 0; }
@@ -510,11 +512,13 @@ main:has(.hero) .section-head .eyebrow::before { counter-increment: sec; content
 .plan-cta { align-self: end; margin: 16px 0 0; }
 .plan-cta .btn { width: 100%; }
 .unit { white-space: nowrap; }
+.compare .unit { display: block; }
 .table-wrap { position: relative; overflow-x: auto; border: 1px solid var(--line); border-radius: var(--k-r-lg); box-shadow: var(--lift); background: linear-gradient(to left, var(--panel) 30%, transparent) right / 48px 100% no-repeat local, linear-gradient(to left, var(--edge), transparent) right / 12px 100% no-repeat scroll, var(--panel); }
-.compare { width: 100%; min-width: 720px; border-collapse: separate; border-spacing: 0; font-size: .9375rem; font-variant-numeric: tabular-nums; }
+.compare { width: 100%; min-width: 720px; table-layout: fixed; border-collapse: separate; border-spacing: 0; font-size: .9375rem; font-variant-numeric: tabular-nums; }
 .compare th, .compare td { padding: 14px 18px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
 .compare thead th { background: var(--panel2); color: var(--ink); }
-.compare tbody th { position: sticky; left: 0; z-index: 1; width: 24%; background: var(--panel); color: var(--ink2); font-weight: 500; }
+.compare th:first-child { width: 24%; }
+.compare tbody th { position: sticky; left: 0; z-index: 1; background: var(--panel); color: var(--ink2); font-weight: 500; }
 /* On a phone the table scrolls under its first column, and a line marks where. */
 .compare thead th:first-child { position: sticky; left: 0; z-index: 2; }
 @media (max-width: 799px) { .compare tbody th, .compare thead th:first-child { box-shadow: inset -1px 0 0 var(--line); } }
@@ -554,12 +558,15 @@ main:has(.hero) .section-head .eyebrow::before { counter-increment: sec; content
 /* documents */
 .legend-title { font-size: 1.375rem; line-height: 1.25; letter-spacing: var(--k-track-title); }
 .legend b { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; }
-.doc-grid, .starts { gap: 16px; }
+.doc-grid { gap: 16px; }
 @media (min-width: 720px) { .doc-grid { grid-template-columns: var(--c2); } }
 @media (min-width: 1040px) { .doc-grid { grid-template-columns: var(--c3); } }
-.doc-card, .start { display: flex; flex-direction: column; gap: 6px; padding: 24px; }
+.doc-card, .start { gap: 6px; padding: 24px; }
+.doc-card { display: flex; flex-direction: column; }
 .doc-card h2, .doc-card h3, .start h3 { font-size: 1.1875rem; line-height: 1.3; }
-/* Start here: four cards, or three without Curule Cloud. */
+/* Start here: four cards, or three without Curule Cloud; a card's rows are its neighbours' rows. */
+.starts { gap: 0 16px; }
+.start { display: grid; grid-row: span 4; grid-template-rows: subgrid; margin-bottom: 16px; }
 @media (min-width: 600px) { .starts { grid-template-columns: var(--c2); } }
 @media (min-width: 1160px) { .starts { grid-template-columns: var(--c4); } .starts:has(> .start[hidden]) { grid-template-columns: var(--c3); } }
 .start-doc { margin: 0; }

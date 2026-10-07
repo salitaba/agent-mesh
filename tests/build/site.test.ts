@@ -11,6 +11,7 @@ import assert from "node:assert/strict";
 import * as fs from "fs";
 import * as path from "path";
 import { ROOT, SITE, headingAnchors, imageSize, page, shareable, sitePages, walk, type Page } from "./site-pages";
+import { parsePage } from "../cloud/pages-support";
 
 const pages = sitePages();
 const files = walk(SITE);
@@ -400,6 +401,49 @@ test("a table or a command that goes on past its box shows a shadow at the edge 
     assert.match(m[0], /<thead><tr><th scope="col">/, "the corner is a header cell, which the stylesheet keeps with the first column");
     for (const row of m[0].matchAll(/<tbody>([\s\S]*?)<\/tbody>/g)) for (const tr of row[1]!.matchAll(/<tr>([\s\S]*?)<\/tr>/g)) assert.match(tr[1]!, /^<th scope="row">/, "every row starts with its own header, the column that stays");
   }
+});
+
+test("cards that share their rows span as many rows as they have parts, so that a part added to one does not push the others out of line", () => {
+  const css = fs.readFileSync(path.join(SITE, "assets", "site.css"), "utf8");
+  // A card is a subgrid of the row of cards it is in: the title, the price or the document it opens sit at one height across the
+  // row, whatever the words take. A card with more parts than the span would put the extra one in a row of its own.
+  for (const [rule, rel] of [[".plan", "pricing/index.html"], [".start", "docs/index.html"]] as const) {
+    const body = new RegExp(`\\n${rule.replace(/\./g, "\\.")} \\{([^}]*)\\}`).exec(css)?.[1] ?? "";
+    assert.match(body, /display: grid;/, `${rule} is a grid`);
+    assert.match(body, /grid-template-rows: subgrid;/, `${rule} takes its rows from the row of cards`);
+    const rows = Number(/grid-row: span (\d+);/.exec(body)?.[1]);
+    const cards = parsePage(page(pages, rel).html).querySelectorAll(rule);
+    assert.ok(cards.length >= 3, `${rel}: ${rule} cards are there (${cards.length})`);
+    for (const card of cards) assert.equal(card.children.filter((c) => !c.isText).length, rows, `${rel}: a ${rule} card has ${rows} parts`);
+  }
+  // The gap between the rows of cards is the card's own margin, so that the rows inside a card are not spread by it.
+  assert.match(css, /\n\.plans \{ gap: 0 16px; \}/);
+  assert.match(css, /\n\.starts \{ gap: 0 16px; \}/);
+});
+
+test("the plans' table has equal columns after the one that names the row, and a yearly total stands under its figure in every column", () => {
+  const css = fs.readFileSync(path.join(SITE, "assets", "site.css"), "utf8");
+  // A fixed layout takes its widths from the first row, which is the header row, so the first cell says how wide the names are.
+  assert.match(css, /\n\.compare \{[^}]*table-layout: fixed;/);
+  assert.match(css, /\n\.compare th:first-child \{ width: \d+%; \}/);
+  assert.match(css, /\n\.compare \.unit \{ display: block; \}/);
+  const pricing = page(pages, "pricing/index.html").markup;
+  const tables = [...pricing.matchAll(/<table class="compare">[\s\S]*?<\/table>/g)].map((m) => m[0]);
+  assert.equal(tables.length, 2, "the plans, and the models the mission is priced at");
+  for (const table of tables) assert.match(table, /^<table class="compare">\s*<caption class="sr">[^<]*<\/caption>\s*<thead>/, "the first row of a table is its header row");
+  const totals = [...tables[0]!.matchAll(/<td>[^<]*<span class="muted unit">\(([^)]*)\)<\/span><\/td>/g)];
+  assert.ok(totals.length >= 2, `the yearly totals are marked (${totals.length})`);
+});
+
+test("a card's title has room above it only after an icon, a plan's figures share a line whatever their labels take, and a lone note is compact", () => {
+  const css = fs.readFileSync(path.join(SITE, "assets", "site.css"), "utf8");
+  assert.match(css, /\n\.card h3 \{ margin: 0 0 8px; \}/, "a card that starts with its title starts at its padding");
+  assert.match(css, /\n\.card > \.mark \+ h3 \{ margin-top: 16px; \}/, "and the icon's tile has its 16 above the title it comes with");
+  assert.match(css, /\n\.plan-limits div \{[^}]*flex-direction: column-reverse; justify-content: flex-end;/, "the figure is at the top of its cell, so a label of two lines does not lift it");
+  assert.match(css, /\n\.section:has\(> \.wrap > p:only-child\) \{ padding-block: \d+px; \}/, "a section that holds one paragraph is as tall as the paragraph needs");
+  // And the pages are what those rules were written for: some cards start with their title, some with an icon, one section is a note.
+  const starts = pages.flatMap((p) => [...p.markup.matchAll(/<(?:div|article) class="card[^"]*">\s*(<svg class="mark|<h3)/g)].map((m) => m[1]));
+  assert.ok(starts.includes("<h3") && starts.some((s) => s.startsWith("<svg")), "both kinds of card are in use");
 });
 
 test("a card or a row that a link points at is marked once the link is followed, by a second line or a bar and not by colour alone", () => {
