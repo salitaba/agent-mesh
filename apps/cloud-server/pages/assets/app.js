@@ -436,7 +436,11 @@
       const buttons = [...node.querySelectorAll("button")];
       for (const b of buttons) b.disabled = true;
       const label = main ? main.textContent : "";
-      if (main) main.textContent = main.dataset.busy;
+      if (main) {
+        main.textContent = main.dataset.busy;
+        // The stylesheet draws a spinner for it, and a button that is disabled while it works is not dimmed as if it could not be used.
+        main.setAttribute("aria-busy", "true");
+      }
       node.setAttribute("aria-busy", "true");
       // Whatever is sent is not left showing for the next person at the screen.
       for (const b of node.querySelectorAll("[data-reveal]")) hideSecret(b);
@@ -448,7 +452,10 @@
       } finally {
         busy = false;
         for (const b of buttons) b.disabled = false;
-        if (main) main.textContent = label;
+        if (main) {
+          main.textContent = label;
+          main.removeAttribute("aria-busy");
+        }
         node.removeAttribute("aria-busy");
         // A button that is disabled loses the cursor in some browsers: it comes back, unless the handler put it somewhere else.
         if (focused && (!doc.activeElement || doc.activeElement === doc.body)) focused.focus();
@@ -502,6 +509,7 @@
     const label = trigger.textContent;
     trigger.disabled = true;
     trigger.textContent = "One moment";
+    trigger.setAttribute("aria-busy", "true");
     if (before) before();
     const r = await request();
     const url = r.ok ? outsideUrl(r.data && r.data.url) : null;
@@ -511,6 +519,7 @@
     }
     trigger.disabled = false;
     trigger.textContent = label;
+    trigger.removeAttribute("aria-busy");
     // An answer that is fine but names no address this page will follow is a failure like any other, and is said as one.
     failed(r.ok ? { ok: false, status: r.status, data: r.data, error: { code: "bad_address", message: "The page we were meant to send you to could not be opened. Try again in a moment." } } : r);
   }
@@ -520,7 +529,7 @@
   function paintChrome(me, page) {
     const signedIn = me !== null;
     for (const node of doc.querySelectorAll("[data-when]")) node.hidden = (node.dataset.when === "in") !== signedIn;
-    const here = page === "home" ? "home" : page === "account" ? "account" : "";
+    const here = { home: "home", account: "account", login: "login" }[page] || "";
     for (const a of doc.querySelectorAll("[data-nav]")) {
       if (a.dataset.nav === here) a.setAttribute("aria-current", "page");
       else a.removeAttribute("aria-current");
@@ -564,7 +573,7 @@
     return el(
       "article",
       { class: current ? "plan current" : "plan" },
-      el("h3", null, plan.title, current ? el("span", { class: "badge badge-ok" }, "Your plan") : null),
+      el("h3", null, plan.title, current ? el("span", { class: "badge badge-accent" }, "Your plan") : null),
       el("div", { class: "price" }, money(plan.priceMinor, currency), el("small", null, ` per ${plan.period}`)),
       plan.summary ? el("p", { class: "muted" }, plan.summary) : null,
       el("ul", null, planFacts(plan, currency).map((fact) => el("li", null, fact))),

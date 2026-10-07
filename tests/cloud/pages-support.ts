@@ -582,3 +582,44 @@ export function helpers(): Record<string, (...args: any[]) => any> & { NEEDS: Re
   for (const [name, value] of Object.entries(module.exports)) out[name] = typeof value === "function" ? (...args: unknown[]) => own((value as (...a: unknown[]) => unknown)(...args)) : own(value);
   return out as ReturnType<typeof helpers>;
 }
+
+// ---- the stylesheet ----
+
+export interface CssRule {
+  /** What the rule is inside of: nothing, or the `@media` / `@supports` it is under, as written. */
+  at: string;
+  selectors: string[];
+  body: string;
+}
+
+/** The rules of a stylesheet as a flat list, comments removed. `@keyframes` and `@font-face` are left out: they declare no rule a test asks about. */
+export function cssRules(css: string): CssRule[] {
+  const out: CssRule[] = [];
+  const walk = (src: string, at: string): void => {
+    let i = 0;
+    while (i < src.length) {
+      const open = src.indexOf("{", i);
+      if (open < 0) break;
+      let depth = 1;
+      let j = open + 1;
+      while (j < src.length && depth > 0) {
+        if (src[j] === "{") depth++;
+        else if (src[j] === "}") depth--;
+        j++;
+      }
+      const head = src.slice(i, open).trim();
+      const body = src.slice(open + 1, j - 1);
+      if (head.startsWith("@")) {
+        if (/^@(media|supports)\b/.test(head)) walk(body, `${at} ${head}`.trim());
+      } else out.push({ at, selectors: head.split(",").map((s) => s.trim()), body });
+      i = j;
+    }
+  };
+  walk(css.replace(/\/\*[\s\S]*?\*\//g, ""), "");
+  return out;
+}
+
+/** The value a rule gives a property, or undefined. */
+export function declared(rule: CssRule, property: string): string | undefined {
+  return new RegExp(`(?:^|;)\\s*${property}\\s*:\\s*([^;]+)`).exec(rule.body)?.[1]?.trim();
+}

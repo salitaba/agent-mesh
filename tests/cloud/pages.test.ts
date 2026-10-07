@@ -13,7 +13,7 @@ import { WorkspaceEdge, createPublicServer } from "../../packages/cloud/src/inde
 import { ask, listen } from "./net-support";
 import { plane } from "./support";
 import { APP, site } from "./web-support";
-import { PAGES_DIR, ROOT, SCRIPT, helpers, parsePage, type FakeNode } from "./pages-support";
+import { PAGES_DIR, ROOT, SCRIPT, cssRules, declared, helpers, parsePage, type FakeNode } from "./pages-support";
 
 const read = (file: string): string => fs.readFileSync(file, "utf8");
 const ASSETS = path.join(PAGES_DIR, "assets");
@@ -263,18 +263,22 @@ test("every call the script makes is to a route the API has, with the method it 
 
 // ---- what the pages say ----
 
-test("the colours are the site's, and every text colour clears WCAG AA on the backgrounds it is used on", () => {
-  const vars = (css: string): Record<string, string> => Object.fromEntries([...css.matchAll(/(--[\w-]+):\s*(#[0-9a-fA-F]{6})\b/g)].map((m) => [m[1]!, m[2]!.toLowerCase()]));
-  const sets = (css: string) => ({ light: vars(/:root \{([\s\S]*?)\n\}/.exec(css)![1]!), dark: vars(/@media \(prefers-color-scheme: dark\) \{\s*:root \{([\s\S]*?)\}\s*\}/.exec(css)![1]!) });
-  const site = sets(read(path.join(ROOT, "site", "assets", "site.css")));
-  const app = sets(read(path.join(ASSETS, "app.css")));
-  for (const theme of ["light", "dark"] as const) {
-    for (const name of ["--bg", "--panel", "--ink", "--muted", "--line", "--accent", "--accent-ink", "--ok", "--warn", "--code"]) {
-      assert.ok(site[theme][name], `the site has ${name}`);
-      assert.equal(app[theme][name], site[theme][name], `${theme} ${name} is the site's`);
-    }
-    assert.ok(app[theme]["--bad"], `${theme} --bad`);
-  }
+test("the stylesheet is drawn from the kit: it carries the kit's block, writes no colour of its own, and uses no token that nothing defines", () => {
+  const css = read(path.join(ASSETS, "app.css"));
+  const begin = css.indexOf("/* @kit:tokens begin");
+  const endMark = "/* @kit:tokens end */";
+  const end = css.indexOf(endMark);
+  assert.ok(begin >= 0 && end > begin, "the kit's block is there (its content is held to the generator by ui-kit-tokens.test.ts)");
+  const own = (css.slice(0, begin) + css.slice(end + endMark.length)).replace(/\/\*[\s\S]*?\*\//g, "");
+  assert.doesNotMatch(own, /#[0-9a-fA-F]{3,8}\b|\brgba?\(|\bhsla?\(|\boklch\(/, "a colour is a token, and a tint is color-mix of one: the page and the site cannot drift apart by a value nudged here");
+  const defined = new Set([...css.matchAll(/(--[\w-]+)\s*:/g)].map((m) => m[1]!));
+  for (const m of own.matchAll(/var\((--[\w-]+)/g)) assert.ok(defined.has(m[1]!), `${m[1]} is used and defined nowhere: a misspelt token draws nothing, and no test would see it`);
+
+  // The pairs this stylesheet draws that the kit's own test (ui-kit-tokens.test.ts) does not list.
+  const colours = (block: string): Record<string, string> => Object.fromEntries([...block.matchAll(/--k-([\w-]+):\s*(#[0-9a-fA-F]{6})\b/g)].map((m) => [m[1]!, m[2]!.toLowerCase()]));
+  const kit = css.slice(begin, end);
+  const light = colours(/:root \{([\s\S]*?)\n\}/.exec(kit)![1]!);
+  const dark = { ...light, ...colours(/@media \(prefers-color-scheme: dark\) \{\s*:root \{([\s\S]*?)\n  \}/.exec(kit)![1]!) };
   const luminance = (hex: string): number => {
     const [r, g, b] = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255).map((c) => (c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4));
     return 0.2126 * r! + 0.7152 * g! + 0.0722 * b!;
@@ -283,31 +287,33 @@ test("the colours are the site's, and every text colour clears WCAG AA on the ba
     const [hi, lo] = [luminance(a), luminance(b)].sort((x, y) => y - x);
     return (hi! + 0.05) / (lo! + 0.05);
   };
-  for (const theme of ["light", "dark"] as const) {
-    const c = app[theme];
-    for (const fg of ["--ink", "--muted", "--accent", "--ok", "--warn", "--bad"]) for (const bg of ["--bg", "--panel"]) assert.ok(contrast(c[fg]!, c[bg]!) >= 4.5, `${theme} ${fg} on ${bg} is ${contrast(c[fg]!, c[bg]!).toFixed(2)}:1`);
-    assert.ok(contrast(c["--accent-ink"]!, c["--accent"]!) >= 4.5, `${theme} text on the accent`);
+  for (const [theme, t] of [["light", light], ["dark", dark]] as const) {
+    assert.ok(contrast(t["on-accent"]!, t.bad!) >= 4.5, `${theme}: the words on a filled delete button`);
+    assert.ok(contrast(t["accent-ink"]!, t["accent-soft"]!) >= 4.5, `${theme}: the page you are on, in the header`);
   }
 });
 
-test("what a finger has to hit is as tall as a button on a phone: the footer's links, the buttons, the Show of a password, the sentence of a tick box, a link in a line of its own", () => {
-  const css = read(path.join(ASSETS, "app.css"));
-  /** The declarations of the rule for exactly this selector, written as the stylesheet writes it: on its own, or inside the media query that is named. */
-  const rule = (selector: string, within = ""): string => {
-    const written = `${within ? `${within} { ` : ""}${selector} {`;
-    const at = css.indexOf(written);
-    assert.ok(at >= 0, `the stylesheet has a rule for ${selector}${within ? ` in ${within}` : ""}`);
-    return css.slice(at, css.indexOf("}", at));
+test("what a finger has to hit is as tall as a button on a phone: the buttons, the header's links, the footer's, the fields and the Show of a password, the sentence of a tick box, a link in a line of its own", () => {
+  const rules = cssRules(read(path.join(ASSETS, "app.css")));
+  /** What the last rule for exactly this selector (alone or in a list) that sets the property says, at the top or inside the at-rule that mentions `within`. */
+  const value = (selector: string, property: string, within = ""): string | undefined => {
+    const found = rules.filter((r) => r.selectors.includes(selector) && (within === "" ? r.at === "" : r.at.includes(within)) && declared(r, property) !== undefined);
+    return found.length > 0 ? declared(found[found.length - 1]!, property) : undefined;
   };
-  assert.match(rule(".btn"), /min-height: 44px/, "a button is 44 pixels tall");
-  assert.match(rule(".btn-small", "@media (max-width: 720px)"), /min-height: 44px/, "and so is a small one on a phone");
-  assert.match(rule(".site-footer a"), /min-height: 44px/, "the footer's links are words with the reach of a button");
-  assert.match(rule(".site-footer a"), /min-width: 44px/);
-  assert.match(rule(".reveal", "@media (max-width: 720px)"), /min-height: 44px/, "Show and Hide on a password");
-  assert.match(rule(".check label"), /min-height: 44px/, "a tick box is ticked by hitting its sentence");
-  assert.match(rule(".aside a"), /padding: 12px/, "a link in a line of its own has a hit area taller than its text");
-  assert.match(rule(".aside a"), /margin: -12px 0/, "without moving the lines around it");
-  assert.match(rule(".ws .ws-auto .check"), /min-height: 44px/, "and so is the offer to open a workspace when it is ready");
+  const phone = "max-width: 720px";
+  assert.equal(value(".btn", "min-height"), "40px", "a button is 40 tall for a pointer");
+  assert.equal(value(".btn", "min-height", phone), "44px", "and 44 for a finger, as is a small one");
+  assert.equal(value(".btn-small", "min-height", phone), "44px");
+  assert.ok(rules.some((r) => r.selectors.includes(".btn") && r.at.includes(phone) && r.at.includes("(pointer: coarse)")), "a coarse pointer is a finger at any width");
+  assert.equal(value(".bar nav a", "min-height", phone), "44px", "the header's links");
+  assert.equal(value('input[type="email"]', "min-height", phone), "44px", "a field");
+  assert.deepEqual([value(".reveal", "top"), value(".reveal", "bottom")], ["0", "0"], "Show and Hide span the whole height of the field, so they are as tall as it is");
+  assert.equal(value(".site-footer a", "min-height"), "44px", "the footer's links are words with the reach of a button");
+  assert.equal(value(".site-footer a", "min-width"), "44px");
+  assert.equal(value(".check label", "min-height"), "44px", "a tick box is ticked by hitting its sentence");
+  assert.equal(value(".aside a", "padding"), "12px 2px", "a link in a line of its own has a hit area taller than its text");
+  assert.equal(value(".aside a", "margin"), "-12px 0", "without moving the lines around it");
+  assert.equal(value(".ws .ws-auto .check", "min-height"), "44px", "and so is the offer to open a workspace when it is ready");
 });
 
 test("no page states a period or a count the service could change: those are filled in from its settings", () => {

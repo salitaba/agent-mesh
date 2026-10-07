@@ -189,6 +189,18 @@ test("a front page that cannot get the plans says so and does not break", async 
   assert.deepEqual(cut.consoleErrors, []);
 });
 
+test("the header marks the page a person is on, and only that one", async () => {
+  const out = world((x) => (x.signedIn = false));
+  const marked = async (page: string, w = out): Promise<string[]> => {
+    const v = await visit(page, { routes: w.routes });
+    return v.doc.querySelectorAll("header nav a").filter((a) => a.getAttribute("aria-current") === "page").map((a) => v.text(a));
+  };
+  assert.deepEqual(await marked("home"), ["Plans"]);
+  assert.deepEqual(await marked("login"), ["Sign in"]);
+  for (const page of ["signup", "forgot", "terms", "404"]) assert.deepEqual(await marked(page), [], `${page} is not in the header`);
+  assert.deepEqual(await marked("account", world(paid)), ["Account"]);
+});
+
 test("signing out asks the service, and leaves the page only when the person is really out", async () => {
   const w = world(paid);
   w.answers.set("POST /api/logout", { json: { ok: true } });
@@ -578,9 +590,11 @@ test("a button that was pressed has the cursor again when its call is done, unle
 test("a main button says what it is doing while the call is out, and is itself again afterwards", async () => {
   const w = world((x) => (x.signedIn = false));
   let during = "";
+  let duringBusy: string | null = null;
   let v: Visit | undefined;
   w.answers.set("POST /api/login", () => {
     during = v!.text(v!.doc.querySelector('button[type="submit"]')!);
+    duringBusy = v!.doc.querySelector('button[type="submit"]')!.getAttribute("aria-busy");
     return failure(401, "invalid_credentials", "That email and password do not match an account.");
   });
   v = await visit("login", { routes: w.routes });
@@ -590,8 +604,10 @@ test("a main button says what it is doing while the call is out, and is itself a
   v.type("password", "a long enough secret");
   await v.send(v.$("form"));
   assert.equal(during, "Signing in", "the button said what was going on while the service had the call");
+  assert.equal(duringBusy, "true", "and said it is busy to the stylesheet, which draws its spinner, and to what reads the page");
   assert.equal(main.textContent, "Sign in", "and says what it is again");
   assert.equal(main.disabled, false);
+  assert.equal(main.getAttribute("aria-busy"), null, "and is not busy any more");
 
   for (const [page, label, busy] of [["signup", "Create account", "Creating account"], ["forgot", "Send the link", "Sending"], ["reset", "Save password", "Saving"], ["account", "Change password", "Changing"], ["account", "Pay", "One moment"], ["account", "Create workspace", "Creating"]] as const) {
     const html = fs.readFileSync(`${PAGES_DIR}/${page}.html`, "utf8");
