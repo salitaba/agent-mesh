@@ -17,7 +17,7 @@
     <a class="brand" href="/" aria-label="Curule, home"><svg class="logo" viewBox="0 0 221.54 60" aria-hidden="true" focusable="false"><path class="ink" d="M31.04 27.74A16.5 16.5 0 1 0 31.04 52.26" fill="none" stroke-width="7" stroke-linecap="round"/><circle class="seat" cx="31.04" cy="27.74" r="6"/><path class="ink" d="M45.54 23.5V40A16.5 16.5 0 0 0 78.54 40M78.54 23.5V56.5M92.54 56.5V23.5M92.54 40A16.5 16.5 0 0 1 109.04 23.5M122.04 23.5V40A16.5 16.5 0 0 0 155.04 40M155.04 23.5V56.5M171.04 3.5V56.5M185.04 40H218.04A16.5 16.5 0 1 0 213.8 51.04" fill="none" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/></svg></a>
     <nav aria-label="Main">
       <a href="/" data-nav="home">Plans</a>
-      <a href="/login" data-when="out">Sign in</a>
+      <a href="/login" data-when="out" data-nav="login">Sign in</a>
       <a href="/account" data-when="in" data-nav="account" hidden>Account</a>
       <button type="button" data-action="signout" data-when="in" hidden>Sign out</button>
     </nav>
@@ -26,43 +26,57 @@
 
 <main id="main" tabindex="-1">
 
-<article class="prose">
-  <h1>Terms</h1>
-  <p><strong>Status of these terms.</strong> They are a plain starting point. A lawyer has not reviewed them yet, and they are not legal advice.</p>
+<div class="wrap doc">
+  <nav class="toc" aria-label="On this page">
+    <p class="toc-h">On this page</p>
+    <ol>
+      <li><a href="#operator">Who provides the service</a></li>
+      <li><a href="#service">What the service is</a></li>
+      <li><a href="#payment">Plans, credit and payment</a></li>
+      <li><a href="#use">Acceptable use</a></li>
+      <li><a href="#data">Your data and the models</a></li>
+      <li><a href="#liability">Availability and liability</a></li>
+      <li><a href="#changes">Changes to these terms</a></li>
+    </ol>
+  </nav>
+  <article class="prose">
+    <h1>Terms</h1>
+    <p><strong>Status of these terms.</strong> They are a plain starting point. A lawyer has not reviewed them yet, and they are not legal advice.</p>
 
-  <h2>Who provides the service</h2>
-  <p>Curule Cloud is operated by Ali Tabatabaei, an individual. You can write to ali79taba@gmail.com.</p>
-  <p>No postal address is published. Write to the email address above.</p>
+    <h2 id="operator">Who provides the service</h2>
+    <p>Curule Cloud is operated by Ali Tabatabaei, an individual. You can write to ali79taba@gmail.com.</p>
+    <p>No postal address is published. Write to the email address above.</p>
 
-  <h2>What the service is</h2>
-  <p>Curule Cloud runs Curule workspaces on infrastructure the operator controls, and supplies the models they call. A workspace is one isolated host with its own projects, event log and files. The software in a workspace is the same Curule that can be run on your own machines.</p>
+    <h2 id="service">What the service is</h2>
+    <p>Curule Cloud runs Curule workspaces on infrastructure the operator controls, and supplies the models they call. A workspace is one isolated host with its own projects, event log and files. The software in a workspace is the same Curule that can be run on your own machines.</p>
 
-  <h2>Plans, credit and payment</h2>
-  <ul>
-    <li>A plan renews each period until it is cancelled, and includes an amount of model usage that is replaced, not added to, each period.</li>
-    <li>Credit you add does not expire and is spent after a plan's included usage. When the balance is zero, calls to models are refused.</li>
-    <li>If a payment fails, workspaces keep running for <span data-policy="graceDays">3 days</span> and are then stopped, not deleted. If a subscription ends, workspaces stop, and are deleted <span data-policy="retentionDays">30 days</span> later.</li>
-    <li>Deleting a workspace deletes its data. That cannot be undone.</li>
-  </ul>
-  <p>Payments are taken by Stripe, on Stripe's own page, so card details do not reach us.</p>
-  <p><strong>Refunds and cancellation.</strong> You can cancel a plan at any time from your account; it then ends at the close of the period you paid for. You can ask for a refund of a payment <span class="owner-term">within 14 days of making it</span>, by writing to ali79taba@gmail.com.</p>
-  <p><strong>Currency and tax.</strong> Prices are in US dollars. Where the law requires tax to be charged, it is added to the price and shown before you pay.</p>
-  <p><strong>Price changes.</strong> If a price changes, we write to you by email <span class="owner-term">at least 30 days</span> before the new price applies to you.</p>
+    <h2 id="payment">Plans, credit and payment</h2>
+    <ul>
+      <li>A plan renews each period until it is cancelled, and includes an amount of model usage that is replaced, not added to, each period.</li>
+      <li>Credit you add does not expire and is spent after a plan's included usage. When the balance is zero, calls to models are refused.</li>
+      <li>If a payment fails, workspaces keep running for <span data-policy="graceDays">3 days</span> and are then stopped, not deleted. If a subscription ends, workspaces stop, and are deleted <span data-policy="retentionDays">30 days</span> later.</li>
+      <li>Deleting a workspace deletes its data. That cannot be undone.</li>
+    </ul>
+    <p>Payments are taken by Stripe, on Stripe's own page, so card details do not reach us.</p>
+    <p><strong>Refunds and cancellation.</strong> You can cancel a plan at any time from your account; it then ends at the close of the period you paid for. You can ask for a refund of a payment <span class="owner-term">within 14 days of making it</span>, by writing to ali79taba@gmail.com.</p>
+    <p><strong>Currency and tax.</strong> Prices are in US dollars. Where the law requires tax to be charged, it is added to the price and shown before you pay.</p>
+    <p><strong>Price changes.</strong> If a price changes, we write to you by email <span class="owner-term">at least 30 days</span> before the new price applies to you.</p>
 
-  <h2>Acceptable use</h2>
-  <p>Agents in a workspace run code and reach the network. You are responsible for what they do. A workspace may not be used to attack others, to mine cryptocurrency, to send unsolicited messages, to host content that is illegal where it is served, or to work around the limits of a plan. We may stop a workspace or an account that is, and we say why when we do.</p>
-  <p>To report abuse, write to ali79taba@gmail.com.</p>
-  <p>No response time is promised for an abuse report; we read each one and act on it.</p>
+    <h2 id="use">Acceptable use</h2>
+    <p>Agents in a workspace run code and reach the network. You are responsible for what they do. A workspace may not be used to attack others, to mine cryptocurrency, to send unsolicited messages, to host content that is illegal where it is served, or to work around the limits of a plan. We may stop a workspace or an account that is, and we say why when we do.</p>
+    <p>To report abuse, write to ali79taba@gmail.com.</p>
+    <p>No response time is promised for an abuse report; we read each one and act on it.</p>
 
-  <h2>Your data and the models</h2>
-  <p>Your workspace's contents are yours. The text of the calls your agents make is sent to the model provider that answers them. What we keep about you is described in the <a href="/privacy">Privacy notice</a>.</p>
+    <h2 id="data">Your data and the models</h2>
+    <p>Your workspace's contents are yours. The text of the calls your agents make is sent to the model provider that answers them. What we keep about you is described in the <a href="/privacy">Privacy notice</a>.</p>
 
-  <h2>Availability and liability</h2>
-  <p>The service is provided &ldquo;as is&rdquo;, without a promise of availability and without warranties of any kind, to the extent the law allows. Our total liability to you for anything arising from the service is limited to the amount you paid us in <span class="owner-term">the three months</span> before the event. Which country&rsquo;s law and courts apply has not yet been set; it will be stated here before the service takes customers other than its operator.</p>
+    <h2 id="liability">Availability and liability</h2>
+    <p>The service is provided &ldquo;as is&rdquo;, without a promise of availability and without warranties of any kind, to the extent the law allows. Our total liability to you for anything arising from the service is limited to the amount you paid us in <span class="owner-term">the three months</span> before the event. Which country&rsquo;s law and courts apply has not yet been set; it will be stated here before the service takes customers other than its operator.</p>
 
-  <h2>Changes to these terms</h2>
-  <p>If these terms change, we write to you by email <span class="owner-term">at least 30 days</span> before the change applies to you.</p>
-</article>
+    <h2 id="changes">Changes to these terms</h2>
+    <p>If these terms change, we write to you by email <span class="owner-term">at least 30 days</span> before the change applies to you.</p>
+  </article>
+</div>
 </main>
 
 <footer class="site-footer">

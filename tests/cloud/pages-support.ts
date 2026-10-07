@@ -231,6 +231,8 @@ export class FakeDocument {
   readyState = "complete";
   visibilityState = "visible";
   readonly listeners = new Map<string, Listener[]>();
+  /** What the page may ask of the page as a whole: how long it is. */
+  readonly documentElement = { scrollHeight: 3000 };
 
   constructor() {
     this.root = new FakeNode("#document", this);
@@ -316,6 +318,10 @@ export interface VisitOptions {
   pointer?: "fine" | "coarse";
   /** The page's timers are the test's: nothing waits for them, and none runs until `advance` says that time has passed. */
   manualTimers?: boolean;
+  /** The browser can copy for a page (`works`, and what was copied is in `copied`) or refuses to. Left out, there is no clipboard at all, as on an address that is not secure. */
+  clipboard?: "works" | "refuses";
+  /** The browser can tell when an element is in view: `intersect` says which ones are. Left out, it cannot. */
+  observer?: boolean;
 }
 
 const tick = (): Promise<void> => new Promise((resolve) => setImmediate(resolve));
@@ -331,6 +337,12 @@ export class Visit {
   /** Calls the page should not make: to another address, without the session, or with a body it did not say is JSON. */
   readonly violations: string[] = [];
   readonly windowListeners = new Map<string, Listener[]>();
+  /** What the page asked the clipboard to hold, in order. */
+  readonly copied: string[] = [];
+  /** What the page asked to be told about (the elements it watches for coming into view), and the function that is told. */
+  readonly watching: { targets: FakeNode[]; tell: ((entries: Array<{ target: FakeNode; isIntersecting: boolean }>) => void) | null; options: unknown } = { targets: [], tell: null, options: null };
+  /** Where the reader is on the page, for what asks whether they are at its foot. */
+  readonly view = { innerHeight: 800, scrollY: 0 };
   private inflight = 0;
   private readonly timers: Array<{ id: number; at: number; fn: () => void }> = [];
   private virtualNow = 0;
@@ -358,7 +370,7 @@ export class Visit {
   async start(): Promise<this> {
     const self = this;
     const pointer = this.options.pointer;
-    const win = {
+    const win = Object.assign(self.view, {
       ...(pointer ? { matchMedia: (query: string) => ({ matches: pointer === "fine" && /hover: hover/.test(query) && /pointer: fine/.test(query) }) } : {}),
       sessionStorage: {
         getItem: (k: string) => self.storage.get(k) ?? null,
@@ -366,8 +378,34 @@ export class Visit {
         removeItem: (k: string) => void self.storage.delete(k),
       },
       addEventListener: (type: string, fn: Listener) => void self.windowListeners.set(type, [...(self.windowListeners.get(type) ?? []), fn]),
-    };
+    });
+    const watching = this.watching;
     const sandbox = {
+      ...(this.options.clipboard
+        ? {
+            navigator: {
+              clipboard: {
+                writeText: async (text: string) => {
+                  if (self.options.clipboard === "refuses") throw new Error("not allowed");
+                  self.copied.push(text);
+                },
+              },
+            },
+          }
+        : {}),
+      ...(this.options.observer
+        ? {
+            IntersectionObserver: class {
+              constructor(tell: (entries: Array<{ target: FakeNode; isIntersecting: boolean }>) => void, options: unknown) {
+                watching.tell = tell;
+                watching.options = options;
+              }
+              observe(node: FakeNode): void {
+                watching.targets.push(node);
+              }
+            },
+          }
+        : {}),
       document: this.doc,
       window: win,
       location: this.location,
@@ -561,6 +599,11 @@ export class Visit {
   pageshow(persisted: boolean): void {
     for (const fn of this.windowListeners.get("pageshow") ?? []) fn({ type: "pageshow", persisted } as unknown as FakeEvent);
   }
+  /** The elements the page watches are in view, or are not: these ids are, the rest are not. */
+  intersect(inView: string[]): void {
+    const entries = this.watching.targets.map((target) => ({ target, isIntersecting: inView.includes(target.id) }));
+    this.watching.tell?.(entries);
+  }
   /** The calls of one kind, in order. */
   to(method: string, pathName: string): Call[] {
     return this.calls.filter((c) => c.method === method && c.path === pathName);
@@ -581,4 +624,45 @@ export function helpers(): Record<string, (...args: any[]) => any> & { NEEDS: Re
   const out: Record<string, unknown> = {};
   for (const [name, value] of Object.entries(module.exports)) out[name] = typeof value === "function" ? (...args: unknown[]) => own((value as (...a: unknown[]) => unknown)(...args)) : own(value);
   return out as ReturnType<typeof helpers>;
+}
+
+// ---- the stylesheet ----
+
+export interface CssRule {
+  /** What the rule is inside of: nothing, or the `@media` / `@supports` it is under, as written. */
+  at: string;
+  selectors: string[];
+  body: string;
+}
+
+/** The rules of a stylesheet as a flat list, comments removed. `@keyframes` and `@font-face` are left out: they declare no rule a test asks about. */
+export function cssRules(css: string): CssRule[] {
+  const out: CssRule[] = [];
+  const walk = (src: string, at: string): void => {
+    let i = 0;
+    while (i < src.length) {
+      const open = src.indexOf("{", i);
+      if (open < 0) break;
+      let depth = 1;
+      let j = open + 1;
+      while (j < src.length && depth > 0) {
+        if (src[j] === "{") depth++;
+        else if (src[j] === "}") depth--;
+        j++;
+      }
+      const head = src.slice(i, open).trim();
+      const body = src.slice(open + 1, j - 1);
+      if (head.startsWith("@")) {
+        if (/^@(media|supports)\b/.test(head)) walk(body, `${at} ${head}`.trim());
+      } else out.push({ at, selectors: head.split(",").map((s) => s.trim()), body });
+      i = j;
+    }
+  };
+  walk(css.replace(/\/\*[\s\S]*?\*\//g, ""), "");
+  return out;
+}
+
+/** The value a rule gives a property, or undefined. */
+export function declared(rule: CssRule, property: string): string | undefined {
+  return new RegExp(`(?:^|;)\\s*${property}\\s*:\\s*([^;]+)`).exec(rule.body)?.[1]?.trim();
 }

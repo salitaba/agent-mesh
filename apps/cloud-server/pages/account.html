@@ -17,7 +17,7 @@
     <a class="brand" href="/" aria-label="Curule, home"><svg class="logo" viewBox="0 0 221.54 60" aria-hidden="true" focusable="false"><path class="ink" d="M31.04 27.74A16.5 16.5 0 1 0 31.04 52.26" fill="none" stroke-width="7" stroke-linecap="round"/><circle class="seat" cx="31.04" cy="27.74" r="6"/><path class="ink" d="M45.54 23.5V40A16.5 16.5 0 0 0 78.54 40M78.54 23.5V56.5M92.54 56.5V23.5M92.54 40A16.5 16.5 0 0 1 109.04 23.5M122.04 23.5V40A16.5 16.5 0 0 0 155.04 40M155.04 23.5V56.5M171.04 3.5V56.5M185.04 40H218.04A16.5 16.5 0 1 0 213.8 51.04" fill="none" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/></svg></a>
     <nav aria-label="Main">
       <a href="/" data-nav="home">Plans</a>
-      <a href="/login" data-when="out">Sign in</a>
+      <a href="/login" data-when="out" data-nav="login">Sign in</a>
       <a href="/account" data-when="in" data-nav="account" hidden>Account</a>
       <button type="button" data-action="signout" data-when="in" hidden>Sign out</button>
     </nav>
@@ -34,13 +34,34 @@
   <noscript><p class="note note-warn">This page needs JavaScript to talk to your account. Nothing on it is loaded from another site.</p></noscript>
   <div id="notice" class="note" role="status" aria-live="polite"></div>
 
-  <section class="stage" id="stage" aria-labelledby="stage-title" hidden>
+  <div class="stage" id="stage" role="group" aria-labelledby="stage-title" hidden>
     <ol class="steps" id="stage-steps" aria-label="Where you are" hidden></ol>
-    <h2 id="stage-title" tabindex="-1"></h2>
-    <p id="stage-text"></p>
+    <div class="stage-body">
+      <h2 id="stage-title" tabindex="-1"></h2>
+      <p id="stage-text"></p>
+    </div>
     <div class="btn-row" id="stage-actions"></div>
-  </section>
+  </div>
   <p class="sr" id="stage-live" role="status" aria-live="polite"></p>
+
+  <div class="skel" id="skeleton" aria-hidden="true" hidden>
+    <div class="sk sk-stage"></div>
+    <div class="sk-tiles"><div class="sk"></div><div class="sk"></div><div class="sk"></div></div>
+    <div class="sk sk-card"></div>
+  </div>
+
+  <section class="glance" id="glance" aria-labelledby="glance-h" hidden>
+    <h2 class="sr" id="glance-h">At a glance</h2>
+    <dl id="glance-list"></dl>
+  </section>
+
+  <nav class="subnav" id="subnav" aria-label="On this page" hidden>
+    <a href="#workspaces-panel">Workspaces</a>
+    <a href="#plan-panel">Plan</a>
+    <a href="#balance-panel">Balance</a>
+    <a href="#usage-panel">Usage</a>
+    <a href="#settings-panel">Settings</a>
+  </nav>
 
   <section class="panel" id="workspaces-panel" aria-labelledby="workspaces-h" hidden>
     <h2 id="workspaces-h">Workspaces</h2>
@@ -67,17 +88,19 @@
 
   <section class="panel" id="balance-panel" aria-labelledby="balance-h" hidden>
     <h2 id="balance-h">Balance</h2>
-    <dl class="figures" id="figures"></dl>
-    <div id="topup-status" class="note" role="status" aria-live="polite"></div>
-    <div class="btn-row topup-options" id="topup-options"></div>
-    <form id="topup" class="inline-form" novalidate>
-      <div class="field">
-        <label for="topup-amount">Another amount <span class="muted" id="topup-unit"></span></label>
-        <input id="topup-amount" name="amount" type="number" inputmode="decimal" min="0" step="any" autocomplete="off" aria-describedby="topup-hint">
-      </div>
-      <button class="btn" type="submit" data-busy="One moment">Pay</button>
-    </form>
-    <p id="topup-hint" class="muted small"></p>
+    <div class="card">
+      <dl class="figures" id="figures"></dl>
+      <div id="topup-status" class="note" role="status" aria-live="polite"></div>
+      <div class="btn-row topup-options" id="topup-options"></div>
+      <form id="topup" class="inline-form" novalidate>
+        <div class="field">
+          <label for="topup-amount">Another amount <span class="muted" id="topup-unit"></span></label>
+          <input id="topup-amount" name="amount" type="number" inputmode="decimal" min="0" step="any" autocomplete="off" aria-describedby="topup-hint">
+        </div>
+        <button class="btn" type="submit" data-busy="One moment">Pay</button>
+      </form>
+      <p id="topup-hint" class="muted small"></p>
+    </div>
   </section>
 
   <section class="panel" id="usage-panel" aria-labelledby="usage-h" hidden>
@@ -86,28 +109,31 @@
     <div id="usage"></div>
   </section>
 
-  <section class="panel panel-quiet" aria-labelledby="security-h">
-    <h2 id="security-h">Settings</h2>
-    <form id="password-form" aria-labelledby="password-h" novalidate>
-      <h3 id="password-h">Change your password</h3>
-      <div id="password-status" class="note" role="status" aria-live="polite"></div>
-      <div class="field">
-        <label for="current">Current password</label>
-        <div class="secret">
-          <input id="current" name="current" type="password" autocomplete="current-password" required>
-          <button class="reveal" type="button" data-reveal="current" aria-controls="current" aria-label="Show password" hidden>Show</button>
+  <section class="panel panel-quiet" id="settings-panel" aria-labelledby="security-h">
+    <details>
+      <summary><h2 id="security-h">Settings</h2></summary>
+      <form id="password-form" aria-labelledby="password-h" novalidate>
+        <h3 id="password-h">Change your password</h3>
+        <div id="password-status" class="note" role="status" aria-live="polite"></div>
+        <div class="field">
+          <label for="current">Current password</label>
+          <div class="secret">
+            <input id="current" name="current" type="password" autocomplete="current-password" required>
+            <button class="reveal" type="button" data-reveal="current" aria-controls="current" aria-label="Show password" hidden>Show</button>
+          </div>
         </div>
-      </div>
-      <div class="field">
-        <label for="next">New password</label>
-        <div class="secret">
-          <input id="next" name="next" type="password" autocomplete="new-password" required minlength="10" aria-describedby="next-hint">
-          <button class="reveal" type="button" data-reveal="next" aria-controls="next" aria-label="Show password" hidden>Show</button>
+        <div class="field">
+          <label for="next">New password</label>
+          <div class="secret">
+            <input id="next" name="next" type="password" autocomplete="new-password" required minlength="10" aria-describedby="next-hint">
+            <button class="reveal" type="button" data-reveal="next" aria-controls="next" aria-label="Show password" hidden>Show</button>
+          </div>
+          <meter class="len" data-len="next" min="0" max="10" value="0" aria-hidden="true"></meter>
+          <span id="next-hint" class="hint">At least 10 characters. Changing it signs you out on every other device.</span>
         </div>
-        <span id="next-hint" class="hint">At least 10 characters. Changing it signs you out on every other device.</span>
-      </div>
-      <button class="btn" type="submit" data-busy="Changing">Change password</button>
-    </form>
+        <button class="btn" type="submit" data-busy="Changing">Change password</button>
+      </form>
+    </details>
   </section>
 </div>
 </main>

@@ -29,7 +29,7 @@
     verify: ["status", "title", "again", "resend-form", "resend", "resend-wait", "resend-status", "email"],
     forgot: ["form", "status", "email"],
     reset: ["card", "form", "status", "title", "lede", "password"],
-    account: ["who", "notice", "stage", "stage-steps", "stage-title", "stage-text", "stage-actions", "stage-live", "workspaces-panel", "workspaces", "create-slot", "create-box", "create", "workspace-name", "create-note", "plan-panel", "plan-h", "plan-status", "plan", "balance-panel", "usage-panel", "figures", "topup", "topup-amount", "topup-unit", "topup-hint", "topup-status", "topup-options", "usage", "password-form", "password-status", "current", "next"],
+    account: ["who", "notice", "skeleton", "glance", "glance-list", "subnav", "settings-panel", "stage", "stage-steps", "stage-title", "stage-text", "stage-actions", "stage-live", "workspaces-panel", "workspaces", "create-slot", "create-box", "create", "workspace-name", "create-note", "plan-panel", "plan-h", "plan-status", "plan", "balance-panel", "usage-panel", "figures", "topup", "topup-amount", "topup-unit", "topup-hint", "topup-status", "topup-options", "usage", "password-form", "password-status", "current", "next"],
     terms: [],
     privacy: [],
     notfound: [],
@@ -150,6 +150,11 @@
   const lacksKey = (w) => Boolean(w.models) && w.models.key === null;
   /** A subscription that still holds a plan. One that has ended is a plan that can be chosen again. */
   const holdsPlan = (sub) => Boolean(sub) && sub.status !== "ended";
+
+  /** How far a new password is towards the length it must have: the characters so far (no more than the length asked for) and whether that is enough. It says nothing of how good the password is. */
+  function lengthProgress(length, need) {
+    return { value: Math.min(length, need), done: length >= need };
+  }
 
   const POLICY_UNITS = { graceDays: "day", retentionDays: "day", sessionDays: "day", idleDays: "day", verificationHours: "hour", resetHours: "hour" };
 
@@ -287,6 +292,54 @@
     return { workspaces: view.workspaces.length > 0, plan: live ? "summary" : "choose", balance: sellsUsage, usage: sellsUsage && (view.workspaces.length > 0 || (view.usageCalls || 0) > 0) };
   }
 
+  /** A subscription's state in a word, and the tone it is said in. */
+  function planState(sub) {
+    if (sub.status === "ended") return ["Ended", "bad"];
+    if (sub.status === "past_due") return ["Payment overdue", "warn"];
+    if (sub.status === "active") return ["Active", "ok"];
+    return [sub.status, ""];
+  }
+
+  /**
+   * What the account is, at a glance: the workspaces that are running, the plan, and the balance where the plan sells usage. Only what the
+   * account has is a tile, and each says in a few words what the section below says of it. `balance` is what the service sent, or null.
+   */
+  function glanceOf(view, balance, currency) {
+    const sub = view.subscription;
+    if (!holdsPlan(sub)) return [];
+    const plan = view.plans.find((p) => p.id === sub.plan);
+    const count = (...states) => view.workspaces.filter((w) => states.includes(w.status)).length;
+    const others = [[count("requested", "provisioning"), "starting"], [count("suspended"), "stopped"], [count("failed"), "could not start"]].filter(([n]) => n > 0).map(([n, what]) => `${n} ${what}`);
+    const tiles = [{ id: "workspaces", label: "Workspaces", value: String(count("running")), unit: "running", note: others.join(", ") || (plan ? `${plural(plan.workspaces, "workspace")} in your plan` : "") }];
+    const [state, tone] = planState(sub);
+    tiles.push({ id: "plan", label: "Plan", value: sub.title || "Your plan", unit: "", note: plan ? `${money(plan.priceMinor, currency)} per ${plan.period}` : "", badge: [state, tone] });
+    if (sectionsOf(view).balance) tiles.push({ id: "balance", label: "Balance", value: balance ? balanceMoney(balance.balance.available, balance.currency) : "", unit: "", note: balance ? "available" : "Not available just now" });
+    return tiles;
+  }
+
+  /**
+   * How much of what the plan includes each period is left, or null when the figures do not say: a plan that has none to include, a balance
+   * that could not be read, or one that holds more than the plan includes (the plan was changed part way through the period).
+   */
+  function allowanceLeft(plan, balance) {
+    if (!plan || !balance || plan.byok) return null;
+    const of = plan.includedUsageMicros;
+    const left = balance.balance.included;
+    return of > 0 && left >= 0 && left <= of ? { left, of } : null;
+  }
+
+  /** Which section of a long page a reader is in: the last, in page order, that is in the band they read in; at the foot of the page, the last there is. */
+  function pickSection(order, inBand, atFoot) {
+    if (atFoot && order.length > 0) return order[order.length - 1];
+    const here = order.filter((id) => inBand.has(id));
+    return here.length > 0 ? here[here.length - 1] : "";
+  }
+
+  /** How far a workspace is in starting: asked for, then being set up (the service says no more than that), and 0 for one that is not starting. */
+  function phaseOf(status) {
+    return status === "requested" ? 1 : status === "provisioning" ? 2 : 0;
+  }
+
   /**
    * Whether a person can start a workspace that is stopped: the service starts none for an account whose plan is not paid up (it answers
    * that a payment is needed), and starts them all itself when the payment comes.
@@ -326,7 +379,7 @@
     return JSON.stringify([sub && [sub.plan, sub.status, sub.periodEnd], b && [b.balance.included, b.balance.purchased]]);
   }
 
-  const exported = { NEEDS, plural, digitsOf, bareAmount, money, usageMoney, balanceMoney, count, when, dayLabel, parseAmount, nextPath, outsideUrl, reasonText, planFacts, fingerprint, isStarting, holdsPlan, canKey, lacksKey, isByok, stepsOf, stageOf, nextStepOf, sectionsOf, resumable, workspaceSays, STATES, POLICY_UNITS };
+  const exported = { NEEDS, lengthProgress, planState, glanceOf, allowanceLeft, pickSection, phaseOf, plural, digitsOf, bareAmount, money, usageMoney, balanceMoney, count, when, dayLabel, parseAmount, nextPath, outsideUrl, reasonText, planFacts, fingerprint, isStarting, holdsPlan, canKey, lacksKey, isByok, stepsOf, stageOf, nextStepOf, sectionsOf, resumable, workspaceSays, STATES, POLICY_UNITS };
   if (typeof module === "object" && module !== null && typeof module.exports === "object") module.exports = exported;
   if (typeof document === "undefined") return;
 
@@ -368,6 +421,8 @@
   function say(node, kind, text) {
     node.className = kind ? `note note-${kind}` : "note";
     node.textContent = text || "";
+    // A status that was drawn as a wait (the page that checks a link) is not waiting for anything once it has said something.
+    node.removeAttribute("aria-busy");
   }
 
   /** The quiet line under a form, which turns into a note when there is something to say. */
@@ -436,7 +491,11 @@
       const buttons = [...node.querySelectorAll("button")];
       for (const b of buttons) b.disabled = true;
       const label = main ? main.textContent : "";
-      if (main) main.textContent = main.dataset.busy;
+      if (main) {
+        main.textContent = main.dataset.busy;
+        // The stylesheet draws a spinner for it, and a button that is disabled while it works is not dimmed as if it could not be used.
+        main.setAttribute("aria-busy", "true");
+      }
       node.setAttribute("aria-busy", "true");
       // Whatever is sent is not left showing for the next person at the screen.
       for (const b of node.querySelectorAll("[data-reveal]")) hideSecret(b);
@@ -448,7 +507,10 @@
       } finally {
         busy = false;
         for (const b of buttons) b.disabled = false;
-        if (main) main.textContent = label;
+        if (main) {
+          main.textContent = label;
+          main.removeAttribute("aria-busy");
+        }
         node.removeAttribute("aria-busy");
         // A button that is disabled loses the cursor in some browsers: it comes back, unless the handler put it somewhere else.
         if (focused && (!doc.activeElement || doc.activeElement === doc.body)) focused.focus();
@@ -479,6 +541,33 @@
     if (set) set(false);
   }
 
+  const lengths = new Map();
+
+  /**
+   * The meter under a new password shows how many of the characters asked for are there, and nothing else: length against the minimum the field
+   * states is a fact, and how good a password is cannot be told from how it looks. It is for the eye (the hint says the same in words).
+   */
+  function wireLength(meter) {
+    const input = $(meter.dataset.len);
+    if (!input) return;
+    const need = Number(input.getAttribute("minlength")) || 10;
+    meter.setAttribute("max", String(need));
+    const sync = () => {
+      const { value, done } = lengthProgress(input.value.length, need);
+      meter.setAttribute("value", String(value));
+      if (done) meter.setAttribute("data-done", "");
+      else meter.removeAttribute("data-done");
+    };
+    lengths.set(input, sync);
+    input.addEventListener("input", sync);
+  }
+
+  /** A field the page emptied itself says so to its meter: no input event is fired for that. */
+  function syncLength(input) {
+    const sync = lengths.get(input);
+    if (sync) sync();
+  }
+
   /** The page's heading and the tab's title say what the page is now: a link that was sent is no longer "Create your account". */
   function retitle(heading, lede) {
     const title = $("title");
@@ -502,6 +591,7 @@
     const label = trigger.textContent;
     trigger.disabled = true;
     trigger.textContent = "One moment";
+    trigger.setAttribute("aria-busy", "true");
     if (before) before();
     const r = await request();
     const url = r.ok ? outsideUrl(r.data && r.data.url) : null;
@@ -511,6 +601,7 @@
     }
     trigger.disabled = false;
     trigger.textContent = label;
+    trigger.removeAttribute("aria-busy");
     // An answer that is fine but names no address this page will follow is a failure like any other, and is said as one.
     failed(r.ok ? { ok: false, status: r.status, data: r.data, error: { code: "bad_address", message: "The page we were meant to send you to could not be opened. Try again in a moment." } } : r);
   }
@@ -520,7 +611,7 @@
   function paintChrome(me, page) {
     const signedIn = me !== null;
     for (const node of doc.querySelectorAll("[data-when]")) node.hidden = (node.dataset.when === "in") !== signedIn;
-    const here = page === "home" ? "home" : page === "account" ? "account" : "";
+    const here = { home: "home", account: "account", login: "login" }[page] || "";
     for (const a of doc.querySelectorAll("[data-nav]")) {
       if (a.dataset.nav === here) a.setAttribute("aria-current", "page");
       else a.removeAttribute("aria-current");
@@ -564,7 +655,7 @@
     return el(
       "article",
       { class: current ? "plan current" : "plan" },
-      el("h3", null, plan.title, current ? el("span", { class: "badge badge-ok" }, "Your plan") : null),
+      el("h3", null, plan.title, current ? el("span", { class: "badge badge-accent" }, "Your plan") : null),
       el("div", { class: "price" }, money(plan.priceMinor, currency), el("small", null, ` per ${plan.period}`)),
       plan.summary ? el("p", { class: "muted" }, plan.summary) : null,
       el("ul", null, planFacts(plan, currency).map((fact) => el("li", null, fact))),
@@ -583,9 +674,12 @@
 
   // ---- the front page ----
 
+  /** The shape of the cards stands in for them while they are read, and a reader who cannot see it is told. It is drawn as the page starts, before the session is asked about. */
+  const planShape = () => $("plans").replaceChildren(el("div", { class: "sk sk-plan", "aria-hidden": "true" }), el("div", { class: "sk sk-plan", "aria-hidden": "true" }), el("p", { class: "sr" }, "Loading the plans."));
+
   async function homePage(me) {
     const box = $("plans");
-    box.textContent = "Loading the plans.";
+    if (!box.querySelector(".sk")) planShape();
     const r = await plans();
     if (!r.ok || r.data.plans.length === 0) {
       box.replaceChildren(el("p", { class: "note note-warn" }, r.ok ? "No plan is on offer just now." : "The plans could not be loaded just now. Reload the page to try again."));
@@ -695,8 +789,9 @@
       const press = button("Resend the email", { type: "submit", id: "resend", attrs: { "data-busy": "Sending" } });
       const wait = el("p", { id: "resend-wait", class: "muted small" });
       const answer = el("div", { id: "resend-status", class: "note", role: "status", "aria-live": "polite" });
-      const again = el("form", { id: "resend-form", class: "resend", novalidate: true }, el("div", { class: "btn-row" }, press, el("a", { id: "another", class: "btn", href: "/signup", onclick: () => store.set(SIGNUP_ADDRESS, address) }, "Use another address")), answer, wait);
+      const again = el("form", { id: "resend-form", class: "resend", novalidate: true }, el("div", { class: "btn-row" }, press, el("a", { id: "another", class: "btn btn-ghost", href: "/signup", onclick: () => store.set(SIGNUP_ADDRESS, address) }, "Use another address")), answer, wait);
       card.replaceChildren(
+        el("div", { class: "tile tile-mail", "aria-hidden": "true" }),
         el("div", { class: "note note-ok", role: "status" }, r.data.message),
         el("p", null, "We sent the link to ", el("strong", null, address), ". It works once, and the email says when it expires."),
         again,
@@ -863,14 +958,19 @@
   const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
   const SIGN_IN = "/login?next=/account";
 
+  /** The shape of the page while its first read is out, so that what arrives does not move what is already there. */
+  const skeleton = (on) => ($("skeleton").hidden = !on);
+
   async function accountPage(signedIn) {
     if (!signedIn) {
+      skeleton(false);
       location.replace(SIGN_IN);
       return;
     }
     // The header needed only to know who this is; the account needs the balance too.
     const first = await call("GET", "/api/me");
     if (!first.ok) {
+      skeleton(false);
       if (signedOut(first)) location.replace(SIGN_IN);
       else say($("notice"), "bad", `${first.error.message} Reload the page to try again.`);
       return;
@@ -958,6 +1058,75 @@
     function flash(kind, text) {
       state.flash = { kind, text };
       renderNotice();
+    }
+
+    // -- at a glance, and where on a long page a person is --
+
+    const stat = (t) =>
+      el(
+        "div",
+        { class: `stat stat-${t.id}` },
+        el("dt", null, t.label),
+        t.value ? el("dd", { class: "stat-v" }, el("span", { class: "n" }, t.value), t.unit ? el("span", { class: "u" }, t.unit) : null, t.badge ? el("span", { class: t.badge[1] ? `badge badge-${t.badge[1]}` : "badge" }, t.badge[0]) : null) : null,
+        el("dd", { class: "stat-n" }, t.note),
+      );
+
+    function renderGlance() {
+      const tiles = glanceOf(viewOf(), state.me.balance, state.currency);
+      $("glance").hidden = tiles.length === 0;
+      $("glance-list").replaceChildren(...tiles.map(stat));
+    }
+
+    /** What is in the page's list of sections: the ones the account has. A list of two is for a page that is short. */
+    const SECTIONS = ["workspaces-panel", "plan-panel", "balance-panel", "usage-panel", "settings-panel"];
+    const inBand = new Set();
+    let spy = null;
+
+    function markSection() {
+      const nav = $("subnav");
+      const order = [...nav.querySelectorAll("a")].filter((a) => !a.hidden).map((a) => a.getAttribute("href").slice(1));
+      const atFoot = window.innerHeight + window.scrollY >= doc.documentElement.scrollHeight - 2;
+      const here = pickSection(order, inBand, atFoot);
+      for (const a of nav.querySelectorAll("a")) {
+        if (a.getAttribute("href") === `#${here}`) a.setAttribute("aria-current", "location");
+        else a.removeAttribute("aria-current");
+      }
+    }
+
+    function renderSubnav() {
+      const nav = $("subnav");
+      let shown = 0;
+      for (const a of nav.querySelectorAll("a")) {
+        const target = doc.getElementById(a.getAttribute("href").slice(1));
+        a.hidden = !target || target.hidden;
+        if (!a.hidden) shown += 1;
+      }
+      nav.hidden = shown < 3;
+      // The page's own sections tell the list where the reader is. A browser that cannot tell leaves the list as a list of links.
+      if (typeof IntersectionObserver !== "function") return;
+      if (spy === null) {
+        spy = new IntersectionObserver(
+          (entries) => {
+            for (const e of entries) {
+              if (e.isIntersecting) inBand.add(e.target.id);
+              else inBand.delete(e.target.id);
+            }
+            markSection();
+          },
+          { rootMargin: "-25% 0px -65% 0px" },
+        );
+        for (const id of SECTIONS) spy.observe($(id));
+      }
+      markSection();
+    }
+
+    // Settings is closed until it is asked for, and the list's link to it is asking.
+    const settingsLink = [...$("subnav").querySelectorAll("a")].find((a) => a.getAttribute("href") === "#settings-panel");
+    if (settingsLink) {
+      settingsLink.addEventListener("click", () => {
+        const details = $("settings-panel").querySelector("details");
+        if (details) details.setAttribute("open", "");
+      });
     }
 
     // -- workspaces --
@@ -1143,6 +1312,33 @@
       return [buttons.length > 0 ? el("div", { class: "btn-row" }, buttons) : null, panel].filter(Boolean);
     }
 
+    /** Three steps, asked for, set up, ready: how far a starting workspace is, for the eye (the badge and the sentence say it in words). */
+    const phaseBar = (status) => el("span", { class: "phase", "data-step": String(phaseOf(status)), "aria-hidden": "true" }, el("i"), el("i"), el("i"));
+
+    /** The browser copies for a page only on an address that is secure, so the control is offered only where it can do what it says. */
+    const canCopy = () => typeof navigator !== "undefined" && Boolean(navigator.clipboard) && typeof navigator.clipboard.writeText === "function";
+
+    function copyButton(w, card) {
+      const press = el("button", { type: "button", class: "btn btn-quiet btn-small copy", "aria-label": `Copy the address of ${w.name}` }, "Copy");
+      press.addEventListener("click", async () => {
+        let said = "Copied the address.";
+        try {
+          await navigator.clipboard.writeText(w.host);
+        } catch {
+          said = "The address could not be copied.";
+        }
+        press.textContent = said === "Copied the address." ? "Copied" : "Copy";
+        // Said where the card says what became of what was asked, unless that line is in use for something else.
+        const free = card.note.className.split(/\s+/).includes("sr");
+        if (free) card.note.textContent = said;
+        setTimeout(() => {
+          press.textContent = "Copy";
+          if (free && card.note.textContent === said) card.note.textContent = "";
+        }, 1800);
+      });
+      return press;
+    }
+
     /** "Open it when it is ready", off until the person asks: a page that takes someone away on its own does so only because they said it may. */
     function autoOpenBox(w) {
       const id = w.workspaceId;
@@ -1163,8 +1359,8 @@
       // Ready is not running only: on a plan that sells hosting only a workspace with no key is up, and has nothing to open for.
       const waiting = isStarting(w) || (w.status === "running" && lacksKey(w));
       const showAuto = isStarting(w) || (waiting && state.autoOpen.has(id));
-      part(card, "head", JSON.stringify([w.name, w.status]), () => [el("strong", null, w.name), el("span", { class: kind ? `badge badge-${kind}` : "badge" }, label)]);
-      part(card, "says", says, () => (says ? [says] : []));
+      part(card, "head", JSON.stringify([w.name, w.status]), () => [el("strong", null, w.name), el("span", { class: [kind ? `badge badge-${kind}` : "badge", isStarting(w) ? "badge-live" : ""].filter(Boolean).join(" ") }, label)]);
+      part(card, "says", `${w.status}|${says}`, () => [...(isStarting(w) ? [phaseBar(w.status)] : []), ...(says ? [says] : [])]);
       part(card, "auto", String(showAuto), () => (showAuto ? [autoOpenBox(w)] : []));
       part(card, "actions", JSON.stringify([w.name, w.status, resumable(w, view), lacksKey(w), cardOffers(id, "open"), cardOffers(id, "resume"), state.more.has(id), state.confirming === id]), () => actionsOf(w, view));
       part(card, "key", keyShape(w), () => keyBlock(w));
@@ -1181,7 +1377,7 @@
       }
       if (card.addressShape !== w.host) {
         card.addressShape = w.host;
-        card.address.replaceChildren("Address ", el("code", null, w.host));
+        card.address.replaceChildren("Address ", el("code", null, w.host), ...(canCopy() ? [copyButton(w, card)] : []));
       }
       return card;
     }
@@ -1498,7 +1694,7 @@
       const checkout = (p, kind) => (event) => leaveFor(event.currentTarget, () => call("POST", "/api/checkout", { purpose: "subscription", plan: p.id }), failedHere, rememberBefore);
       const parts = [];
       if (sub) {
-        const label = sub.status === "ended" ? ["Ended", "bad"] : sub.status === "past_due" ? ["Payment overdue", "warn"] : sub.status === "active" ? ["Active", "ok"] : [sub.status, ""];
+        const label = planState(sub);
         const others = live ? state.plans.filter((p) => p.id !== sub.plan) : [];
         const said = [plan && live ? `${money(plan.priceMinor, state.currency)} per ${plan.period}.` : "", live && sub.periodEnd ? `Paid until ${when(sub.periodEnd)}.` : ""].filter(Boolean).join(" ");
         parts.push(
@@ -1554,8 +1750,8 @@
 
     // -- balance and credit --
 
-    function figure(label, value) {
-      return el("div", null, el("dt", null, label), el("dd", null, value));
+    function figure(label, value, of) {
+      return el("div", null, el("dt", null, label), el("dd", null, value), of || null);
     }
 
     function renderBalance() {
@@ -1564,7 +1760,10 @@
         $("figures").replaceChildren(figure("Available", "Not available just now"));
         return;
       }
-      $("figures").replaceChildren(figure("Available", balanceMoney(b.balance.available, b.currency)), figure("From your plan", balanceMoney(b.balance.included, b.currency)), figure("From credit you added", balanceMoney(b.balance.purchased, b.currency)));
+      // What the plan includes each period, and how much of it is left: a bar for the eye, and the figure it is of.
+      const left = allowanceLeft(planOf(), b);
+      const of = left ? el("dd", { class: "of" }, el("meter", { min: 0, max: left.of, value: left.left, "aria-label": `From your plan: ${balanceMoney(left.left, b.currency)} left of ${balanceMoney(left.of, b.currency)}` }), `of ${balanceMoney(left.of, b.currency)}`) : null;
+      $("figures").replaceChildren(figure("Available", balanceMoney(b.balance.available, b.currency)), figure("From your plan", balanceMoney(b.balance.included, b.currency), of), figure("From credit you added", balanceMoney(b.balance.purchased, b.currency)));
     }
 
     function renderTopups() {
@@ -1597,10 +1796,21 @@
 
     // -- usage --
 
-    function usageTable(caption, heading, rows, total, showFailed) {
+    function usageTable(caption, heading, rows, total, showFailed, bars) {
       const head = [heading, "Calls", ...(showFailed ? ["Failed"] : []), "Input tokens", "Output tokens", "Charged"];
       const cells = (row, label) => [label, count(row.calls), ...(showFailed ? [count(row.failed)] : []), count(row.inputTokens), count(row.outputTokens), usageMoney(row.chargedMicros, state.usageCurrency)];
-      const line = (values, tag) => el("tr", null, values.map((v, i) => el(i === 0 ? "th" : tag, i === 0 ? { scope: "row" } : { class: "num" }, v)));
+      // A bar beside what a day was charged is that day against the busiest of the days shown: for the eye, the figure is the one that is read.
+      const busiest = bars ? Math.max(0, ...rows.map((r) => r.chargedMicros)) : 0;
+      const line = (values, tag, row) =>
+        el(
+          "tr",
+          null,
+          values.map((v, i) => {
+            if (i === 0) return el("th", { scope: "row" }, v);
+            const bar = row && busiest > 0 && i === values.length - 1 ? el("meter", { min: 0, max: busiest, value: row.chargedMicros, "aria-hidden": "true" }) : null;
+            return el(tag, { class: "num" }, bar ? el("span", { class: "bar-cell" }, bar, v) : v);
+          }),
+        );
       // A table that can scroll sideways on a narrow screen must be reachable by keyboard, and say what it is.
       return el(
         "div",
@@ -1610,7 +1820,7 @@
           null,
           el("caption", null, caption),
           el("thead", null, el("tr", null, head.map((h, i) => el("th", { scope: "col", class: i === 0 ? "" : "num" }, h)))),
-          el("tbody", null, rows.map((row) => line(cells(row, row.label), "td"))),
+          el("tbody", null, rows.map((row) => line(cells(row, row.label), "td", row))),
           total ? el("tfoot", null, line(cells(total, "Total"), "td")) : null,
         ),
       );
@@ -1618,7 +1828,7 @@
 
     async function loadUsage() {
       const box = $("usage");
-      box.replaceChildren(el("p", { class: "muted" }, "Loading."));
+      box.replaceChildren(el("div", { class: "sk sk-card", "aria-hidden": "true" }), el("p", { class: "sr" }, "Loading."));
       const r = await call("GET", "/api/usage");
       if (signInAgain(r)) return;
       if (!r.ok) {
@@ -1629,8 +1839,9 @@
       state.usageCurrency = u.currency;
       state.usageCalls = u.total.calls;
       $("usage-panel").hidden = !sectionsOf(viewOf()).usage;
+      renderSubnav();
       if (u.total.calls === 0) {
-        box.replaceChildren(el("p", { class: "muted" }, "Nothing has been used yet. Calls appear here when a mesh in one of your workspaces asks a model for something."));
+        box.replaceChildren(el("div", { class: "empty" }, el("div", { class: "tile tile-bars", "aria-hidden": "true" }), el("p", { class: "empty-t" }, "Nothing has been used yet."), el("p", { class: "muted" }, "Calls appear here when a mesh in one of your workspaces asks a model for something.")));
         return;
       }
       const days = u.byDay
@@ -1640,7 +1851,7 @@
         .map((row) => ({ ...row, label: dayLabel(row.group) }));
       const spaces = u.byWorkspace.map((row) => ({ ...row, label: nameOf(row.group) }));
       const showFailed = u.total.failed > 0;
-      box.replaceChildren(usageTable(`By day, the last ${USAGE_DAYS} days with calls`, "Day", days, u.total, showFailed), usageTable("By workspace, in all", "Workspace", spaces, null, showFailed));
+      box.replaceChildren(usageTable(`By day, the last ${USAGE_DAYS} days with calls`, "Day", days, u.total, showFailed, true), usageTable("By workspace, in all", "Workspace", spaces, null, showFailed, false));
     }
 
     // -- everything that is drawn from the account --
@@ -1650,11 +1861,14 @@
       const sections = sectionsOf(viewOf());
       renderNotice();
       renderStage();
+      renderGlance();
       renderWorkspaces();
       renderPlan();
       $("balance-panel").hidden = !sections.balance;
       $("usage-panel").hidden = !sections.usage;
       renderBalance();
+      renderSubnav();
+      skeleton(false);
       // Credit and usage are asked for once the account has a plan that sells them, whenever that comes to be.
       if (sections.balance && !state.usageLoaded) {
         state.usageLoaded = true;
@@ -1728,6 +1942,7 @@
       }
       current.value = "";
       next.value = "";
+      syncLength(next);
       say(status, "ok", "Your password is changed. Every other device is signed out.");
     });
 
@@ -1797,16 +2012,20 @@
       console.error(`This page lacks what its script needs: ${missing.join(", ")}`);
       return;
     }
+    if (page === "account") skeleton(true);
+    if (page === "home") planShape();
     doc.addEventListener("input", (event) => {
       if (event.target && event.target.removeAttribute) event.target.removeAttribute("aria-invalid");
     });
     for (const button of doc.querySelectorAll("[data-reveal]")) wireSecret(button);
+    for (const meter of doc.querySelectorAll("[data-len]")) wireLength(meter);
     const asked = call("GET", "/api/session");
     const polite = paintPolicy();
     const reply = await asked;
     const me = reply.ok ? reply.data.account : null;
     paintChrome(me, page);
     if (page === "account" && !reply.ok) {
+      skeleton(false);
       say($("notice"), "bad", `${reply.error.message} Reload the page to try again.`);
       return;
     }

@@ -189,6 +189,18 @@ test("a front page that cannot get the plans says so and does not break", async 
   assert.deepEqual(cut.consoleErrors, []);
 });
 
+test("the header marks the page a person is on, and only that one", async () => {
+  const out = world((x) => (x.signedIn = false));
+  const marked = async (page: string, w = out): Promise<string[]> => {
+    const v = await visit(page, { routes: w.routes });
+    return v.doc.querySelectorAll("header nav a").filter((a) => a.getAttribute("aria-current") === "page").map((a) => v.text(a));
+  };
+  assert.deepEqual(await marked("home"), ["Plans"]);
+  assert.deepEqual(await marked("login"), ["Sign in"]);
+  for (const page of ["signup", "forgot", "terms", "404"]) assert.deepEqual(await marked(page), [], `${page} is not in the header`);
+  assert.deepEqual(await marked("account", world(paid)), ["Account"]);
+});
+
 test("signing out asks the service, and leaves the page only when the person is really out", async () => {
   const w = world(paid);
   w.answers.set("POST /api/logout", { json: { ok: true } });
@@ -554,6 +566,51 @@ test("a password field has Show and Hide that only a script can give, and a pass
   }
 });
 
+test("a new password shows how far it is towards the length asked for, in steps, and says nothing of how good it is", async () => {
+  const h = helpers();
+  assert.deepEqual(h.lengthProgress(0, 10), { value: 0, done: false });
+  assert.deepEqual(h.lengthProgress(9, 10), { value: 9, done: false });
+  assert.deepEqual(h.lengthProgress(10, 10), { value: 10, done: true });
+  assert.deepEqual(h.lengthProgress(40, 10), { value: 10, done: true }, "a longer one has no more of it to show");
+  for (const [page, search] of [["signup", ""], ["reset", "?token=t0k3n"]] as const) {
+    const v = await visit(page, { routes: world((x) => (x.signedIn = false)).routes, search });
+    const meter = v.doc.querySelector("meter")!;
+    assert.deepEqual([meter.getAttribute("max"), meter.getAttribute("value"), meter.getAttribute("aria-hidden")], ["10", "0", "true"], `${page}: it is for the eye: the hint says the same in words`);
+    assert.equal(meter.getAttribute("data-len"), "password");
+    v.type("password", "abcd");
+    assert.deepEqual([meter.getAttribute("value"), meter.hasAttribute("data-done")], ["4", false], page);
+    v.type("password", "correct horse");
+    assert.deepEqual([meter.getAttribute("value"), meter.hasAttribute("data-done")], ["10", true], `${page}: full, and marked so`);
+    v.type("password", "short one");
+    assert.deepEqual([meter.getAttribute("value"), meter.hasAttribute("data-done")], ["9", false], `${page}: and not once it is shortened`);
+  }
+});
+
+test("the page that says the link was sent has an icon for what it is, which is for the eye and says nothing", async () => {
+  const { v } = await (async () => {
+    const w = world((x) => (x.signedIn = false));
+    w.answers.set("POST /api/signup", { status: 202, json: { ok: true, message: "Check your email for a link to confirm your address." } });
+    const page = await visit("signup", { routes: w.routes, manualTimers: true });
+    page.type("email", "ada@example.com");
+    page.type("password", "correct horse battery staple");
+    page.check("agree");
+    await page.send(page.$("form"));
+    return { v: page };
+  })();
+  const tile = v.$("card").querySelector(".tile")!;
+  assert.deepEqual([tile.getAttribute("aria-hidden"), tile.textContent], ["true", ""]);
+  assert.equal(v.$("card").children[0], tile, "and it comes first");
+  assert.equal(v.link("card", "Use another address").className, "btn btn-ghost", "the way back is quieter than the button that sends the link again");
+});
+
+test("a status that was drawn as a wait stops waiting once it has said something", async () => {
+  assert.match(fs.readFileSync(`${PAGES_DIR}/verify.html`, "utf8"), /id="status"[^>]*aria-busy="true"[^>]*>Checking the link\./, "the page that checks a link says so, and is drawn as a wait");
+  const w = world((x) => (x.signedIn = false));
+  w.answers.set("POST /api/verify", failure(400, "invalid_token", "That link is not valid, or it has expired. Ask for a new one."));
+  const v = await visit("verify", { routes: w.routes, search: "?token=old" });
+  assert.equal(v.$("status").getAttribute("aria-busy"), null);
+});
+
 test("a button that was pressed has the cursor again when its call is done, unless the page put it somewhere on purpose", async () => {
   const w = world((x) => (x.signedIn = false));
   w.answers.set("POST /api/forgot", { status: 202, json: { ok: true, message: "If that address has an account, a link to choose a new password is on its way." } });
@@ -578,9 +635,11 @@ test("a button that was pressed has the cursor again when its call is done, unle
 test("a main button says what it is doing while the call is out, and is itself again afterwards", async () => {
   const w = world((x) => (x.signedIn = false));
   let during = "";
+  let duringBusy: string | null = null;
   let v: Visit | undefined;
   w.answers.set("POST /api/login", () => {
     during = v!.text(v!.doc.querySelector('button[type="submit"]')!);
+    duringBusy = v!.doc.querySelector('button[type="submit"]')!.getAttribute("aria-busy");
     return failure(401, "invalid_credentials", "That email and password do not match an account.");
   });
   v = await visit("login", { routes: w.routes });
@@ -590,8 +649,10 @@ test("a main button says what it is doing while the call is out, and is itself a
   v.type("password", "a long enough secret");
   await v.send(v.$("form"));
   assert.equal(during, "Signing in", "the button said what was going on while the service had the call");
+  assert.equal(duringBusy, "true", "and said it is busy to the stylesheet, which draws its spinner, and to what reads the page");
   assert.equal(main.textContent, "Sign in", "and says what it is again");
   assert.equal(main.disabled, false);
+  assert.equal(main.getAttribute("aria-busy"), null, "and is not busy any more");
 
   for (const [page, label, busy] of [["signup", "Create account", "Creating account"], ["forgot", "Send the link", "Sending"], ["reset", "Save password", "Saving"], ["account", "Change password", "Changing"], ["account", "Pay", "One moment"], ["account", "Create workspace", "Creating"]] as const) {
     const html = fs.readFileSync(`${PAGES_DIR}/${page}.html`, "utf8");
@@ -798,7 +859,10 @@ test("the balance is what the gateway says, rounded down; when it cannot be read
   const w = world(paid);
   w.balance = balance({ included: 19_999_200, purchased: 10_000_000 });
   const v = await visit("account", { routes: w.routes });
-  assert.equal(v.text("figures"), "Available $29.99 From your plan $19.99 From credit you added $10.00");
+  assert.equal(v.text("figures"), "Available $29.99 From your plan $19.99 of $20.00 From credit you added $10.00", "what the plan includes each period is the figure the part of it that is left is of");
+  const bar = v.$("figures").querySelector("meter")!;
+  assert.deepEqual([bar.getAttribute("min"), bar.getAttribute("max"), bar.getAttribute("value")], ["0", "20000000", "19999200"], "and the bar is that part against that whole, in the units the service gives");
+  assert.equal(bar.getAttribute("aria-label"), "From your plan: $19.99 left of $20.00", "which is said to a reader of the page in words");
 
   const blind = world(paid);
   blind.balance = null;
@@ -1407,6 +1471,29 @@ test("what the front page says about model usage is shown for a service that sel
     assert.equal((page.match(/data-hosting-only/g) ?? []).length, 5, "the five places that speak of model usage are marked: the line under the heading, two of the facts, the third step of how it works, and one of the billing facts");
     assert.equal((page.match(/data-usage-sold/g) ?? []).length, 1, "and the one place that says what a service that sells credit does in its place");
   }
+});
+
+test("the plans have a shape while they are read, from the moment the page starts, and a reader who cannot see it is told they are loading", async () => {
+  const w = world((x) => (x.signedIn = false));
+  let during: string[][] = [];
+  let asking: string[] = [];
+  const v = new Visit("home", { routes: w.routes });
+  w.answers.set("GET /api/session", () => {
+    asking = v.$("plans").children.map((n) => n.className);
+    return { json: { account: null } };
+  });
+  w.answers.set("GET /api/plans", () => {
+    const kids = v.$("plans").children;
+    during = [kids.map((n) => n.className), [v.text("plans")], kids.map((n) => n.getAttribute("aria-hidden") ?? "")];
+    return { json: PLANS };
+  });
+  await v.start();
+  assert.deepEqual(asking, ["sk sk-plan", "sk sk-plan", "sr"], "the shape is there while the session is still being read, which is the first thing a slow connection waits for");
+  assert.deepEqual(during[0], ["sk sk-plan", "sk sk-plan", "sr"], "the shape of two cards, and a line for a reader of the page");
+  assert.deepEqual(during[1], ["Loading the plans."], "the line is the only text, and it is read out: the region is polite");
+  assert.deepEqual(during[2], ["true", "true", ""], "the shapes are for the eye, the line is not");
+  assert.deepEqual(v.$("plans").querySelectorAll(".sk"), [], "and they are gone when the cards are there");
+  assert.equal(v.$("plans").querySelectorAll("article").length, 2);
 });
 
 test("the front page says how it works in four steps, in order, from what the service does, and the third is as the service sells", async () => {

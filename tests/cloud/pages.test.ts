@@ -13,7 +13,7 @@ import { WorkspaceEdge, createPublicServer } from "../../packages/cloud/src/inde
 import { ask, listen } from "./net-support";
 import { plane } from "./support";
 import { APP, site } from "./web-support";
-import { PAGES_DIR, ROOT, SCRIPT, helpers, parsePage, type FakeNode } from "./pages-support";
+import { PAGES_DIR, ROOT, SCRIPT, cssRules, declared, helpers, parsePage, type FakeNode } from "./pages-support";
 
 const read = (file: string): string => fs.readFileSync(file, "utf8");
 const ASSETS = path.join(PAGES_DIR, "assets");
@@ -232,8 +232,9 @@ test("every link goes to a page or an anchor that exists, whether it is written 
   for (const p of pages()) {
     for (const n of p.all.filter((x) => x.tag === "a")) {
       const href = attr(n, "href");
-      if (href === "#main") assert.ok(idsOf(p.all).includes("main"));
-      else if (href === "#") assert.ok(n.attrs.has("data-contact") && n.hidden, `${p.name}: only the hidden contact link goes nowhere`);
+      if (href === "#") assert.ok(n.attrs.has("data-contact") && n.hidden, `${p.name}: only the hidden contact link goes nowhere`);
+      // A link to a place on its own page names an element that is there.
+      else if (href.startsWith("#")) assert.ok(idsOf(p.all).includes(href.slice(1)), `${p.name}: ${href} names an element that is not there`);
       else check(href, p.name);
     }
   }
@@ -261,20 +262,81 @@ test("every call the script makes is to a route the API has, with the method it 
   assert.ok(source.includes("response = await fetch(path, {"), "and it is of the address call() was given, which is one of those above");
 });
 
+// ---- the sign-in pages ----
+
+/** What the panel beside the form says, in the words of the pages that already say it (the front page's facts, the terms, the account's workspace card). */
+const PANEL: Array<[string, string]> = [
+  ["A workspace of your own", "One isolated host with its own projects, event log and files."],
+  ["Your record is yours", "The same append-only event log a self-hosted install writes, so a mission can be replayed."],
+  ["Pause or delete", "A paused workspace keeps its files. Deleting one deletes its data."],
+];
+
+test("the sign-in pages are one shell: the form first, and beside it the same three things the product says of itself, each of them said elsewhere already", () => {
+  for (const name of ["signup", "login", "forgot", "reset", "verify"]) {
+    const { all } = pages().find((p) => p.name === name)!;
+    const shell = all.find((n) => n.className === "wrap auth")!;
+    assert.ok(shell, `${name} has the shell`);
+    const [main, side] = shell.children.filter((n) => !n.isText);
+    assert.deepEqual([main!.className, side!.className], ["auth-main", "auth-side"], `${name}: the form's column comes first, so it is first to a keyboard and to a reader of the page`);
+    assert.ok(main!.querySelector("h1") && main!.descendants().some((n) => n.tag === "form"), `${name}: the heading and the form are in it`);
+    assert.deepEqual(side!.querySelectorAll("li").map((li) => [li.querySelector("strong")!.textContent, li.querySelector("span")!.textContent]), PANEL, `${name}: the panel says the same three things`);
+    assert.equal(attr(side!.querySelector("svg")!, "aria-hidden"), "true", `${name}: the mark is for the eye`);
+  }
+  // Nothing in the panel is new: each is a sentence, or the two halves of one, that a page already has.
+  const textOf = (file: string): string => read(path.join(PAGES_DIR, file)).replace(/<[^>]+>/g, " ").replace(/\s+/g, " ");
+  assert.match(textOf("index.html"), /One isolated host with its own projects, event log and files\./);
+  assert.match(textOf("index.html"), /same append-only event log a self-hosted install writes, so a mission can be replayed/);
+  assert.match(textOf("terms.html"), /Deleting a workspace deletes its data\./);
+  assert.match(read(SCRIPT), /Its files are kept\./, "what the account says of a paused workspace");
+});
+
+// ---- the documents, and the page that is not there ----
+
+test("a document has a table of contents that names its headings and goes to them, and the table is not itself a heading", () => {
+  for (const name of ["terms", "privacy"]) {
+    const { all } = pages().find((p) => p.name === name)!;
+    const toc = all.find((n) => n.tag === "nav" && n.className === "toc")!;
+    assert.ok(toc, `${name} has one`);
+    assert.equal(attr(toc, "aria-label"), "On this page");
+    const headings = all.filter((n) => n.tag === "h2");
+    assert.deepEqual(
+      toc.querySelectorAll("a").map((a) => [a.textContent, attr(a, "href")]),
+      headings.map((h) => [h.textContent, `#${attr(h, "id")}`]),
+      `${name}: one link for each heading, in its order, to the heading`,
+    );
+    assert.ok(toc.querySelector("p.toc-h") && toc.querySelectorAll("h1, h2, h3").length === 0, `${name}: its title is not a heading, or the document would have a heading that is not a part of it`);
+    assert.equal(all.filter((n) => n.tag === "article").length, 1, `${name}: the text is one article`);
+  }
+});
+
+test("the page that is not there is a mark, what happened, and the way back, and the mark is for the eye", () => {
+  const { all } = pages().find((p) => p.name === "404")!;
+  const lost = all.find((n) => n.className === "wrap lost")!;
+  assert.ok(lost);
+  const mark = lost.querySelector("svg")!;
+  assert.deepEqual([attr(mark, "aria-hidden"), mark.textContent], ["true", ""]);
+  assert.equal(lost.children.filter((n) => !n.isText)[0], mark, "it comes first");
+  assert.ok(lost.querySelector("h1") && lost.querySelector(".btn-row"));
+});
+
 // ---- what the pages say ----
 
-test("the colours are the site's, and every text colour clears WCAG AA on the backgrounds it is used on", () => {
-  const vars = (css: string): Record<string, string> => Object.fromEntries([...css.matchAll(/(--[\w-]+):\s*(#[0-9a-fA-F]{6})\b/g)].map((m) => [m[1]!, m[2]!.toLowerCase()]));
-  const sets = (css: string) => ({ light: vars(/:root \{([\s\S]*?)\n\}/.exec(css)![1]!), dark: vars(/@media \(prefers-color-scheme: dark\) \{\s*:root \{([\s\S]*?)\}\s*\}/.exec(css)![1]!) });
-  const site = sets(read(path.join(ROOT, "site", "assets", "site.css")));
-  const app = sets(read(path.join(ASSETS, "app.css")));
-  for (const theme of ["light", "dark"] as const) {
-    for (const name of ["--bg", "--panel", "--ink", "--muted", "--line", "--accent", "--accent-ink", "--ok", "--warn", "--code"]) {
-      assert.ok(site[theme][name], `the site has ${name}`);
-      assert.equal(app[theme][name], site[theme][name], `${theme} ${name} is the site's`);
-    }
-    assert.ok(app[theme]["--bad"], `${theme} --bad`);
-  }
+test("the stylesheet is drawn from the kit: it carries the kit's block, writes no colour of its own, and uses no token that nothing defines", () => {
+  const css = read(path.join(ASSETS, "app.css"));
+  const begin = css.indexOf("/* @kit:tokens begin");
+  const endMark = "/* @kit:tokens end */";
+  const end = css.indexOf(endMark);
+  assert.ok(begin >= 0 && end > begin, "the kit's block is there (its content is held to the generator by ui-kit-tokens.test.ts)");
+  const own = (css.slice(0, begin) + css.slice(end + endMark.length)).replace(/\/\*[\s\S]*?\*\//g, "");
+  assert.doesNotMatch(own, /#[0-9a-fA-F]{3,8}\b|\brgba?\(|\bhsla?\(|\boklch\(/, "a colour is a token, and a tint is color-mix of one: the page and the site cannot drift apart by a value nudged here");
+  const defined = new Set([...css.matchAll(/(--[\w-]+)\s*:/g)].map((m) => m[1]!));
+  for (const m of own.matchAll(/var\((--[\w-]+)/g)) assert.ok(defined.has(m[1]!), `${m[1]} is used and defined nowhere: a misspelt token draws nothing, and no test would see it`);
+
+  // The pairs this stylesheet draws that the kit's own test (ui-kit-tokens.test.ts) does not list.
+  const colours = (block: string): Record<string, string> => Object.fromEntries([...block.matchAll(/--k-([\w-]+):\s*(#[0-9a-fA-F]{6})\b/g)].map((m) => [m[1]!, m[2]!.toLowerCase()]));
+  const kit = css.slice(begin, end);
+  const light = colours(/:root \{([\s\S]*?)\n\}/.exec(kit)![1]!);
+  const dark = { ...light, ...colours(/@media \(prefers-color-scheme: dark\) \{\s*:root \{([\s\S]*?)\n  \}/.exec(kit)![1]!) };
   const luminance = (hex: string): number => {
     const [r, g, b] = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255).map((c) => (c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4));
     return 0.2126 * r! + 0.7152 * g! + 0.0722 * b!;
@@ -283,31 +345,89 @@ test("the colours are the site's, and every text colour clears WCAG AA on the ba
     const [hi, lo] = [luminance(a), luminance(b)].sort((x, y) => y - x);
     return (hi! + 0.05) / (lo! + 0.05);
   };
-  for (const theme of ["light", "dark"] as const) {
-    const c = app[theme];
-    for (const fg of ["--ink", "--muted", "--accent", "--ok", "--warn", "--bad"]) for (const bg of ["--bg", "--panel"]) assert.ok(contrast(c[fg]!, c[bg]!) >= 4.5, `${theme} ${fg} on ${bg} is ${contrast(c[fg]!, c[bg]!).toFixed(2)}:1`);
-    assert.ok(contrast(c["--accent-ink"]!, c["--accent"]!) >= 4.5, `${theme} text on the accent`);
+  for (const [theme, t] of [["light", light], ["dark", dark]] as const) {
+    assert.ok(contrast(t["on-accent"]!, t.bad!) >= 4.5, `${theme}: the words on a filled delete button`);
+    assert.ok(contrast(t["accent-ink"]!, t["accent-soft"]!) >= 4.5, `${theme}: the page you are on, in the header`);
   }
 });
 
-test("what a finger has to hit is as tall as a button on a phone: the footer's links, the buttons, the Show of a password, the sentence of a tick box, a link in a line of its own", () => {
-  const css = read(path.join(ASSETS, "app.css"));
-  /** The declarations of the rule for exactly this selector, written as the stylesheet writes it: on its own, or inside the media query that is named. */
-  const rule = (selector: string, within = ""): string => {
-    const written = `${within ? `${within} { ` : ""}${selector} {`;
-    const at = css.indexOf(written);
-    assert.ok(at >= 0, `the stylesheet has a rule for ${selector}${within ? ` in ${within}` : ""}`);
-    return css.slice(at, css.indexOf("}", at));
+test("what a finger has to hit is as tall as a button on a phone: the buttons, the header's links, the footer's, the fields and the Show of a password, the sentence of a tick box, a link in a line of its own", () => {
+  const rules = cssRules(read(path.join(ASSETS, "app.css")));
+  /** What the last rule for exactly this selector (alone or in a list) that sets the property says, at the top or inside the at-rule that mentions `within`. */
+  const value = (selector: string, property: string, within = ""): string | undefined => {
+    const found = rules.filter((r) => r.selectors.includes(selector) && (within === "" ? r.at === "" : r.at.includes(within)) && declared(r, property) !== undefined);
+    return found.length > 0 ? declared(found[found.length - 1]!, property) : undefined;
   };
-  assert.match(rule(".btn"), /min-height: 44px/, "a button is 44 pixels tall");
-  assert.match(rule(".btn-small", "@media (max-width: 720px)"), /min-height: 44px/, "and so is a small one on a phone");
-  assert.match(rule(".site-footer a"), /min-height: 44px/, "the footer's links are words with the reach of a button");
-  assert.match(rule(".site-footer a"), /min-width: 44px/);
-  assert.match(rule(".reveal", "@media (max-width: 720px)"), /min-height: 44px/, "Show and Hide on a password");
-  assert.match(rule(".check label"), /min-height: 44px/, "a tick box is ticked by hitting its sentence");
-  assert.match(rule(".aside a"), /padding: 12px/, "a link in a line of its own has a hit area taller than its text");
-  assert.match(rule(".aside a"), /margin: -12px 0/, "without moving the lines around it");
-  assert.match(rule(".ws .ws-auto .check"), /min-height: 44px/, "and so is the offer to open a workspace when it is ready");
+  const phone = "max-width: 720px";
+  assert.equal(value(".btn", "min-height"), "40px", "a button is 40 tall for a pointer");
+  assert.equal(value(".btn", "min-height", phone), "44px", "and 44 for a finger, as is a small one");
+  assert.equal(value(".btn-small", "min-height", phone), "44px");
+  assert.ok(rules.some((r) => r.selectors.includes(".btn") && r.at.includes(phone) && r.at.includes("(pointer: coarse)")), "a coarse pointer is a finger at any width");
+  assert.equal(value(".bar nav a", "min-height", phone), "44px", "the header's links");
+  assert.equal(value('input:not([type="checkbox"])', "min-height", phone), "44px", "a field: every input but the tick box, which is drawn small and ticked by hitting its sentence");
+  assert.equal(value('input:not([type="checkbox"])', "min-height"), "40px", "and is 40 tall for a pointer");
+  assert.deepEqual([value(".reveal", "top"), value(".reveal", "bottom")], ["0", "0"], "Show and Hide span the whole height of the field, so they are as tall as it is");
+  assert.equal(value(".site-footer a", "min-height"), "44px", "the footer's links are words with the reach of a button");
+  assert.equal(value(".site-footer a", "min-width"), "44px");
+  assert.equal(value(".check label", "min-height"), "44px", "a tick box is ticked by hitting its sentence");
+  assert.equal(value(".aside a", "padding"), "12px 2px", "a link in a line of its own has a hit area taller than its text");
+  assert.equal(value(".aside a", "margin"), "-12px 0", "without moving the lines around it");
+  assert.equal(value(".ws .ws-auto .check", "min-height"), "44px", "and so is the offer to open a workspace when it is ready");
+});
+
+test("a name a person typed cannot widen the page: the cards that show one break a word that has nowhere to break, and the header fits a small phone", () => {
+  const rules = cssRules(read(path.join(ASSETS, "app.css")));
+  const own = (selector: string, property: string, within = ""): string | undefined => {
+    const found = rules.filter((r) => r.selectors.includes(selector) && (within === "" ? r.at === "" : r.at.includes(within)) && declared(r, property) !== undefined);
+    return found.length > 0 ? declared(found[found.length - 1]!, property) : undefined;
+  };
+  // A workspace is named by its owner and nothing says where the name may break: without this a card is as wide as its name and the page scrolls sideways.
+  for (const selector of [".row", ".stage", ".confirm"]) assert.equal(own(selector, "overflow-wrap"), "anywhere", selector);
+  // The header's three links stay on one line, and on a phone as small as 320 px they and the mark are made smaller before anything is allowed to wrap or overflow.
+  assert.equal(own(".bar nav a", "white-space"), "nowrap", "a link is a word, not two");
+  assert.equal(own(".bar nav a", "padding", "max-width: 380px"), "0 8px");
+  assert.equal(own(".logo", "height", "max-width: 380px"), "20px");
+});
+
+test("the stylesheet is held to its budget, and whatever it moves it stills for a person who asked for stillness", () => {
+  const css = read(path.join(ASSETS, "app.css"));
+  // The stylesheet stands between a visitor and the first paint of every page, so what it weighs is what a phone on a poor connection waits for.
+  // The brief of the UI kit sets 34 KB, uncompressed, for all of it: the kit's block, the icons and the rules of every page.
+  const budget = 34 * 1024;
+  assert.ok(Buffer.byteLength(css) <= budget, `app.css is ${Buffer.byteLength(css)} bytes, and its budget is ${budget}`);
+
+  // Every animation is one a keyframes rule defines here (a misspelt name moves nothing and no test would see it) ...
+  const defined = new Set([...css.matchAll(/@keyframes\s+([\w-]+)/g)].map((m) => m[1]!));
+  const used = [...css.matchAll(/[\s;{]animation:\s*([\w-]+)/g)].map((m) => m[1]!);
+  assert.ok(used.length > 0 && defined.size > 0, "the stylesheet animates something (the spinners, the skeleton, the pulse of a workspace that is starting)");
+  for (const name of used) assert.ok(defined.has(name), `${name} is animated and defined nowhere`);
+  // A page arrives once, and holds what it is afterwards (no fill: a transform kept after the move would make the page a containing block for what is fixed in it).
+  const arrival = cssRules(css).find((r) => r.selectors.includes("main > .wrap") && declared(r, "animation") !== undefined);
+  assert.ok(arrival, "the content of every page arrives");
+  assert.match(declared(arrival, "animation") ?? "", /^rise [^ ]+ [^ ]+$/, "with the rise, once, over a time and an ease and no more");
+
+  // ... and a visitor who asked their system for less motion gets none of it: the animations end where they start, the transitions are instant,
+  // and a jump to a section is a jump. `!important`, because the rules it overrides are more specific than a bare `*`.
+  const still = cssRules(css).find((r) => r.at.includes("prefers-reduced-motion: reduce") && r.selectors.includes("*"));
+  assert.ok(still, "there is a rule for prefers-reduced-motion that reaches every element");
+  for (const [property, value] of [["animation-duration", ".001ms"], ["animation-iteration-count", "1"], ["transition-duration", ".001ms"], ["scroll-behavior", "auto"]] as const) {
+    assert.equal(declared(still, property), `${value} !important`, property);
+  }
+});
+
+test("on the system's own colours (Windows high contrast) a ticked box is still ticked and an icon is still drawn", () => {
+  const rules = cssRules(read(path.join(ASSETS, "app.css")));
+  // The system replaces the page's backgrounds with its own. A tick that is a mask over a background is then painted in the colour of the page it sits on,
+  // and a box that was ticked looks as it did before: nothing in an ordinary photograph of the page shows it.
+  const forced = rules.filter((r) => r.at.includes("forced-colors: active"));
+  assert.ok(forced.some((r) => r.selectors.includes('input[type="checkbox"]') && declared(r, "appearance") === "auto"), "the tick box is the browser's again, which draws its tick in the system's colours");
+  assert.ok(forced.some((r) => r.selectors.includes('input[type="checkbox"]::after') && declared(r, "display") === "none"), "and the drawn tick is gone, so there is one tick and not two");
+  // An icon is a mask over a background that takes the colour of the text beside it: it keeps that, or it is painted in nothing.
+  const icons = rules.filter((r) => declared(r, "mask") !== undefined && declared(r, "background") === "currentColor");
+  assert.ok(icons.length > 0, "the icons are drawn as masks");
+  for (const r of icons) assert.equal(declared(r, "forced-color-adjust"), "none", `${r.selectors[0]}: an icon keeps its colour`);
+  const dot = rules.find((r) => r.selectors.includes(".badge::before"));
+  assert.equal(declared(dot!, "forced-color-adjust"), "none", "and so does the dot of a badge");
 });
 
 test("no page states a period or a count the service could change: those are filled in from its settings", () => {
