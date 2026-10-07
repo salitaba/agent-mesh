@@ -47,6 +47,12 @@
    and the one thing to do with it. Taking a project off the host is a quiet red line at the foot, never a button as loud as the rest. */
 .pj-page { max-width: 1280px; }
 .pj-kpis { padding: 0; margin: 0 0 var(--s4); }
+/* The counts need little room and the spend is a figure, a ceiling and a meter: it takes twice a count's share, so "of $50.00 ceiling" is one line. */
+@media (min-width: 901px) {
+  .stat-strip.pj-kpis { display: flex; }
+  .pj-kpis .stat-cell { flex: 1 1 0; }
+  .pj-kpis .stat-cell.pj-spend { flex-grow: 2; }
+}
 .pj-note { margin: 0 0 var(--s3); }
 .pj-group + .pj-group { margin-top: var(--s5); }
 .pj-group .group-h { display: flex; align-items: center; gap: var(--s2); margin: 0 var(--s0) var(--s2-5); }

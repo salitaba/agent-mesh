@@ -203,7 +203,7 @@ export default function Projects(): React.JSX.Element {
                 <div className="stat-cell"><Stat label="Open" value={summary.open} /></div>
                 {summary.attention > 0 ? <div className="stat-cell"><Stat label="Need attention" value={summary.attention} tone="bad" /></div> : null}
                 <div className="stat-cell"><Stat label="Turns running" value={summary.runningTurns} /></div>
-                <div className="stat-cell" title="Open projects only, estimated at list prices since each last started. The provider's invoice is the bill.">
+                <div className="stat-cell pj-spend" title="Open projects only, estimated at list prices since each last started. The provider's invoice is the bill.">
                   {summary.usd === null ? (
                     <Stat label="Estimated spend" value="Not reported" size="sm" />
                   ) : (
