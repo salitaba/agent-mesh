@@ -52,7 +52,7 @@
 .ov-seat.on { box-shadow: 0 0 0 1px var(--panel), 0 0 0 2.5px var(--ok); }
 /* In the stack the avatars are a size down, so a roster of seven (and the count of the rest) fits the cell of a laptop screen on one row. */
 .ov-seats .avatar { width: 22px; height: 22px; font-size: 11px; }
-.ov-seat.more { width: 22px; height: 22px; place-items: center; background: var(--panel-2); border: 1px solid var(--line); font: 600 10px/1 var(--sans); color: var(--muted); }
+.ov-seat.more { min-width: 22px; height: 22px; padding: 0; box-sizing: border-box; place-items: center; background: var(--panel-2); border: 1px solid var(--line); font: 600 11px/1 var(--sans); color: var(--muted); }
 
 /* Right now: a few plain lines, each marked by the seat or the kind of thing it is about, the last always answering "does it need me". */
 .ov-now, .ov-note { padding: var(--s3-5) var(--s6); border-top: 1px solid var(--line); }
