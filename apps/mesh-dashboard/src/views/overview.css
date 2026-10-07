@@ -194,3 +194,15 @@ details.ov-note { display: block; }
   .ov .ov-ad > summary::before { margin-top: 0; }
   .ov .ov-ev .chip { min-height: 44px; padding: 0 var(--s3); }
 }
+
+/* ---------- when the system takes the colours (Windows High Contrast) ----------
+   A drawn mark keeps what it says: a segment is filled for a check that is done, ringed for one that is only claimed, dashed for
+   one that was skipped and a hairline while it is to do; a seat in a turn has an outline, since its ring is a shadow and shadows go. */
+@media (forced-colors: active) {
+  .ov-seg i { forced-color-adjust: none; box-sizing: border-box; height: 10px; background: Canvas; border: 1px solid GrayText; box-shadow: none; }
+  .ov-seg i.done { background: Highlight; border-color: Highlight; }
+  .ov-seg i.claimed { border: 2px solid Highlight; }
+  .ov-seg i.skipped { border: 1px dashed CanvasText; }
+  .ov-seat.on { outline: 2px solid Highlight; outline-offset: 1px; }
+  .ck.done { forced-color-adjust: none; background: Highlight; color: HighlightText; }
+}

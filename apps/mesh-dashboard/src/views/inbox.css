@@ -117,3 +117,8 @@
   .ib-sent { white-space: normal; }
   .tg-acts > button { flex: 1 1 auto; justify-content: center; }
 }
+
+/* The stripe down a decision's edge is a shadow, and shadows go when the system takes the colours: the edge is a border then. */
+@media (forced-colors: active) {
+  .dc { border-left: 4px solid Highlight; }
+}
