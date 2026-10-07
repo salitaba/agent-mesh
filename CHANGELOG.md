@@ -286,6 +286,15 @@ their first mission, an operator who leaves a mission running. What each surface
 
 ### Fixed
 
+- **A mission paused and resumed could stop with work owed, and the scripted demo did so every time four console walks ran at once.**
+  A pause landed between the ops of a seat's turn (a lease left held, a patch never announced), or while a seat was thinking (its ops
+  stopped, its mail marked delivered, nothing to wake it at resume), or while an event a seat was waiting for arrived (the event left
+  nothing behind). Resume woke only seats that held mail, a task or a wait, so the seat was never woken again; the stall watchdog's
+  manager would have noticed minutes later, and the demo's scripted manager only reports "turn done", so it stopped at 2 of 7 checks
+  (found by the console's walk). A pause now waits for the op loops that have begun (milliseconds; 10 s at most); a turn whose model
+  answers into a paused mission is cut whole, recorded as `turn.discarded` (`paused`, with its tokens), its mail stays owed and the
+  seat is told; and resume wakes each seat the pause took a turn or an event from, once, with the reason it was first woken for and a
+  note that says what did not run.
 - **A turn the shutdown stopped, whose call had reported no usage, recorded no tokens.** The twentieth run's mission ended under a
   developer turn whose backend the shutdown tore down 24,497 tokens in, and the ledger, the end-of-run report and the console's
   cost view had none of them ("spend unmeasured"). The running count the turn's stream had reached is recorded as `tokens` on

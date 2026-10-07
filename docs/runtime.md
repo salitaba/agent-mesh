@@ -502,6 +502,29 @@ briefing for its next four turns in the twentieth run. It still counts as a turn
 (the watchdog's retry is armed as before), and a turn that did work is described by its work. A floor
 wake with an ask in its box says how many of the messages ask, and its turn is judged as before.
 
+**A pause defers; resume gives back what it took.** While the mission is paused the policy refuses every activation (`goal-paused`, a
+DEFER), the scheduler ignores interest events, and the freeze refuses every op that moves work. Three things used to be lost to that, and
+in a team of real models the stall watchdog's manager would notice a few minutes later; in the scripted demo, whose manager only reports
+"turn done", the mission stopped at 2 of 7 checks (one Pause and Resume in five on a loaded machine, every time with four of the
+console's walks running at once).
+
+- *A pause waits for the turns that are applying their ops.* A turn whose model has answered applies its ops back to back, in
+  milliseconds, and a pause that landed between two of them left a lease held, a patch unannounced, or a task closed by the `done` of
+  the turn that followed. `pauseGoal` now asks, and takes effect when the turns that had begun applying are finished (at most
+  `PAUSE_OP_GRACE_MS`, 10 s, if one is stuck, when the freeze stops the rest as before and the turn says how many ops ran and which did
+  not). A turn whose model answers after the pause was asked for is cut whole.
+- *A turn the pause cut is given again.* Nothing it proposed runs; the mail it was handed is not marked delivered (delivered means
+  rendered and answered), so it stays owed; the turn is recorded as `turn.discarded` with reason `paused` (not an abnormal ending, so the seat keeps the note the mesh wrote for it) and the tokens it cost,
+  and the seat's own note says what happened. At resume the seat is woken once, with the reason it was first woken for (kind and event
+  included: a seat that reads who woke it, as the scripted team does, finds what it was given the first time) and a note naming what
+  did not run. A seat that holds mail, a task or a wait is woken as before and reads the same things in that one turn.
+- *An event that came during the pause is not forgotten.* The scheduler keeps who it would have woken, one wake per seat (the latest):
+  the interest event that came while the mission was paused, and the interest wake the policy refused as the pause landed.
+  `resumeGoal` asks for them once (`takeHeldWakes`) and wakes each seat not already woken, with the event's own kind and a note
+  ("goal resumed: dependency.changed happened while the mission was paused, and nothing woke you for it"). The gate that spares a live
+  seat a turn for a progress tick spares it here too (`isRedundantObservation`), the seat that raised an event is not woken by it, and
+  `resetMissionState` forgets what an earlier mission was owed.
+
 ## Runtime adapter interface
 
 ```ts
