@@ -18,7 +18,7 @@ import { CX, CY } from "./geom";
 import { cardFor, displayPx, edgePoint, neighborInDirection, nudge, pairsOf, segment, stageHeight, storedFromPx, type Dir, type Pair, type Size } from "./topology";
 import type { Wire } from "./edits";
 import { ToolButton } from "./ui";
-import { AgentAvatar, agentColor } from "../components";
+import { AgentAvatar, Button, agentColor } from "../components";
 import { Icon } from "../icons";
 import { register, unregister } from "../commands";
 import { useFocusMode } from "../shell";
@@ -326,14 +326,16 @@ export default function Topology(props: TopologyProps): React.JSX.Element {
     <section className="card ms-canvas" aria-label="Team topology">
       <div className="ms-tools">
         <ToolButton icon="plus" label="Add seat" text onClick={onAddSeat} title="Add a seat to the team" />
-        <ToolButton
-          icon="graph" label={wiring ? "Wiring: pick two seats" : "Wire seats"} text pressed={wiring}
-          title="Pick a seat that sends, then a seat it may message. Shortcut: W on a focused seat."
-          onClick={() => { if (wiring) stopWiring(); else { setWiring(true); setWireFrom(null); setSelPair(null); say("Wiring. Pick the seat that sends."); } }}
-        />
-        <ToolButton icon="arrange" label="Arrange" text onClick={onArrange} title="Space the seats out again. Where seats sit is kept in this browser, not in mesh.yaml." disabled={ids.length < 2} />
-        <ToolButton icon="expand" label="Focus" text pressed={focusMode} id="ms-focus-toggle" onClick={() => setFocusMode(!focusMode)} title="Hide the inspector and the notes below, and give the canvas the page" />
-        <KeysHelp />
+        <div className="ms-toolgroup" role="group" aria-label="Canvas tools">
+          <ToolButton
+            icon="graph" label={wiring ? "Wiring: pick two seats" : "Wire seats"} pressed={wiring}
+            title="Pick a seat that sends, then a seat it may message. Shortcut: W on a focused seat."
+            onClick={() => { if (wiring) stopWiring(); else { setWiring(true); setWireFrom(null); setSelPair(null); say("Wiring. Pick the seat that sends."); } }}
+          />
+          <ToolButton icon="arrange" label="Arrange" onClick={onArrange} title="Space the seats out again. Where seats sit is kept in this browser, not in mesh.yaml." disabled={ids.length < 2} />
+          <ToolButton icon="expand" label="Focus" pressed={focusMode} id="ms-focus-toggle" onClick={() => setFocusMode(!focusMode)} title="Hide the inspector and the notes below, and give the canvas the page" />
+          <KeysHelp />
+        </div>
         {activePair ? <WireActions pair={activePair} onCut={(s, t) => { onCut([[s, t]]); say(`Cut ${s} to ${t}.`); }} /> : null}
         <span className="ms-tool-hint" id="ms-canvas-hint">{hint}</span>
       </div>
@@ -388,6 +390,7 @@ export default function Topology(props: TopologyProps): React.JSX.Element {
                     <button
                       type="button" ref={(el) => { if (el) seatRefs.current.set(id, el); else seatRefs.current.delete(id); }}
                       className={`ms-seat${ag.mode === "service" ? " svc" : ""}${bad ? " err" : ""}`}
+                      style={{ "--tint": agentColor(role) } as React.CSSProperties}
                       data-seat={id} aria-pressed={sel} aria-label={label}
                       aria-describedby={id === stop ? "ms-canvas-keys" : undefined}
                       tabIndex={id === stop ? 0 : -1}
@@ -404,7 +407,7 @@ export default function Topology(props: TopologyProps): React.JSX.Element {
                           {bad || starting ? (
                             <span className="ms-seat-flags" aria-hidden="true">
                               {bad ? <Icon name="alert" size={14} className="flag-bad" /> : null}
-                              {starting ? <Icon name="play" size={12} className="flag-start" /> : null}
+                              {starting ? <span className="flag-start"><Icon name="play" size={10} /></span> : null}
                             </span>
                           ) : null}
                         </span>
@@ -458,8 +461,8 @@ function wireTitle(p: Pair): string {
 function WireActions({ pair, onCut }: { pair: Pair; onCut: (src: string, tgt: string) => void }): React.JSX.Element {
   return (
     <div className="ms-wire-actions" role="group" aria-label={`The selected wire between ${pair.a} and ${pair.b}`}>
-      {pair.ab ? <button type="button" className="ms-cut" onClick={() => onCut(pair.a, pair.b)}><Icon name="x" size={12} />Cut {pair.a} to {pair.b}</button> : null}
-      {pair.ba ? <button type="button" className="ms-cut" onClick={() => onCut(pair.b, pair.a)}><Icon name="x" size={12} />Cut {pair.b} to {pair.a}</button> : null}
+      {pair.ab ? <Button variant="small" danger icon="x" onClick={() => onCut(pair.a, pair.b)}>Cut {pair.a} to {pair.b}</Button> : null}
+      {pair.ba ? <Button variant="small" danger icon="x" onClick={() => onCut(pair.b, pair.a)}>Cut {pair.b} to {pair.a}</Button> : null}
     </div>
   );
 }

@@ -10,102 +10,127 @@
 
 .count-note { font: var(--tx-meta); color: var(--muted); font-variant-numeric: tabular-nums; }
 
+/* A glyph in a tile says what a file is (a patch, a plan, a report, a document) before its name is read. The shape carries it, so the
+   tiles are all one quiet ground: colour here would be a second thing to learn next to the state. */
+.file-tile { display: inline-grid; place-items: center; flex: none; width: 32px; height: 32px; border-radius: var(--r-sm); background: var(--sunken); border: 1px solid var(--line); color: var(--text-dim); }
+.file-tile.lg { width: 40px; height: 40px; border-radius: var(--r); }
+
 /* ---------- the page ---------- */
-.files-bar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s2); margin: 0 0 var(--s3-5); }
-.files-bar input.search { flex: 1 1 240px; min-width: 0; min-height: 34px; }
-.files-bar select.sel { flex: 1 1 150px; min-width: 0; max-width: 260px; min-height: 34px; }
-.files-check { display: inline-flex; align-items: center; gap: var(--s2); min-height: 34px; padding: 0 var(--s1); font: var(--tx-value); color: var(--text-dim); cursor: pointer; }
-.files-check input { width: 16px; height: 16px; margin: 0; accent-color: var(--accent); }
+.files-bar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s2) var(--s3); margin: 0 0 var(--s4); }
+.files-bar .srch { flex: 1 1 220px; min-width: 200px; }
+.files-bar select.sel { flex: 0 1 190px; min-width: 0; }
+.files-bar .seg { flex-wrap: wrap; max-width: 100%; }
+.files-bar .seg button { white-space: nowrap; }
+.seg-n { margin-left: var(--s1-5); font-weight: 500; font-variant-numeric: tabular-nums; color: var(--muted); }
+.seg button[aria-pressed="true"] .seg-n { color: inherit; }
 
 .files-layout { display: block; }
-.files-layout.split { display: grid; grid-template-columns: minmax(300px, 5fr) minmax(0, 7fr); gap: var(--s4); align-items: start; }
+.files-layout.split { display: grid; grid-template-columns: minmax(320px, 5fr) minmax(0, 7fr); gap: var(--s4); align-items: start; }
 .files-list { min-width: 0; }
 
 .files-group { margin: 0 0 var(--s4); }
-.files-group-h { display: flex; align-items: baseline; gap: var(--s2); margin: 0 var(--s1) var(--s2); font: var(--tx-section); text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
-.files-group-n { font: var(--tx-meta); letter-spacing: 0; font-variant-numeric: tabular-nums; }
+.files-group-h { display: flex; align-items: center; gap: var(--s2); margin: 0 var(--s1) var(--s2); font: 600 14px var(--sans); letter-spacing: var(--k-track-tight); text-transform: none; color: var(--text); }
+.files-group-n { min-width: 22px; padding: 0 var(--s1-5); border-radius: var(--k-r-pill); background: var(--sunken); font: 500 12px/20px var(--sans); letter-spacing: 0; text-align: center; font-variant-numeric: tabular-nums; color: var(--muted); }
 
-.file-rows { list-style: none; margin: 0; padding: 0; background: var(--panel); border: 1px solid var(--line); border-radius: var(--r-lg); overflow: hidden; }
+.file-rows { list-style: none; margin: 0; padding: 0; background: var(--panel); border: 1px solid var(--line); border-radius: var(--r-lg); box-shadow: var(--k-hl), var(--k-shadow-1); overflow: hidden; }
 .file-rows > li + li { border-top: 1px solid var(--line); }
 /* A list of 500 draws only what is on screen: the rows are plain, so the browser can skip the ones that are not. */
 .file-rows > li { content-visibility: auto; contain-intrinsic-size: auto 64px; }
 .file-row {
-  display: grid; grid-template-columns: auto minmax(0, 1fr) auto; grid-template-areas: "ic name state" "ic sub sub" "ic path path";
-  column-gap: var(--s3); row-gap: var(--s0); align-items: center; width: 100%; min-height: 56px; padding: var(--s2-5) var(--s3-5);
+  display: grid; grid-template-columns: auto minmax(0, 1fr) auto; grid-template-areas: "tile main state";
+  align-items: center; column-gap: var(--s3); width: 100%; min-height: 60px; padding: var(--s2-5) var(--s3-5);
   background: none; border: 0; color: var(--text); font: var(--tx-value); text-align: left; cursor: pointer;
+  transition: background-color var(--k-dur-1) var(--k-ease);
 }
-.file-row:hover { background: var(--panel-2); }
-.file-row[aria-current="true"] { background: color-mix(in srgb, var(--accent) 9%, transparent); box-shadow: inset 3px 0 0 var(--accent); }
+.file-row > .file-tile { grid-area: tile; }
+.file-row:is(:hover, .is-hover) { background: var(--wash); }
+.file-row[aria-current="true"] { background: var(--k-accent-soft); box-shadow: inset 3px 0 0 var(--k-accent); }
+.file-row[aria-current="true"] .file-tile { background: var(--panel); border-color: color-mix(in srgb, var(--k-accent) 28%, var(--line)); color: var(--k-accent-ink); }
 .file-row:focus-visible { outline-offset: -2px; }
-.file-ic { grid-area: ic; align-self: start; margin-top: var(--s0); color: var(--muted); }
-.file-name { grid-area: name; min-width: 0; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.file-state { grid-area: state; }
-.file-sub { grid-area: sub; display: flex; flex-wrap: wrap; gap: 0 var(--s1-5); min-width: 0; font: var(--tx-meta); color: var(--muted); overflow-wrap: anywhere; }
+.file-main { grid-area: main; display: flex; flex-direction: column; gap: var(--s0); min-width: 0; }
+.file-name { min-width: 0; font: 600 14px var(--sans); letter-spacing: var(--k-track-tight); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.file-sub { display: flex; flex-wrap: wrap; gap: 0 var(--s1-5); min-width: 0; font: var(--tx-meta); color: var(--muted); overflow-wrap: anywhere; }
 .file-sub > span + span::before { content: "·" / ""; margin-right: var(--s1-5); }
-.file-path { grid-area: path; min-width: 0; font-size: 12px; color: var(--text-dim); direction: rtl; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.file-path { min-width: 0; margin-top: var(--s0); font-size: 12px; color: var(--text-dim); direction: rtl; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .file-path > bdi { direction: ltr; unicode-bidi: isolate; }
+/* Where the file stands, in a word with its colour in front of it: the group above already says approved or in review, so the row
+   says only which of that group's states it is in, and it does not compete with the name. */
+.file-state { --tone: var(--muted); grid-area: state; display: inline-flex; align-items: center; gap: var(--s1-5); font: 13px var(--sans); color: var(--text-dim); white-space: nowrap; }
+.file-state::before { content: ""; flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--tone); }
+.file-state[data-tone="completed"] { --tone: var(--ok); }
+.file-state[data-tone="waiting"] { --tone: var(--warn); }
+.file-state[data-tone="failed"] { --tone: var(--bad); }
+.file-state[data-tone="idle"]::before { background: transparent; box-shadow: inset 0 0 0 1.5px var(--line-control); }
 @media (max-width: 620px) {
-  .file-row { grid-template-areas: "ic name" "ic state" "ic sub" "ic path"; grid-template-columns: auto minmax(0, 1fr); row-gap: var(--s1); }
+  .file-row { grid-template-areas: "tile main" "tile state"; grid-template-columns: auto minmax(0, 1fr); row-gap: var(--s1); }
   .file-state { justify-self: start; }
 }
 
-.file-skel { display: grid; gap: var(--s1-5); padding: var(--s3) var(--s3-5); }
-.file-skel + .file-skel { border-top: 1px solid var(--line); }
-.file-skel i { display: block; height: 12px; border-radius: var(--r-sm); background: var(--line); }
-.file-skel i:first-child { width: 42%; height: 14px; }
-.file-skel i:last-child { width: 68%; }
+.file-skel { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: var(--s3); padding: var(--s2-5) var(--s3-5); min-height: 60px; }
 
 /* ---------- the reader ---------- */
 .files-reader {
   position: sticky; top: 0; min-width: 0; max-height: calc(100vh - 140px); overflow: auto;
-  background: var(--panel); border: 1px solid var(--line); border-radius: var(--r-lg);
+  background: var(--panel); border: 1px solid var(--line); border-radius: var(--r-lg); box-shadow: var(--k-hl), var(--k-shadow-1);
 }
 .reader { display: block; min-width: 0; }
-.reader-head { display: grid; gap: var(--s2); padding: var(--s3-5) var(--s4) var(--s3); }
-.reader-title { display: flex; align-items: center; flex-wrap: wrap; gap: var(--s2) var(--s2-5); min-width: 0; }
-.reader-name { margin: 0; min-width: 0; font: var(--tx-title); overflow-wrap: anywhere; }
-.reader-close { margin-left: auto; }
-.reader-facts { display: flex; flex-wrap: wrap; gap: 0 var(--s1-5); margin: 0; font: var(--tx-meta); color: var(--muted); }
+.reader-head { display: grid; gap: var(--s3); padding: var(--s4); }
+.reader-title { display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto; grid-template-areas: "tile id pill close"; align-items: center; gap: var(--s3); min-width: 0; }
+.reader-title > .file-tile { grid-area: tile; }
+.reader-title > .pill { grid-area: pill; }
+.reader-id { grid-area: id; min-width: 0; display: flex; flex-direction: column; gap: var(--s0); }
+.reader-name { margin: 0; min-width: 0; font: 650 18px/1.25 var(--sans); letter-spacing: var(--k-track-title); text-transform: none; color: var(--text); overflow-wrap: anywhere; }
+.reader-close { grid-area: close; margin-left: var(--s1); }
+/* A narrow reader (the drawer on a phone) keeps the name beside its tile and the close button, and the state goes under them. */
+@media (max-width: 620px) {
+  .reader-title { grid-template-columns: auto minmax(0, 1fr) auto; grid-template-areas: "tile id close" ". pill ."; row-gap: var(--s2); }
+  .reader-title > .pill { justify-self: start; }
+  .reader-title:not(:has(> .file-tile)) { grid-template-areas: "id close"; grid-template-columns: minmax(0, 1fr) auto; }
+}
+.reader-facts { display: flex; flex-wrap: wrap; gap: 0 var(--s1-5); margin: 0; font: 13px var(--sans); color: var(--muted); }
 .reader-facts > span + span::before { content: "·" / ""; margin-right: var(--s1-5); }
-.reader-path { display: flex; align-items: center; gap: var(--s2); min-width: 0; }
-.reader-path-l { flex: none; font: var(--tx-label); color: var(--muted); }
+/* The path is a thing to copy: it sits in its own sunken line with the button at its end. */
+.reader-path { display: flex; align-items: center; gap: var(--s2); min-width: 0; padding: var(--s1) var(--s1) var(--s1) var(--s3); background: var(--sunken); border: 1px solid var(--line); border-radius: var(--r); }
+.reader-path-l { flex: none; font: 600 12px var(--sans); color: var(--muted); }
 /* A path is read from its end: the file name is what matters, so a long one is cut at the front, and the full path is in the title. */
-.pathline { flex: 1 1 0; min-width: 0; font-size: 12px; color: var(--text-dim); direction: rtl; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pathline { flex: 1 1 0; min-width: 0; font-size: 12px; color: var(--text); direction: rtl; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pathline > bdi { direction: ltr; unicode-bidi: isolate; }
-.reader-versions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s2) var(--s4); font: var(--tx-meta); }
-.reader-field { display: inline-flex; align-items: center; flex-wrap: wrap; gap: var(--s2); font: var(--tx-meta); color: var(--text-dim); }
+.reader-versions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s2) var(--s4); font: 13px var(--sans); }
+.reader-field { display: inline-flex; align-items: center; flex-wrap: wrap; gap: var(--s2); font: 13px var(--sans); color: var(--text-dim); }
 .reader-field select.sel { min-height: 30px; padding-top: var(--s1); padding-bottom: var(--s1); font-size: 13px; max-width: 100%; }
-.reader-link { background: none; border: 0; padding: var(--s1) 0; font: var(--tx-meta); color: var(--accent-2); text-decoration: underline; cursor: pointer; }
-.trail { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s1); margin: 0; padding: 0; list-style: none; font: var(--tx-meta); color: var(--muted); }
-.trail li { display: inline-flex; align-items: center; gap: var(--s1); }
+/* How a version got to where it stands, as the states it walked in order, the one it is in now bold with a dot. The separator is
+   text that flows, so a long trail wraps like a sentence and not like a drawing with a broken line. */
+.trail { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s1) 0; margin: 0; padding: 0; list-style: none; font: 500 12px var(--sans); color: var(--muted); }
+.trail li { display: inline-flex; align-items: center; gap: var(--s1-5); }
+.trail li:not(:last-child)::after { content: "›" / ""; margin: 0 var(--s2); color: var(--line-control); font-size: 14px; }
 .trail li[aria-current="step"] { color: var(--text); font-weight: 600; }
+.trail li[aria-current="step"]::before { content: ""; flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--k-accent); box-shadow: 0 0 0 3px var(--k-accent-soft); }
 
 .reader-skel { display: grid; gap: var(--s2-5); padding: var(--s4); }
 .reader-skel i { display: block; height: 14px; border-radius: var(--r-sm); background: var(--line); }
 .reader-skel i:nth-child(2) { width: 82%; }
 .reader-skel i:nth-child(3) { width: 56%; }
 
-.reader-details { border-top: 1px solid var(--line); padding: var(--s2) var(--s4) var(--s3); font: var(--tx-meta); color: var(--text-dim); }
-.reader-details summary { cursor: pointer; min-height: 24px; color: var(--muted); }
-.reader-details dl { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: var(--s1-5) var(--s3); margin: var(--s2) 0 0; align-items: center; }
-.reader-details dt { color: var(--muted); }
-.reader-details dd { margin: 0; min-width: 0; overflow-wrap: anywhere; display: flex; flex-wrap: wrap; align-items: center; gap: var(--s2); }
+.reader-details { border-top: 1px solid var(--line); padding: var(--s2) var(--s4) var(--s3); }
+.reader-details dl.kv { margin-top: var(--s2); font-size: 13px; align-items: center; }
+.reader-details dd { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s2); }
 .reader-details dd .pathline { flex: 1 1 160px; }
 
 .reader.pane .fv { border-width: 1px 0 0; border-radius: 0; }
-.reader.pane .fv-body { max-height: calc(100vh - 440px); min-height: 240px; }
-.reader.drawer .fv-body { max-height: calc(100vh - 400px); min-height: 220px; }
+.reader.pane .fv-body { max-height: calc(100vh - 500px); min-height: 240px; }
+.reader.drawer .fv-body { max-height: calc(100vh - 460px); min-height: 220px; }
 .reader.drawer .reader-head { padding-left: 0; padding-right: 0; }
+.reader.drawer .reader-details { padding-left: 0; padding-right: 0; }
 
 /* ---------- the file renderer ---------- */
-.fv { border: 1px solid var(--line); border-radius: var(--r); background: var(--bg-2); overflow: hidden; }
+.fv { border: 1px solid var(--line); border-radius: var(--r); background: var(--panel); overflow: hidden; }
 .fv-pathbar { display: flex; align-items: center; gap: var(--s2); padding: var(--s2) var(--s3); border-bottom: 1px solid var(--line); color: var(--muted); }
 .fv-path { flex: 1 1 0; min-width: 0; font-size: 13px; color: var(--text); direction: rtl; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .fv-path > bdi { direction: ltr; unicode-bidi: isolate; }
 .fv-bar { display: flex; align-items: center; flex-wrap: wrap; gap: var(--s2) var(--s3); padding: var(--s2) var(--s3); background: var(--panel-2); border-bottom: 1px solid var(--line); }
 .fv-meta { font: var(--tx-meta); color: var(--muted); font-variant-numeric: tabular-nums; }
 .fv-actions { margin-left: auto; display: flex; align-items: center; flex-wrap: wrap; gap: var(--s1-5); }
-.fv-actions button.small[aria-pressed="true"] { color: var(--accent-2); border-color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, transparent); }
+.fv-actions button.small[aria-pressed="true"] { color: var(--k-accent-ink); border-color: color-mix(in srgb, var(--k-accent) 40%, var(--line-strong)); background: var(--k-accent-soft); }
 .fv-controls { padding: var(--s2) var(--s3); border-bottom: 1px solid var(--line); background: var(--panel); }
 .fv-body { overflow: auto; max-height: 460px; }
 /* The frame clips its children, so the focus ring is drawn inside the body rather than outside it. */
@@ -114,6 +139,11 @@
 .fv-empty p { margin: 0; }
 .fv-code { padding: var(--s1-5) 0; font: 400 13px/1.55 var(--mono); }
 .fv-code .fv-line:hover { background: color-mix(in srgb, var(--accent) 6%, transparent); }
+/* A patch: what it adds and what it takes away are tinted, as the comparison's rows are, and its headers recede. */
+.fv-code .fv-line.p-add { background: color-mix(in srgb, var(--ok) 14%, transparent); }
+.fv-code .fv-line.p-del { background: color-mix(in srgb, var(--bad) 14%, transparent); }
+.fv-code .fv-line.p-hunk { background: color-mix(in srgb, var(--info) 12%, transparent); color: var(--text-dim); }
+.fv-code .fv-line.p-meta { color: var(--muted); }
 .fv-code.wrap .fv-text { white-space: pre-wrap; word-break: break-word; }
 /* The numbers are a margin, not text to read: they stay muted but at full strength, because a faded muted is under 4.5:1. */
 .fv .fv-num { opacity: 1; }
@@ -127,21 +157,24 @@
 .fv-note { padding: var(--s2) var(--s2-5); font: var(--tx-meta); }
 
 /* markdown, drawn as a document */
-.fv-md { padding: var(--s3) var(--s4); font: 400 15px/1.65 var(--sans); color: var(--text); overflow-wrap: anywhere; }
-.fv-md h1, .fv-md h2, .fv-md h3, .fv-md h4, .fv-md h5, .fv-md h6 { margin: var(--s4) 0 var(--s1-5); line-height: 1.3; }
+.fv-md { padding: var(--s4) var(--s5) var(--s5); font: 400 15px/1.65 var(--sans); color: var(--text); overflow-wrap: anywhere; }
+.fv-md h1, .fv-md h2, .fv-md h3, .fv-md h4, .fv-md h5, .fv-md h6 { margin: var(--s5) 0 var(--s1-5); line-height: 1.3; letter-spacing: var(--k-track-title); text-transform: none; color: var(--text); }
 .fv-md > :first-child { margin-top: 0; }
-.fv-md h1 { font-size: 20px; } .fv-md h2 { font-size: 18px; } .fv-md h3 { font-size: 16px; }
-.fv-md h4, .fv-md h5, .fv-md h6 { font-size: 15px; color: var(--text-dim); }
+.fv-md h1 { padding-bottom: var(--s2); border-bottom: 1px solid var(--line); font: 650 24px/1.25 var(--sans); }
+.fv-md h2 { font: 650 18px/1.3 var(--sans); }
+.fv-md h3 { font: 600 16px/1.3 var(--sans); }
+.fv-md h4, .fv-md h5, .fv-md h6 { font: 600 15px/1.3 var(--sans); color: var(--text-dim); }
 .fv-md p { margin: var(--s1-5) 0; }
 .fv-md ul { margin: var(--s1-5) 0 var(--s1-5) 18px; padding: 0; }
 .fv-md ol { margin: var(--s1-5) 0 var(--s1-5) 22px; padding: 0; }
 .fv-md li { margin: var(--s0) 0; }
 .fv-md li > ul, .fv-md li > ol { margin: var(--s0) 0 var(--s0) 18px; }
-.fv-md a { color: var(--accent-2); }
-.fv-md code { padding: 1px 4px; border-radius: 4px; background: color-mix(in srgb, var(--line) 55%, transparent); font: 400 13px var(--mono); }
+.fv-md a { color: var(--k-accent-ink); text-underline-offset: 2px; }
+.fv-md code { padding: 1px var(--s1-5); border-radius: var(--r-sm); background: var(--sunken); border: 1px solid var(--line); font: 400 13px var(--mono); }
 .fv-md blockquote { margin: var(--s2) 0; padding: var(--s1) var(--s3); border-left: 3px solid var(--line-strong); color: var(--text-dim); }
 .fv-md hr { margin: var(--s3-5) 0; border: 0; border-top: 1px solid var(--line); }
-.fv-md .md-code { margin: var(--s2) 0; padding: var(--s2-5) var(--s3); overflow: auto; background: var(--sunken); border: 1px solid var(--line); border-radius: var(--r-sm); font: 400 13px/1.55 var(--mono); white-space: pre; }
+/* A code block in a document wraps: a line that scrolls sideways inside a page that scrolls down is a line half of the readers never see. */
+.fv-md .md-code { margin: var(--s2) 0; padding: var(--s2-5) var(--s3); background: var(--sunken); border: 1px solid var(--line); border-radius: var(--r); font: 400 13px/1.55 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; }
 
 /* ---------- controls shared by the reader and the Product page ---------- */
 /* The switch between views of one thing is the segmented control (.seg, styles.css): a trough with the chosen view raised out of it. */

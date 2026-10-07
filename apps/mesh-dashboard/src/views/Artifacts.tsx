@@ -6,9 +6,9 @@ import { useMesh } from "../store";
 import { useMedia, WIDE } from "../useMedia";
 import { useMission } from "../useMission";
 import { useMissionActions } from "../useMissionActions";
-import { Banner, Button, EmptyState, ErrorState, Input, PageHeader, Pill, Select, type PillTone } from "../components";
-import { Icon } from "../icons";
+import { Banner, Button, EmptyState, ErrorState, PageHeader, SearchField, Segmented, Select, Skeleton, Switch } from "../components";
 import { ArtifactReader } from "../artifactreader";
+import { FileTile } from "../fileview";
 import {
   FILE_GROUPS,
   NO_FILTER,
@@ -53,16 +53,18 @@ function FileRow({ a, current, tabbable, onOpen, onKey, hold }: {
         onClick={onOpen}
         onKeyDown={onKey}
       >
-        <span className="file-ic"><Icon name="files" size={18} /></span>
-        <span className="file-name" title={a.name}>{a.name}</span>
-        <span className="file-state"><Pill tone={artifactCls(a.status) as PillTone}>{plainArtifact(a.status)}</Pill></span>
-        <span className="file-sub">
-          <span>{a.type}</span>
-          <span>v{a.version}</span>
-          <span>{a.owner}</span>
-          <span title={localDateTime(a.createdAt)}>{ago(a.createdAt)}</span>
+        <FileTile type={a.type} />
+        <span className="file-main">
+          <span className="file-name" title={a.name}>{a.name}</span>
+          <span className="file-sub">
+            <span>{a.type}</span>
+            <span>v{a.version}</span>
+            <span>{a.owner}</span>
+            <span title={localDateTime(a.createdAt)}>{ago(a.createdAt)}</span>
+          </span>
+          {path ? <span className="file-path mono" title={path}><bdi>{path}</bdi></span> : null}
         </span>
-        {path ? <span className="file-path mono" title={path}><bdi>{path}</bdi></span> : null}
+        <span className="file-state" data-tone={artifactCls(a.status)}>{plainArtifact(a.status)}</span>
       </button>
     </li>
   );
@@ -70,9 +72,17 @@ function FileRow({ a, current, tabbable, onOpen, onKey, hold }: {
 
 function ListSkeleton(): React.JSX.Element {
   return (
-    <div className="file-rows skel" role="status">
+    <div className="files-group" role="status">
       <span className="sr-only">Loading files</span>
-      {[0, 1, 2, 3, 4].map((i) => <div className="file-skel" key={i} aria-hidden="true"><i /><i /></div>)}
+      <ul className="file-rows" aria-hidden="true">
+        {[0, 1, 2, 3, 4].map((i) => (
+          <li key={i} className="file-skel">
+            <Skeleton w={32} h={32} />
+            <span className="file-main"><Skeleton w={`${30 + (i % 3) * 10}%`} h={14} /><Skeleton w={`${48 + (i % 2) * 16}%`} h={12} /></span>
+            <Skeleton w={72} h={12} />
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }
@@ -133,6 +143,7 @@ export default function Artifacts(): React.JSX.Element {
   const flat = useMemo(() => groups.flatMap((g) => g.items), [groups]);
   const types = useMemo(() => typeCounts(arts), [arts]);
   const counts = useMemo(() => groupCounts(filterFiles(arts, { ...filter, group: "" })), [arts, filter]);
+  const total = useMemo(() => Object.values(counts).reduce((n, c) => n + c, 0), [counts]);
 
   // The reader follows the person's choice while that file is still in the list; when it is not, or nothing is chosen,
   // it shows the first file, so the right half of the page is never an empty box.
@@ -164,6 +175,11 @@ export default function Artifacts(): React.JSX.Element {
         title="Files"
         status={loaded ? <span className="count-note" role="status">{countLabel(visible.length, arts.length)}</span> : null}
         lede="What the team made. Read a file, compare its versions, copy its path."
+        actions={loaded && arts.length > 0 ? (
+          <span title="When two files share a name and type, show only the newest. Older ones stay in the manifest.">
+            <Switch label="Latest of each name" checked={filter.latestOnly} onChange={() => setFilter({ ...filter, latestOnly: !filter.latestOnly })} />
+          </span>
+        ) : null}
       />
 
       {stale ? (
@@ -187,25 +203,26 @@ export default function Artifacts(): React.JSX.Element {
       ) : (
         <>
           <div className="files-bar" role="search">
-            <Input
-              search
-              aria-label="Search files"
-              placeholder="Search by name, owner, type or path"
+            <SearchField
+              label="Search files"
+              placeholder="Name, owner, type or path"
               value={filter.query}
               onChange={(e) => setFilter({ ...filter, query: e.target.value })}
+              onClear={() => setFilter({ ...filter, query: "" })}
             />
             <Select aria-label="Type" value={filter.type} onChange={(e) => setFilter({ ...filter, type: e.target.value })}>
               <option value="">All types</option>
               {types.map((t) => <option key={t.type} value={t.type}>{t.type} ({t.n})</option>)}
             </Select>
-            <Select aria-label="Status" value={filter.group} onChange={(e) => setFilter({ ...filter, group: e.target.value as FileFilter["group"] })}>
-              <option value="">Any status</option>
-              {FILE_GROUPS.map((g) => <option key={g.id} value={g.id}>{g.label} ({counts[g.id]})</option>)}
-            </Select>
-            <label className="files-check" title="When two files share a name and type, show only the newest. Older ones stay in the manifest.">
-              <input type="checkbox" checked={filter.latestOnly} onChange={(e) => setFilter({ ...filter, latestOnly: e.target.checked })} />
-              Latest of each name
-            </label>
+            <Segmented
+              label="Status"
+              value={filter.group}
+              onChange={(id) => setFilter({ ...filter, group: id })}
+              options={[
+                { id: "" as FileFilter["group"], label: <>All<span className="seg-n">{total}</span></> },
+                ...FILE_GROUPS.filter((g) => counts[g.id] > 0 || filter.group === g.id).map((g) => ({ id: g.id as FileFilter["group"], label: <>{g.short}<span className="seg-n">{counts[g.id]}</span></>, hint: g.label })),
+              ]}
+            />
           </div>
 
           <div className={`files-layout${split ? " split" : ""}`}>

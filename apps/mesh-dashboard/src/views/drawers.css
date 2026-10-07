@@ -1,0 +1,504 @@
+/* ============ The drawers: a step, an agent ============
+ *
+ * What the panel on the right holds when a step or an agent is opened: the step's header, its status, its ledger of actions, its tools, its
+ * events, its inspector, and an agent's vitals and tabs. The frame (the scrim, the panel, its title row, the close button) is in styles.css.
+ * Tokens only; the pills, the buttons, the tabs, the chips and the disclosure are the kit's. Four rules hold it together:
+ *   - a heading is a sentence at 14 to 16px, never a caption in capitals, so a reader can find a section by what it says;
+ *   - a list of rows is ONE ruled card, not a stack of cards, so twelve actions are one thing with twelve lines;
+ *   - a state is a word with its colour (a rail, a dot, a tinted pill), and the colour is the same one the Steps list uses for it (.o-*);
+ *   - a figure is the sans, tabular, at 650: mono is for an id, a path and a payload.
+ */
+
+/* ---------- headings, the frame's own ---------- */
+#drawer h3, #drawer h4 { margin: var(--s5) 0 var(--s2); font: 600 14px/1.35 var(--sans); letter-spacing: var(--k-track-tight); text-transform: none; color: var(--text); }
+#drawer h3:first-child, #drawer h4:first-child { margin-top: 0; }
+
+/* ---------- empty states: a quiet panel, not a dashed box ---------- */
+.step-empty, .idle-box, .think-box { background: var(--sunken); border: 1px solid var(--line); border-radius: var(--r); }
+.step-empty { display: flex; flex-direction: column; align-items: flex-start; gap: var(--s1-5); padding: var(--s3) var(--s4); font: var(--tx-value); color: var(--text-dim); max-width: 68ch; }
+.step-empty b { color: var(--text); font: 600 14px var(--sans); }
+.idle-box { padding: var(--s3) var(--s4); font: var(--tx-value); margin: var(--s2) 0; }
+.think-box { display: flex; gap: var(--s3); align-items: center; padding: var(--s3) var(--s4); margin-top: var(--s4); font: var(--tx-value); max-width: 68ch; }
+.think-txt { display: flex; flex-direction: column; gap: var(--s0); }
+.think-txt b { font: 600 14px var(--sans); }
+.think-dots { display: inline-flex; gap: var(--s1); }
+.think-dots i { width: 7px; height: 7px; border-radius: 50%; background: var(--k-accent); animation: blink 1.2s infinite; }
+.think-dots i:nth-child(2) { animation-delay: .2s; }
+.think-dots i:nth-child(3) { animation-delay: .4s; }
+
+/* ---------- the live stream ---------- */
+.live-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--warn); flex: none; animation: blink 1.1s infinite; }
+.live-dot.on { background: var(--ok); box-shadow: 0 0 0 0 color-mix(in srgb, var(--ok) 60%, transparent); animation: pulse 2.2s infinite; }
+.live-dot.off { background: var(--bad); animation: none; }
+.stream-wrap { margin-top: var(--s4); }
+.stream-bar { display: flex; justify-content: space-between; align-items: center; gap: var(--s2-5); margin-bottom: var(--s1-5); }
+.stream-live { display: inline-flex; align-items: center; gap: var(--s2); }
+.stream-live .live-dot { width: 7px; height: 7px; }
+.stream-paused { font-size: 13px; margin-top: var(--s1-5); }
+.sec-label { font: 600 13px var(--sans); color: var(--text); }
+.sec-stat { font: 500 12px var(--sans); color: var(--muted); font-variant-numeric: tabular-nums; }
+.sec-tools { display: inline-flex; align-items: center; gap: var(--s2); }
+#drawer pre.token-stream.live { border-color: color-mix(in srgb, var(--ok) 35%, var(--line)); background: color-mix(in srgb, var(--ok) 4%, var(--sunken)); max-height: 380px; }
+/* The blinking block at the end of a live stream. A span, not `.caret`: the chevrons that turn open (Events, Steps, the JSON tree) are an icon of that class. */
+span.caret { color: var(--ok); animation: blink 1s steps(1) infinite; }
+
+/* ---------- the step: the frame ---------- */
+/* Only a step earns the wide drawer; the message, approval and file panels keep the reading width they were designed for. */
+.drawer:has(.stepv) { width: min(1180px, 96vw); }
+.stepv { display: flex; flex-direction: column; min-height: 0; }
+/* Walking: the previous step stays up, dimmed, until the next one arrives. */
+.stepv.pending .sv-body { opacity: .5; transition: opacity .12s ease .08s; pointer-events: none; }
+
+/* --- the header: who, what came of it, what it cost, and the way to the rest of the page --- */
+.sv-head {
+  position: sticky; top: calc(var(--s5) * -1); z-index: var(--z-sticky);
+  margin: calc(var(--s5) * -1) -22px 0; padding: var(--s3) 22px 0;
+  background: color-mix(in srgb, var(--drawer) 94%, transparent); -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px);
+  border-bottom: 1px solid var(--line);
+}
+.sv-topbar { display: flex; align-items: center; justify-content: space-between; gap: var(--s3); }
+/* The way to the next and the last step is one control: two arrows and where this one stands among the loaded. */
+.sv-walk { display: inline-flex; align-items: center; gap: var(--s1); padding: 2px; background: var(--panel); border: 1px solid var(--line-strong); border-radius: var(--r); box-shadow: var(--k-hl), var(--k-shadow-1); }
+.sv-walk > button:not(.linklike) { min-width: 30px; min-height: 28px; padding: 0 var(--s2); border-radius: calc(var(--r) - 3px); font-size: 18px; line-height: 1; }
+.sv-walk-n { min-width: 72px; text-align: center; font: 500 12px var(--sans); font-variant-numeric: tabular-nums; color: var(--text-dim); }
+.sv-walk .sv-walk-more { margin: 0 var(--s2) 0 var(--s1); font-size: 12px; }
+.sv-ident { display: flex; align-items: center; gap: var(--s3); min-width: 0; margin-top: var(--s3); }
+.sv-who { display: flex; flex-direction: column; gap: 2px; min-width: 0; line-height: 1.15; }
+.sv-who b { font: 650 18px/1.2 var(--sans); letter-spacing: var(--k-track-title); overflow-wrap: anywhere; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden; }
+.sv-id { font: 12px var(--mono); color: var(--muted); }
+/* The verdict of the turn, in the pill the rest of the console uses for it: a dot in its colour and a word. */
+.sstat-badge { --sc: var(--muted); display: inline-flex; align-items: center; gap: var(--s1-5); height: 22px; padding: 0 var(--s2-5) 0 var(--s2); border: 0; border-radius: var(--k-r-pill);
+  background: color-mix(in srgb, var(--sc) 14%, transparent); color: var(--sc); font: 600 12px/1 var(--sans); letter-spacing: 0; text-transform: none; white-space: nowrap; cursor: default; }
+.sstat-badge.sstat-live { color: var(--k-accent-ink); background: var(--k-accent-soft); }
+.sstat-badge::before { content: ""; flex: none; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.sv-why-a { font: 500 12px var(--sans); color: var(--warn); white-space: nowrap; }
+.sv-why { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s2); margin: var(--s2) 0 0 44px; font-size: 13px; color: var(--text-dim); }
+.sv-why-k { color: var(--text-dim); }
+.sv-why-x { padding: 1px var(--s1-5); border-radius: var(--r-sm); background: var(--sunken); border: 1px solid var(--line); font-size: 12px; color: var(--muted); }
+/* Scrolled: the reason line goes, the rest of the header stays put. */
+.sv-head.stuck .sv-why { display: none; }
+
+/* What it took, as cells ruled apart: how long, how many tokens, how much of what it did left a trace, how much was refused. */
+.sv-metrics { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s1) 0; margin: var(--s3) 0 var(--s2) 44px; font: 600 13px var(--sans); font-variant-numeric: tabular-nums; color: var(--text); }
+.sv-metrics > span { display: inline-flex; align-items: center; gap: var(--s1-5); padding: 0 var(--s3); border-left: 1px solid var(--line); white-space: nowrap; }
+.sv-metrics > span:first-child { padding-left: 0; border-left: 0; }
+.sv-metrics .part { color: var(--warn); }
+.sv-metrics .sv-met-rej { color: var(--rej); }
+.sv-metrics .lw-warn, .sv-metrics .lw-bad { color: var(--lw); }
+.sv-model { font: 12px var(--mono); font-weight: 400; color: var(--muted); overflow: hidden; text-overflow: ellipsis; max-width: 210px; }
+/* Input against output as a hairline meter: the pair of numbers is in its title. */
+.sv-split { display: inline-block; width: 34px; height: 4px; border-radius: var(--k-r-pill); background: var(--line-strong); overflow: hidden; }
+.sv-split b { display: block; height: 100%; background: var(--k-accent); }
+
+/* The jump to a section of the page: the console's tabs, with the count of what is in each. */
+.sv-jump { display: flex; flex-wrap: wrap; gap: 0 var(--s1); margin: 0 calc(var(--s2) * -1); }
+.sv-jump-b { position: relative; display: inline-flex; align-items: center; gap: var(--s1-5); min-height: 36px; padding: 0 var(--s2-5); background: none; border: 0; border-radius: var(--r-sm) var(--r-sm) 0 0;
+  font: 500 13px var(--sans); letter-spacing: 0; text-transform: none; color: var(--muted); cursor: pointer; transition: color var(--k-dur-1) var(--k-ease), background-color var(--k-dur-1) var(--k-ease); }
+.sv-jump-b:hover { color: var(--text); background: var(--wash); }
+.sv-jump-b.on { color: var(--text); font-weight: 600; background: none; box-shadow: inset 0 -2px 0 var(--k-accent); }
+.sv-jump-b:focus-visible { outline: 2px solid var(--k-accent); outline-offset: -2px; }
+.sv-jump-n { font: 500 12px var(--sans); font-variant-numeric: tabular-nums; color: var(--muted); }
+
+/* --- the page: the sections, and the column that stays --- */
+.sv-body { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: var(--s5); align-items: start; padding-top: var(--s4); }
+.sv-main { min-width: 0; display: flex; flex-direction: column; gap: var(--s6); }
+/* Capped at the space under the header and scrolled as one: a sticky column taller than the viewport can never show its bottom.
+   --sv-head-h is measured by StepDrawer (the header wraps); the header sticks at -s5 against the drawer's padding. */
+.sv-side {
+  position: sticky; top: calc(var(--sv-head-h, 150px) - var(--s5) + var(--s3));
+  max-height: calc(100vh - var(--sv-head-h, 150px) - var(--s3) * 2); overflow: auto; overscroll-behavior: contain;
+  display: flex; flex-direction: column; gap: var(--s3); min-width: 0;
+}
+.sv-sec { scroll-margin-top: calc(var(--sv-head-h, 150px) + var(--s3)); }
+.sv-sec-h { display: flex; align-items: baseline; justify-content: space-between; gap: var(--s2-5); margin-bottom: var(--s3); }
+#drawer .sv-sec-h h4 { margin: 0; font: 650 16px/1.3 var(--sans); letter-spacing: var(--k-track-title); color: var(--text); }
+.sv-sec-n { font: 500 12px var(--sans); color: var(--muted); font-variant-numeric: tabular-nums; }
+.sv-sec-n.part { color: var(--warn); }
+
+/* --- what happened, why, and what next: a note with a rail in the colour of the verdict --- */
+.sstat { --sc: var(--muted); display: flex; flex-direction: column; gap: var(--s2-5); margin: 0; padding: var(--s3-5) var(--s4);
+  background: color-mix(in srgb, var(--sc) 6%, var(--panel)); border: 1px solid color-mix(in srgb, var(--sc) 24%, var(--line)); border-left: 3px solid var(--sc); border-radius: var(--r); }
+/* The same palette as the list's `.o-*`: the row a reader clicked was amber for blocked and grey for a parked turn, so the panel is. */
+.sstat-live { --sc: var(--k-accent); } .sstat-ship { --sc: var(--ok); } .sstat-wait { --sc: var(--muted); }
+.sstat-quiet { --sc: var(--muted); } .sstat-rej { --sc: var(--rej); }
+.sstat-block { --sc: var(--warn); } .sstat-crash { --sc: var(--bad); }
+#drawer .sstat .sstat-head { margin: 0; font: 650 16px/1.35 var(--sans); letter-spacing: var(--k-track-title); text-transform: none; color: var(--text); }
+.sstat-why, .sstat-next { display: flex; gap: var(--s3); align-items: baseline; }
+.sstat-next { padding-top: var(--s2-5); border-top: 1px solid color-mix(in srgb, var(--sc) 20%, var(--line)); }
+.sstat-why-l, .sstat-next-l { flex: none; min-width: 74px; font: 600 12px var(--sans); letter-spacing: 0; text-transform: none; color: var(--muted); }
+.sstat-next-l { color: var(--sc); }
+.sstat-why p, .sstat-next p { margin: 0; font: var(--tx-value); color: var(--text-dim); max-width: 62ch; }
+
+/* --- prose: the one thing on this page that is not a payload --- */
+.sv-prose { max-width: 68ch; margin: 0 0 var(--s3); font: 15px/1.65 var(--sans); color: var(--text); white-space: pre-wrap; word-break: break-word; }
+.sv-prose.dim { color: var(--text-dim); font-size: 14px; }
+/* The narration as the markdown the model wrote: the source's line breaks are markup now, not layout. Tighter than a file's markdown: a reply, not a document. */
+.sv-md { white-space: normal; }
+.sv-md > :first-child { margin-top: 0; }
+.sv-md > :last-child { margin-bottom: 0; }
+.sv-md p { margin: 0 0 var(--s2); }
+.sv-md h1, .sv-md h2, .sv-md h3, .sv-md h4, .sv-md h5, .sv-md h6 { margin: var(--s3) 0 var(--s1-5); font: 650 15px/1.35 var(--sans); letter-spacing: var(--k-track-tight); text-transform: none; color: var(--text); }
+.sv-md h1, .sv-md h2 { font-size: 16px; }
+.sv-md ul, .sv-md ol { margin: 0 0 var(--s2); padding-left: 22px; }
+.sv-md li { margin: 3px 0; }
+.sv-md li > ul, .sv-md li > ol { margin: 2px 0 0; }
+.sv-md li::marker { color: var(--muted); }
+.sv-md strong { font-weight: 600; color: var(--text); }
+.sv-md a { color: var(--k-accent-ink); text-underline-offset: 2px; }
+.sv-md code { padding: 1px var(--s1-5); border-radius: var(--r-sm); background: var(--sunken); border: 1px solid var(--line); font: 13px var(--mono); }
+.sv-md blockquote { margin: var(--s2) 0; padding: var(--s1) var(--s3); border-left: 3px solid var(--line-strong); color: var(--text-dim); }
+.sv-md hr { border: 0; border-top: 1px solid var(--line); margin: var(--s3) 0; }
+.sv-md .md-code { margin: var(--s2) 0; padding: var(--s2) var(--s2-5); background: var(--sunken); border: 1px solid var(--line); border-radius: var(--r); font: 13px/1.55 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; }
+.sv-md .md-table { margin: var(--s2) 0 var(--s2-5); }
+/* What the kernel told the seat about its own turn, set above the narration: worth reading before the prose, but advice, not an alarm. */
+.sv-notices { list-style: none; margin: 0 0 var(--s3); padding: var(--s2-5) var(--s3); display: flex; flex-direction: column; gap: var(--s1-5); max-width: 68ch;
+  background: color-mix(in srgb, var(--warn) 6%, var(--panel)); border: 1px solid color-mix(in srgb, var(--warn) 24%, var(--line)); border-left: 3px solid var(--warn); border-radius: var(--r-sm); }
+.sv-notice { font: var(--tx-value); color: var(--text-dim); overflow-wrap: anywhere; }
+.sv-notice::before { content: "▲"; color: var(--warn); font-size: 11px; margin-right: var(--s1-5); vertical-align: 1px; }
+
+/* --- the ledger of what it did: one ruled card, a rail in each row's colour --- */
+.sv-ops, .sv-tools, .sv-evs { display: flex; flex-direction: column; margin: 0 0 var(--s3); background: var(--panel); border: 1px solid var(--line); border-radius: var(--r); overflow: hidden; }
+.sv-ops > :not(:first-child), .sv-tools > :not(:first-child), .sv-evs > :not(:first-child) { border-top: 1px solid var(--line); }
+.sv-op {
+  --rail: var(--line-strong);
+  display: grid; grid-template-columns: 22px minmax(0, 1fr) auto; align-items: baseline; gap: var(--s2-5); cursor: pointer;
+  padding: var(--s2-5) var(--s3); background: none; box-shadow: inset 3px 0 0 var(--rail); transition: background-color var(--k-dur-1) var(--k-ease);
+}
+.sv-op:hover { background: var(--wash); }
+.sv-op.on { background: var(--k-accent-soft); --rail: var(--k-accent); }
+.sv-op:focus-visible { outline: 2px solid var(--k-accent); outline-offset: -2px; }
+.sv-op-ok { --rail: var(--ok); }
+.sv-op-miss { --rail: var(--warn); }
+.sv-op-na { --rail: var(--line-strong); }
+/* Refused is orange on the list page; red here said "crashed" for the same verdict. */
+.sv-op-refused { --rail: var(--rej); }
+.sv-op-i { font: 500 12px var(--sans); font-variant-numeric: tabular-nums; color: var(--muted); text-align: right; }
+.sv-op-main { display: flex; flex-direction: column; gap: var(--s1); min-width: 0; }
+.sv-op-r1 { display: flex; align-items: baseline; gap: var(--s2); flex-wrap: wrap; min-width: 0; }
+.sv-op-t { font: 600 14px var(--sans); letter-spacing: var(--k-track-tight); min-width: 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* A refused row's title names what it tried, not what happened. */
+.sv-op-refused .sv-op-t { color: var(--text-dim); }
+.sv-op-why { font: 13px/1.45 var(--mono); color: var(--rej); overflow-wrap: anywhere; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden; }
+.sv-op-note { font-size: 13px; color: var(--muted); white-space: nowrap; }
+/* A parameter, as a tag: its name quiet and its value in the mono. The value ellipsizes inside the tag and the full text is its title. */
+.sv-op-f { display: inline-flex; align-items: baseline; gap: var(--s1-5); max-width: 100%; min-width: 0; overflow: hidden; padding: 1px var(--s2); border-radius: var(--r-sm); background: var(--sunken); border: 1px solid var(--line); font: 12px var(--mono); color: var(--text-dim); white-space: nowrap; }
+.sv-op-f b { flex: none; font: 500 12px var(--sans); letter-spacing: 0; text-transform: none; color: var(--muted); }
+.sv-op-fv { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.sv-op-d { font-size: 13px; color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Whether it left a trace in the log: the same shape for every answer, so the eye compares the colour and not the form. */
+.sv-op-fx { padding: 2px var(--s2-5); border-radius: var(--k-r-pill); font: 600 12px/1.3 var(--sans); letter-spacing: 0; text-transform: none; white-space: nowrap; }
+.sv-op-fx-ok { color: var(--ok); background: color-mix(in srgb, var(--ok) 14%, transparent); }
+.sv-op-fx-miss { color: var(--warn); background: color-mix(in srgb, var(--warn) 14%, transparent); }
+.sv-op-fx-na { color: var(--muted); background: color-mix(in srgb, var(--muted) 12%, transparent); }
+.sv-op-fx-refused { color: var(--rej); background: color-mix(in srgb, var(--rej) 14%, transparent); }
+/* A pairing decided by order alone: the same hue and no fill, so it reads softer than a confirmed one without inventing a fourth colour. */
+.sv-op-fx-guess { color: var(--ok); border: 1px dashed color-mix(in srgb, var(--ok) 50%, transparent); background: none; font-weight: 500; }
+.sv-op-fx-missguess { color: var(--warn); border: 1px dashed color-mix(in srgb, var(--warn) 50%, transparent); background: none; font-weight: 500; }
+
+/* --- its tool calls, in the order they were made --- */
+.sv-tool { --rail: transparent; display: grid; grid-template-columns: 24px 56px minmax(80px, auto) minmax(0, 1fr) auto; align-items: baseline; gap: var(--s2-5); cursor: pointer; padding: var(--s2) var(--s3); box-shadow: inset 3px 0 0 var(--rail); transition: background-color var(--k-dur-1) var(--k-ease); }
+.sv-tool:hover { background: var(--wash); }
+.sv-tool.on { background: var(--k-accent-soft); --rail: var(--k-accent); }
+.sv-tool:focus-visible { outline: 2px solid var(--k-accent); outline-offset: -2px; }
+.sv-tool.failed { --rail: var(--bad); }
+/* A denied call is the sandbox saying no: a refusal, not a failure. */
+.sv-tool.denied { --rail: var(--rej); }
+.sv-tool-i { font: 500 12px var(--sans); font-variant-numeric: tabular-nums; color: var(--muted); text-align: right; }
+/* The family is a label, not a verdict: only a mesh call, which is an action, takes the accent. */
+.sv-tool-fam { font: 500 12px var(--sans); letter-spacing: 0; text-transform: none; color: var(--muted); }
+.sv-fam-mesh { color: var(--k-accent-ink); font-weight: 600; }
+.sv-tool-n { font: 600 13px var(--mono); color: var(--text); }
+.sv-tool-a { font: 12px var(--mono); color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sv-tool-x { font: 600 12px var(--sans); text-transform: none; color: var(--bad); }
+.sv-tools > .linklike, .sv-evs > .linklike { align-self: flex-start; margin: var(--s2) var(--s3); }
+
+/* --- the events of the step, as offsets from its start --- */
+.sv-ev { --rail: transparent; display: grid; grid-template-columns: 62px minmax(100px, auto) minmax(0, 1fr) auto; align-items: baseline; gap: var(--s2-5); cursor: pointer; padding: var(--s2) var(--s3); box-shadow: inset 3px 0 0 var(--rail); transition: background-color var(--k-dur-1) var(--k-ease); }
+.sv-ev:hover { background: var(--wash); }
+.sv-ev:not([role]) { cursor: default; }
+.sv-ev:not([role]):hover { background: none; }
+.sv-ev.on { background: var(--k-accent-soft); --rail: var(--k-accent); }
+.sv-ev:focus-visible { outline: 2px solid var(--k-accent); outline-offset: -2px; }
+.sv-ev-off { font: 500 12px var(--sans); font-variant-numeric: tabular-nums; color: var(--muted); text-align: right; }
+.sv-ev-t { font: 600 12px var(--sans); letter-spacing: 0; text-transform: none; }
+.sv-ev-s { font-size: 13px; color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sv-ev-q { font: 12px var(--sans); font-variant-numeric: tabular-nums; color: var(--muted); }
+/* Bookkeeping, shown on request: present but a step back from the rest. */
+.sv-ev.quiet .sv-ev-t, .sv-ev.quiet .sv-ev-s { opacity: .6; }
+.sv-evs > .zone-line { margin: var(--s2) var(--s3) 0; }
+
+/* --- the inspector: one row opened --- */
+.sv-insp { background: var(--panel); border: 1px solid var(--line); border-radius: var(--r); box-shadow: var(--k-hl), var(--k-shadow-1); overflow: hidden; }
+.sv-insp-empty { padding: var(--s4); }
+.sv-insp-empty p { margin: 0; font-size: 13px; line-height: 1.5; }
+.sv-insp-head { display: flex; align-items: center; justify-content: space-between; gap: var(--s2); padding: var(--s2-5) var(--s3); border-bottom: 1px solid var(--line); background: var(--panel-2); }
+#drawer .sv-insp-head h4 { margin: 0; font: 600 13px var(--sans); letter-spacing: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.sv-insp-tools { display: inline-flex; align-items: center; gap: var(--s1); flex: none; }
+.sv-insp-body { padding: var(--s3); }
+.sv-insp-body h5 { margin: var(--s3) 0 var(--s1-5); font: 600 12px var(--sans); letter-spacing: 0; text-transform: none; color: var(--muted); }
+.sv-insp-body h5:first-child { margin-top: 0; }
+.sv-insp-body p { font-size: 13px; line-height: 1.5; }
+.sv-insp-meta { font-size: 12px; color: var(--muted); margin-bottom: var(--s2); }
+.sv-json { margin: 0; padding: var(--s2-5); background: var(--sunken); border: 1px solid var(--line); border-radius: var(--r-sm); font: 12px/1.55 var(--mono); white-space: pre-wrap; word-break: break-word; overflow-x: auto; color: var(--text-dim); }
+.sv-json + .linklike, .sv-diff + .linklike { margin-top: var(--s1-5); }
+.sv-h5-n { margin-left: var(--s1-5); font: 400 12px var(--mono); letter-spacing: 0; text-transform: none; }
+.sv-insp-body p.sv-insp-path { margin: 0; font-size: 12px; color: var(--text); overflow-wrap: anywhere; }
+/* A file edit, as text: the comparison's own line styles, wrapped to the column. */
+.sv-diff { background: var(--sunken); border: 1px solid var(--line); border-radius: var(--r-sm); font-size: 12px; overflow-x: auto; }
+.sv-diff .fv-text { white-space: pre-wrap; word-break: break-word; }
+.sv-diff-gap { padding: var(--s0) var(--s2); font: 12px var(--mono); color: var(--muted); }
+/* A refusal, a call that failed and an argument the server cut are notes in the alert shape: a rail in the tone and its wash. */
+.sv-insp-body p.sv-tool-err, .sv-insp-body p.sv-refused, .sv-insp-body p.sv-clip { margin: 0 0 var(--s2); padding: var(--s2) var(--s2-5); border-radius: var(--r-sm); border-left: 3px solid var(--bad); background: color-mix(in srgb, var(--bad) 8%, transparent); color: var(--text); overflow-wrap: anywhere; }
+.sv-insp-body p.sv-refused { border-left-color: var(--rej); background: color-mix(in srgb, var(--rej) 8%, transparent); }
+.sv-refused b { font-weight: 600; }
+/* An argument the server cut at storage: without this the stored start reads as the whole value, and "show all" cannot bring the rest back. */
+.sv-insp-body p.sv-clip { border-left-color: var(--warn); background: color-mix(in srgb, var(--warn) 8%, transparent); color: var(--text-dim); font-size: 13px; }
+.sv-clip b { color: var(--warn); font-weight: 600; }
+.sv-clip .mono { font-size: 12px; color: var(--text); }
+/* Inline under a row (the narrow layout): set off from the list it interrupts. */
+.sv-ops > .sv-insp, .sv-tools > .sv-insp, .sv-evs > .sv-insp { margin: var(--s2) var(--s3) var(--s3) var(--s5); }
+
+/* --- folds --- */
+.sv-fold { background: var(--panel); border: 1px solid var(--line); border-radius: var(--r); margin-bottom: var(--s2); }
+.sv-fold > summary { display: flex; align-items: center; gap: var(--s1-5); min-height: 36px; padding: 0 var(--s3); font: 500 13px var(--sans); color: var(--text-dim); list-style: none; cursor: pointer; border-radius: var(--r); }
+.sv-fold > summary::-webkit-details-marker { display: none; }
+.sv-fold > summary::before { content: ""; flex: none; width: 14px; height: 14px; background: currentColor; color: var(--muted); -webkit-mask: var(--chev) center / contain no-repeat; mask: var(--chev) center / contain no-repeat; transition: transform var(--k-dur-1) var(--k-ease); }
+.sv-fold[open] > summary::before { transform: rotate(90deg); }
+.sv-fold > summary:hover { color: var(--text); }
+.sv-fold > summary:focus-visible { outline: 2px solid var(--k-accent); outline-offset: -2px; }
+.sv-fold > *:not(summary) { margin: 0 var(--s3) var(--s3); }
+.stepv > .sv-fold { margin-top: var(--s2); }
+.sv-gone { margin: var(--s4) 0 var(--s3); }
+.sv-gone-actions { display: flex; flex-wrap: wrap; gap: var(--s2); margin-top: var(--s1); }
+
+/* --- the side column with nothing selected: this step against the agent's usual --- */
+.sv-ctx { padding: var(--s3-5); background: var(--panel); border: 1px solid var(--line); border-radius: var(--r); box-shadow: var(--k-hl), var(--k-shadow-1); }
+.sv-ctx h5 { margin: var(--s3) 0 var(--s1-5); font: 600 13px var(--sans); letter-spacing: 0; text-transform: none; color: var(--text); }
+.sv-ctx h5:first-child { margin-top: 0; }
+.sv-ctx dl { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: var(--s1-5) var(--s3); margin: 0; font-size: 13px; }
+.sv-ctx dt { color: var(--muted); }
+.sv-ctx dd { margin: 0; color: var(--text); overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+.sv-ctx dd.mono { font-size: 12px; color: var(--text-dim); }
+.sv-ctx .sbx { margin: 0; }
+/* The strip has no heading of its own above it: set it off from the list. */
+.sv-ctx > * + .sbx { margin-top: var(--s3); padding-top: var(--s3); border-top: 1px solid var(--line); }
+.sv-ctx .sv-sec-n { margin: var(--s1-5) 0 0; }
+
+/* --- the permission strip: what the runtime's gate lets this agent touch --- */
+.sbx { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s1-5); margin: var(--s4) 0 0; }
+.sbx-label { margin-right: var(--s1); font: 600 13px var(--sans); letter-spacing: 0; text-transform: none; color: var(--text); }
+.sbx-chip { display: inline-flex; align-items: center; gap: var(--s1-5); height: 24px; padding: 0 var(--s2-5) 0 var(--s2); border: 1px solid var(--line); border-radius: var(--k-r-pill); background: var(--panel-2); font: 500 13px var(--sans); cursor: default; }
+.sbx-chip i { width: 6px; height: 6px; border-radius: 50%; background: var(--muted); }
+.sbx-chip small { font: 500 12px var(--sans); letter-spacing: 0; text-transform: none; opacity: .85; }
+.sbx-allow { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 32%, var(--line)); background: color-mix(in srgb, var(--ok) 8%, transparent); }
+.sbx-allow i { background: var(--ok); }
+.sbx-approval { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 36%, var(--line)); background: color-mix(in srgb, var(--warn) 9%, transparent); }
+.sbx-approval i { background: var(--warn); }
+/* A partial grant (shell narrowed to the commit path): open, but not the blanket green. Info, with a dashed edge for "only some of it". */
+.sbx-scoped { color: var(--info); border-style: dashed; border-color: color-mix(in srgb, var(--info) 45%, var(--line)); background: color-mix(in srgb, var(--info) 8%, transparent); }
+.sbx-scoped i { background: var(--info); }
+.sbx-deny { color: var(--muted); border-style: dashed; text-decoration: line-through; text-decoration-color: color-mix(in srgb, var(--muted) 60%, transparent); }
+.sbx-deny small { text-decoration: none; }
+.sbx-none { color: var(--text-dim); border-style: dashed; }
+.sbx-rt { margin-left: auto; font-size: 12px; color: var(--muted); }
+.sbx-sk { width: 64px; height: 22px; border-radius: var(--k-r-pill); }
+
+/* --- what a running turn is, while it runs: the vitals --- */
+.v-ok   { --v: var(--ok); }
+.v-warm { --v: var(--info); }
+.v-warn { --v: var(--warn); }
+.v-bad  { --v: var(--bad); }
+.v-done { --v: var(--line-strong); }
+/* The strip is a card inside the drawer. Its health tints its top edge and its cells, so an amber strip is amber all the way through. */
+.vitals { --vitals-fill: var(--panel); margin: 0 0 var(--s4); padding: var(--s3) var(--s4); background: var(--vitals-fill); border: 1px solid var(--line); border-top: 2px solid var(--v, var(--line-strong)); border-radius: var(--r); box-shadow: var(--k-hl), var(--k-shadow-1); }
+.vitals.v-bad  { --vitals-fill: color-mix(in srgb, var(--bad) 8%, var(--panel)); }
+.vitals.v-warn { --vitals-fill: color-mix(in srgb, var(--warn) 6%, var(--panel)); }
+.vitals-head { display: flex; align-items: baseline; gap: var(--s2); flex-wrap: wrap; font-size: 14px; }
+.vitals-head .live-dot { align-self: center; }
+.vitals-head b { color: var(--v, var(--text)); text-transform: lowercase; font: 650 16px var(--sans); letter-spacing: var(--k-track-title); }
+.v-model { margin-left: auto; font-size: 12px; }
+.vitals-nums { display: grid; grid-template-columns: 1.4fr 1fr 1fr 1fr; gap: 1px; margin-top: var(--s3); background: var(--line); border: 1px solid var(--line); border-radius: var(--r-sm); overflow: hidden; }
+.vital { display: flex; flex-direction: column; gap: var(--s0); padding: var(--s2) var(--s3); background: color-mix(in srgb, var(--sunken) 55%, var(--vitals-fill)); }
+.vital b { font: 650 16px var(--sans); letter-spacing: var(--k-track-title); font-variant-numeric: tabular-nums; }
+.vital.lead b { font-size: 20px; line-height: 1.1; }
+.vital span { font-size: 12px; color: var(--muted); }
+.vital.warn b { color: var(--warn); }
+.vital.bad b { color: var(--bad); }
+.vitals-detail { font-size: 13px; color: var(--text-dim); flex: 1 1 100%; }
+
+/* --- where the time went: one chart, each leg a row whose track starts where the leg did --- */
+.prail { margin: 0; padding: var(--s3-5); background: var(--panel); border: 1px solid var(--line); border-radius: var(--r); box-shadow: var(--k-hl), var(--k-shadow-1); }
+.prail-row { display: grid; grid-template-columns: 116px minmax(0, 1fr) auto; align-items: center; gap: var(--s2-5); padding: 3px 0; }
+.prail-name { font-size: 13px; color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.prail-track { position: relative; height: 8px; border-radius: var(--k-r-pill); background: var(--sunken); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--line) 70%, transparent); overflow: hidden; }
+.prail-fill { position: absolute; top: 0; bottom: 0; min-width: 2px; border-radius: var(--k-r-pill); background: var(--leg, var(--text-dim)); transition: left .3s ease, width .3s ease; }
+.prail-fill.open { animation: pulse-soft 1.6s ease-in-out infinite; }
+.prail-ms { font: 600 12px var(--sans); font-variant-numeric: tabular-nums; color: var(--text-dim); text-align: right; white-space: nowrap; }
+/* The longest leg is the answer to "why was this slow", so it is the only row at full strength; the others recede. */
+.prail-row.top .prail-name, .prail-row.top .prail-ms { color: var(--text); }
+.lg-prep   { --leg: var(--phase-prep); }
+.lg-wait   { --leg: var(--phase-wait); }
+.lg-stream { --leg: var(--k-accent); }
+.lg-ops    { --leg: var(--ok); }
+.prail-verdict { font-size: 13px; margin-top: var(--s2); color: var(--text-dim); }
+@keyframes pulse-soft { 0%,100% { opacity: 1; } 50% { opacity: .5; } }
+.bchip { padding: 1px var(--s2); border-radius: var(--k-r-pill); background: var(--sunken); color: var(--muted); font: 600 12px var(--sans); white-space: nowrap; }
+.bchip.high { background: color-mix(in srgb, var(--warn) 14%, transparent); color: var(--warn); }
+.bchip.low  { background: color-mix(in srgb, var(--ok) 14%, transparent); color: var(--ok); }
+
+/* --- what woke it and what it woke --- */
+.causal { display: flex; flex-direction: column; gap: var(--s1-5); margin: var(--s3) 0 0; padding: var(--s2-5) var(--s3); border-radius: var(--r); background: var(--panel-2); border: 1px solid var(--line); }
+.causal-row { display: flex; align-items: baseline; gap: var(--s2); flex-wrap: wrap; }
+.causal-dir { min-width: 58px; font: 600 12px var(--sans); letter-spacing: 0; text-transform: none; color: var(--muted); }
+.causal-dir.out { color: var(--k-accent-ink); }
+.causal-links { display: flex; flex-wrap: wrap; gap: var(--s1-5) var(--s3); }
+.causal-link { padding: 0; background: none; border: 0; font: 400 14px var(--sans); color: var(--k-accent-ink); cursor: pointer; text-align: left; text-decoration: underline; text-decoration-color: color-mix(in srgb, var(--k-accent) 40%, transparent); text-underline-offset: 3px; }
+.causal-link:hover { text-decoration-color: currentColor; }
+.live-ops { display: flex; flex-direction: column; gap: var(--s1-5); margin: var(--s2-5) 0; }
+.live-ops-h { font-size: 13px; }
+/* A card of one op, as the live view draws it before the ledger exists: written by the model and not applied yet. */
+.op { display: flex; flex-direction: column; gap: var(--s1); padding: var(--s2-5) var(--s3); background: var(--panel); border: 1px solid var(--line); border-left: 3px solid var(--line-strong); border-radius: var(--r); }
+.op-head { display: flex; gap: var(--s2-5); align-items: baseline; }
+.op-name { flex: 1; min-width: 0; font: 600 14px var(--sans); letter-spacing: var(--k-track-tight); }
+.op-detail { margin-top: var(--s1); font-size: 14px; color: var(--text-dim); white-space: pre-wrap; word-break: break-word; }
+.op-live { border-style: dashed; opacity: .92; }
+.op-pending { font: 600 12px var(--sans); text-transform: none; letter-spacing: 0; color: var(--warn); }
+.op-ghost { display: flex; justify-content: center; padding: var(--s2); background: var(--sunken); border-radius: var(--r); }
+
+/* --- what it was doing, while it did it (liveview.tsx): the tone classes carry one hue each, the same three the vitals use --- */
+.lw-ok   { --lw: var(--ok); }
+.lw-warn { --lw: var(--warn); }
+.lw-bad  { --lw: var(--bad); }
+.lw { display: flex; flex-direction: column; gap: var(--s2-5); margin: 0 0 var(--s4); }
+.lw-now { display: flex; align-items: baseline; gap: var(--s2); min-width: 0; font-size: 14px; padding: var(--s2) var(--s3); border: 1px solid var(--line); border-radius: var(--r); background: var(--panel); }
+.lw-now-k { flex: none; font: 600 12px var(--sans); letter-spacing: 0; text-transform: none; color: var(--muted); }
+.lw-now.run .lw-now-k { color: var(--ok); }
+.lw-now.fail .lw-now-k, .lw-now.fail .lw-now-w { color: var(--bad); }
+.lw-now-n { flex: none; font-size: 14px; color: var(--text); }
+.lw-now-t { min-width: 0; flex: 0 1 auto; font-size: 13px; color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lw-now-w { flex: none; margin-left: auto; font: 12px var(--sans); font-variant-numeric: tabular-nums; color: var(--muted); }
+.lw-dl-head { display: flex; align-items: baseline; gap: var(--s2); flex-wrap: wrap; font-size: 13px; margin-bottom: var(--s1); }
+.lw-dl-left { color: var(--lw, var(--text)); font-weight: 600; font-variant-numeric: tabular-nums; }
+.lw-dl-ext { padding: 1px var(--s1-5); border-radius: var(--k-r-pill); font: 600 12px var(--sans); letter-spacing: 0; text-transform: none; color: var(--info); background: color-mix(in srgb, var(--info) 14%, transparent); }
+.lw-dl-hard { color: var(--text-dim); font-variant-numeric: tabular-nums; }
+.lw-dl-el { margin-left: auto; font: 12px var(--sans); font-variant-numeric: tabular-nums; }
+.lw-dl-track { position: relative; height: 8px; border-radius: var(--k-r-pill); background: var(--sunken); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--line) 70%, transparent); }
+.lw-dl-fill { position: absolute; left: 0; top: 0; bottom: 0; border-radius: var(--k-r-pill); background: var(--lw, var(--text-dim)); opacity: .8; transition: width .3s ease; }
+.lw-dl-mark { position: absolute; top: -3px; bottom: -3px; width: 2px; margin-left: -1px; background: var(--text); border-radius: 1px; }
+.lw-dl-mark.ceil { background: var(--bad); }
+.lw-adv { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--s1); }
+.lw-adv li { display: flex; align-items: baseline; gap: var(--s2); padding: var(--s1-5) var(--s2-5); border-radius: var(--r-sm); background: color-mix(in srgb, var(--warn) 6%, var(--panel)); border: 1px solid color-mix(in srgb, var(--warn) 22%, var(--line)); border-left: 3px solid var(--warn); font-size: 13px; color: var(--text-dim); }
+.lw-adv-x { flex: none; margin-left: auto; font: 600 12px var(--sans); letter-spacing: 0; text-transform: none; color: var(--bad); }
+.lw-h { display: flex; align-items: baseline; justify-content: space-between; gap: var(--s2); margin-bottom: var(--s1); }
+.lw-tools { display: flex; flex-direction: column; background: var(--panel); border: 1px solid var(--line); border-radius: var(--r); overflow: hidden; }
+.lw-tool { display: grid; grid-template-columns: 16px minmax(64px, auto) minmax(0, 1fr) auto; align-items: baseline; gap: var(--s2); padding: var(--s1-5) var(--s3); border-left: 3px solid transparent; }
+.lw-tool + .lw-tool { border-top: 1px solid var(--line); }
+.lw-tool.lw-failed { border-left-color: var(--bad); }
+.lw-mark { font-size: 11px; color: var(--muted); text-align: center; }
+.lw-running .lw-mark { color: var(--ok); animation: pulse-soft 1.6s ease-in-out infinite; }
+.lw-completed .lw-mark { color: var(--ok); }
+.lw-failed .lw-mark { color: var(--bad); }
+.lw-tool-n { font: 600 13px var(--mono); color: var(--text); }
+.lw-tool-a { font: 12px var(--mono); color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lw-tool-w { font: 12px var(--sans); color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.lw-tool-err { grid-column: 2 / -1; font-size: 12px; color: var(--bad); white-space: pre-wrap; word-break: break-word; }
+.lw-tools > .linklike { align-self: flex-start; margin: var(--s1-5) var(--s3); }
+.lw-file-list { list-style: none; margin: 0; padding: 0; font: 12px var(--mono); color: var(--text-dim); max-height: 240px; overflow: auto; }
+.lw-file-list li { padding: 2px 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lw-files { margin-bottom: 0; }
+.lw-cp { padding: var(--s2) var(--s3); border: 1px solid color-mix(in srgb, var(--info) 36%, var(--line)); border-left: 3px solid var(--info); border-radius: var(--r); background: var(--panel); font-size: 14px; }
+.lw-cp-ref { display: flex; align-items: center; gap: var(--s2); margin: var(--s1-5) 0; min-width: 0; }
+.lw-cp-ref code { font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lw-cp .sv-fold { margin: var(--s1-5) 0 0; }
+.lw-quiet { font-size: 13px; margin: var(--s2) 0 0; }
+
+/* --- a crash, and the latency of each action --- */
+.crash { margin: 0 0 var(--s4); padding: var(--s3) var(--s4); background: color-mix(in srgb, var(--bad) 7%, var(--panel)); border: 1px solid color-mix(in srgb, var(--bad) 30%, var(--line)); border-left: 3px solid var(--bad); border-radius: var(--r); }
+.crash-head { display: flex; align-items: baseline; gap: var(--s2); flex-wrap: wrap; }
+.crash-kind { padding: 1px var(--s2); border-radius: var(--k-r-pill); font: 600 12px var(--mono); background: color-mix(in srgb, var(--bad) 14%, transparent); color: var(--bad); }
+.crash-msg { font-size: 14px; margin-top: var(--s1-5); word-break: break-word; }
+.crash-root { font-size: 14px; margin-top: var(--s2); padding-top: var(--s2); border-top: 1px solid color-mix(in srgb, var(--bad) 18%, var(--line)); }
+.crash-chain { font: 12px var(--mono); margin-top: var(--s1); }
+.crash-stack { font: 400 12px var(--mono); max-height: 220px; overflow: auto; color: var(--text-dim); }
+.oplat-fold { margin-top: var(--s3); }
+.oplat-sum-x { color: var(--rej); }
+.oplat { display: flex; flex-direction: column; gap: 3px; }
+.oplat-row { display: grid; grid-template-columns: minmax(90px, 150px) 1fr auto auto; gap: var(--s2); align-items: center; font-size: 13px; padding: var(--s0) 0; }
+.oplat-name { color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.oplat-bar { height: 6px; border-radius: var(--k-r-pill); background: var(--sunken); overflow: hidden; }
+.oplat-bar i { display: block; height: 100%; background: var(--ok); border-radius: inherit; }
+/* `bad` here is a refusal, so it wears the refused orange like every other one. */
+.oplat-row.bad .oplat-bar i { background: var(--rej); }
+.oplat-row.bad .oplat-name { color: var(--rej); }
+.oplat-ms { font: 600 12px var(--sans); font-variant-numeric: tabular-nums; }
+.oplat-x { font: 600 12px var(--sans); text-transform: none; letter-spacing: 0; color: var(--rej); }
+
+/* ---------- an agent ---------- */
+/* Four figures in one ruled card: how many turns, how many left something behind, how long one takes, how much of its budget is gone. */
+.agent-vitals { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); margin: var(--s3) 0 var(--s2-5); background: var(--panel); border: 1px solid var(--line); border-radius: var(--r); box-shadow: var(--k-hl), var(--k-shadow-1); overflow: hidden; }
+.avital { display: flex; flex-direction: column; gap: 2px; padding: var(--s2-5) var(--s3); background: none; border: 0; border-radius: 0; }
+.avital + .avital { border-left: 1px solid var(--line); }
+.avital b { font: 650 20px/1.1 var(--sans); letter-spacing: var(--k-track-title); font-variant-numeric: tabular-nums; }
+.avital span { font-size: 12px; color: var(--muted); }
+.avital.warn b { color: var(--warn); }
+.avital.bad b { color: var(--bad); }
+.ag-sub { margin: var(--s1) 0 0; font: 13px var(--sans); }
+.ag-controls { display: flex; flex-wrap: wrap; gap: var(--s2); margin: var(--s3) 0 var(--s1-5); }
+.ag-hint { margin: 0 0 var(--s3); font-size: 13px; color: var(--muted); }
+.now-task { margin: var(--s2) 0; font-size: 14px; }
+.agent-peek { max-height: 180px; margin-top: var(--s2); }
+/* What is waiting on it or on you, in the alert shape: a rail in the tone and a quiet ground. */
+.sig { margin: var(--s1-5) 0; padding: var(--s2) var(--s3); background: var(--panel); border: 1px solid var(--line); border-left: 3px solid var(--line-strong); border-radius: var(--r-sm); font-size: 13px; color: var(--text-dim); }
+.sig.warn { border-left-color: var(--warn); background: color-mix(in srgb, var(--warn) 6%, var(--panel)); }
+.sig.bad { border-left-color: var(--bad); background: color-mix(in srgb, var(--bad) 6%, var(--panel)); color: var(--text); }
+.mem-row { margin: var(--s1-5) 0; padding: var(--s2) var(--s3); background: var(--panel); border: 1px solid var(--line); border-radius: var(--r-sm); font-size: 14px; }
+.mem-row .mono { padding: 0 var(--s1-5); border-radius: var(--r-sm); background: var(--sunken); font-size: 12px; color: var(--text-dim); }
+/* The rows of what is happening in the drawer: the time at the left, what kind, then what. */
+#drawer .ev-list { margin: var(--s1) 0 var(--s2); background: var(--panel); border: 1px solid var(--line); border-radius: var(--r); overflow: hidden; }
+#drawer .ev { grid-template-columns: 58px 116px minmax(0, 1fr); gap: var(--s2-5); padding: var(--s2) var(--s3); border-bottom: 0; transition: background-color var(--k-dur-1) var(--k-ease); }
+#drawer .ev + .ev { border-top: 1px solid var(--line); }
+#drawer .ev:hover { background: var(--wash); }
+#drawer .ev time { font: 500 12px var(--sans); font-variant-numeric: tabular-nums; }
+#drawer .ev .type { font: 600 12px var(--sans); color: var(--text); }
+#drawer .ev .summary { font-size: 13px; }
+#drawer .steps-mini { gap: var(--s1-5); }
+/* The setup, as a ruled list: the name of the thing at the left and what it is at the right. */
+#drawer table.tbl { width: 100%; border-collapse: collapse; font-size: 14px; }
+#drawer table.tbl td { padding: var(--s2) 0; border-top: 1px solid var(--line); vertical-align: baseline; }
+#drawer table.tbl tr:first-child td { border-top: 0; }
+#drawer table.tbl td:first-child { width: 110px; padding-right: var(--s3); color: var(--muted); }
+
+@media (max-width: 1100px) {
+  .drawer:has(.stepv) { width: min(760px, 96vw); }
+  .sv-body { grid-template-columns: minmax(0, 1fr); }
+  .sv-side { position: static; max-height: none; overflow: visible; }
+}
+@media (max-width: 640px) {
+  .sv-metrics, .sv-why { margin-left: 0; }
+  .sv-tool { grid-template-columns: 22px 52px minmax(0, 1fr) auto; }
+  .sv-tool-a, .sv-ev-q { display: none; }
+  .sv-ev { grid-template-columns: 52px minmax(0, 1fr); }
+  .sv-ev-t { display: none; }
+  .sstat-why, .sstat-next { flex-direction: column; gap: var(--s1); }
+  .sv-op { padding-inline: var(--s2-5); }
+}
+@media (max-width: 620px) {
+  .vitals-nums, .agent-vitals { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .agent-vitals .avital:nth-child(3) { border-left: 0; }
+  .agent-vitals .avital:nth-child(n + 3) { border-top: 1px solid var(--line); }
+  .sbx-rt { margin-left: 0; width: 100%; }
+  .sv-jump { overflow-x: auto; scrollbar-width: none; flex-wrap: nowrap; }
+  .sv-jump::-webkit-scrollbar { display: none; }
+  .sv-jump-b { flex: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .prail-fill, .lw-dl-fill, .sv-split b { transition: none; }
+}
+
+/* ---- Windows High Contrast ----
+ * The phase bars, the deadline's bar and the little split of input to output in a step's header are backgrounds, which it replaces with the
+ * system's: each is drawn again in the highlight on a track with an edge. The words beside them carry the figures. */
+@media (forced-colors: active) {
+  .prail-track, .lw-dl-track, .sv-split { border: 1px solid GrayText; }
+  .prail-fill, .lw-dl-fill, .sv-split b { forced-color-adjust: none; background: Highlight; opacity: 1; }
+}

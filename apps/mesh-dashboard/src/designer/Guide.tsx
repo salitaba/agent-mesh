@@ -40,7 +40,7 @@ export function KeysHelp(): React.JSX.Element {
   }, [open]);
   return (
     <div className="ms-keys-anchor" ref={anchor}>
-      <ToolButton icon="help" label="Canvas keys" text expanded={open} haspopup="dialog" title="The keys that move, wire and edit seats" onClick={() => setOpen((v) => !v)} />
+      <ToolButton icon="help" label="Canvas keys" expanded={open} haspopup="dialog" title="The keys that move, wire and edit seats" onClick={() => setOpen((v) => !v)} />
       {open ? (
         <div className="ms-pop ms-keys" role="dialog" aria-label="Keyboard shortcuts for the canvas" ref={ref} tabIndex={-1}>
           <div className="ms-pop-head">

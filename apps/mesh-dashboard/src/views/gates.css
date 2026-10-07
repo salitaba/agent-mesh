@@ -1,0 +1,44 @@
+/* ============ Tool gates: what the approval gate is holding, and what an operator has unlocked ============
+ *
+ * Two panels on the inbox's Tool gates tab: the requests (a seat asked for a tool its gate holds back) and the gated seats (what each
+ * is held on, what is unlocked on it, a way to unlock one ahead of a request). The panel's frame is the page's (Panel); this is what is
+ * inside it. Tokens only; the chips, the fields and the buttons are the kit's.
+ */
+
+.tga-lede { margin: 0 0 var(--s4); max-width: 72ch; font: var(--tx-value); color: var(--text-dim); }
+.tga-quiet { margin: 0; font: var(--tx-value); color: var(--muted); }
+.tga-none { display: flex; align-items: flex-start; gap: var(--s3); }
+.tga-none p { margin: var(--s1-5) 0 0; max-width: 64ch; font: var(--tx-value); color: var(--text-dim); }
+.tga-none-ic { display: grid; place-items: center; flex: none; width: 32px; height: 32px; border-radius: var(--r-sm); background: var(--sunken); border: 1px solid var(--line); color: var(--muted); }
+.tga-grow { flex: 1 1 0; }
+.tga-k { font: 600 12px var(--sans); color: var(--muted); }
+
+.tga-list { display: flex; flex-direction: column; gap: var(--s3); margin: 0; padding: 0; list-style: none; }
+/* A seat is a block of its own: who, then the rows that are about it. A request has the page's attention, so its block has a rail. */
+.tga-req, .tga-seat { display: grid; gap: var(--s3); padding: var(--s3) var(--s4); background: var(--panel-2); border: 1px solid var(--line); border-radius: var(--r); }
+.tga-req { border-left: 3px solid var(--warn); }
+.tga-who { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s2); min-width: 0; }
+.tga-who b { font: 600 14px var(--sans); letter-spacing: var(--k-track-tight); }
+
+/* The tools a seat asked for, one to a row, each with its own way to say yes. */
+.tga-tools { display: flex; flex-direction: column; margin: 0; padding: 0; list-style: none; background: var(--panel); border: 1px solid var(--line); border-radius: var(--r); }
+.tga-tools > li { display: flex; align-items: center; gap: var(--s2-5); min-height: 48px; padding: var(--s1-5) var(--s3); }
+.tga-tools > li + li { border-top: 1px solid var(--line); }
+.tga-tools > li > .icon { flex: none; color: var(--muted); }
+.tga-tools code { padding: 0; border: 0; background: none; font: 600 14px var(--mono); color: var(--text); overflow-wrap: anywhere; }
+.tga-foot { display: flex; justify-content: flex-end; }
+
+.tga-grants { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s2); }
+.tga-manual { display: grid; gap: var(--s1-5); max-width: 520px; }
+.tga-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s2); }
+.tga-row input { flex: 1 1 200px; min-width: 0; }
+.tga-note { margin: var(--s3) 0 0; font: var(--tx-meta); color: var(--muted); }
+
+@media (max-width: 620px) {
+  .tga-req, .tga-seat { padding: var(--s3); }
+  .tga-who .tga-grow { display: none; }
+  .tga-who > button { flex: 1 1 100%; justify-content: center; }
+  .tga-tools > li { min-height: 52px; }
+  .tga-foot > button { flex: 1 1 auto; justify-content: center; }
+  .tga-row input.txt { min-height: 44px; font-size: 16px; }
+}

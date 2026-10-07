@@ -221,7 +221,8 @@ export function renderMarkdown(src: string): string {
       const body: string[] = [];
       for (i += 2; i < lines.length && lines[i]!.trim() !== "" && lines[i]!.includes("|"); i++) body.push(row(cells(lines[i]!), "td"));
       i--;
-      out.push(`<div class="md-table"><table><thead>${row(head, "th")}</thead>${body.length ? `<tbody>${body.join("")}</tbody>` : ""}</table></div>`);
+      // The wrapper scrolls when a table is wider than its column, so the keyboard has to be able to reach it: a tab stop that is named.
+      out.push(`<div class="md-table" tabindex="0" role="region" aria-label="Table"><table><thead>${row(head, "th")}</thead>${body.length ? `<tbody>${body.join("")}</tbody>` : ""}</table></div>`);
       continue;
     }
 

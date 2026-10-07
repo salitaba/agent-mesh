@@ -1,18 +1,18 @@
 import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useMesh, type TimelineEvent } from "../store";
-import { Button, EmptyState, ErrorState, Input, PageHeader, Select, useNow } from "../components";
+import { AgentAvatar, Banner, Button, EmptyState, ErrorState, PageHeader, SearchField, Select, Skeleton, Switch, agentColor, useNow } from "../components";
 import { EventDetail, EventMissing } from "../evdetail";
-import { Icon } from "../icons";
+import { Icon, type IconName } from "../icons";
 import { EV_FILTER_GROUPS, EventSummary, SEVERITY_META, SEVERITY_ORDER, SevMark, evSeverity, severityTitle, sevWord, useNameOf } from "../events";
 import {
-  applySeverity, buildRows, eventHaystack, facetOne, facetValues, filterBase, parseFacets, setFacet, severityCounts, toggleFacet, topActors,
+  applySeverity, buildRows, eventHaystack, evGroupOf, facetOne, facetValues, filterBase, parseFacets, setFacet, severityCounts, toggleFacet, topActors,
   type EventFilter, type NameOf, type Severity,
 } from "../eventmodel";
 import { heldList, newestKey } from "../feed";
 import { FeedStatus, HoldBar, PauseButton, useFeedHold } from "../feedstatus";
 import { useRoving } from "../rovinglist";
 import { titleWhenClipped } from "../domutil";
-import { localDateTime, localTime, plainEvent, zoneLabel } from "../format";
+import { localDateTime, localTime, plainEvent, plural, zoneLabel } from "../format";
 import { useMission } from "../useMission";
 import { useMissionActions } from "../useMissionActions";
 import "./events.css";
@@ -36,10 +36,19 @@ const NO_EVENT_FILTER: EventFilter = { search: "", groups: new Set(), actor: nul
 
 /* ------------------------------- rows ---------------------------------- */
 
-const EvLine = memo(function EvLine({ e, selected, tab, onOpen, onTab, nameOf }: {
-  e: TimelineEvent; selected: boolean; tab: boolean; onOpen: (seq: number) => void; onTab: (key: string) => void; nameOf: NameOf;
+/** What stands for an event that no agent of the mesh acted in: the kind of thing it is. */
+const KIND_ICON: Record<string, IconName> = { message: "message", agent: "agents", work: "files", system: "sliders" };
+
+/**
+ * One event as one line of a ledger: when, who (the seat's own avatar, or a mark for the kind of thing when no seat acted), what
+ * happened, and what kind of event it was. The mark of an alert is a triangle in a red tile, and of routine bookkeeping an outline: the
+ * shape says it as well as the colour. The actor is in the sentence, in bold, so it is not a column of its own.
+ */
+const EvLine = memo(function EvLine({ e, selected, tab, roster, onOpen, onTab, nameOf }: {
+  e: TimelineEvent; selected: boolean; tab: boolean; roster: ReadonlySet<string>; onOpen: (seq: number) => void; onTab: (key: string) => void; nameOf: NameOf;
 }): React.JSX.Element {
   const sev = evSeverity(e);
+  const seat = e.actorId && roster.has(e.actorId) ? e.actorId : null;
   return (
     <button
       type="button"
@@ -51,21 +60,23 @@ const EvLine = memo(function EvLine({ e, selected, tab, onOpen, onTab, nameOf }:
       onClick={() => onOpen(e.seq)}
       onFocus={() => onTab(String(e.seq))}
     >
-      <span className="evc-sev"><SevMark s={sev} /><span className="sr-only">{sevWord(sev)}</span></span>
       <time dateTime={e.timestamp} title={`${localDateTime(e.timestamp)} (${e.timestamp})`}>{localTime(e.timestamp)}</time>
+      <span className={`evc-tile ${sev}`} title={e.actorId ? `Acted by ${e.actorId}` : undefined}>
+        {sev === "alert" ? <Icon name="alert" size={14} /> : seat ? <AgentAvatar id={seat} color={agentColor(seat)} size="sm" /> : <Icon name={KIND_ICON[evGroupOf(e.type)] ?? "sliders"} size={14} />}
+        <span className="sr-only">{sevWord(sev)}</span>
+      </span>
       <span className="evc-sum" onMouseEnter={titleWhenClipped}><EventSummary e={e} nameOf={nameOf} /></span>
-      <span className="evc-type" onMouseEnter={titleWhenClipped}>{plainEvent(e.type, e.payload)}</span>
-      <span className="evc-actor" onMouseEnter={titleWhenClipped}>{e.actorId ?? ""}</span>
+      <span className="evc-type" title={e.type} onMouseEnter={titleWhenClipped}>{plainEvent(e.type, e.payload)}</span>
     </button>
   );
 });
 
-function Skeleton(): React.JSX.Element {
+function Rows(): React.JSX.Element {
   return (
     <div className="evc-skel" aria-busy="true" aria-label="Loading events">
-      {[0, 1, 2, 3, 4, 5, 6].map((i) => (
+      {[0, 1, 2, 3, 4, 5, 6, 7].map((i) => (
         <div key={i} className="evc-skel-row">
-          <span className="sk" /><span className="sk sk-t" /><span className="sk sk-s" />
+          <Skeleton w={52} h={12} /><Skeleton w={26} h={26} round /><Skeleton w={`${40 + ((i * 17) % 40)}%`} h={12} />
         </div>
       ))}
     </div>
@@ -161,6 +172,10 @@ export default function Events(): React.JSX.Element {
   // The haystack only changes when the buffer does; building it inside the filter re-stringified up to 800 payloads on every
   // keystroke. It holds each row's line, so a file is found by its name on the rows that name it.
   const nameOf = useNameOf(events);
+  // The seats of the mesh, as a set that keeps its identity while the roster does: the status is read every few seconds, and a new set
+  // each time would draw every row again.
+  const seatIds = ((status?.agents ?? []) as { id: string }[]).map((a) => a.id).join("\n");
+  const roster = useMemo(() => new Set(seatIds ? seatIds.split("\n") : []), [seatIds]);
   const hay = useMemo(() => events.map((e) => eventHaystack(e, nameOf)), [events, nameOf]);
   const actors = useMemo(() => topActors(events), [events]);
 
@@ -183,6 +198,16 @@ export default function Events(): React.JSX.Element {
   // them turns it off.
   const folding = foldPref && !sevOn.has("routine");
   const rows = useMemo(() => buildRows(shown, now, folding), [shown, now, folding]);
+  // How many events sit under each time heading, folded ones included: a heading that said nothing of its size made the list read as one run.
+  const inBucket = useMemo(() => {
+    const n = new Map<string, number>();
+    let key = "";
+    for (const r of rows) {
+      if (r.kind === "bucket") key = r.key;
+      else n.set(key, (n.get(key) ?? 0) + (r.kind === "fold" ? r.items.length : 1));
+    }
+    return n;
+  }, [rows]);
 
   /* ---------------------------- selection ------------------------------ */
 
@@ -240,8 +265,7 @@ export default function Events(): React.JSX.Element {
       />
 
       <div className="ev-tools" role="search">
-        <label className="sr-only" htmlFor="ev-search">Search events</label>
-        <Input search id="ev-search" placeholder="Search messages, agents, files…  ( / )" value={evSearch} onChange={(e) => setEvSearch(e.target.value)} />
+        <SearchField id="ev-search" label="Search events" placeholder="Messages, agents, files" hint="/" value={evSearch} onChange={(e) => setEvSearch(e.target.value)} onClear={() => setEvSearch("")} />
         <label className="sr-only" htmlFor="ev-actor">Filter by agent</label>
         <Select id="ev-actor" value={actorOn ?? ""} onChange={(e) => setOne("actor", e.target.value || null)}>
           <option value="">Every agent</option>
@@ -250,49 +274,43 @@ export default function Events(): React.JSX.Element {
         <Button variant="soft" icon="sliders" extra="ev-filters-toggle" aria-expanded={filtersOpen} aria-controls="ev-facets" onClick={() => setFiltersOpen((o) => !o)}>
           Filters{chipCount ? ` (${chipCount})` : ""}
         </Button>
-        {filtered ? <Button variant="small" icon="x" onClick={clearAll}>Clear filters</Button> : null}
+        {filtered ? <Button variant="ghost" icon="x" onClick={clearAll}>Clear filters</Button> : null}
       </div>
 
       <div className={`ev-facets${filtersOpen ? " open" : ""}`} id="ev-facets">
-        <div className="ev-facet-group" role="group" aria-label="Filter by importance">
+        <div className="seg ev-facet-group" role="group" aria-label="Filter by importance">
           {SEVERITY_ORDER.map((s: Severity) => (
             <button
               key={s}
               type="button"
-              className={`fchip sev-${s}${sevOn.has(s) ? " on" : ""}`}
+              className={`sev-${s}`}
               aria-pressed={sevOn.has(s)}
               title={severityTitle(s)}
               onClick={() => toggle(`sev:${s}`)}
             >
               <SevMark s={s} />
               {SEVERITY_META[s].label}
-              <span className="fchip-n">{counts[s]}</span>
+              <span className="ev-n">{counts[s]}</span>
             </button>
           ))}
         </div>
-        <div className="ev-facet-group" role="group" aria-label="Filter by kind">
+        <div className="seg ev-facet-group" role="group" aria-label="Filter by kind">
           {EV_FILTER_GROUPS.map((g) => (
-            <button key={g.id} type="button" className={`fchip${grpOn.has(g.id) ? " on" : ""}`} aria-pressed={grpOn.has(g.id)} onClick={() => toggle(`grp:${g.id}`)}>
+            <button key={g.id} type="button" aria-pressed={grpOn.has(g.id)} onClick={() => toggle(`grp:${g.id}`)}>
+              <Icon name={KIND_ICON[g.id] ?? "sliders"} size={14} />
               {g.label}
             </button>
           ))}
         </div>
-        <button
-          type="button"
-          className={`fchip fold${foldPref ? " on" : ""}`}
-          aria-pressed={foldPref}
-          title="Collapse runs of routine bookkeeping into a single row"
-          onClick={() => setFoldPref((f) => !f)}
-        >
-          Fold routine events
-        </button>
+        <span title="Collapse runs of routine bookkeeping into a single row">
+          <Switch label="Fold routine events" checked={foldPref} onChange={() => setFoldPref((f) => !f)} />
+        </span>
       </div>
 
       {threadOn ? (
-        <div className="ev-thread-bar" role="status">
-          <span>Following one thread: <code>{threadOn}</code></span>
-          <Button variant="small" onClick={() => setOne("thread", null)}>Show everything</Button>
-        </div>
+        <Banner tone="info" icon="graph" title="Following one thread." actions={<Button variant="banner-act" onClick={() => setOne("thread", null)}>Show everything</Button>}>
+          <code>{threadOn}</code>
+        </Banner>
       ) : null}
 
       <div className={`evc${selectedSeq != null ? " split" : ""}`}>
@@ -300,7 +318,7 @@ export default function Events(): React.JSX.Element {
           {loadErr && firstLoad ? (
             <ErrorState what="the event log" detail={loadErr} onRetry={() => setAttempt((n) => n + 1)} />
           ) : loading && firstLoad ? (
-            <Skeleton />
+            <Rows />
           ) : !rows.length && !hold.paused && held.fresh === 0 ? (
             events.length ? (
               <EmptyState icon="search" title="No events match" action={<Button variant="small" onClick={clearAll}>Clear filters</Button>}>
@@ -320,15 +338,22 @@ export default function Events(): React.JSX.Element {
               <HoldBar paused={hold.paused} fresh={held.fresh} noun="event" onShow={showNewest} />
               <div className="evc-list" ref={listRef} onKeyDown={roving.onKeyDown} {...hold.listProps}>
                 {rows.map((r) => {
-                  if (r.kind === "bucket") return <h3 key={r.key} className="evc-bucket">{r.label}</h3>;
+                  if (r.kind === "bucket") {
+                    return (
+                      <h3 key={r.key} className="evc-bucket">
+                        <span>{r.label}</span>
+                        <span className="evc-bucket-n">{plural(inBucket.get(r.key) ?? 0, "event")}</span>
+                      </h3>
+                    );
+                  }
                   if (r.kind === "event") {
-                    return <EvLine key={r.key} e={r.e} selected={r.e.seq === selectedSeq} tab={roving.stop === String(r.e.seq)} onOpen={open} onTab={roving.setLast} nameOf={nameOf} />;
+                    return <EvLine key={r.key} e={r.e} selected={r.e.seq === selectedSeq} tab={roving.stop === String(r.e.seq)} roster={roster} onOpen={open} onTab={roving.setLast} nameOf={nameOf} />;
                   }
                   const isOpen = openFolds.has(r.key);
                   const newestItem = r.items[0]!;
                   const oldestItem = r.items[r.items.length - 1]!;
                   return (
-                    <div key={r.key} className="evc-fold">
+                    <div key={r.key} className={`evc-fold${isOpen ? " open" : ""}`}>
                       <button
                         type="button"
                         data-rv=""
@@ -344,11 +369,11 @@ export default function Events(): React.JSX.Element {
                         })}
                       >
                         <Icon name="chevron-right" size={12} className={isOpen ? "caret turned" : "caret"} />
-                        <span>{r.items.length} routine events</span>
-                        <span className="muted">{localTime(oldestItem.timestamp)} to {localTime(newestItem.timestamp)}</span>
+                        <span><b>{r.items.length}</b> routine events</span>
+                        <span className="evc-fold-range">{localTime(oldestItem.timestamp)} to {localTime(newestItem.timestamp)}</span>
                       </button>
                       {isOpen ? r.items.map((e) => (
-                        <EvLine key={e.seq || e.id} e={e} selected={e.seq === selectedSeq} tab={roving.stop === String(e.seq)} onOpen={open} onTab={roving.setLast} nameOf={nameOf} />
+                        <EvLine key={e.seq || e.id} e={e} selected={e.seq === selectedSeq} tab={roving.stop === String(e.seq)} roster={roster} onOpen={open} onTab={roving.setLast} nameOf={nameOf} />
                       )) : null}
                     </div>
                   );

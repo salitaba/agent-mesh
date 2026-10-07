@@ -14,8 +14,8 @@ import { useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import "./views/files.css";
 import { Button, CopyButton } from "./components";
-import { Icon } from "./icons";
-import { LINE_WINDOW, fileModes, fmtSize, lineWindow, modeLabel, type FileKind, type FileViewMode } from "./files";
+import { Icon, type IconName } from "./icons";
+import { LINE_WINDOW, fileKind, fileModes, fmtSize, lineWindow, looksLikePatch, modeLabel, patchKinds, type FileKind, type FileKindId, type FileViewMode } from "./files";
 import { renderMarkdown } from "./markdown";
 import { plural } from "./format";
 
@@ -42,6 +42,17 @@ export interface DiffPayload {
   identical: boolean;
   from?: number | string | null;
   to?: number | string | null;
+}
+
+const KIND_ICON: Record<FileKindId, IconName> = { patch: "code", release: "product", report: "report", document: "files" };
+
+/**
+ * What a file is, as a glyph in a tile: a patch, a release plan, a report or a document (files.ts `fileKind`). The list can be run
+ * down by shape before it is read; the type is written beside it, so the tile is decoration and says nothing to a screen reader.
+ */
+export function FileTile({ type, size }: { type: string; size?: "lg" }): React.JSX.Element {
+  const kind = fileKind(type);
+  return <span className={`file-tile${size ? ` ${size}` : ""}`} data-kind={kind} aria-hidden="true"><Icon name={KIND_ICON[kind]} size={size === "lg" ? 20 : 18} /></span>;
 }
 
 function download(name: string, content: string, mime = "text/plain"): void {
@@ -155,6 +166,8 @@ export function FileView({
   // The window belongs to one body of text: opening another file starts at the top again without an effect to reset it.
   const [cap, setCap] = useState<{ of: string | undefined; n: number }>({ of: content, n: LINE_WINDOW });
   const lines = useMemo(() => (content ?? "").split("\n"), [content]);
+  // A patch is read by its colours: what it adds and what it takes away. Anything else is plain lines.
+  const patch = useMemo(() => (kind === "text" && content !== undefined && looksLikePatch(content) ? patchKinds(lines) : null), [kind, content, lines]);
 
   const cmp: FileChanges | null = changes ?? (diff ? { available: true, diff } : null);
   const modes = fileModes(kind, content !== undefined, cmp?.available === true);
@@ -233,7 +246,7 @@ export function FileView({
         ) : (
           <div className={`fv-code${wrap ? " wrap" : ""}`}>
             {lines.slice(0, win.shown).map((l, i) => (
-              <div className="fv-line" key={i}>
+              <div className={`fv-line${patch ? ` p-${patch[i]}` : ""}`} key={i}>
                 <span className="fv-num">{i + 1}</span>
                 <span className="fv-text">{l || " "}</span>
               </div>

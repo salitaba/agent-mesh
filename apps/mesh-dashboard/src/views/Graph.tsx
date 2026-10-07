@@ -2,11 +2,11 @@ import { useEffect, useLayoutEffect, useMemo, useState } from "react";
 import { plainLifecycle } from "../format";
 import { useMesh } from "../store";
 import { useMission } from "../useMission";
-import { Button, Card, EmptyState, ErrorState, PageHeader, rowKey, useNow } from "../components";
+import { Button, Card, EmptyState, ErrorState, PageHeader, Skeleton, agentColor, rowKey, useNow } from "../components";
 import { AgentDrawer } from "../drawers";
 import { sinceText } from "../feed";
 import { middleClip } from "../text";
-import { around, drawingWidth, edgeKey, edgeText, edgeWidth, flowingKeys, isFlowing, kindOf, kindsPresent, labelPlacement, nodeTone, pairFilter, ringLayout, toggleKind, visibleEdges, type NodeTone } from "../graph";
+import { around, drawingWidth, edgeKey, edgeText, edgeWidth, flowingKeys, isFlowing, kindOf, kindsPresent, labelPlacement, nodeTone, pairFilter, ringLayout, toggleKind, visibleEdges, type LabelSpot, type NodeTone } from "../graph";
 import "./graph.css";
 
 /* Who talks to whom. Where the seats sit, which way their names point and which lines are drawn is decided in graph.ts, which
@@ -14,11 +14,24 @@ import "./graph.css";
    under the drawing. Pointing at or focusing a seat picks out its lines, the key hides a kind of line, and a line in the list opens
    its messages in Events. */
 
-const H = 480;
+/** The height of the drawing, in its own units. A seat is a disc of `SEAT` with a ring around it. */
+const H = 500;
+const SEAT = 24;
+/** How far a label sits from the centre of a seat, over what the model allows for its own smaller disc (graph.ts draws its names for 18). */
+const GROW = SEAT + 6 - 18;
 /** Lines drawn at most; the page says how many it left off. */
 const MAX_LINES = 12;
 /** A message among the newest events makes its line flow. */
 const RECENT_EVENTS = 40;
+
+/** A label's place pushed out by the room the larger seat takes, in the direction it already points. */
+function grown(spot: LabelSpot): LabelSpot {
+  const out = (d: number): number => (d === 0 ? 0 : d + Math.sign(d) * GROW);
+  const mid = spot.anchor === "middle";
+  return mid
+    ? { ...spot, name: { dx: 0, dy: out(spot.name.dy) }, state: { dx: 0, dy: out(spot.state.dy) } }
+    : { ...spot, name: { dx: out(spot.name.dx), dy: spot.name.dy }, state: { dx: out(spot.state.dx), dy: spot.state.dy } };
+}
 
 const RING_WORD: Record<NodeTone, string> = {
   working: "working", waiting: "waiting for mail", stopped: "crashed or blocked", paused: "paused", idle: "idle or finished",
@@ -112,7 +125,7 @@ export default function Graph(): React.JSX.Element {
   );
 
   if (err && !graph) return <>{header()}<ErrorState what="the graph" detail={err} onRetry={() => setAttempt((n) => n + 1)} /></>;
-  if (!graph) return <>{header()}<div role="status"><EmptyState icon="graph" title="Loading the graph" /></div></>;
+  if (!graph) return <>{header()}<Card><div role="status" aria-label="Loading the graph"><Skeleton h={380} /></div></Card></>;
   if (!nodes.length) {
     return (
       <>
@@ -133,6 +146,10 @@ export default function Graph(): React.JSX.Element {
     setEvSearch(f.search);
     setView("events");
   };
+  const maxCount = lines.shown.reduce((m, e) => Math.max(m, e.count), 1);
+  // The lines that are picked out are drawn last, so they lie over the ones that are not.
+  const isLit = (e: { from: string; to: string; kind: string }): boolean => hot === edgeKey(e) || Boolean(near?.lines.has(edgeKey(e)));
+  const drawOrder = [...lines.shown].sort((a, b) => Number(isLit(a)) - Number(isLit(b)));
   return (
     <>
       {header(<span className="feed-meta">{err ? "Refresh failed. Showing the last drawing." : at ? `Drawn ${sinceText(now - Date.parse(at))}` : ""}</span>)}
@@ -143,34 +160,45 @@ export default function Graph(): React.JSX.Element {
         <div className="gr-scroll">
         {/* A group, not an image: an img has presentational children, and the seats inside are buttons. */}
         <svg ref={setSvgEl} className={`gr-svg${hot || near ? " focus" : ""}`} role="group" aria-label="Mesh graph: one button per agent, with lines for the messages between them" viewBox={`0 0 ${W} ${H}`}>
-          <defs><marker id="ar" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="5" markerHeight="5" orient="auto"><path d="M0 0L8 4L0 8z" fill="context-stroke" /></marker></defs>
-          {lines.shown.map((e) => {
+          <defs><marker id="ar" viewBox="0 0 8 8" refX="6.5" refY="4" markerWidth="4.5" markerHeight="4.5" orient="auto"><path d="M0.5 0.5L7.5 4L0.5 7.5z" fill="context-stroke" stroke="context-stroke" strokeWidth="1" strokeLinejoin="round" /></marker></defs>
+          {drawOrder.map((e) => {
             const p = pos.get(e.from)!, q = pos.get(e.to)!;
             const dx = q.x - p.x, dy = q.y - p.y, dist = Math.hypot(dx, dy) || 1;
-            const sx = p.x + (dx / dist) * 26, sy = p.y + (dy / dist) * 26;
-            const ex = q.x - (dx / dist) * 30, ey = q.y - (dy / dist) * 30;
+            const sx = p.x + (dx / dist) * (SEAT + 6), sy = p.y + (dy / dist) * (SEAT + 6);
+            const ex = q.x - (dx / dist) * (SEAT + 12), ey = q.y - (dy / dist) * (SEAT + 12);
             const mx = (sx + ex) / 2 + dy * 0.14, my = (sy + ey) / 2 - dx * 0.14;
             const key = edgeKey(e);
+            const lit = isLit(e);
             return (
-              <path
-                key={key}
-                className={`edge ${kindOf(e.kind).id}${isFlowing(e, flowing) ? " flowing" : ""}${hot === key || near?.lines.has(key) ? " hot" : ""}`}
-                d={`M ${sx} ${sy} Q ${mx} ${my} ${ex} ${ey}`}
-                markerEnd="url(#ar)"
-                strokeWidth={edgeWidth(e.count)}
-              >
-                <title>{edgeText(e)}</title>
-              </path>
+              <g key={key} className={`edge-g${lit ? " hot" : ""}`}>
+                <path
+                  className={`edge ${kindOf(e.kind).id}${isFlowing(e, flowing) ? " flowing" : ""}${lit ? " hot" : ""}`}
+                  d={`M ${sx} ${sy} Q ${mx} ${my} ${ex} ${ey}`}
+                  markerEnd="url(#ar)"
+                  strokeWidth={edgeWidth(e.count)}
+                >
+                  <title>{edgeText(e)}</title>
+                </path>
+                {/* How many, on the line itself, for the lines that are picked out: the width says "more", this says how many. */}
+                {lit ? (
+                  <g className="edge-n" transform={`translate(${(sx + 2 * mx + ex) / 4} ${(sy + 2 * my + ey) / 4})`} aria-hidden="true">
+                    <rect x={-13} y={-10} width={26} height={20} rx={10} />
+                    <text y={4} textAnchor="middle">{e.count}</text>
+                  </g>
+                ) : null}
+              </g>
             );
           })}
           {nodes.map((nd) => {
             const s = pos.get(nd.id)!;
-            const spot = labelPlacement(s.angle);
+            const spot = grown(labelPlacement(s.angle));
             const state = plainLifecycle(nd.lifecycle, where);
+            const tone = nodeTone(nd.lifecycle);
             return (
               <g
                 key={nd.id}
-                className={`gn ${nodeTone(nd.lifecycle)}${near && !near.seats.has(nd.id) ? " dim" : ""}`}
+                className={`gn ${tone}${near && !near.seats.has(nd.id) ? " dim" : ""}${near?.seats.has(nd.id) && seat === nd.id ? " on" : ""}`}
+                style={{ "--tint": agentColor(nd.id) } as React.CSSProperties}
                 data-id={nd.id}
                 role="button"
                 tabIndex={0}
@@ -183,8 +211,11 @@ export default function Graph(): React.JSX.Element {
                 onBlur={() => setSeat((c) => (c === nd.id ? null : c))}
               >
                 <title>{nd.id}</title>
-                <circle className="node" cx={s.x} cy={s.y} r={18} />
-                <text className="init" x={s.x} y={s.y + 4} textAnchor="middle">{nd.id.slice(0, 2).toUpperCase()}</text>
+                {/* The seat's disc is its role's colour (who it is), the ring around it the state it is in (what it is doing). */}
+                {tone === "working" ? <circle className="halo" cx={s.x} cy={s.y} r={SEAT + 4} /> : null}
+                <circle className="ring" cx={s.x} cy={s.y} r={SEAT + 3} />
+                <circle className="node" cx={s.x} cy={s.y} r={SEAT} />
+                <text className="init" x={s.x} y={s.y + 5} textAnchor="middle">{nd.id.slice(0, 2).toUpperCase()}</text>
                 <text className="name" x={s.x + spot.name.dx} y={s.y + spot.name.dy} textAnchor={spot.anchor}>{middleClip(nd.id, 16)}</text>
                 <text className="dim" x={s.x + spot.state.dx} y={s.y + spot.state.dy} textAnchor={spot.anchor}>{state}</text>
               </g>
@@ -195,36 +226,41 @@ export default function Graph(): React.JSX.Element {
 
         {/* The legend says what the colours, the dashes and the rings mean, and lists only what is on the drawing. Each kind of line is
             a key: pressed, it is shown; pressed again, it is hidden, and the list below follows. */}
-        <ul className="gr-legend" aria-label="Legend. Each kind of line is a button that shows or hides it.">
-          {kinds.map((k) => (
-            <li key={k.id}>
-              <button
-                type="button" className="gr-key" aria-pressed={!off.has(k.id)} aria-label={`Show lines: ${k.label}`}
-                title={off.has(k.id) ? `Show the lines that ${k.label}` : `Hide the lines that ${k.label}`}
-                onClick={() => setOff((o) => toggleKind(o, k.id))}
-              >
-                <i className={`gr-line ${k.id}`} aria-hidden="true" />{k.label}
-              </button>
-            </li>
-          ))}
-          <li><i className="gr-line dash" aria-hidden="true" />carried a message in the last {RECENT_EVENTS} events</li>
-          {(["working", "waiting", "stopped", "paused", "idle"] as NodeTone[]).filter((t) => tones.has(t)).map((t) => (
-            <li key={t}><i className={`gr-ring ${t}`} aria-hidden="true" />{t === "idle" && where.parked && !where.over ? "ready, idle or finished" : RING_WORD[t]}</li>
-          ))}
-        </ul>
+        <div className="gr-foot">
+          <ul className="gr-legend" aria-label="Legend. Each kind of line is a button that shows or hides it.">
+            {kinds.map((k) => (
+              <li key={k.id}>
+                <button
+                  type="button" className="gr-key" aria-pressed={!off.has(k.id)} aria-label={`Show lines: ${k.label}`}
+                  title={off.has(k.id) ? `Show the lines that ${k.label}` : `Hide the lines that ${k.label}`}
+                  onClick={() => setOff((o) => toggleKind(o, k.id))}
+                >
+                  <i className={`gr-line ${k.id}`} aria-hidden="true" />{k.label}
+                </button>
+              </li>
+            ))}
+            <li className="gr-plain"><i className="gr-line dash" aria-hidden="true" />carried a message in the last {RECENT_EVENTS} events</li>
+          </ul>
+          <ul className="gr-legend gr-seats">
+            {(["working", "waiting", "stopped", "paused", "idle"] as NodeTone[]).filter((t) => tones.has(t)).map((t) => (
+              <li key={t} className="gr-plain"><i className={`gr-ring ${t}`} aria-hidden="true" />{t === "idle" && where.parked && !where.over ? "ready, idle or finished" : RING_WORD[t]}</li>
+            ))}
+          </ul>
+        </div>
       </Card>
 
-      <Card title="Most active links">
+      <Card variant="titled" title="Most active links" meta={lines.shown.length ? `${lines.shown.length} of ${lines.drawable.length}` : undefined}>
         {lines.shown.length ? (
           <ul className="gr-links">
-            {lines.shown.map((e) => {
+            {lines.shown.map((e, i) => {
               const key = edgeKey(e);
+              const k = kindOf(e.kind);
               return (
                 <li key={key} className="gr-row">
                   {/* A button, so a line can be reached and highlighted from the keyboard. */}
                   <button
                     type="button"
-                    className="gr-link"
+                    className={`gr-link ${k.id}`}
                     aria-pressed={pin === key}
                     onClick={() => setPin(pin === key ? null : key)}
                     onMouseEnter={() => setHover(key)}
@@ -232,15 +268,16 @@ export default function Graph(): React.JSX.Element {
                     onFocus={() => setHover(key)}
                     onBlur={() => setHover((h) => (h === key ? null : h))}
                   >
-                    <i className={`gr-line ${kindOf(e.kind).id}`} aria-hidden="true" />
-                    <span><b>{e.from}</b> <span className="muted">{kindOf(e.kind).verb}</span> <b>{e.to}</b></span>
-                    <span className="muted gr-n">{e.count.toLocaleString("en-US")}</span>
+                    <span className="gr-rank" aria-hidden="true">{i + 1}</span>
+                    <span className="gr-what"><b>{e.from}</b> <span className="muted">{k.verb}</span> <b>{e.to}</b></span>
+                    <span className="gr-bar" aria-hidden="true"><i style={{ width: `${Math.max(4, Math.round((e.count / maxCount) * 100))}%` }} /></span>
+                    <span className="gr-n">{e.count.toLocaleString("en-US")}</span>
                   </button>
                   <Button
-                    variant="small" extra="gr-open" aria-label={`See the messages from ${e.from} to ${e.to} in Events`}
+                    variant="small" extra="gr-open" icon="arrow-right" aria-label={`See the messages from ${e.from} to ${e.to} in Events`}
                     title={`Open Events with ${e.from}'s messages that name ${e.to}`} onClick={() => openMessages(e)}
                   >
-                    See messages
+                    <span className="gr-open-t">See messages</span>
                   </Button>
                 </li>
               );

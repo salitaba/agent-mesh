@@ -2,7 +2,7 @@
  * Presentational: all state flows in through props from the Designer. */
 
 import type { RefObject } from "react";
-import { Banner, Button, TextArea, useDismissable } from "../components";
+import { Banner, Button, Dialog, TextArea, useDismissable } from "../components";
 import { Icon } from "../icons";
 import { CloseButton, PathLabel } from "./ui";
 import { locateIssue, whereLabel, type Where } from "./locate";
@@ -15,11 +15,7 @@ import type { Advice } from "./types";
 /** Where the draft stands against mesh.yaml, in two words, beside the page title. */
 export function DraftChip({ status }: { status: DraftStatus }): React.JSX.Element {
   const tone = status.kind === "unsaved" || status.kind === "restored" ? "warn" : status.kind === "clean" ? "ok" : "neutral";
-  return (
-    <span className={`ms-chip ${tone}`} role="status" title={status.detail}>
-      <i className="dot" aria-hidden="true" />{status.label}
-    </span>
-  );
+  return <span className={`pill ${tone}`} role="status" title={status.detail}>{status.label}</span>;
 }
 
 /* ---------------- the checks ---------------- */
@@ -41,7 +37,7 @@ export function ChecksButton({ checking, valid, offline, errors, notes, open, on
   const text = checking ? "Checking" : offline ? "Check failed" : valid ? (notes ? `Valid, ${notes} ${notes === 1 ? "note" : "notes"}` : "Valid") : `${errors} ${errors === 1 ? "error" : "errors"}`;
   return (
     <button
-      type="button" ref={btnRef} className={`ms-chip ms-verdict ${tone}`} aria-expanded={open} aria-haspopup="dialog"
+      type="button" ref={btnRef} className={`pill no-dot ms-verdict ${tone}`} aria-expanded={open} aria-haspopup="dialog"
       title="What the server says about this draft, and where to fix it" onClick={onToggle}
     >
       <Icon name={tone === "bad" || tone === "warn" ? "alert" : "check"} size={14} />
@@ -167,23 +163,21 @@ export interface ImportDialogProps {
 }
 
 export function ImportDialog({ text, setText, error, busy, onApply, onCancel }: ImportDialogProps): React.JSX.Element {
-  const ref = useDismissable<HTMLDivElement>(true, onCancel);
   return (
-    <>
-      <div className="confirm-scrim" onClick={onCancel} />
-      <div className="confirm ms-dialog" role="dialog" aria-modal="true" aria-labelledby="ms-import-title" ref={ref} tabIndex={-1}>
-        <form onSubmit={(e) => { e.preventDefault(); if (text.trim() && !busy) onApply(); }}>
-          <h3 id="ms-import-title">Import YAML</h3>
-          <p className="ms-hint">Paste the text of a mesh.yaml. It replaces the draft, and you can undo it. Nothing is saved.</p>
-          <TextArea mono rows={10} spellCheck={false} placeholder="version: 1&#10;mesh:&#10;  id: my-mesh" aria-label="YAML to import" value={text} onChange={(e) => setText(e.target.value)} />
-          {error ? <p className="ms-hint bad" role="alert">{error}</p> : null}
-          <div className="confirm-acts">
-            <Button variant="soft" onClick={onCancel}>Cancel</Button>
-            <Button variant="primary" type="submit" disabled={!text.trim() || busy}>{busy ? "Reading…" : "Import"}</Button>
-          </div>
-        </form>
-      </div>
-    </>
+    <Dialog
+      title="Import YAML" labelId="ms-import-title" wide onClose={onCancel}
+      onSubmit={(e) => { e.preventDefault(); if (text.trim() && !busy) onApply(); }}
+      actions={(
+        <>
+          <Button variant="soft" onClick={onCancel}>Cancel</Button>
+          <Button variant="primary" type="submit" disabled={!text.trim() || busy}>{busy ? "Reading…" : "Import"}</Button>
+        </>
+      )}
+    >
+      <p className="ms-hint">Paste the text of a mesh.yaml. It replaces the draft, and you can undo it. Nothing is saved.</p>
+      <TextArea mono rows={10} spellCheck={false} placeholder="version: 1&#10;mesh:&#10;  id: my-mesh" aria-label="YAML to import" value={text} onChange={(e) => setText(e.target.value)} />
+      {error ? <p className="ms-hint bad" role="alert">{error}</p> : null}
+    </Dialog>
   );
 }
 
@@ -195,31 +189,21 @@ export interface TemplateDialogProps {
 }
 
 export function TemplateDialog({ unsaved, onPick, onCancel }: TemplateDialogProps): React.JSX.Element {
-  const ref = useDismissable<HTMLDivElement>(true, onCancel);
   return (
-    <>
-      <div className="confirm-scrim" onClick={onCancel} />
-      <div className="confirm ms-dialog" role="dialog" aria-modal="true" aria-labelledby="ms-tpl-title" ref={ref} tabIndex={-1}>
-        <div className="ms-dialog-body">
-          <h3 id="ms-tpl-title">Start from a template</h3>
-          <p className="ms-hint">
-            A template replaces the draft with a small team to edit.{" "}
-            {unsaved ? <b>It discards your {unsaved} unsaved {unsaved === 1 ? "change" : "changes"}. You can undo it right after.</b> : "You can undo it right after."}
-          </p>
-          <div className="ms-templates stacked">
-            {TEMPLATES.map((t) => (
-              <button key={t.key} type="button" className="ms-template" onClick={() => onPick(t)}>
-                <b>{t.name}</b>
-                <span>{t.desc}</span>
-                <em>{t.seats} {t.seats === 1 ? "seat" : "seats"}</em>
-              </button>
-            ))}
-          </div>
-          <div className="confirm-acts">
-            <Button variant="soft" onClick={onCancel}>Cancel</Button>
-          </div>
-        </div>
+    <Dialog title="Start from a template" labelId="ms-tpl-title" wide onClose={onCancel} actions={<Button variant="soft" onClick={onCancel}>Cancel</Button>}>
+      <p className="ms-hint">
+        A template replaces the draft with a small team to edit.{" "}
+        {unsaved ? <b>It discards your {unsaved} unsaved {unsaved === 1 ? "change" : "changes"}. You can undo it right after.</b> : "You can undo it right after."}
+      </p>
+      <div className="ms-templates stacked">
+        {TEMPLATES.map((t) => (
+          <button key={t.key} type="button" className="ms-template" onClick={() => onPick(t)}>
+            <b>{t.name}</b>
+            <span>{t.desc}</span>
+            <em>{t.seats} {t.seats === 1 ? "seat" : "seats"}</em>
+          </button>
+        ))}
       </div>
-    </>
+    </Dialog>
   );
 }

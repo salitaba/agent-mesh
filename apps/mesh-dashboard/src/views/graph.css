@@ -1,6 +1,6 @@
 /* ================================= graph =================================
-   Who talks to whom. A line's colour is the kind of message, its thickness is how many, and a dashed moving line carried one in the
-   last few events. A seat's ring says what it is doing, and the word beside it says the same. Names sit outside the ring, where no
+   Who talks to whom. A seat is a disc in its role's colour with a ring in the colour of what it is doing; a line's colour is the kind
+   of message, its thickness how many, and a dashed moving line carried one in the last few events. Names sit outside the ring, where no
    line goes. Prefixes: gr- (page chrome), edge, gn (the drawing). */
 
 .graph-wrap { position: relative; }
@@ -8,13 +8,13 @@
 
 /* Tall enough for the drawing at its own size: a short window (a phone on its side, a laptop with its tools open) used to shrink it
    to 60% of the window, which is names at 6 px, when the page can simply scroll. */
-.gr-svg { display: block; width: 100%; height: min(max(60vh, 480px), 520px); }
+.gr-svg { display: block; width: 100%; height: min(max(60vh, 500px), 540px); }
 .gr-svg text { fill: var(--text); font: 12px var(--sans); }
-.gr-svg text.name { font-weight: 500; }
-.gr-svg text.dim { fill: var(--muted); font: 11px var(--mono); }
-.gr-svg text.init { fill: var(--text); font: 600 11px var(--mono); }
+.gr-svg text.name { font: 600 13px var(--sans); letter-spacing: var(--k-track-tight); }
+.gr-svg text.dim { fill: var(--muted); font: 12px var(--sans); }
+.gr-svg text.init { fill: var(--tint); font: 650 13px var(--sans); letter-spacing: .02em; pointer-events: none; }
 
-/* The drawing is a fixed 900x480 viewBox scaled to fit. On a phone that is a uniformly shrunk desktop drawing: 11px labels at about
+/* The drawing is a fixed 900x500 viewBox scaled to fit. On a phone that is a uniformly shrunk desktop drawing: 11px labels at about
    4px and 36px seats at 13px. Below the width where the scale turns illegible it stops scaling and scrolls instead, so the text is
    its authored size and a seat is a real tap target. The frame that scrolls is the drawing's own (the key under it stays where it
    is), it reaches the card's edges, and a soft edge shows on the side that has more: a phone hides its scroll bars, and a drawing
@@ -32,27 +32,32 @@
       radial-gradient(farthest-side at 0 50%, var(--gr-edge), transparent) 0 0 / 14px 100% no-repeat scroll,
       radial-gradient(farthest-side at 100% 50%, var(--gr-edge), transparent) 100% 0 / 14px 100% no-repeat scroll;
   }
-  .gr-svg { min-width: 900px; height: 480px; }
+  .gr-svg { min-width: 900px; height: 500px; }
 }
 
 /* ---- seats ---- */
 
-.gn { cursor: pointer; }
-.gn circle.node { fill: var(--panel); stroke: var(--line-control); stroke-width: 1.5; }
-.gn.working circle.node { stroke: var(--ok); stroke-width: 2.5; }
-.gn.waiting circle.node { stroke: var(--warn); stroke-width: 2; }
-.gn.stopped circle.node { stroke: var(--bad); stroke-width: 2.5; }
-.gn.paused circle.node { stroke: var(--text-dim); stroke-dasharray: 3 3; }
-.gn:hover circle.node { fill: var(--panel-2); }
+.gn { cursor: pointer; transition: opacity var(--k-dur-2) var(--k-ease); }
+.gn circle { transition: fill var(--k-dur-1) var(--k-ease), stroke var(--k-dur-1) var(--k-ease), stroke-width var(--k-dur-1) var(--k-ease); }
+/* The disc is pressable, so it sits one rung up: a short shadow, and the lit top edge is in the ring. */
+.gn circle.node { fill: color-mix(in srgb, var(--tint) 12%, var(--panel)); stroke: color-mix(in srgb, var(--tint) 38%, transparent); stroke-width: 1.5; filter: drop-shadow(0 1px 2px color-mix(in srgb, var(--text) 16%, transparent)); }
+.gn circle.ring { fill: none; stroke: var(--line-strong); stroke-width: 1.5; }
+.gn.working circle.ring { stroke: var(--ok); stroke-width: 2.5; }
+.gn.waiting circle.ring { stroke: var(--warn); stroke-width: 2; }
+.gn.stopped circle.ring { stroke: var(--bad); stroke-width: 2.5; }
+.gn.paused circle.ring { stroke: var(--text-dim); stroke-dasharray: 3 3; }
+.gn circle.halo { fill: color-mix(in srgb, var(--ok) 18%, transparent); transform-box: fill-box; transform-origin: center; animation: gr-halo 2.2s ease-out infinite; pointer-events: none; }
+@keyframes gr-halo { from { transform: scale(.85); opacity: 1; } to { transform: scale(1.55); opacity: 0; } }
+.gn:hover circle.node, .gn.on circle.node { fill: color-mix(in srgb, var(--tint) 22%, var(--panel)); stroke: color-mix(in srgb, var(--tint) 60%, transparent); }
 /* Pointing at a seat picks out its lines (the .focus rule below draws the others back); the seats it does not talk to go back too. */
-.gn.dim { opacity: .45; }
+.gn.dim { opacity: .38; }
 /* The group includes the names, so the ring of focus is around the whole seat. */
 .gn:focus { outline: none; }
 .gn:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; border-radius: 6px; }
 
 /* ---- lines ---- */
 
-.gr-svg path.edge { fill: none; stroke: var(--muted); stroke-width: 1.4; }
+.gr-svg path.edge { fill: none; stroke: var(--muted); stroke-width: 1.4; stroke-linecap: round; opacity: .85; transition: opacity var(--k-dur-2) var(--k-ease), stroke-width var(--k-dur-1) var(--k-ease); }
 .gr-svg path.edge.REQUEST { stroke: var(--accent); }
 .gr-svg path.edge.APPROVE { stroke: var(--ok); }
 .gr-svg path.edge.BLOCK { stroke: var(--bad); }
@@ -61,18 +66,23 @@
 .gr-svg path.edge.flowing { stroke-dasharray: 5 7; animation: dashflow 1.2s linear infinite; }
 @keyframes dashflow { to { stroke-dashoffset: -12; } }
 /* Pointing at a line in the list below picks it out and leaves the rest as context. */
-.gr-svg.focus path.edge:not(.hot) { opacity: .2; }
-.gr-svg path.edge.hot { stroke-width: 4px; }
+.gr-svg.focus path.edge:not(.hot) { opacity: .14; }
+.gr-svg path.edge.hot { opacity: 1; stroke-width: 3.5px; }
+.edge-n { pointer-events: none; }
+.edge-n rect { fill: var(--panel); stroke: var(--line-strong); }
+.edge-n text { fill: var(--text); font: 650 12px var(--sans); }
 
-/* ---- legend ---- */
+/* ---- the key: what a colour, a dash and a ring mean, and the lines you can hide ---- */
 
-.gr-legend { display: flex; flex-wrap: wrap; gap: var(--s1-5) var(--s4); margin: var(--s2) 0 0; padding: 0; list-style: none; font-size: 13px; color: var(--text-dim); }
-.gr-legend li { display: inline-flex; align-items: center; gap: var(--s1-5); }
-/* A kind of line is a button: pressed it is shown, and hidden it is struck through with a dotted swatch, so colour is not the only cue. */
-.gr-key { display: inline-flex; align-items: center; gap: var(--s1-5); min-height: 28px; margin: 0 calc(var(--s1-5) * -1); padding: 0 var(--s1-5); background: none; border: 0; border-radius: var(--r-sm); color: inherit; font: inherit; cursor: pointer; }
-.gr-key:hover { background: var(--panel-2); color: var(--text); }
-.gr-key[aria-pressed="false"] { color: var(--muted); text-decoration: line-through; }
+.gr-foot { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--s2) var(--s5); margin: var(--s2) calc(var(--s5) * -1) calc(var(--s4) * -1); padding: var(--s3) var(--s5); border-top: 1px solid var(--line); background: var(--panel-2); border-radius: 0 0 var(--r-lg) var(--r-lg); }
+.gr-legend { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s1-5); margin: 0; padding: 0; list-style: none; font-size: 13px; color: var(--text-dim); }
+/* A kind of line is a button: pressed it is shown, and hidden it is struck through with a dotted swatch and a dashed edge, so colour is not the only cue. */
+.gr-key { display: inline-flex; align-items: center; gap: var(--s1-5); min-height: 28px; padding: 0 var(--s2-5) 0 var(--s2); background: var(--panel); border: 1px solid var(--line-strong); border-radius: var(--k-r-pill); box-shadow: var(--k-hl), var(--k-shadow-1); color: var(--text); font: 500 13px var(--sans); cursor: pointer; transition: background-color var(--k-dur-1) var(--k-ease), border-color var(--k-dur-1) var(--k-ease), color var(--k-dur-1) var(--k-ease); }
+.gr-key:is(:hover, .is-hover) { border-color: var(--line-control); background: var(--panel-2); }
+.gr-key:active { background: var(--sunken); box-shadow: none; }
+.gr-key[aria-pressed="false"] { background: transparent; border-style: dashed; box-shadow: none; color: var(--muted); text-decoration: line-through; }
 .gr-key[aria-pressed="false"] .gr-line { border-top-style: dotted; opacity: .6; }
+.gr-plain { display: inline-flex; align-items: center; gap: var(--s1-5); min-height: 28px; padding: 0 var(--s2); }
 .gr-line { display: inline-block; flex: none; width: 18px; height: 0; border-top: 3px solid var(--muted); border-radius: 2px; }
 .gr-line.REQUEST { border-top-color: var(--accent); }
 .gr-line.APPROVE { border-top-color: var(--ok); }
@@ -86,26 +96,34 @@
 .gr-ring.stopped { border-color: var(--bad); }
 .gr-ring.paused { border: 2px dashed var(--text-dim); }
 
-/* ---- the list: every line, reachable by keyboard ---- */
+/* ---- the list: every line, busiest first, reachable by keyboard ---- */
 
 .gr-links { margin: 0; padding: 0; list-style: none; }
 /* A row is the line, and beside it the way to its messages. */
 .gr-row { display: flex; align-items: center; gap: var(--s2); border-bottom: 1px solid var(--line); }
 .gr-links li:last-child { border-bottom: 0; }
 .gr-open { flex: none; margin-right: var(--s1); }
-.gr-link {
-  display: flex; align-items: center; gap: var(--s2-5); flex: 1 1 auto; min-width: 0; min-height: 32px; padding: var(--s1) var(--s2);
-  background: none; border: 0; border-radius: 0; color: var(--text); font: 14px var(--sans); text-align: left; cursor: pointer;
-}
+.gr-link { --kind: var(--muted); display: grid; grid-template-columns: 22px minmax(0, 1.5fr) minmax(72px, 1fr) 44px; align-items: center; gap: var(--s3); flex: 1 1 auto; min-width: 0; min-height: 46px; padding: 0 var(--s2); background: none; border: 0; border-radius: 0; color: var(--text); font: 14px var(--sans); text-align: left; cursor: pointer; transition: background-color var(--k-dur-1) var(--k-ease); }
+.gr-link.REQUEST { --kind: var(--accent); } .gr-link.APPROVE { --kind: var(--ok); } .gr-link.BLOCK { --kind: var(--bad); } .gr-link.ESCALATE { --kind: var(--warn); } .gr-link.INFORM { --kind: var(--info); }
 .gr-link:hover, .gr-link[aria-pressed="true"] { background: var(--panel-2); }
+.gr-link[aria-pressed="true"] { box-shadow: inset 3px 0 0 var(--kind); }
 .gr-link:focus-visible { outline-offset: -2px; }
-.gr-link > span:nth-of-type(1) { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; }
-.gr-n { flex: none; font-variant-numeric: tabular-nums; }
+.gr-rank { text-align: right; font: 600 12px var(--sans); color: var(--muted); }
+.gr-what { min-width: 0; overflow-wrap: anywhere; }
+.gr-what b { font-weight: 600; letter-spacing: var(--k-track-tight); }
+.gr-bar { display: block; height: 6px; border-radius: var(--k-r-pill); background: var(--sunken); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--line) 70%, transparent); overflow: hidden; }
+.gr-bar > i { display: block; height: 100%; border-radius: inherit; background: var(--kind); transition: width var(--k-dur-3) var(--k-ease); }
+.gr-n { text-align: right; font: 650 14px var(--sans); }
 .gr-note { margin: var(--s2) 0 0; font-size: 13px; }
 
 /* On a phone the key and the rows are touch targets. After the rules they override, so the order does not undo them. */
 @media (max-width: 620px) {
-  .gr-key { min-height: 44px; }
+  .gr-key, .gr-plain { min-height: 44px; }
   .gr-link, button.gr-open { min-height: 44px; }
-  .gr-legend { gap: var(--s1) var(--s3); }
+  .gr-link { grid-template-columns: 20px minmax(0, 1fr) 40px; row-gap: var(--s1-5); padding-block: var(--s2); }
+  .gr-bar { grid-column: 2 / 4; grid-row: 2; }
+  /* The way to a line's messages is an arrow here: a labelled button on every row is a wall of boxes, and its name is still its label. */
+  .gr-open { width: 44px; padding: 0; }
+  .gr-open-t { position: absolute; width: 1px; height: 1px; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+  .gr-foot { margin-left: calc(var(--s4) * -1); margin-right: calc(var(--s4) * -1); padding-left: var(--s4); padding-right: var(--s4); }
 }

@@ -14,7 +14,7 @@ import "./kit.css";
 import {
   AgentAvatar, Banner, Button, Card, Checkbox, Chip, ConfirmDialog, CopyButton, Dialog, DialogPanel, DrawerHead, EmptyState, ErrorState, EventRow,
   Field, IconButton, IdChip, Input, Kbd, LifecyclePill, Menu, OutcomePill, PageHeader, Pill, Progress, Radio, Ring, Segmented, Select, Skeleton,
-  SkeletonText, Sparkline, Stat, StatusPill, StepMini, Switch, TabPanel, Tabs, TextArea, ToastCard, Tooltip, Wordmark, ZoneNote, agentColor,
+  SearchField, SkeletonText, Sparkline, Stat, StatusPill, StepMini, Switch, TabPanel, Tabs, TextArea, ToastCard, Tooltip, Wordmark, ZoneNote, agentColor,
   type ConfirmRequest, type MenuItem, type PillTone,
 } from "./components";
 import { CommandPalette, type PaletteLook } from "./commandpalette";
@@ -172,6 +172,7 @@ function Gallery(): React.JSX.Element {
   const [seg, setSeg] = useState("5m");
   const [open, setOpen] = useState<null | "plain" | "danger" | "dialog">(null);
   const [checked, setChecked] = useState(true);
+  const [query, setQuery] = useState("");
 
   useEffect(() => {
     register("gallery", [
@@ -320,6 +321,7 @@ function Gallery(): React.JSX.Element {
                 <IconButton icon="help" label="Keyboard shortcuts and help" keys="?" onClick={() => undefined} />
                 <IconButton icon="sign-out" label="Sign out" onClick={() => undefined} />
                 <IconButton icon="bell" label="Notifications on" pressed onClick={() => undefined} />
+                <IconButton icon="help" label="Keyboard shortcuts, open" expanded controls="gal-keys" haspopup="dialog" onClick={() => undefined} />
                 <IconButton icon="x" label="Close" size="sm" onClick={() => undefined} />
                 <IconButton icon="trash" label="Delete (not allowed here)" disabled onClick={() => undefined} />
                 <IconButton icon="refresh" label="Refresh" extra="is-hover" onClick={() => undefined} />
@@ -346,6 +348,8 @@ function Gallery(): React.JSX.Element {
                 ["Select", <Select key="g" aria-label="Type" defaultValue="all"><option value="all">All types</option><option>ArchitectureDocument</option></Select>],
                 ["Select, focus", <Select key="h" extra="is-focus" aria-label="Type, focus" defaultValue="all"><option value="all">All types</option></Select>],
                 ["Textarea", <TextArea key="i" rows={3} placeholder="Say it in plain words" aria-label="Message" />],
+                ["Search", <SearchField key="j" label="Search the gallery" hint="/" placeholder="Agent or word" value={query} onChange={(e) => setQuery(e.target.value)} onClear={() => setQuery("")} />],
+                ["Search, filled", <SearchField key="k" label="Search, filled" value="developer" onChange={() => undefined} onClear={() => undefined} />],
               ]} />
             </Spec>
             <Spec name="Checkbox, radio, switch" wide>
@@ -411,6 +415,7 @@ function Gallery(): React.JSX.Element {
               <div className="kpi"><b>49.3k</b><small>of 2.0M tokens</small></div>
               <Progress value={49300} max={2000000} label="Mission token budget" valueText="49.3k of 2.0M tokens" size="lg" />
             </Card>
+            <Card title="A block with its own job" variant="titled" meta="12 of 18"><p style={{ margin: 0 }}>The title is a sentence at 15px, for a card that is a part of the page and not a label above a figure.</p></Card>
             <Card title="Pressable" interactive meta="hover it"><p style={{ margin: 0 }}>Rung 2 on hover, a pixel up, pressed back down.</p></Card>
             <Card title="Pressable, hovered" interactive variant="is-hover"><p style={{ margin: 0 }}>The hover state, held for the picture.</p></Card>
           </div>
@@ -563,6 +568,15 @@ function Gallery(): React.JSX.Element {
                 <div className="confirm-scrim" />
                 <DialogPanel title="Start the mission?" role="dialog" labelId="gal-dlg" actions={<><Button variant="soft">Cancel</Button><Button variant="primary" icon="play">Start the mission</Button></>}>
                   <p style={{ margin: 0, color: "var(--text-dim)" }}>This is a scripted team. It makes no model calls and spends nothing, and it runs until it finishes or you park the mission.</p>
+                </DialogPanel>
+              </div>
+            </Spec>
+            <Spec name="Dialog, wide" wide note="640 instead of 480, for a text area or a grid of choices">
+              <div className="gal-stage short">
+                <div className="confirm-scrim" />
+                <DialogPanel wide title="Import a mesh.yaml" role="dialog" labelId="gal-dlg3" actions={<><Button variant="soft">Cancel</Button><Button variant="primary" icon="check">Replace the draft</Button></>}>
+                  <p style={{ margin: 0, color: "var(--text-dim)" }}>Paste the whole file. The draft is replaced, and you can undo that.</p>
+                  <TextArea rows={3} aria-label="mesh.yaml" placeholder="mesh:&#10;  id: my-team" />
                 </DialogPanel>
               </div>
             </Spec>

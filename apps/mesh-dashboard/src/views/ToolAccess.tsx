@@ -1,9 +1,10 @@
 import { useState } from "react";
-import { AgentAvatar, Button, EmptyState, ErrorState, Input } from "../components";
+import { AgentAvatar, Button, Chip, EmptyState, ErrorState, Input, agentColor } from "../components";
+import { Icon } from "../icons";
 import type { LoadState, ToolSeat } from "../inbox-model";
 import { useMesh } from "../store";
 import { Panel } from "./Panel";
-import "./inbox.css";
+import "./gates.css";
 
 /**
  * Seats the approval gate is holding, what each has asked for, and what an operator has unlocked on each.
@@ -68,7 +69,7 @@ export function ToolAccess({ seats, state, reload }: { seats: ToolSeat[]; state:
     if (n > 0) toast(`${n} ${n === 1 ? "tool" : "tools"} unlocked on ${seat.agentId}`, `${seat.agentId} can use them from its next turn.`, "ok", { label: `Wake ${seat.agentId}`, run: () => void wake(seat.agentId) });
   };
 
-  if (state === "loading") return <p className="ov-empty" role="status">Loading the tool gates.</p>;
+  if (state === "loading") return <p className="tga-quiet" role="status">Loading the tool gates.</p>;
   if (state === "error") return <ErrorState what="the tool gates" detail="The server did not answer. It may be restarting." onRetry={() => void reload()} />;
 
   if (seats.length === 0) {
@@ -83,36 +84,46 @@ export function ToolAccess({ seats, state, reload }: { seats: ToolSeat[]; state:
   const total = asking.reduce((n, s) => n + s.requested.length, 0);
   return (
     <>
-      <p className="tg-lede">A grant covers one tool for the rest of the session, not one call and not the whole capability. Granting does not wake the seat: wake it once you have cleared everything it needs.</p>
+      <p className="tga-lede">A grant covers one tool for the rest of the session, not one call and not the whole capability. Granting does not wake the seat: wake it once you have cleared everything it needs.</p>
 
       <Panel id="tg-requests" title="Requests" meta={total ? `${total} waiting` : undefined}>
         {asking.length === 0 ? (
-          <p className="ov-empty">No tool requests are waiting. A seat asks when it reaches for a tool its gate holds back.</p>
+          <div className="tga-none">
+            <span className="tga-none-ic" aria-hidden="true"><Icon name="check" size={16} /></span>
+            <p>No tool requests are waiting. A seat asks when it reaches for a tool its gate holds back.</p>
+          </div>
         ) : (
-          <ul className="tg-list">
+          <ul className="tga-list">
             {asking.map((s) => (
-              <li key={s.agentId} className="tg-req" data-seat={s.agentId}>
-                <div className="tg-who">
-                  <AgentAvatar id={s.agentId} size="sm" />
-                  <b className="mono">{s.agentId}</b>
-                  <span className="muted">asked for</span>
-                  {s.requested.map((t) => <code key={t}>{t}</code>)}
-                </div>
-                <div className="tg-acts">
-                  {s.requested.length > 1 ? (
-                    <Button variant="primary" icon="key" disabled={busy !== null} onClick={() => void unlockAll(s)}>Unlock all {s.requested.length}</Button>
-                  ) : null}
-                  {s.requested.map((tool) => (
-                    <Button
-                      key={tool} variant={s.requested.length > 1 ? "small" : "primary"} icon="key" disabled={busy === `${s.agentId}:${tool}`}
-                      title={`Unlock ${tool} for the rest of the session. It takes effect on ${s.agentId}'s next turn.`}
-                      onClick={() => void decide(s.agentId, tool, false)}
-                    >
-                      Unlock {tool}
-                    </Button>
-                  ))}
+              <li key={s.agentId} className="tga-req" data-seat={s.agentId}>
+                <div className="tga-who">
+                  <AgentAvatar id={s.agentId} color={agentColor(s.agentId)} size="sm" />
+                  <b>{s.agentId}</b>
+                  <span className="muted">asked for {s.requested.length === 1 ? "a tool" : `${s.requested.length} tools`}</span>
+                  <span className="tga-grow" />
                   <Button variant="soft" icon="play" title="Run one step now, so the seat picks up what you just unlocked" onClick={() => void wake(s.agentId)}>Wake {s.agentId}</Button>
                 </div>
+                <ul className="tga-tools">
+                  {s.requested.map((tool) => (
+                    <li key={tool}>
+                      <Icon name="lock" size={14} />
+                      <code>{tool}</code>
+                      <span className="tga-grow" />
+                      <Button
+                        variant={s.requested.length > 1 ? "small" : "primary"} icon="key" disabled={busy === `${s.agentId}:${tool}`}
+                        title={`Unlock ${tool} for the rest of the session. It takes effect on ${s.agentId}'s next turn.`}
+                        onClick={() => void decide(s.agentId, tool, false)}
+                      >
+                        Unlock<span className="sr-only"> {tool}</span>
+                      </Button>
+                    </li>
+                  ))}
+                </ul>
+                {s.requested.length > 1 ? (
+                  <div className="tga-foot">
+                    <Button variant="primary" icon="key" disabled={busy !== null} onClick={() => void unlockAll(s)}>Unlock all {s.requested.length}</Button>
+                  </div>
+                ) : null}
               </li>
             ))}
           </ul>
@@ -120,31 +131,31 @@ export function ToolAccess({ seats, state, reload }: { seats: ToolSeat[]; state:
       </Panel>
 
       <Panel id="tg-seats" title="Gated seats" meta={`${seats.length} ${seats.length === 1 ? "seat" : "seats"}`}>
-        <ul className="tg-list">
+        <ul className="tga-list">
           {seats.map((s) => {
             const typed = (draft[s.agentId] ?? "").trim();
             return (
-              <li key={s.agentId} className="tg-seat">
-                <div className="tg-who">
-                  <AgentAvatar id={s.agentId} size="sm" />
-                  <b className="mono">{s.agentId}</b>
+              <li key={s.agentId} className="tga-seat">
+                <div className="tga-who">
+                  <AgentAvatar id={s.agentId} color={agentColor(s.agentId)} size="sm" />
+                  <b>{s.agentId}</b>
                   <span className="muted">gated on</span>
-                  {s.requiresApproval.map((c) => <code key={c}>{c}</code>)}
+                  {s.requiresApproval.map((c) => <Chip key={c} mono>{c}</Chip>)}
                 </div>
-                <div className="tg-grants">
-                  <span className="muted">Unlocked:</span>
+                <div className="tga-grants">
+                  <span className="tga-k">Unlocked</span>
                   {s.granted.length === 0 ? <span className="muted">nothing yet</span> : s.granted.map((tool) => (
-                    <Button
-                      key={tool} variant="small" icon="x" aria-label={`Withdraw ${tool} from ${s.agentId}`} disabled={busy === `${s.agentId}:${tool}`}
+                    <button
+                      key={tool} type="button" className="chip-toggle on" aria-label={`Withdraw ${tool} from ${s.agentId}`} disabled={busy === `${s.agentId}:${tool}`}
                       title={`Withdraw ${tool}. ${s.agentId} is gated on it again from its next turn.`} onClick={() => void decide(s.agentId, tool, true)}
                     >
-                      {tool}
-                    </Button>
+                      {tool}<Icon name="x" size={12} />
+                    </button>
                   ))}
                 </div>
-                <form className="tg-manual" onSubmit={(ev) => { ev.preventDefault(); void decide(s.agentId, typed, false); }}>
-                  <label className="dc-label" htmlFor={`tg-${s.agentId}-tool`}>Unlock a tool ahead of a request</label>
-                  <div className="dc-row">
+                <form className="tga-manual" onSubmit={(ev) => { ev.preventDefault(); void decide(s.agentId, typed, false); }}>
+                  <label className="tga-k" htmlFor={`tg-${s.agentId}-tool`}>Unlock a tool ahead of a request</label>
+                  <div className="tga-row">
                     <Input id={`tg-${s.agentId}-tool`} mono value={draft[s.agentId] ?? ""} placeholder="Tool name, exactly: Edit, Write, Bash" onChange={(ev) => setDraft((d) => ({ ...d, [s.agentId]: ev.target.value }))} />
                     <Button variant="small" type="submit" disabled={!typed || busy === `${s.agentId}:${typed}`}>Unlock</Button>
                   </div>
@@ -153,7 +164,7 @@ export function ToolAccess({ seats, state, reload }: { seats: ToolSeat[]; state:
             );
           })}
         </ul>
-        <p className="tg-note">Match the runtime's spelling: a grant for "edit" is recorded and never matches the "Edit" the gate checks.</p>
+        <p className="tga-note">Match the runtime's spelling: a grant for "edit" is recorded and never matches the "Edit" the gate checks.</p>
       </Panel>
     </>
   );

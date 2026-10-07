@@ -1,7 +1,8 @@
 /* ============ The Designer page ============
  * The frame, the header, the checks popover, the first-run guide, the save bar and its sheet, the YAML slide-over and the dialogs.
  * The canvas is in topology.css, the forms in inspector.css, the assistant in assistant.css. Tokens only: no colour literal, the type
- * ramp, the spacing ladder, the breakpoint ladder (1280 and 760 are the Designer's two collapse points). */
+ * ramp, the spacing ladder, the breakpoint ladder (1280 and 760 are the Designer's two collapse points). The buttons, the pills, the
+ * dialogs and the icon buttons are the kit's: what is here is how they are laid out on this page. */
 
 /* A sticky `bottom: 0` resolves against the SCROLLPORT PADDING BOX, so #view's bottom padding would leave a permanent gap under the save bar
  * and no negative margin on the bar itself can close it. This view supplies its own edge instead, and min-height keeps the bar pinned to the
@@ -18,67 +19,38 @@
 .ms .page-head .view-title { align-items: center; margin-bottom: var(--s2); }
 .ms .view-sub { margin-top: 0; }
 .ms .banner.has-icon { margin-bottom: 0; }
-/* The shared buttons draw an icon and a label with nothing between them, and a disabled primary looks exactly like an enabled one (no
-   :disabled rule). Both are put right here, for this page and its dialogs, until they are put right for everyone. */
-.ms button.small, .ms button.ghost, .confirm.ms-dialog button.small { gap: var(--s1-5); }
-.ms button:disabled, .confirm.ms-dialog button:disabled { opacity: .5; cursor: not-allowed; }
+/* A toggle that opens something says so with the selection's own ground, as the kit's icon button does. */
+.ms button.soft:is([aria-pressed="true"], [aria-expanded="true"]) { background: var(--k-accent-soft); color: var(--k-accent-ink); border-color: color-mix(in srgb, var(--k-accent) 40%, var(--line-strong)); }
 
 /* ---------- header controls ---------- */
-.ms-tool {
-  display: inline-flex; align-items: center; justify-content: center; gap: var(--s1-5); min-width: 32px; min-height: 32px; padding: 0 var(--s2);
-  background: var(--panel); border: 1px solid var(--line-control); border-radius: var(--r-sm); color: var(--text-dim);
-  font: 500 13px var(--sans); cursor: pointer; transition: border-color .12s, color .12s, background .12s;
-}
-.ms-tool.has-text { padding: 0 var(--s2-5) 0 var(--s2); }
-.ms-tool:hover:not(:disabled) { color: var(--text); border-color: var(--accent); }
-.ms-tool[aria-pressed="true"], .ms-tool[aria-expanded="true"] { color: var(--accent-2); border-color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, var(--panel)); }
-.ms-tool:disabled { opacity: .5; cursor: not-allowed; }
+/* Icon buttons that belong together sit in one raised group, so a toolbar is a few things and not a row of many. */
+.ms-toolgroup { display: inline-flex; align-items: center; gap: var(--s0); padding: 3px; background: var(--panel); border: 1px solid var(--line-strong); border-radius: var(--r); box-shadow: var(--k-hl), var(--k-shadow-1); }
+.ms-toolgroup .ms-tg, .ms-tg { width: 30px; height: 30px; border-radius: calc(var(--r) - 3px); }
+.ms-toolgroup .ms-keys-anchor { display: inline-flex; }
+@media (pointer: coarse), (max-width: 620px) { .ms-toolgroup .ms-tg, .ms-tg { width: 44px; height: 44px; } }
 
-.ms-chip {
-  display: inline-flex; align-items: center; gap: var(--s1-5); flex: none; padding: var(--s1) var(--s3) var(--s1) var(--s2-5);
-  border: 1px solid transparent; border-radius: 999px; font: 600 13px/1.2 var(--sans);
-  color: var(--text-dim); background: color-mix(in srgb, var(--text-dim) 12%, transparent);
-}
-.ms-chip .dot { width: 8px; height: 8px; border-radius: 50%; background: currentColor; flex: none; }
-.ms-chip.ok { color: var(--ok); background: color-mix(in srgb, var(--ok) 14%, transparent); }
-.ms-chip.warn { color: var(--warn); background: color-mix(in srgb, var(--warn) 14%, transparent); }
-.ms-chip.bad { color: var(--bad); background: color-mix(in srgb, var(--bad) 14%, transparent); }
-button.ms-chip { min-height: 32px; font-family: var(--sans); cursor: pointer; padding-left: var(--s2-5); }
-button.ms-chip:hover, button.ms-chip[aria-expanded="true"] { border-color: currentColor; }
+/* The verdict is a button that looks like what it says: the kit's pill, taller, because it is pressed. */
+.ms-verdict { height: 32px; padding: 0 var(--s3) 0 var(--s2-5); gap: var(--s1-5); font-size: 13px; cursor: pointer; transition: border-color var(--k-dur-1) var(--k-ease), background-color var(--k-dur-1) var(--k-ease); }
+.ms-verdict:is(:hover, [aria-expanded="true"]) { border-color: currentColor; }
+@media (pointer: coarse), (max-width: 620px) { .ms-verdict { height: 44px; } }
 
 .ms-checks-anchor { position: relative; display: inline-flex; }
-.ms-pop {
-  position: absolute; top: calc(100% + var(--s2)); right: 0; z-index: var(--z-overlay);
-  width: min(520px, calc(100vw - 2 * var(--s4))); max-height: min(70dvh, 560px); overflow: auto;
-  display: flex; flex-direction: column; gap: var(--s3); padding: var(--s4);
-  background: var(--bg-2); border: 1px solid var(--line-strong); border-radius: var(--r); box-shadow: var(--shadow);
-}
-.ms-pop h3, .ms-slide h3, .ms-sheet h3, .ms-guide h3, .ms-dialog h3 {
-  margin: 0; font: var(--tx-section); text-transform: uppercase; letter-spacing: .08em; color: var(--muted);
-}
+.ms-pop { position: absolute; top: calc(100% + var(--s2)); right: 0; z-index: var(--z-overlay); width: min(520px, calc(100vw - 2 * var(--s4))); max-height: min(70dvh, 560px); overflow: auto; display: flex; flex-direction: column; gap: var(--s3); padding: var(--s4); background: var(--panel); border: 1px solid var(--line); border-radius: var(--r-lg); box-shadow: var(--k-hl), var(--k-shadow-3); animation: menu-in var(--k-dur-2) var(--k-ease); }
+.ms-pop h3, .ms-slide h3, .ms-sheet h3, .ms-guide h3 { margin: 0; font: 650 16px/1.3 var(--sans); letter-spacing: var(--k-track-title); text-transform: none; color: var(--text); }
 .ms-pop h4, .ms-sheet h4 { margin: 0 0 var(--s1-5); font: 600 13px var(--sans); color: var(--text); }
 .ms-pop-head, .ms-slide-head, .ms-sheet-head { display: flex; align-items: center; justify-content: space-between; gap: var(--s2); }
 .ms-pop-status { margin: 0; font: var(--tx-value); color: var(--text); }
 .ms-pop-status.bad { color: var(--bad); }
-.ms-pop-foot { display: flex; align-items: center; justify-content: space-between; gap: var(--s2); flex-wrap: wrap; }
+.ms-pop-foot { display: flex; align-items: center; justify-content: space-between; gap: var(--s2); flex-wrap: wrap; padding-top: var(--s3); border-top: 1px solid var(--line); }
 
 .ms-issues { display: flex; flex-direction: column; gap: var(--s2); margin: 0; padding: 0; list-style: none; }
-.ms-issue {
-  display: grid; grid-template-columns: auto 1fr; gap: var(--s1-5) var(--s2-5); align-items: start; padding: var(--s2) var(--s2-5);
-  border-radius: var(--r-sm); background: color-mix(in srgb, var(--bad) 8%, var(--panel));
-}
-.ms-issue.note { background: var(--sunken); }
+.ms-issue { display: grid; grid-template-columns: auto 1fr; gap: var(--s1-5) var(--s2-5); align-items: start; padding: var(--s2-5) var(--s3); border: 1px solid color-mix(in srgb, var(--bad) 22%, var(--line)); border-radius: var(--r); background: color-mix(in srgb, var(--bad) 7%, var(--panel)); }
+.ms-issue.note { border-color: var(--line); background: var(--panel-2); }
 .ms-issue > .icon { margin-top: 2px; color: var(--bad); }
 .ms-issue.note > .icon { color: var(--info); }
 .ms-issue-text { min-width: 0; overflow-wrap: anywhere; font: var(--tx-value); color: var(--text); }
 .ms-issue > button, .ms-issue-note { grid-column: 2; justify-self: start; }
 .ms-issue-note { font: var(--tx-meta); color: var(--muted); }
-
-.ms-close {
-  display: inline-grid; place-items: center; flex: none; width: 32px; height: 32px; padding: 0;
-  background: var(--panel); border: 1px solid var(--line-control); border-radius: var(--r-sm); color: var(--text-dim); cursor: pointer;
-}
-.ms-close:hover { color: var(--text); border-color: var(--accent); }
 
 /* ---------- the workbench: the canvas and the inspector ---------- */
 .ms-body { display: grid; grid-template-columns: minmax(0, 1fr) clamp(340px, 30vw, 400px); gap: var(--s3); align-items: start; flex: 1 1 auto; }
@@ -95,28 +67,22 @@ button.ms-chip:hover, button.ms-chip[aria-expanded="true"] { border-color: curre
 .ms-side-head { display: none; }
 
 /* ---------- the first-run guide ---------- */
-.ms-guide { display: flex; flex-direction: column; gap: var(--s3); }
+.ms-guide { display: flex; flex-direction: column; gap: var(--s3-5); }
 .ms-guide-head { display: flex; align-items: center; justify-content: space-between; gap: var(--s2); }
-.ms-steps { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--s3) var(--s5); margin: 0; padding: 0; list-style: none; }
-.ms-steps li { display: grid; grid-template-columns: 24px minmax(0, 1fr); gap: var(--s3); align-items: start; }
-.ms-step-mark {
-  display: grid; place-items: center; width: 24px; height: 24px; border: 1px solid var(--line-control); border-radius: 50%;
-  font: 600 12px var(--mono); color: var(--text-dim);
-}
-.ms-steps li.done .ms-step-mark { color: var(--ok); border-color: var(--ok); background: color-mix(in srgb, var(--ok) 14%, transparent); }
+.ms-steps { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--s3-5) var(--s5); margin: 0; padding: 0; list-style: none; }
+.ms-steps li { display: grid; grid-template-columns: 26px minmax(0, 1fr); gap: var(--s3); align-items: start; }
+.ms-step-mark { display: grid; place-items: center; width: 26px; height: 26px; border: 1px solid var(--line-control); border-radius: 50%; font: 600 12px var(--sans); color: var(--text-dim); background: var(--panel); }
+.ms-steps li.done .ms-step-mark { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 40%, transparent); background: color-mix(in srgb, var(--ok) 14%, transparent); }
 /* Where the person is: a filled number (done is a tick, next is an outline), so the step to do now is not told by colour alone. */
-.ms-steps li.now .ms-step-mark { color: var(--text-on-accent); border-color: var(--accent); background: var(--accent); }
+.ms-steps li.now .ms-step-mark { color: var(--k-on-accent); border-color: var(--k-accent); background: var(--k-accent); box-shadow: var(--k-ring); }
 .ms-steps li.next .ms-step-body > b { color: var(--text-dim); }
 .ms-step-body { display: flex; flex-direction: column; gap: var(--s1-5); min-width: 0; }
-.ms-step-body > b { font: 600 14px var(--sans); }
-.ms-step-text { font: var(--tx-meta); color: var(--text-dim); }
-.ms-step-acts { display: flex; gap: var(--s2); }
+.ms-step-body > b { font: 600 14px var(--sans); letter-spacing: var(--k-track-tight); }
+.ms-step-text { font: var(--tx-meta); color: var(--text-dim); max-width: 60ch; }
+.ms-step-acts { display: flex; flex-wrap: wrap; gap: var(--s2); }
 
 /* ---------- the save bar and its sheet ---------- */
-.ms-bar {
-  position: sticky; bottom: 0; z-index: var(--z-savebar); margin: auto calc(var(--s6) * -1) 0; padding: var(--s2-5) var(--s6);
-  background: color-mix(in srgb, var(--bg-2) 94%, transparent); backdrop-filter: blur(8px); border-top: 1px solid var(--line-strong);
-}
+.ms-bar { position: sticky; bottom: 0; z-index: var(--z-savebar); margin: auto calc(var(--s6) * -1) 0; padding: var(--s2-5) var(--s6); background: color-mix(in srgb, var(--bg-2) 92%, transparent); -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px); border-top: 1px solid var(--line-strong); box-shadow: 0 -10px 24px -14px color-mix(in srgb, var(--text) 22%, transparent); }
 /* Toasts sit above the bar while it is on the page (SaveBar publishes its height), not on its buttons. */
 body:has(.ms-bar) #toasts { bottom: calc(var(--dock-clear) + var(--ms-bar-h, 0px)); }
 .ms-bar-in { display: flex; align-items: center; gap: var(--s2) var(--s4); flex-wrap: wrap; }
@@ -133,11 +99,7 @@ body:has(.ms-bar) #toasts { bottom: calc(var(--dock-clear) + var(--ms-bar-h, 0px
 .ms-path-dir { min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--muted); direction: rtl; text-align: left; unicode-bidi: plaintext; }
 .ms-path-text b { flex: none; font-weight: 600; }
 
-.ms-sheet {
-  position: absolute; bottom: calc(100% + var(--s2)); right: var(--s6); width: min(640px, calc(100% - 2 * var(--s6)));
-  max-height: min(78dvh, 740px); overflow: auto; display: flex; flex-direction: column; gap: var(--s3); padding: var(--s4);
-  background: var(--bg-2); border: 1px solid var(--line-strong); border-radius: var(--r-lg); box-shadow: var(--shadow);
-}
+.ms-sheet { position: absolute; bottom: calc(100% + var(--s2)); right: var(--s6); width: min(640px, calc(100% - 2 * var(--s6))); max-height: min(78dvh, 740px); overflow: auto; display: flex; flex-direction: column; gap: var(--s3); padding: var(--s4) var(--s5); background: var(--panel); border: 1px solid var(--line); border-radius: var(--r-xl); box-shadow: var(--k-hl), var(--k-shadow-4); animation: menu-in-up var(--k-dur-2) var(--k-ease); }
 .ms-sheet h3 { display: inline-flex; align-items: center; gap: var(--s2); }
 .ms-sheet .ms-ok { color: var(--ok); }
 .ms-sheet-body { display: flex; flex-direction: column; gap: var(--s3); }
@@ -149,16 +111,14 @@ body:has(.ms-bar) #toasts { bottom: calc(var(--dock-clear) + var(--ms-bar-h, 0px
 .ms-file-line { display: flex; align-items: center; gap: var(--s3); flex-wrap: wrap; }
 .ms-facts { display: flex; flex-direction: column; gap: var(--s1-5); margin: 0; padding-left: var(--s4); font: var(--tx-value); color: var(--text-dim); }
 .ms-facts b { color: var(--text); }
-.ms-block { display: flex; flex-direction: column; gap: var(--s2); padding: var(--s3); border: 1px solid var(--line); border-radius: var(--r); background: var(--panel); }
+.ms-block { display: flex; flex-direction: column; gap: var(--s2); padding: var(--s3); border: 1px solid var(--line); border-radius: var(--r); background: var(--panel-2); }
 .ms-next { display: flex; flex-direction: column; gap: var(--s3); }
 .ms-confirm { display: flex; flex-direction: column; gap: var(--s2); }
 .ms-cmd { display: flex; align-items: center; gap: var(--s2); padding: var(--s2) var(--s3); border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--sunken); }
-.ms-cmd code { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; font: 13px var(--mono); color: var(--text); }
+.ms-cmd code { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; background: none; border: 0; padding: 0; font: 13px var(--mono); color: var(--text); }
 
-.ms-note {
-  margin: 0; padding: var(--s2) var(--s3); border: 1px solid var(--line); border-left-width: 3px; border-radius: var(--r-sm);
-  background: var(--sunken); font: var(--tx-value); color: var(--text);
-}
+/* A note is the kit's alert shape drawn small: a rail in its tone and the tone's wash. */
+.ms-note { margin: 0; padding: var(--s2-5) var(--s3); border: 1px solid var(--line); border-left-width: 3px; border-radius: var(--r-sm); background: var(--panel-2); font: var(--tx-value); color: var(--text); }
 .ms-note.ok { border-left-color: var(--ok); background: color-mix(in srgb, var(--ok) 8%, var(--panel)); }
 .ms-note.warn { border-left-color: var(--warn); background: color-mix(in srgb, var(--warn) 8%, var(--panel)); }
 .ms-note.bad { border-left-color: var(--bad); background: color-mix(in srgb, var(--bad) 8%, var(--panel)); }
@@ -167,11 +127,8 @@ body:has(.ms-bar) #toasts { bottom: calc(var(--dock-clear) + var(--ms-bar-h, 0px
 
 .ms-changes-wrap { display: flex; flex-direction: column; align-items: flex-start; gap: var(--s1); }
 .ms-changes { display: flex; flex-direction: column; gap: var(--s1-5); margin: 0; padding: 0; list-style: none; font: var(--tx-value); color: var(--text); }
-.ms-chg { display: grid; grid-template-columns: 18px minmax(0, 1fr); gap: var(--s2); align-items: start; overflow-wrap: anywhere; }
-.ms-chg-op {
-  display: grid; place-items: center; width: 18px; height: 18px; margin-top: 1px; border-radius: 50%;
-  color: var(--info); background: color-mix(in srgb, var(--info) 14%, transparent);
-}
+.ms-chg { display: grid; grid-template-columns: 20px minmax(0, 1fr); gap: var(--s2); align-items: start; overflow-wrap: anywhere; }
+.ms-chg-op { display: grid; place-items: center; width: 20px; height: 20px; margin-top: 1px; border-radius: var(--r-sm); color: var(--info); background: color-mix(in srgb, var(--info) 14%, transparent); }
 .ms-chg.add .ms-chg-op { color: var(--ok); background: color-mix(in srgb, var(--ok) 14%, transparent); }
 .ms-chg.remove .ms-chg-op { color: var(--bad); background: color-mix(in srgb, var(--bad) 14%, transparent); }
 .ms-results { display: flex; flex-direction: column; gap: var(--s1); margin: var(--s2) 0 0; padding: 0; list-style: none; font: var(--tx-meta); }
@@ -180,32 +137,18 @@ body:has(.ms-bar) #toasts { bottom: calc(var(--dock-clear) + var(--ms-bar-h, 0px
 .ms-results li.bad .icon { color: var(--bad); }
 
 /* ---------- YAML slide-over and the dialogs ---------- */
-.ms-slide {
-  position: fixed; top: 0; right: 0; z-index: var(--z-slide); width: min(620px, 94vw); height: 100dvh;
-  display: flex; flex-direction: column; gap: var(--s3); padding: var(--s4); overflow: auto;
-  background: var(--drawer); border-left: 1px solid var(--line-strong); box-shadow: var(--shadow);
-}
+.ms-slide { position: fixed; top: 0; right: 0; z-index: var(--z-slide); width: min(620px, 94vw); height: 100dvh; display: flex; flex-direction: column; gap: var(--s3); padding: var(--s4) var(--s5); overflow: auto; background: var(--drawer); border-left: 1px solid var(--line-strong); box-shadow: var(--k-hl), var(--k-shadow-4); animation: drawer-in var(--k-dur-3) var(--k-ease); }
 .ms-slide-meta { display: flex; align-items: center; justify-content: space-between; gap: var(--s2); flex-wrap: wrap; }
-.yaml-pane {
-  flex: 1 1 auto; min-height: 220px; margin: 0; padding: var(--s3); overflow: auto; white-space: pre;
-  font: 13px/1.6 var(--mono); color: var(--text-dim); background: var(--bg); border: 1px solid var(--line); border-radius: var(--r);
-}
-.confirm.ms-dialog { width: min(640px, 92vw); }
-.ms-dialog-body { display: flex; flex-direction: column; gap: var(--s3); padding: var(--s4); }
-.ms-dialog .ms-hint { margin: 0; }
-.ms-dialog textarea { width: 100%; }
+.yaml-pane { flex: 1 1 auto; min-height: 220px; margin: 0; padding: var(--s3) var(--s4); overflow: auto; white-space: pre; font: 13px/1.6 var(--mono); color: var(--text-dim); background: var(--sunken); border: 1px solid var(--line); border-radius: var(--r); tab-size: 2; }
 .ms-templates.stacked { grid-template-columns: 1fr; width: 100%; }
 
 /* ---------- the inspector as a drawer, and the bar on narrower screens ---------- */
 @media (max-width: 1280px) {
   .ms-body { grid-template-columns: minmax(0, 1fr); }
-  .ms-side {
-    display: none; position: fixed; top: 0; right: 0; z-index: var(--z-ctx); width: min(400px, 92%); height: 100dvh;
-    flex-direction: column; background: var(--drawer); border-left: 1px solid var(--line-strong); box-shadow: var(--shadow);
-  }
+  .ms-side { display: none; position: fixed; top: 0; right: 0; z-index: var(--z-ctx); width: min(400px, 92%); height: 100dvh; flex-direction: column; background: var(--drawer); border-left: 1px solid var(--line-strong); box-shadow: var(--k-hl), var(--k-shadow-4); }
   .ms-side.open { display: flex; }
   .ms-side-head { display: flex; align-items: center; justify-content: space-between; gap: var(--s2); padding: var(--s2-5) var(--s3-5); border-bottom: 1px solid var(--line); }
-  .ms-side .ms-insp { flex: 1 1 auto; min-height: 0; border: 0; border-radius: 0; background: transparent; }
+  .ms-side .ms-insp { flex: 1 1 auto; min-height: 0; border: 0; border-radius: 0; background: transparent; box-shadow: none; }
 }
 @media (max-width: 900px) {
   .ms-steps { grid-template-columns: minmax(0, 1fr); }

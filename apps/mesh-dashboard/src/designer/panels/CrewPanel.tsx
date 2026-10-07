@@ -172,10 +172,10 @@ export default function CrewPanel({ ctx }: { ctx: DCtx }): React.JSX.Element {
           </Select>
         </Field>
         <div className="grid2">
-          <Field label="Runtime" name="runtime" hint="Blank uses the mesh default.">
+          <Field label="Runtime" name="runtime" span hint="Blank uses the mesh default.">
             <Input {...text("runtime")} placeholder={m.mesh.runtime?.default || "mesh default"} />
           </Field>
-          <Field label="Model" name="model" hint={modelHint}>
+          <Field label="Model" name="model" span hint={modelHint}>
             {models.phase === "error" ? (
               <ErrorState what="the model list" detail={models.detail} onRetry={reloadModels} />
             ) : (
@@ -190,7 +190,7 @@ export default function CrewPanel({ ctx }: { ctx: DCtx }): React.JSX.Element {
             )}
           </Field>
           {variantOptions.length ? (
-            <Field label="Thinking variant" name="variant" hint={variantHint}>
+            <Field label="Thinking variant" name="variant" span hint={variantHint}>
               <Select value={savedVariant} disabled={models.phase === "loading"} aria-label="Thinking variant" onChange={(e) => set("variant", e.target.value)}>
                 <option value="">Mesh default{meshVariant ? ` (${meshVariant})` : ""}</option>
                 {variantOptions.map((v) => (

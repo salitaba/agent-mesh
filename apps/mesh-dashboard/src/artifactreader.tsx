@@ -11,9 +11,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import "./views/files.css";
 import { ago, artifactCls, localDateTime, plainArtifact } from "./format";
-import { CopyButton, ErrorState, IconButton, Pill, Select, type PillTone } from "./components";
-import { Icon } from "./icons";
-import { FileView, type DiffPayload, type FileViewMode } from "./fileview";
+import { Button, CopyButton, ErrorState, IconButton, Pill, Segmented, Select, type PillTone } from "./components";
+import { FileTile, FileView, type DiffPayload, type FileViewMode } from "./fileview";
 import { distinctVersions, downloadName, previousVersion, readAs, readerPaths, trailWords, type Art, type ArtRecord, type ArtVersion } from "./files";
 import { useMesh } from "./store";
 
@@ -143,16 +142,14 @@ export function ArtifactReader({ id, as, stamp }: {
     setMetaTry((n) => n + 1);
   };
 
-  const heading = (name: string, tone?: PillTone, label?: string): React.JSX.Element => {
-    const H = as === "drawer" ? "h2" : "h3";
-    return (
-      <div className="reader-title">
-        <H id={as === "drawer" ? "drawer-title" : undefined} className="reader-name" title={name}>{name}</H>
-        {tone && label ? <Pill tone={tone}>{label}</Pill> : null}
-        {as === "drawer" ? <span className="reader-close"><IconButton icon="x" label="Close panel" title="Close (Esc)" onClick={closeDrawer} /></span> : null}
-      </div>
-    );
-  };
+  const H = as === "drawer" ? "h2" : "h3";
+  const closer = as === "drawer" ? <span className="reader-close"><IconButton icon="x" label="Close panel" title="Close (Esc)" onClick={closeDrawer} /></span> : null;
+  const heading = (name: string): React.JSX.Element => (
+    <div className="reader-title">
+      <div className="reader-id"><H id={as === "drawer" ? "drawer-title" : undefined} className="reader-name" title={name}>{name}</H></div>
+      {closer}
+    </div>
+  );
 
   if (meta.kind === "loading") {
     return (
@@ -202,12 +199,19 @@ export function ArtifactReader({ id, as, stamp }: {
     <div className={`reader ${as}`}>
       {/* A div, not a header: inside the details panel a header would be a second banner landmark. */}
       <div className="reader-head">
-        {heading(art.name, artifactCls(status) as PillTone, plainArtifact(status))}
-        <p className="reader-facts">
-          <span>{art.type}</span>
-          <span>by {art.owner}</span>
-          <span title={viewed ? localDateTime(viewed.createdAt) : undefined}>{ago(viewed?.createdAt ?? art.createdAt)}</span>
-        </p>
+        <div className="reader-title">
+          <FileTile type={art.type} size="lg" />
+          <div className="reader-id">
+            <H id={as === "drawer" ? "drawer-title" : undefined} className="reader-name" title={art.name}>{art.name}</H>
+            <p className="reader-facts">
+              <span>{art.type}</span>
+              <span>by {art.owner}</span>
+              <span title={viewed ? localDateTime(viewed.createdAt) : undefined}>{ago(viewed?.createdAt ?? art.createdAt)}</span>
+            </p>
+          </div>
+          <Pill tone={artifactCls(status) as PillTone}>{plainArtifact(status)}</Pill>
+          {closer}
+        </div>
         {repoPath ? (
           <div className="reader-path">
             <span className="reader-path-l">Repo path</span>
@@ -217,27 +221,35 @@ export function ArtifactReader({ id, as, stamp }: {
         ) : null}
         <div className="reader-versions">
           {versions.length > 1 ? (
-            <label className="reader-field">
-              <span>Version</span>
-              <Select value={String(shown)} aria-label="Version to read" onChange={(e) => setPick(Number(e.target.value))}>
-                {[...versions].reverse().map((v) => (
-                  <option key={v.version} value={v.version}>v{v.version} · {plainArtifact(v.status)}{v.version === latest ? " (latest)" : ""}</option>
-                ))}
-              </Select>
-              <span className="muted">of {versions.length}</span>
-            </label>
+            versions.length <= 5 ? (
+              <div className="reader-field">
+                <span>Version</span>
+                <Segmented
+                  label="Version to read" value={String(shown)} onChange={(id) => setPick(Number(id))}
+                  options={versions.map((v) => ({ id: String(v.version), label: `v${v.version}`, hint: `v${v.version} · ${plainArtifact(v.status)}${v.version === latest ? " (latest)" : ""}` }))}
+                />
+                <span className="muted">of {versions.length}</span>
+              </div>
+            ) : (
+              <label className="reader-field">
+                <span>Version</span>
+                <Select value={String(shown)} aria-label="Version to read" onChange={(e) => setPick(Number(e.target.value))}>
+                  {[...versions].reverse().map((v) => (
+                    <option key={v.version} value={v.version}>v{v.version} · {plainArtifact(v.status)}{v.version === latest ? " (latest)" : ""}</option>
+                  ))}
+                </Select>
+                <span className="muted">of {versions.length}</span>
+              </label>
+            )
           ) : (
             <span className="muted">Version {shown}, the only one.</span>
           )}
-          {older ? <button type="button" className="reader-link" onClick={() => setPick(null)}>Show the latest (v{latest})</button> : null}
+          {older ? <Button variant="linklike" onClick={() => setPick(null)}>Show the latest (v{latest})</Button> : null}
         </div>
         {viewed && viewed.trail.length > 1 ? (
           <ol className="trail" aria-label={`How version ${viewed.version} got to ${plainArtifact(viewed.status)}`}>
             {trailWords(viewed.trail).map((w, i, all) => (
-              <li key={`${w}-${i}`} aria-current={i === all.length - 1 ? "step" : undefined}>
-                {w}
-                {i < all.length - 1 ? <Icon name="chevron-right" size={12} /> : null}
-              </li>
+              <li key={`${w}-${i}`} aria-current={i === all.length - 1 ? "step" : undefined}>{w}</li>
             ))}
           </ol>
         ) : null}
@@ -269,9 +281,9 @@ export function ArtifactReader({ id, as, stamp }: {
         <div className="reader-skel" role="status"><span className="sr-only">Loading version {shown}</span><i /><i /><i /></div>
       )}
 
-      <details className="reader-details">
+      <details className="disc reader-details">
         <summary>Details</summary>
-        <dl>
+        <dl className="kv">
           <dt>Artifact id</dt>
           <dd><span className="mono">{art.id}</span> <CopyButton text={art.id} label="Copy id" /></dd>
           {viewed?.digest ? (<><dt>Digest</dt><dd className="mono">{viewed.digest}</dd></>) : null}

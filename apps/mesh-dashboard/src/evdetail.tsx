@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from "react";
 import { ago, localDateTime, localTime, plainEvent, zoneLabel } from "./format";
-import { Button, CopyButton, IconButton, IdChip } from "./components";
+import { Button, Chip, CopyButton, IconButton, IdChip, Pill } from "./components";
 import { Icon } from "./icons";
 import { JsonTree } from "./jsontree";
 import { EventSummary, SevMark, evSeverity, sevWord, useNameOf } from "./events";
@@ -24,12 +24,16 @@ const THREAD_ROWS = 40;
 function ThreadRow({ e, current, onSelect, nameOf }: { e: TimelineEvent; current: boolean; onSelect: (seq: number) => void; nameOf: NameOf }): React.JSX.Element {
   return (
     <button type="button" className={`evd-tr sev-${evSeverity(e)}${current ? " on" : ""}`} aria-current={current ? "true" : undefined} onClick={() => onSelect(e.seq)}>
+      <i className="evd-dot" aria-hidden="true" />
       <span className="sr-only">{sevWord(evSeverity(e))}</span>
       <time dateTime={e.timestamp} title={`${localDateTime(e.timestamp)} (${e.timestamp})`}>{localTime(e.timestamp)}</time>
       <span className="evd-tr-sum"><EventSummary e={e} nameOf={nameOf} /></span>
     </button>
   );
 }
+
+/** The importance of one event, in a word. The filter's labels are plural because they are groups. */
+const SEV_WORD = { alert: "Alert", notice: "Activity", routine: "Routine" } as const;
 
 /** A field the operator may want to paste into a grep. */
 function IdField({ label, value }: { label: string; value?: string }): React.JSX.Element | null {
@@ -103,9 +107,9 @@ export function EventDetail({
 
   return (
     <div className="evd">
-      <header className="evd-head">
+      <div className="evd-head">
         <div className="evd-title">
-          <span title={sevWord(sev).trim() || undefined}><SevMark s={sev} /></span>
+          <span className={`evd-tile ${sev}`}><SevMark s={sev} /></span>
           <h3>{plainEvent(e.type, e.payload)}</h3>
           <IconButton icon="x" label="Close event detail" title="Close (Esc)" onClick={onClose} />
         </div>
@@ -118,10 +122,11 @@ export function EventDetail({
         <p className="evd-sum"><EventSummary e={e} nameOf={nameOf} /></p>
         {/* The raw type is here and not in the heading: the heading is the human label, and this is the string you would grep for. */}
         <p className="evd-raw">
-          <code>{e.type}</code>
+          <Pill tone={sev === "alert" ? "bad" : sev === "notice" ? "accent" : "neutral"}>{SEV_WORD[sev]}</Pill>
+          <Chip mono title="The event's type, as the log records it">{e.type}</Chip>
           <CopyButton text={e.type} what="event type" compact />
         </p>
-      </header>
+      </div>
 
       <section className="evd-sec" aria-labelledby="evd-why">
         <h4 id="evd-why">Why it happened</h4>

@@ -53,6 +53,8 @@ export type FileGroupId = "done" | "review" | "rework" | "draft" | "archived" | 
 export interface FileGroupDef {
   id: FileGroupId;
   label: string;
+  /** The same in a word or two, for a button in a row of them ("Approved", not "Approved and merged"). */
+  short: string;
   statuses: readonly string[];
 }
 
@@ -62,14 +64,14 @@ export interface FileGroupDef {
  * The order is the order a person reads the page in: the result first, then what is waiting, then what went back.
  */
 export const FILE_GROUPS: readonly FileGroupDef[] = [
-  { id: "done", label: "Approved and merged", statuses: ["MERGED", "ACCEPTED", "FINAL", "MERGEABLE", "VERIFIED", "APPROVED"] },
-  { id: "review", label: "In review", statuses: ["READY_FOR_REVIEW", "UNDER_REVIEW", "IMPLEMENTED", "QA_VERIFIED", "SECURITY_VERIFIED"] },
-  { id: "rework", label: "Needs rework", statuses: ["REJECTED"] },
-  { id: "draft", label: "Drafts and proposals", statuses: ["DRAFT", "PROPOSED"] },
-  { id: "archived", label: "Archived", statuses: ["ARCHIVED"] },
+  { id: "done", label: "Approved and merged", short: "Approved", statuses: ["MERGED", "ACCEPTED", "FINAL", "MERGEABLE", "VERIFIED", "APPROVED"] },
+  { id: "review", label: "In review", short: "In review", statuses: ["READY_FOR_REVIEW", "UNDER_REVIEW", "IMPLEMENTED", "QA_VERIFIED", "SECURITY_VERIFIED"] },
+  { id: "rework", label: "Needs rework", short: "Rework", statuses: ["REJECTED"] },
+  { id: "draft", label: "Drafts and proposals", short: "Drafts", statuses: ["DRAFT", "PROPOSED"] },
+  { id: "archived", label: "Archived", short: "Archived", statuses: ["ARCHIVED"] },
 ];
 
-const OTHER: FileGroupDef = { id: "other", label: "Other", statuses: [] };
+const OTHER: FileGroupDef = { id: "other", label: "Other", short: "Other", statuses: [] };
 
 export function groupOf(status: string): FileGroupDef {
   return FILE_GROUPS.find((g) => g.statuses.includes(String(status))) ?? OTHER;
@@ -104,6 +106,25 @@ export interface FileFilter {
 }
 
 export const NO_FILTER: FileFilter = { query: "", type: "", group: "", latestOnly: true };
+
+/**
+ * What a file is, in four words a person sorts a list by: a patch to review, a release plan, a report that says how something
+ * went, or a document. It decides the glyph in front of the name, so the list can be run down by shape before it is read. The
+ * protocol's own machines say the first two (a CodePatch has the code states, a ReleasePlan the release ones); the rest of
+ * what an agent writes to report a result is named here, and everything it does not know is a document, never dropped.
+ */
+export type FileKindId = "patch" | "release" | "report" | "document";
+
+const REPORT_TYPES = new Set(["TestReport", "SecurityReport", "ResearchReport", "BenchmarkResult", "DisagreementRecord"]);
+
+export function fileKind(type: string): FileKindId {
+  if (type === "CodePatch") return "patch";
+  if (type === "ReleasePlan") return "release";
+  return REPORT_TYPES.has(type) ? "report" : "document";
+}
+
+/** The kind as a person would say it: for the tooltip on the glyph and for a screen reader. */
+export const FILE_KIND_LABEL: Record<FileKindId, string> = { patch: "Code patch", release: "Release plan", report: "Report", document: "Document" };
 
 /** The repo path a code artifact names, if it does. */
 export const repoPathOf = (a: Pick<Art, "metadata">): string => {
@@ -229,6 +250,43 @@ export interface LineWindow {
 export function lineWindow(total: number, limit: number = LINE_WINDOW): LineWindow {
   const shown = Math.max(0, Math.min(total, limit));
   return { shown, remaining: total - shown, next: Math.min(total, limit + LINE_WINDOW) };
+}
+
+/**
+ * Whether a body of text is a unified diff, as `git diff` or a patch file writes it. A patch is read by its colours (what it adds,
+ * what it takes away), and a document that merely has a list in it ("- one", "+ two") must not be painted as one: so the test is the
+ * headers a diff has and a list does not, in the first lines.
+ */
+export function looksLikePatch(text: string): boolean {
+  const head = text.slice(0, 6000).split("\n", 80);
+  if (head.some((l) => l.startsWith("diff --git ") || /^@@ -\d+(,\d+)? \+\d+(,\d+)? @@/.test(l))) return true;
+  return head.some((l) => l.startsWith("--- ")) && head.some((l) => l.startsWith("+++ "));
+}
+
+export type PatchLine = "meta" | "hunk" | "add" | "del" | "ctx";
+
+/**
+ * What each line of a patch is. Before the first hunk header a line is part of the file's header (`--- a/x`, `+++ b/x`, `index ..`),
+ * and inside a hunk a line that starts with `-` took something away even when what it took away began with `--` (a SQL comment is
+ * `--- comment` in a diff). A `diff --git` line starts the next file. `\ No newline at end of file` is a note, not a line.
+ */
+export function patchKinds(lines: readonly string[]): PatchLine[] {
+  let inHunk = false;
+  return lines.map((l) => {
+    if (l.startsWith("diff --git ")) {
+      inHunk = false;
+      return "meta";
+    }
+    if (l.startsWith("@@")) {
+      inHunk = true;
+      return "hunk";
+    }
+    if (!inHunk) return "meta";
+    if (l.startsWith("\\")) return "meta";
+    if (l.startsWith("+")) return "add";
+    if (l.startsWith("-")) return "del";
+    return "ctx";
+  });
 }
 
 /** `512B`, `1.2kB`, `130kB`, `1.4MB`. */

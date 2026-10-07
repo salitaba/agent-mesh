@@ -3,12 +3,14 @@ import assert from "node:assert/strict";
 
 import {
   FILE_GROUPS,
+  FILE_KIND_LABEL,
   LINE_WINDOW,
   NO_FILTER,
   countLabel,
   distinctVersions,
   downloadName,
   emptyCopy,
+  fileKind,
   fileModes,
   filterFiles,
   fmtSize,
@@ -18,10 +20,12 @@ import {
   latestArtifactSeq,
   latestPerName,
   lineWindow,
+  looksLikePatch,
   matchesQuery,
   modeLabel,
   nextIndex,
   pathFromRef,
+  patchKinds,
   previousVersion,
   readAs,
   readerPaths,
@@ -305,4 +309,45 @@ test("a reader leads with the file's path in the product when it has one, and ke
   assert.deepEqual(readerPaths({ metadata: { path: "src/tx/Pipeline.java" } }, stored), { product: "src/tx/Pipeline.java", stored: "/tmp/p/.mesh-state/artifacts/artifacts/art-1/v2.txt" });
   assert.deepEqual(readerPaths({ metadata: { file: "README.md" } }, undefined), { product: "README.md", stored: "" });
   assert.deepEqual(readerPaths({ metadata: { path: 3 } }, undefined), { product: "", stored: "" }, "a path that is not text is not one");
+});
+
+test("a file is a patch, a release plan, a report or a document, and a type nobody has heard of is a document, never dropped", () => {
+  assert.equal(fileKind("CodePatch"), "patch");
+  assert.equal(fileKind("ReleasePlan"), "release");
+  for (const t of ["TestReport", "SecurityReport", "ResearchReport", "BenchmarkResult", "DisagreementRecord"]) assert.equal(fileKind(t), "report", t);
+  for (const t of ["ArchitectureDocument", "ADR", "ApiSpec", "DatabaseSchema", "RequirementsDoc", "DesignSpec", "SomethingNew", ""]) assert.equal(fileKind(t), "document", t || "(no type)");
+  assert.deepEqual(Object.keys(FILE_KIND_LABEL).sort(), ["document", "patch", "release", "report"], "every kind has the words a screen reader and a tooltip would use");
+});
+
+test("every group has a short name for a row of buttons, and it is never longer than the group's own", () => {
+  for (const g of FILE_GROUPS) {
+    assert.ok(g.short.length > 0 && g.short.length <= g.label.length, `${g.id}: "${g.short}" for "${g.label}"`);
+  }
+  assert.equal(new Set(FILE_GROUPS.map((g) => g.short)).size, FILE_GROUPS.length, "two buttons are never called the same thing");
+});
+
+test("a patch is told from a document that has a list in it, by the headers a diff has and a list does not", () => {
+  const git = "diff --git a/src/A.java b/src/A.java\nindex 1..2 100644\n--- a/src/A.java\n+++ b/src/A.java\n@@ -1,3 +1,4 @@\n a\n+b\n c\n";
+  assert.equal(looksLikePatch(git), true, "git diff");
+  assert.equal(looksLikePatch("--- a/x\n+++ b/x\n@@ -1 +1 @@\n-a\n+b"), true, "a bare unified diff");
+  assert.equal(looksLikePatch("--- a/x\n+++ b/x\n"), true, "file headers alone");
+  assert.equal(looksLikePatch("# Plan\n\n- one\n- two\n+ three\n\n---\n\nText"), false, "a markdown list and a rule are not a diff");
+  assert.equal(looksLikePatch("+1\n-1\nplain"), false, "lines that start with a sign are not enough");
+  assert.equal(looksLikePatch(""), false);
+  assert.equal(looksLikePatch(`${"x\n".repeat(200)}@@ -1 +1 @@`), false, "a hunk header far down is not looked for: the headers of a diff are at its start");
+});
+
+test("each line of a patch is a header, a hunk, an addition, a removal or context, and a removed line that begins with dashes is still a removal", () => {
+  const lines = [
+    "diff --git a/db.sql b/db.sql", "index 1..2 100644", "--- a/db.sql", "+++ b/db.sql",
+    "@@ -1,4 +1,4 @@", " keep", "-old", "+new", "--- a sql comment that was removed", "+-- a sql comment that was added", "\\ No newline at end of file",
+    "diff --git a/b.txt b/b.txt", "--- a/b.txt", "+++ b/b.txt", "@@ -1 +1 @@", "-x", "+y",
+  ];
+  assert.deepEqual(patchKinds(lines), [
+    "meta", "meta", "meta", "meta",
+    "hunk", "ctx", "del", "add", "del", "add", "meta",
+    "meta", "meta", "meta", "hunk", "del", "add",
+  ]);
+  assert.deepEqual(patchKinds([]), []);
+  assert.deepEqual(patchKinds(["+++ b/x", "+not in a hunk"]), ["meta", "meta"], "before the first hunk everything is the header's");
 });

@@ -26,3 +26,42 @@ i.sev-mark.routine { box-sizing: border-box; border: 1.5px solid var(--muted); }
 /* On a line of its own, above rows. */
 .zone-line { margin: 0 0 var(--s1-5); }
 .zone-line .zone-note { margin-left: 0; }
+
+/* ---------- a search box: the field with a magnifier, the key that focuses it, and a way to empty it ---------- */
+
+.srch { position: relative; display: inline-flex; align-items: center; flex: 1 1 200px; min-width: 0; max-width: 420px; color: var(--muted); }
+.srch > .icon { position: absolute; left: var(--s2-5); pointer-events: none; transition: color var(--k-dur-1) var(--k-ease); }
+.srch:focus-within > .icon { color: var(--k-accent-ink); }
+/* 34px is the magnifier (16, at 10) and a gap of 8; 56 on the right leaves room for the key or the clear button. */
+.srch > input.search { flex: 1; width: 100%; min-width: 0; padding: 0 56px 0 34px; text-overflow: ellipsis; }
+.srch > input.search::-webkit-search-cancel-button, .srch > input.search::-webkit-search-decoration { -webkit-appearance: none; appearance: none; display: none; }
+.srch-hint { position: absolute; right: var(--s2); display: inline-flex; transition: opacity var(--k-dur-1) var(--k-ease); pointer-events: none; }
+.srch:focus-within .srch-hint { opacity: 0; }
+.srch-clear { position: absolute; right: var(--s1); display: grid; place-items: center; width: 28px; height: 28px; padding: 0; background: none; border: 0; border-radius: var(--r-sm); color: var(--muted); cursor: pointer; transition: background-color var(--k-dur-1) var(--k-ease), color var(--k-dur-1) var(--k-ease); }
+.srch-clear:is(:hover, .is-hover) { background: var(--wash); color: var(--text); }
+.srch-clear:active { background: var(--wash-2); }
+@media (pointer: coarse), (max-width: 620px) {
+  .srch > input.search { min-height: 44px; }
+  .srch-clear { width: 40px; height: 40px; }
+}
+
+/* A dialog that holds a text area or a grid of choices (the Designer's import and templates) is wider than a question. */
+.confirm.wide { width: min(640px, 92vw); }
+
+/* An icon button that opens something has the ground a pressed one has while what it opened is open. */
+.icon-btn[aria-expanded="true"] { color: var(--k-accent-ink); background: var(--k-accent-soft); }
+
+/* A table wider than its column scrolls inside its own frame, and the frame is a tab stop (markdown.ts), so its ring is drawn inside it. */
+.md-table:focus-visible { outline-offset: -2px; }
+
+/* A banner whose actions do not fit beside its words puts them on the next line, under the words. The phone rule above already gives the
+   actions the full width for that (styles.css, 620px); the row had nothing to wrap, so the words were squeezed into a column of five characters. */
+.banner.has-icon { flex-wrap: wrap; }
+
+/* The panel is focused when it opens, so the keyboard is inside it and a screen reader announces it. It is a container and not a control: a ring
+   drawn round the whole panel (its edge showed as a blue line down the left of the page) says nothing the controls inside it do not. */
+.drawer:focus, .drawer:focus-visible { outline: none; }
+
+/* A card that is a block of the page with its own job, not a label above a figure: its title is a title (the sentence, 15px) and not a caption
+   in capitals. Cost and Product set theirs the same way; `variant="titled"` is how any other card says so. */
+.card.titled > .card-head h3 { font: 600 15px/1.3 var(--sans); letter-spacing: var(--k-track-tight); text-transform: none; color: var(--text); }
