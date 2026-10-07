@@ -396,6 +396,21 @@ test("the stylesheet is held to its budget, and whatever it moves it stills for 
   }
 });
 
+test("on the system's own colours (Windows high contrast) a ticked box is still ticked and an icon is still drawn", () => {
+  const rules = cssRules(read(path.join(ASSETS, "app.css")));
+  // The system replaces the page's backgrounds with its own. A tick that is a mask over a background is then painted in the colour of the page it sits on,
+  // and a box that was ticked looks as it did before: nothing in an ordinary photograph of the page shows it.
+  const forced = rules.filter((r) => r.at.includes("forced-colors: active"));
+  assert.ok(forced.some((r) => r.selectors.includes('input[type="checkbox"]') && declared(r, "appearance") === "auto"), "the tick box is the browser's again, which draws its tick in the system's colours");
+  assert.ok(forced.some((r) => r.selectors.includes('input[type="checkbox"]::after') && declared(r, "display") === "none"), "and the drawn tick is gone, so there is one tick and not two");
+  // An icon is a mask over a background that takes the colour of the text beside it: it keeps that, or it is painted in nothing.
+  const icons = rules.filter((r) => declared(r, "mask") !== undefined && declared(r, "background") === "currentColor");
+  assert.ok(icons.length > 0, "the icons are drawn as masks");
+  for (const r of icons) assert.equal(declared(r, "forced-color-adjust"), "none", `${r.selectors[0]}: an icon keeps its colour`);
+  const dot = rules.find((r) => r.selectors.includes(".badge::before"));
+  assert.equal(declared(dot!, "forced-color-adjust"), "none", "and so does the dot of a badge");
+});
+
 test("no page states a period or a count the service could change: those are filled in from its settings", () => {
   const number = /\b\d+\s*(?:days?|hours?|minutes?|weeks?|months?)\b|\b(?:one|two|three|four|five|six|seven|ten|twelve|fourteen|twenty|thirty|sixty|ninety)[\s-]+(?:days?|hours?|minutes?|weeks?)\b/i;
   const withoutPolicy = (n: FakeNode): string[] => (n.isText ? [n.textContent] : n.attrs.has("data-policy") || n.className.split(/\s+/).includes("owner-term") || n.tag === "script" || n.tag === "noscript" ? [] : n.children.flatMap(withoutPolicy));

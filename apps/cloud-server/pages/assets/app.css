@@ -115,7 +115,7 @@ code{font-family:var(--k-mono);font-size:.8125rem;background:var(--k-sunken);bor
 td,th,dd,.price,.num,.badge,.auth-points li::before{font-variant-numeric:tabular-nums}
 .stat dt,.figures dt,thead th,.toc-h{color:var(--k-muted);font-size:.6875rem;font-weight:650;letter-spacing:var(--k-track-caps);text-transform:uppercase}
 .wrap{width:min(100% - 2 * var(--gutter),var(--max));margin-inline:auto}
-.note::before,.reveal::before,.copy::before,.btn-quiet[aria-expanded]::after,summary::after,.plan li::before,.facts-list li::before,.tile::before{content:"";flex:none;display:inline-block;width:var(--s,20px);height:var(--s,20px);background:currentColor;mask:var(--sprite) calc(var(--n,0) * var(--s,20px) * -1) 0 / calc(10 * var(--s,20px)) var(--s,20px) no-repeat}
+.note::before,.reveal::before,.copy::before,.btn-quiet[aria-expanded]::after,summary::after,.plan li::before,.facts-list li::before,.tile::before{content:"";flex:none;display:inline-block;width:var(--s,20px);height:var(--s,20px);forced-color-adjust:none;background:currentColor;mask:var(--sprite) calc(var(--n,0) * var(--s,20px) * -1) 0 / calc(10 * var(--s,20px)) var(--s,20px) no-repeat}
 /* Cards: a hairline, a lit top edge, the first rung of shadow. */
 .card,.row,.plan,.stat,.how-card,.table-wrap,.panel-quiet details,.empty{border:1px solid var(--k-line);border-radius:var(--k-r-lg);background:var(--k-surface)}
 .card,.row,.plan,.how-card{box-shadow:var(--k-hl),var(--k-shadow-1)}
@@ -206,7 +206,7 @@ meter::-moz-meter-bar{border-radius:var(--k-r-pill);background:currentColor}
 .note:empty{display:none}
 .note[aria-busy="true"]::before{width:18px;height:18px;margin:1px;color:var(--k-accent)}
 .badge{display:inline-flex;align-items:center;gap:6px;min-height:22px;padding:0 8px;border:1px solid var(--k-line);border-radius:var(--k-r-pill);background:var(--k-surface-2);color:var(--tone);font-size:.75rem;font-weight:650;line-height:1;white-space:nowrap}
-.badge::before{content:"";width:6px;height:6px;border-radius:50%;background:currentColor}
+.badge::before{content:"";width:6px;height:6px;border-radius:50%;forced-color-adjust:none;background:currentColor}
 .badge-ok{--tone:var(--k-ok)} .badge-warn{--tone:var(--k-warn)} .badge-bad{--tone:var(--k-bad)}
 .badge-ok,.badge-warn,.badge-bad{border-color:color-mix(in srgb,var(--tone) 24%,transparent);background:color-mix(in srgb,var(--tone) 14%,transparent)}
 .badge-accent{border-color:color-mix(in srgb,var(--k-accent) 25%,transparent);background:var(--k-accent-soft);color:var(--k-accent-ink)}
@@ -437,6 +437,9 @@ tfoot > tr > *{background:var(--k-surface-2);font-weight:650}
 .subnav a{min-height:44px}
 }
 @media (max-width: 720px),(pointer: coarse){.btn,.btn-small,.bar nav a,.bar nav button,input[type="email"],input[type="password"],input[type="text"],input[type="number"],select{min-height:44px}}
+
+/* ---- the system's own colours: a drawn tick box is the browser's again, and an icon keeps the colour of its text */
+@media (forced-colors: active){input[type="checkbox"]{appearance:auto} input[type="checkbox"]::after{display:none}}
 
 /* ---- motion: nothing moves when a person asks it not to */
 @keyframes spin{to{transform:rotate(360deg)}}
