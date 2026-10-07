@@ -215,10 +215,13 @@ function cardHtml() {
 <style>
 html,body{margin:0;padding:0}
 body{width:1200px;height:630px;position:relative;overflow:hidden;background:${p.paper};color:${p.ink};font-family:"Liberation Sans","Helvetica Neue",Arial,system-ui,sans-serif}
-.sign{position:absolute;left:560px;top:-35px;width:700px;height:700px}
-.logo{position:absolute;left:84px;top:150px;width:${logoW}px;height:${logoH}px}
-h1{position:absolute;left:84px;top:332px;margin:0;width:760px;font-size:56px;line-height:1.1;font-weight:700;letter-spacing:-.02em}
-p{position:absolute;left:84px;top:500px;margin:0;width:760px;font-size:28px;line-height:1.35;color:${p.muted}}
+/* The site's first screen in one picture: the ledger's ruled paper fading out from behind the words, and the page's blue glow from above. */
+body::before{content:"";position:absolute;z-index:0;inset:0;background:repeating-linear-gradient(to bottom,transparent 0,transparent 31px,${p.line} 31px,${p.line} 32px);opacity:.75;-webkit-mask-image:radial-gradient(62% 95% at 26% 52%,#000 8%,transparent);mask-image:radial-gradient(62% 95% at 26% 52%,#000 8%,transparent)}
+body::after{content:"";position:absolute;z-index:0;inset:0;background:radial-gradient(60% 75% at 62% 0%,rgba(43,95,217,.13),transparent 72%)}
+.sign{position:absolute;z-index:1;left:560px;top:-35px;width:700px;height:700px}
+.logo{position:absolute;z-index:1;left:84px;top:150px;width:${logoW}px;height:${logoH}px}
+h1{position:absolute;z-index:1;left:84px;top:332px;margin:0;width:760px;font-size:56px;line-height:1.1;font-weight:700;letter-spacing:-.02em}
+p{position:absolute;z-index:1;left:84px;top:500px;margin:0;width:760px;font-size:28px;line-height:1.35;color:${p.muted}}
 </style></head><body>
 <svg class="sign" viewBox="0 0 ${MARK.box} ${MARK.box}" aria-hidden="true"><path d="${sign.d}" fill="none" stroke="#efebe3" stroke-width="${MARK.stroke}" stroke-linecap="round"/><circle cx="${n(sign.seat[0])}" cy="${n(sign.seat[1])}" r="${MARK.bead}" fill="${p.blue}"/></svg>
 <svg class="logo" viewBox="0 0 ${n(width)} 60" role="img" aria-label="Curule">${body}</svg>
