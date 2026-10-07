@@ -188,6 +188,25 @@ test("read off a /status payload: seats without the human, turns from the status
   assert.deepEqual(rightNow(i), ["qa (2 min) and developer (1 min) are working.", "Next in line: architect. 2 requests are waiting for an answer.", "Nothing is waiting for you."]);
 });
 
+test("a step that says running for a turn the status says is over is the older reading, and a turn only the steps know is a turn that began since", () => {
+  const status = {
+    agents: [{ id: "qa", lifecycle: "IDLE" }, { id: "dev", lifecycle: "THINKING" }],
+    recentTurns: [{ turnId: "t-qa", agentId: "qa", startedAt: ago(1), status: "ok" }, { turnId: "t-dev", agentId: "dev", startedAt: ago(0, 20), status: "running" }],
+  };
+  const steps = [
+    { turnId: "t-qa", agentId: "qa", startedAt: ago(1), status: "running" },
+    { turnId: "t-dev", agentId: "dev", startedAt: ago(0, 20), status: "running" },
+    { turnId: "t-new", agentId: "architect", startedAt: ago(0, 2), status: "running" },
+  ];
+  const i = rightNowInput(status, { phase: "running", now: NOW, forYou: 0, steps });
+  assert.deepEqual(i.turns.filter((t) => t.status === "running").map((t) => t.agentId).sort(), ["architect", "dev"], "qa's turn is over, whatever the list says");
+  assert.equal(i.turns.length, 3, "the status's two turns and the one only the steps know: a turn both name is read once");
+  assert.match(rightNow(i)[0]!, /^dev \(less than a minute\) and architect \(less than a minute\) are working\.$|^architect \(less than a minute\) and dev \(less than a minute\) are working\.$/);
+  // Steps with no turn id (an older server) cannot be told apart, so they are all read.
+  const bare = rightNowInput({ agents: [], recentTurns: [{ turnId: "t-1", agentId: "qa", status: "ok", startedAt: ago(1) }] }, { phase: "running", now: NOW, forYou: 0, steps: [{ agentId: "qa", startedAt: ago(1), status: "running" }] });
+  assert.deepEqual(bare.turns.map((t) => t.status), ["ok", "running"]);
+});
+
 test("a server that predates a field, or a status that is not there, reads as unknown and not as zero", () => {
   const none = rightNowInput({ agents: [] }, { phase: "running", now: NOW, forYou: 0 });
   assert.equal(none.openRequests, null);

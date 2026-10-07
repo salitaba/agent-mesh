@@ -513,6 +513,32 @@ export function seatStack(agents: ReadonlyArray<{ id: string; role?: string; lif
   return { shown: seats.filter((s) => keep.has(s.id)), more: seats.length - room };
 }
 
+/**
+ * The turns the list of steps says are running that the status says are over. `/status` is read with every event and carries the ten
+ * latest turns; `/steps` is read every few seconds, so for a moment after a turn ends the page holds two readings of it. The list is
+ * the older one: these are the turns to read again, and not to count as running meanwhile.
+ */
+export function staleRunning(
+  steps: ReadonlyArray<{ turnId?: string; status?: string }>,
+  recent: ReadonlyArray<{ turnId?: string; status?: string }> | undefined,
+): string[] {
+  const said = new Map<string, string>();
+  for (const t of recent ?? []) if (t?.turnId) said.set(t.turnId, String(t.status ?? ""));
+  return steps.flatMap((s) => (s.status === "running" && s.turnId && said.has(s.turnId) && said.get(s.turnId) !== "running" ? [s.turnId] : []));
+}
+
+/**
+ * The turns the status says are running that the list of steps does not have at all: they began after the list was read. Like a turn
+ * that ended since, they are a reason to read the list again; unlike it, the list has nothing to un-count.
+ */
+export function unlistedRunning(
+  steps: ReadonlyArray<{ turnId?: string }>,
+  recent: ReadonlyArray<{ turnId?: string; status?: string }> | undefined,
+): string[] {
+  const listed = new Set(steps.map((s) => s.turnId).filter((id): id is string => Boolean(id)));
+  return (recent ?? []).flatMap((t) => (t?.turnId && t.status === "running" && !listed.has(t.turnId) ? [t.turnId] : []));
+}
+
 /** One mark for each mandatory check, in the goal's order: the segments of the bar under the figure. */
 export function checkSegments(criteria: readonly unknown[] | undefined): CheckMark[] {
   return (criteria || []).filter((c: any) => c?.mandatory).map((c: any) => checkView(c).mark);

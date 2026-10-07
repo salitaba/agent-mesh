@@ -12,7 +12,7 @@ import { useToolApprovals } from "../useToolApprovals";
 import { escalationText, holdsOf } from "../escalation-card";
 import { orderDecisions, toolRequestsBySeat, type LoadState } from "../inbox-model";
 import type { HeroAction, MissionAction } from "../mission";
-import { buildAttention, bufferIsBehind, bySeq, capacityWaits, checkSegments, checksSummary, heroLook, heroNote, missionRead, splitHeadline, standingBlocks, type FixTarget } from "../overview-model";
+import { buildAttention, bufferIsBehind, bySeq, capacityWaits, checkSegments, checksSummary, heroLook, heroNote, missionRead, splitHeadline, staleRunning, standingBlocks, unlistedRunning, type FixTarget } from "../overview-model";
 import { rightNowInput } from "../rightnow";
 import { HOST_SPEND_CEILING_REASON, liveMissionVerdict, terminalMissionVerdict, verdictText } from "../../../../packages/protocol/src/catalog";
 import { AttentionList } from "./AttentionList";
@@ -50,6 +50,8 @@ export default function Overview(): React.JSX.Element {
   const [artsState, setArtsState] = useState<LoadState>("loading");
   const [stepsErr, setStepsErr] = useState(false);
   const [attempt, setAttempt] = useState(0);
+  // Bumped to read the steps again without reading everything else: the list can be a few seconds older than the status beside it.
+  const [stepsTick, setStepsTick] = useState(0);
 
   // What the page read when it opened is the mission as it was then. A mission that is started while the person watches, and
   // finishes in front of them, has to be read again: it said "No files are recorded for this goal" at the moment of delivery,
@@ -77,7 +79,38 @@ export default function Overview(): React.JSX.Element {
       dead = true;
     };
     // goalId is a dependency so a reset or a reopen refetches instead of showing the previous mission's.
-  }, [setSteps, client, goalId, attempt]);
+  }, [setSteps, client, goalId, attempt, stepsTick]);
+
+  // The status is read with every event and the steps every few seconds, so for a moment after a turn ends or begins the page holds
+  // two readings of it: the headline and the figures say one thing and the list another. The list is read again when they disagree:
+  // one read at a time, 350 ms after the disagreement is seen (a mission that changes faster than that is read at that pace, not
+  // once per change), and up to three times while the same turns stay in dispute. Until it is, a turn the status says is over is
+  // not counted as running.
+  const ended = useMemo(() => staleRunning(steps, status?.recentTurns), [steps, status?.recentTurns]);
+  const began = useMemo(() => unlistedRunning(steps, status?.recentTurns), [steps, status?.recentTurns]);
+  const staleKey = [...ended, ...began.map((id) => `+${id}`)].join(",");
+  const reads = useRef<{ key: string; n: number; timer: ReturnType<typeof setTimeout> | null }>({ key: "", n: 0, timer: null });
+  useEffect(() => {
+    const r = reads.current;
+    if (!staleKey) {
+      r.key = "";
+      r.n = 0;
+      return;
+    }
+    if (r.key !== staleKey) {
+      r.key = staleKey;
+      r.n = 0;
+    }
+    if (r.timer || r.n >= 3) return;
+    r.timer = setTimeout(() => {
+      r.timer = null;
+      r.n += 1;
+      setStepsTick((n) => n + 1);
+    }, 350);
+    // No cleanup here: a change in what is disputed must not push the read back, or a mission that changes every 100 ms is never read.
+    // `steps` is a dependency so each read that still disagrees schedules the next, and the first that agrees stops it.
+  }, [staleKey, steps]);
+  useEffect(() => () => { if (reads.current.timer) clearTimeout(reads.current.timer); }, []);
 
   const filesLoaded = useRef(false);
   useEffect(() => {
@@ -197,7 +230,7 @@ export default function Overview(): React.JSX.Element {
   const fix = (t: FixTarget): void => setView(FIX_VIEW[t]);
   const goalArts = arts.filter((a: any) => a.goalId === goal.id);
   const openArt = (art: any): void => { if (art) openDrawer(<ArtifactDrawer id={art.id} />); };
-  const runningSteps = (steps || []).filter((s) => s.status === "running");
+  const runningSteps = (steps || []).filter((s) => s.status === "running" && !ended.includes(s.turnId));
   const holding = orderDecisions(escOpen).blocking;
   const seatHolds = holding.flatMap((e) => { const h = holdsOf(e); return h.scope === "seat" ? [h.seat] : []; });
   const attention = buildAttention({

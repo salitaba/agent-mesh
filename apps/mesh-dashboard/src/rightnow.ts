@@ -166,14 +166,20 @@ export const rightNow = (i: RightNowInput): string[] => rightNowRows(i).map((r) 
  * The input, read off a `/status` payload. Everything is optional because a server predates some of it, and a missing figure is
  * never read as zero: `openRequests` stays null when the server does not say how many requests are open.
  */
-export function rightNowInput(status: any, extra: { phase: MissionPhase; now: number; forYou: number; steps?: ReadonlyArray<{ agentId: string; startedAt?: string; status?: string }> }): RightNowInput {
+export function rightNowInput(status: any, extra: { phase: MissionPhase; now: number; forYou: number; steps?: ReadonlyArray<{ turnId?: string; agentId: string; startedAt?: string; status?: string }> }): RightNowInput {
   const queue: any[] = Array.isArray(status?.scheduler?.queue) ? status.scheduler.queue : [];
   const open = status?.commitments?.open;
+  // The status is read with every event and carries the ten latest turns; the steps are read every few seconds. A step that says
+  // "running" for a turn the status says is over is the older reading, so where both name a turn the status is the one believed. A
+  // step the status does not know is a turn that began since, and it counts.
+  const fresh = ((status?.recentTurns ?? []) as any[]).filter((t) => t?.agentId);
+  const known = new Set(fresh.map((t) => t.turnId).filter(Boolean));
+  const older = (extra.steps ?? []).filter((t) => !t.turnId || !known.has(t.turnId));
   return {
     phase: extra.phase,
     now: extra.now,
     agents: ((status?.agents ?? []) as any[]).filter((a) => a?.id && a.id !== "human").map((a) => ({ id: String(a.id), lifecycle: String(a.lifecycle ?? ""), mailbox: typeof a.mailbox === "number" ? a.mailbox : undefined })),
-    turns: [...((status?.recentTurns ?? []) as any[]), ...(extra.steps ?? [])].filter((t) => t?.agentId).map((t) => ({ agentId: String(t.agentId), startedAt: t.startedAt, status: t.status })),
+    turns: [...fresh, ...older].filter((t) => t?.agentId).map((t) => ({ agentId: String(t.agentId), startedAt: t.startedAt, status: t.status })),
     queued: queue.map((q) => String(q?.agentId ?? "")).filter(Boolean),
     openRequests: typeof open === "number" ? open : null,
     forYou: extra.forYou,

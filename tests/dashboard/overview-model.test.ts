@@ -26,6 +26,8 @@ import {
   sortFiles,
   splitHeadline,
   standingBlocks,
+  staleRunning,
+  unlistedRunning,
   workspaceOf,
   type AttentionInput,
   type HeroNoteInput,
@@ -633,4 +635,29 @@ test("a patch is code and every other kind of file is a document", () => {
   assert.equal(fileIcon("CodePatch"), "code");
   assert.equal(fileIcon("patch"), "code");
   for (const t of ["ArchitectureDocument", "ReleasePlan", "ResearchReport", "RequirementsDoc", "", undefined, null]) assert.equal(fileIcon(t), "files", String(t));
+});
+
+test("a turn the list still says is running and the status says is over is stale: the list is the older reading", () => {
+  const steps = [
+    { turnId: "t-3", status: "running" },
+    { turnId: "t-2", status: "running" },
+    { turnId: "t-1", status: "ok" },
+    { turnId: "t-0", status: "waiting" },
+  ];
+  const recent = [{ turnId: "t-2", status: "ok" }, { turnId: "t-1", status: "ok" }, { turnId: "t-0", status: "waiting" }];
+  assert.deepEqual(staleRunning(steps, recent), ["t-2"], "t-2 ended since the list was read; t-3 began since the status was read, so it stands");
+  assert.deepEqual(staleRunning(steps, [{ turnId: "t-2", status: "running" }]), [], "both readings say running: nothing is stale");
+  assert.deepEqual(staleRunning(steps, undefined), [], "a status with no turns in it settles nothing");
+  assert.deepEqual(staleRunning(steps, []), []);
+  assert.deepEqual(staleRunning([{ status: "running" }], [{ status: "ok" }]), [], "a turn with no id cannot be told apart, so it is not called stale");
+  assert.deepEqual(staleRunning([{ turnId: "t-1", status: "ok" }], [{ turnId: "t-1", status: "running" }]), [], "only a running step can be stale: an ended one that the status calls running is the status being earlier, and the list is read again anyway");
+});
+
+test("a turn the status says is running that the list has never heard of began after the list was read", () => {
+  const steps = [{ turnId: "t-1" }, { turnId: "t-0" }];
+  assert.deepEqual(unlistedRunning(steps, [{ turnId: "t-2", status: "running" }, { turnId: "t-1", status: "running" }, { turnId: "t-0", status: "ok" }]), ["t-2"]);
+  assert.deepEqual(unlistedRunning(steps, [{ turnId: "t-2", status: "ok" }]), [], "a turn that is over and not in the list is history, not news: the list is six rows long");
+  assert.deepEqual(unlistedRunning(steps, undefined), []);
+  assert.deepEqual(unlistedRunning([], [{ turnId: "t-9", status: "running" }]), ["t-9"], "nothing listed yet at all");
+  assert.deepEqual(unlistedRunning(steps, [{ status: "running" }]), [], "a turn with no id cannot be matched against the list");
 });
