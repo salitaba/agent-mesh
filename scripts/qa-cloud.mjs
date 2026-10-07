@@ -267,6 +267,7 @@ await step(page, "signing out, then in, then changing the password and resetting
   await page.click("#password-form button[type=submit]");
   await page.waitForSelector("#password-status.note-ok");
   await page.getByRole("button", { name: "Sign out" }).click();
+  await page.waitForURL(`${BASE}/`);
   await page.goto(`${BASE}/forgot`);
   await page.fill("#email", email);
   await page.click("button[type=submit]");
