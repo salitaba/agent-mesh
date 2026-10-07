@@ -186,6 +186,7 @@ export function DecisionCard({ e, status, list, msgs, artIndex, decisions: d }: 
   const budget = text.budget;
   const kind = cardKind(e, budget);
   const holds = holdsOf(e);
+  const left = ifLeftAlone(holds);
   const agents = escAgents(e);
   const detail = (e.detail && typeof e.detail === "object" ? e.detail : {}) as Record<string, any>;
   const stuck = kind === "stuck" || kind === "derived" ? stuckInfoOf(e, msgs) : null;
@@ -232,7 +233,7 @@ export function DecisionCard({ e, status, list, msgs, artIndex, decisions: d }: 
           </p>
         </div>
       </header>
-      <p className="dc-left"><Icon name={holds.scope === "nothing" ? "info" : "pause"} size={14} />{ifLeftAlone(holds)}</p>
+      {left ? <p className="dc-left"><Icon name="pause" size={14} />{left}</p> : null}
 
       {showWhat ? <p className="dc-what">{text.what}</p> : null}
       {budget && (budget.consumed || budget.limit) ? <BudgetMeter b={budget} /> : null}

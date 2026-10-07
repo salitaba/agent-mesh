@@ -621,6 +621,9 @@ test("a row of the log shows the icon of what happened, and colour only for a fa
   assert.deepEqual(eventLook("review.approved", "notice"), { icon: "approve", tone: "ok" });
   assert.deepEqual(eventLook("patch.merged", "notice"), { icon: "files", tone: "ok" });
   assert.deepEqual(eventLook("budget.spent", "routine"), { icon: "cost", tone: "neutral" });
+  // Every seat finishing is the end of every mission, so it is not good news seven times over: the work and the mission are.
+  assert.deepEqual(eventLook("agent.completed", "notice"), { icon: "agents", tone: "neutral" });
+  assert.deepEqual(eventLook("goal.completed", "notice"), { icon: "overview", tone: "ok" });
   assert.deepEqual(eventLook("something.new", "notice"), { icon: "dot", tone: "neutral" }, "a kind this build does not know is a dot, not a gap");
   // A fault is a triangle in the bad tone whatever it is about: a crash is never a quiet icon among the rest.
   for (const type of ["agent.failed", "message.rejected", "review.rejected", "goal.escalated"]) assert.deepEqual(eventLook(type, "alert"), { icon: "alert", tone: "bad" }, type);

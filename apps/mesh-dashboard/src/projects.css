@@ -53,7 +53,6 @@
   .pj-kpis .stat-cell { flex: 1 1 0; }
   .pj-kpis .stat-cell.pj-spend { flex-grow: 2; }
 }
-.pj-note { margin: 0 0 var(--s3); }
 .pj-group + .pj-group { margin-top: var(--s5); }
 .pj-group .group-h { display: flex; align-items: center; gap: var(--s2); margin: 0 var(--s0) var(--s2-5); }
 .pj-grid { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(min(440px, 100%), 1fr)); gap: var(--s3); }

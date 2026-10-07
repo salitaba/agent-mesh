@@ -238,13 +238,14 @@ export function holdsLine(h: Holds): string {
 /**
  * What happens if the card is left alone, said plainly under its title: the chip names what is held, this says what that means for
  * the mission. The page used to keep it in the chip's tooltip, where the one thing a person deciding whether to act needs was out of sight.
+ * A notice holds nothing, so there is no consequence to add: its badge and its own text already say the mission carries on.
  */
-export function ifLeftAlone(h: Holds): string {
+export function ifLeftAlone(h: Holds): string | null {
   return h.scope === "mission"
     ? "The mission is halted until this is answered."
     : h.scope === "seat"
       ? "Only this seat is parked. The rest of the mesh keeps working."
-      : "The mission carries on whether or not this is answered.";
+      : null;
 }
 
 /* ------------------------------- the wording -------------------------------- */

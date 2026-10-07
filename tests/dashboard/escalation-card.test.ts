@@ -412,11 +412,13 @@ test("a derived card links only to the requests it summarises that are still ope
   assert.deepEqual(openSupports(esc({ reason: "stalemate" }), list), []);
 });
 
-test("what happens if a card is left alone is said under its title, for each thing a card can hold", () => {
+test("what happens if a card is left alone is said under its title, for each thing a card can hold, and a notice adds nothing", () => {
   assert.equal(ifLeftAlone({ scope: "mission" }), "The mission is halted until this is answered.");
   assert.equal(ifLeftAlone({ scope: "seat", seat: "dev" }), "Only this seat is parked. The rest of the mesh keeps working.");
-  assert.equal(ifLeftAlone({ scope: "nothing" }), "The mission carries on whether or not this is answered.");
-  // The sentence follows what the card holds: a halting card and a notice never say the same thing.
-  assert.notEqual(ifLeftAlone(holdsOf(esc())), ifLeftAlone(holdsOf(esc({ advisory: true }))));
-  assert.equal(ifLeftAlone(holdsOf(esc({ advisory: true }))), "The mission carries on whether or not this is answered.");
+  // A notice holds nothing: its badge and its own words say the mission carries on, so a third sentence would only repeat them.
+  assert.equal(ifLeftAlone({ scope: "nothing" }), null);
+  // The sentence follows what the card holds.
+  assert.equal(ifLeftAlone(holdsOf(esc())), "The mission is halted until this is answered.");
+  assert.equal(ifLeftAlone(holdsOf(esc({ advisory: true }))), null);
+  assert.match(ifLeftAlone(holdsOf(esc({ conflictKey: "budget:agent:goal-1/dev" }))) ?? "", /Only this seat is parked/);
 });
