@@ -676,7 +676,8 @@
 
   async function homePage(me) {
     const box = $("plans");
-    box.textContent = "Loading the plans.";
+    // The shape of the cards stands in for them while they are read, and a reader who cannot see it is told.
+    box.replaceChildren(el("div", { class: "sk sk-plan", "aria-hidden": "true" }), el("div", { class: "sk sk-plan", "aria-hidden": "true" }), el("p", { class: "sr" }, "Loading the plans."));
     const r = await plans();
     if (!r.ok || r.data.plans.length === 0) {
       box.replaceChildren(el("p", { class: "note note-warn" }, r.ok ? "No plan is on offer just now." : "The plans could not be loaded just now. Reload the page to try again."));

@@ -1473,6 +1473,23 @@ test("what the front page says about model usage is shown for a service that sel
   }
 });
 
+test("the plans have a shape while they are read, and a reader who cannot see it is told they are loading", async () => {
+  const w = world((x) => (x.signedIn = false));
+  let during: string[][] = [];
+  const v = new Visit("home", { routes: w.routes });
+  w.answers.set("GET /api/plans", () => {
+    const kids = v.$("plans").children;
+    during = [kids.map((n) => n.className), [v.text("plans")], kids.map((n) => n.getAttribute("aria-hidden") ?? "")];
+    return { json: PLANS };
+  });
+  await v.start();
+  assert.deepEqual(during[0], ["sk sk-plan", "sk sk-plan", "sr"], "the shape of two cards, and a line for a reader of the page");
+  assert.deepEqual(during[1], ["Loading the plans."], "the line is the only text, and it is read out: the region is polite");
+  assert.deepEqual(during[2], ["true", "true", ""], "the shapes are for the eye, the line is not");
+  assert.deepEqual(v.$("plans").querySelectorAll(".sk"), [], "and they are gone when the cards are there");
+  assert.equal(v.$("plans").querySelectorAll("article").length, 2);
+});
+
 test("the front page says how it works in four steps, in order, from what the service does, and the third is as the service sells", async () => {
   const hostingOnly = world((x) => {
     x.signedIn = false;

@@ -27,25 +27,27 @@
 <main id="main" tabindex="-1">
 
 <div class="wrap">
-  <section class="hero" aria-labelledby="top">
-    <h1 id="top">Run a mesh without running a server.</h1>
-    <p class="lede">Curule Cloud is the runtime, run for you. Sign up, pick a plan and open a workspace in your browser: the same dashboard and the same agents as the self-hosted product, on servers we operate. You install nothing and rent nothing.<span data-hosting-only> You bring your own model key, and you pay your model provider directly.</span></p>
-    <div class="btn-row">
-      <a class="btn btn-primary" href="/signup" data-when="out">Create an account</a>
-      <a class="btn" href="/login" data-when="out">Sign in</a>
-      <a class="btn btn-primary" href="/account" data-when="in" hidden>Go to your account</a>
-    </div>
-  </section>
   <noscript><p class="note note-warn">This page needs JavaScript to talk to your account. Nothing on it is loaded from another site.</p></noscript>
-  <section class="section" aria-labelledby="how-h">
-    <h2 id="how-h">How it works</h2>
-    <ol class="how" role="list">
-      <li><strong>Sign up</strong><span>An email and a password. We send a link to confirm your address.</span></li>
-      <li><strong>Pick a plan</strong><span>A flat price for hosting your workspace, paid on the payment provider's page.</span></li>
-      <li><strong>Make a workspace</strong><span data-hosting-only>One click starts your own Curule host. You give it your model key once it has started.</span><span data-usage-sold hidden>One click starts your own Curule host, with the service's models ready to use. Each plan lists the usage it includes.</span></li>
-      <li><strong>Describe your team and start</strong><span>Open the workspace in your browser, describe the team you want, and start a mission.</span></li>
-    </ol>
-  </section>
+  <div class="top">
+    <section class="hero" aria-labelledby="top">
+      <h1 id="top">Run a mesh without running a server.</h1>
+      <p class="lede">Curule Cloud is the runtime, run for you. Sign up, pick a plan and open a workspace in your browser: the same dashboard and the same agents as the self-hosted product, on servers we operate. You install nothing and rent nothing.<span data-hosting-only> You bring your own model key, and you pay your model provider directly.</span></p>
+      <div class="btn-row">
+        <a class="btn btn-primary" href="/signup" data-when="out">Create an account</a>
+        <a class="btn" href="/login" data-when="out">Sign in</a>
+        <a class="btn btn-primary" href="/account" data-when="in" hidden>Go to your account</a>
+      </div>
+    </section>
+    <section class="how-card" aria-labelledby="how-h">
+      <h2 id="how-h">How it works</h2>
+      <ol class="how" role="list">
+        <li><strong>Sign up</strong><span>An email and a password. We send a link to confirm your address.</span></li>
+        <li><strong>Pick a plan</strong><span>A flat price for hosting your workspace, paid on the payment provider's page.</span></li>
+        <li><strong>Make a workspace</strong><span data-hosting-only>One click starts your own Curule host. You give it your model key once it has started.</span><span data-usage-sold hidden>One click starts your own Curule host, with the service's models ready to use. Each plan lists the usage it includes.</span></li>
+        <li><strong>Describe your team and start</strong><span>Open the workspace in your browser, describe the team you want, and start a mission.</span></li>
+      </ol>
+    </section>
+  </div>
   <ul class="facts">
     <li><strong>A workspace of your own</strong><span>One isolated host with its own projects, event log and files. Deleting a workspace deletes them.</span></li>
     <li data-hosting-only><strong>Your own model key</strong><span>Your agents call the model provider you choose, with a key you give your workspace and nobody can read back. Anthropic, or any provider that speaks the OpenAI chat format: OpenRouter, OpenAI, DeepSeek, Gemini's compatible endpoint.</span></li>
