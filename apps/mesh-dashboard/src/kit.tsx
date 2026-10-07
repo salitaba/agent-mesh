@@ -14,7 +14,7 @@ import "./kit.css";
 import {
   AgentAvatar, Banner, Button, Card, Checkbox, Chip, ConfirmDialog, CopyButton, Dialog, DialogPanel, DrawerHead, EmptyState, ErrorState, EventRow,
   Field, IconButton, IdChip, Input, Kbd, LifecyclePill, Menu, OutcomePill, PageHeader, Pill, Progress, Radio, Ring, Segmented, Select, Skeleton,
-  SkeletonText, Sparkline, StatusPill, StepMini, Switch, TabPanel, Tabs, TextArea, ToastCard, Tooltip, Wordmark, ZoneNote, agentColor,
+  SkeletonText, Sparkline, Stat, StatusPill, StepMini, Switch, TabPanel, Tabs, TextArea, ToastCard, Tooltip, Wordmark, ZoneNote, agentColor,
   type ConfirmRequest, type MenuItem, type PillTone,
 } from "./components";
 import { CommandPalette, type PaletteLook } from "./commandpalette";
@@ -43,20 +43,20 @@ function savedTheme(): ThemeChoice {
   } catch { return "system"; }
 }
 
-const SECTIONS: Array<{ id: string; title: string }> = [
-  { id: "colour", title: "Colour" },
-  { id: "type", title: "Type" },
-  { id: "depth", title: "Depth, shape and motion" },
-  { id: "buttons", title: "Buttons" },
-  { id: "fields", title: "Fields and choices" },
-  { id: "badges", title: "Badges and tags" },
-  { id: "surfaces", title: "Cards and tables" },
-  { id: "feedback", title: "Banners and states" },
-  { id: "charts", title: "Meters and charts" },
-  { id: "navigation", title: "Tabs, menus and tips" },
-  { id: "overlays", title: "Dialogs, panels and notices" },
-  { id: "shell", title: "The shell" },
-  { id: "icons", title: "Icons" },
+const SECTIONS: Array<{ id: string; title: string; nav: string }> = [
+  { id: "colour", title: "Colour", nav: "Colour" },
+  { id: "type", title: "Type", nav: "Type" },
+  { id: "depth", title: "Depth, shape and motion", nav: "Depth" },
+  { id: "buttons", title: "Buttons", nav: "Buttons" },
+  { id: "fields", title: "Fields and choices", nav: "Fields" },
+  { id: "badges", title: "Badges and tags", nav: "Badges" },
+  { id: "surfaces", title: "Cards and tables", nav: "Cards" },
+  { id: "feedback", title: "Banners and states", nav: "States" },
+  { id: "charts", title: "Meters and charts", nav: "Charts" },
+  { id: "navigation", title: "Tabs, menus and tips", nav: "Menus" },
+  { id: "overlays", title: "Dialogs, panels and notices", nav: "Overlays" },
+  { id: "shell", title: "The shell", nav: "Shell" },
+  { id: "icons", title: "Icons", nav: "Icons" },
 ];
 
 function Section({ id, title, lede, children }: { id: string; title: string; lede?: string; children: React.ReactNode }): React.JSX.Element {
@@ -70,9 +70,9 @@ function Section({ id, title, lede, children }: { id: string; title: string; led
 }
 
 /** A captioned specimen. */
-function Spec({ name, note, wide, children }: { name: string; note?: string; wide?: boolean; children: React.ReactNode }): React.JSX.Element {
+function Spec({ name, note, wide, short, tall, children }: { name: string; note?: string; wide?: boolean; short?: boolean; tall?: boolean; children: React.ReactNode }): React.JSX.Element {
   return (
-    <figure className={`gal-spec${wide ? " wide" : ""}`}>
+    <figure className={`gal-spec${wide ? " wide" : ""}${short ? " short" : ""}${tall ? " tall" : ""}`}>
       <div className="gal-cap"><b>{name}</b>{note ? <span>{note}</span> : null}</div>
       <div className="gal-body">{children}</div>
     </figure>
@@ -199,7 +199,7 @@ function Gallery(): React.JSX.Element {
           <Wordmark height={22} />
           <span className="gal-title">Console kit</span>
           <nav className="gal-nav" aria-label="Sections">
-            {SECTIONS.map((s) => <a key={s.id} href={`#${s.id}`}>{s.title}</a>)}
+            {SECTIONS.map((s) => <a key={s.id} href={`#${s.id}`} title={s.title}>{s.nav}</a>)}
           </nav>
           <Segmented label="Theme" value={theme} onChange={choose} options={[{ id: "light", label: "Light" }, { id: "dark", label: "Dark" }, { id: "system", label: "System" }]} />
         </div>
@@ -279,7 +279,7 @@ function Gallery(): React.JSX.Element {
         {/* -------------------------------------------------------------------------------- buttons */}
         <Section id="buttons" title="Buttons" lede="One primary per view. A small button is a row action. Every one has hover, pressed, focus, disabled and loading states.">
           <div className="gal-matrix" role="table" aria-label="Button states">
-            <div className="gal-matrix-head" role="row"><span role="columnheader" />{BUTTON_STATES.map(([n]) => <span key={n} role="columnheader">{n}</span>)}</div>
+            <div className="gal-matrix-head" role="row"><span role="columnheader"><span className="sr-only">Variant</span></span>{BUTTON_STATES.map(([n]) => <span key={n} role="columnheader">{n}</span>)}</div>
             {([
               ["Primary", "primary", false, "play"],
               ["Secondary", "soft", false, "message"],
@@ -436,6 +436,43 @@ function Gallery(): React.JSX.Element {
               </table>
             </Spec>
           </div>
+          <div className="gal-grid two">
+            <Spec name="Stat" note="a figure with its label; a row of them is .stats" wide>
+              <div className="stats">
+                <Stat label="Tokens" value="49.3k" unit="of 2.0M" sub="2% of the budget"><Progress value={49300} max={2000000} label="Mission token budget" /></Stat>
+                <Stat label="Turns" value="28" sub="16 produced, 12 with no output" />
+                <Stat label="Failed" value="3" tone="bad" sub="2 of them were retried" />
+                <Stat label="Evidenced" value="7 of 7" tone="ok" sub="every mandatory check" />
+              </div>
+            </Spec>
+            <Spec name="Stat, large and small" note="30 for the one that matters on a page, 16 beside prose">
+              <div className="gal-row">
+                <Stat size="lg" label="Delivered in" value="4m 12s" />
+                <Stat size="sm" label="Per turn" value="1.8k" unit="tokens" />
+              </div>
+            </Spec>
+            <Spec name="Facts" note="dl.kv: the name, then the value">
+              <dl className="kv">
+                <dt>Role</dt><dd>developer</dd>
+                <dt>Model</dt><dd className="mono">stub-model</dd>
+                <dt>Listens for</dt><dd><Chip mono>message.sent</Chip> <Chip mono>task.claimed</Chip></dd>
+                <dt>Goal</dt><dd><IdChip value="goal-M4AMP2070" label="goal id" /></dd>
+              </dl>
+            </Spec>
+            <Spec name="Rows" note=".rows: a list that is not a table; one is chosen, one is under the pointer" wide>
+              <ul className="rows">
+                <li className="clickable on"><AgentAvatar id="developer" size="sm" color={agentColor("developer")} /><span>developer</span><span className="muted" style={{ marginLeft: "auto" }}>working</span></li>
+                <li className="clickable is-hover"><AgentAvatar id="qa" size="sm" color={agentColor("qa")} /><span>qa</span><span className="muted" style={{ marginLeft: "auto" }}>idle</span></li>
+                <li className="clickable"><AgentAvatar id="pm" size="sm" color={agentColor("pm")} /><span>pm</span><span className="muted" style={{ marginLeft: "auto" }}>idle</span></li>
+              </ul>
+            </Spec>
+            <Spec name="Disclosure" note="details.disc: the chevron turns">
+              <div className="gal-col wide">
+                <details className="disc"><summary>Show the raw payload</summary><pre className="code" style={{ marginTop: "var(--s2)" }}>{"{ \"agent\": { \"id\": \"explorer\" } }"}</pre></details>
+                <details className="disc" open><summary>What was checked</summary><p className="muted" style={{ margin: "var(--s2) 0 0" }}>Seven checks, each with the artifact that evidences it.</p></details>
+              </div>
+            </Spec>
+          </div>
         </Section>
 
         {/* -------------------------------------------------------------------------------- feedback */}
@@ -500,6 +537,7 @@ function Gallery(): React.JSX.Element {
             <Spec name="Segmented" note="the same, as a trough">
               <div className="gal-col">
                 <Tabs idPrefix="galseg" label="Range" variant="segmented" tabs={[{ id: "5m", label: "5m" }, { id: "30m", label: "30m" }, { id: "2h", label: "2h" }, { id: "all", label: "All" }]} value={seg} onChange={setSeg} />
+                <TabPanel idPrefix="galseg" id={seg}><p className="muted" style={{ margin: 0 }}>Showing “{seg}”.</p></TabPanel>
                 <Segmented label="Show" value={seg} onChange={setSeg} options={[{ id: "5m", label: "5m" }, { id: "30m", label: "30m" }, { id: "2h", label: "2h" }, { id: "all", label: "All" }]} />
               </div>
             </Spec>
@@ -537,7 +575,7 @@ function Gallery(): React.JSX.Element {
                 </DialogPanel>
               </div>
             </Spec>
-            <Spec name="Open the real ones" note="focus moves in, Tab stays, Escape closes">
+            <Spec name="Open the real ones" short note="focus moves in, Tab stays, Escape closes">
               <div className="gal-row">
                 <Button variant="soft" onClick={() => setOpen("plain")}>Confirm</Button>
                 <Button variant="soft" danger onClick={() => setOpen("danger")}>Destructive confirm</Button>
@@ -579,7 +617,7 @@ function Gallery(): React.JSX.Element {
         {/* -------------------------------------------------------------------------------- shell */}
         <Section id="shell" title="The shell" lede="The sidebar row, the mission chip, the readouts in the top bar and the project strip, as the console draws them.">
           <div className="gal-grid two">
-            <Spec name="Sidebar rows" note="default, hover, current, with a count">
+            <Spec name="Sidebar rows" tall note="default, hover, current, with a count">
               <div className="gal-side">
                 <button type="button" className="side-search"><Icon name="search" size={18} /><span>Search</span><Kbd keys="mod+k" /></button>
                 <button type="button" className="tab"><Icon name="overview" size={18} /><span className="tab-label">Overview</span></button>

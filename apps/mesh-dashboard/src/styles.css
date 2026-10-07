@@ -466,7 +466,7 @@ kbd { display: inline-flex; align-items: center; justify-content: center; min-wi
 /* ---------- top bar ---------- */
 /* Left: where the mission stands (one word) and what it is for. Middle: two readouts. Right: the one thing to do about it,
    then the rest. Only the goal text shrinks; it truncates before anything else gives way. */
-#topbar { grid-area: top; position: relative; z-index: var(--z-ctx); display: flex; align-items: center; flex-wrap: wrap; gap: var(--s2) var(--s4); padding: var(--s2-5) var(--s5); min-height: 64px; border-bottom: 1px solid var(--line); background: color-mix(in srgb, var(--bg-2) 82%, transparent); backdrop-filter: blur(8px); min-width: 0; }
+#topbar { grid-area: top; position: relative; z-index: var(--z-ctx); display: flex; align-items: center; flex-wrap: wrap; gap: var(--s2) var(--s4); padding: var(--s2) var(--s5); min-height: 64px; border-bottom: 1px solid var(--line); background: color-mix(in srgb, var(--bg-2) 82%, transparent); backdrop-filter: blur(8px); min-width: 0; }
 #btn-menu { display: none; }
 /* The host's own pages (a host with no project, the Projects page) have no mission to describe: the bar keeps only the menu opener
    a phone needs and gives its height back everywhere else. */
@@ -493,13 +493,14 @@ kbd { display: inline-flex; align-items: center; justify-content: center; min-wi
 .server-banner { margin-bottom: var(--s3); display: flex; align-items: center; gap: var(--s2); flex-wrap: wrap; }
 /* Telemetry, not decoration: two readouts in a well (sunken is how this UI says "read, do not press"), each a label over a figure.
    Spent carries a meter because a budget is the one figure with a ceiling, and a bar says how close it is faster than two numbers do. */
-.bar-strip { display: flex; align-items: center; gap: var(--s5); flex: none; padding: var(--s1-5) var(--s4); border-radius: var(--r); background: var(--sunken); border: 1px solid var(--line); }
+.bar-strip { display: flex; align-items: stretch; gap: var(--s5); flex: none; padding: var(--s1) var(--s3-5); border-radius: var(--r); background: var(--sunken); border: 1px solid var(--line); }
 .bar-strip-stat { display: flex; flex-direction: column; align-items: flex-start; gap: 1px; min-width: 0; line-height: 1.2; }
 .bar-strip-stat:not(:first-child) { padding-left: var(--s5); border-left: 1px solid var(--line-strong); }
 .bar-strip-stat > .k { font: 600 11px/1.2 var(--sans); letter-spacing: var(--k-track-caps); text-transform: uppercase; color: var(--muted); }
-.bar-strip-stat b { display: block; white-space: nowrap; font: 650 15px/1.25 var(--sans); letter-spacing: var(--k-track-tight); color: var(--text); }
+.bar-strip-stat b { display: block; white-space: nowrap; font: 650 15px/1.2 var(--sans); letter-spacing: var(--k-track-tight); color: var(--text); }
 .bar-strip-stat b .of { font-weight: 500; color: var(--muted); }
-.bar-strip-stat .meter { position: relative; display: block; width: 100%; min-width: 88px; height: 4px; margin-top: var(--s0); border-radius: var(--k-r-pill); background: var(--line-strong); overflow: hidden; }
+.bar-strip-stat b .live { display: inline-block; width: 6px; height: 6px; margin-right: var(--s1-5); border-radius: 50%; vertical-align: 2px; background: var(--ok); animation: pulse 2.2s infinite; }
+.bar-strip-stat .meter { position: relative; display: block; width: 100%; min-width: 88px; height: 4px; margin-top: 0; border-radius: var(--k-r-pill); background: var(--line-strong); overflow: hidden; }
 .bar-strip-stat .meter::after { content: ""; position: absolute; inset: 0 auto 0 0; width: calc(var(--p, 0) * 100%); border-radius: inherit; background: var(--accent); transition: width var(--k-dur-3) var(--k-ease); }
 .bar-strip-stat .meter.warn::after { background: var(--warn); }
 .bar-strip-stat .meter.bad::after { background: var(--bad); }
@@ -509,6 +510,8 @@ kbd { display: inline-flex; align-items: center; justify-content: center; min-wi
    takes 232px off the top of every one of these widths. */
 @media (min-width: 801px) and (max-width: 1280px) {
   #topbar { gap: var(--s2) var(--s3); padding: var(--s2) var(--s3-5); }
+  /* The chip, the readout and three icons come first; the goal asks for 140 and takes what is left, so the row does not wrap at 820. */
+  #goal-strip { flex-basis: 140px; }
   .bar-strip-stat.spent { display: none; }
   .bar-strip { gap: var(--s4); }
   .top-actions { gap: var(--s1-5); }
@@ -549,6 +552,8 @@ kbd { display: inline-flex; align-items: center; justify-content: center; min-wi
 /* Rung 1: a card sits on the page. The lit top edge is how it is seen in dark, where a shadow alone does not read. Static text
    blocks are not cards and stay flat; a card that can be pressed (.interactive) is rung 2 on hover. */
 .card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--r-lg); padding: var(--s4) var(--s5); box-shadow: var(--k-hl), var(--k-shadow-1); }
+/* The sign-in card (firstrun.css draws its shape) floats one rung above the page: the first thing a person sees is not a flat box. */
+.si-card { box-shadow: var(--k-hl), var(--k-shadow-2); }
 .card h3 { margin: 0 0 var(--s3); font: var(--tx-section); text-transform: uppercase; letter-spacing: var(--k-track-caps); color: var(--muted); }
 .card.interactive, a.card, button.card { cursor: pointer; transition: box-shadow var(--k-dur-1) var(--k-ease), border-color var(--k-dur-1) var(--k-ease), transform var(--k-dur-1) var(--k-ease); }
 .card.interactive:hover, .card.interactive.is-hover, a.card:hover, button.card:hover { border-color: var(--line-strong); box-shadow: var(--k-hl), var(--k-shadow-2); transform: translateY(-1px); }
@@ -566,6 +571,40 @@ a.card { display: block; color: inherit; text-decoration: none; }
 .kpi b { font: 650 24px/1.1 var(--sans); letter-spacing: var(--k-track-title); }
 .kpi small { color: var(--muted); font: 600 11px/1.3 var(--sans); text-transform: uppercase; letter-spacing: var(--k-track-caps); }
 .kpi .delta { color: var(--text-dim); font: 500 13px var(--sans); }
+
+/* A labelled figure (components.tsx Stat): a small label in capitals over a figure in the sans at 650, tabular, with what it is out of
+   in the quiet ink and a line of detail under it. The same classes work on a dt and a dd where the markup is a definition list. */
+.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: var(--s4) var(--s5); margin: 0; }
+.stat { display: flex; flex-direction: column; gap: var(--s0); min-width: 0; }
+.stat-k { font: 600 11px/1.3 var(--sans); letter-spacing: var(--k-track-caps); text-transform: uppercase; color: var(--muted); }
+.stat-v { margin: 0; font: 650 24px/1.15 var(--sans); letter-spacing: var(--k-track-title); color: var(--text); overflow-wrap: anywhere; }
+.stat-u { font: 500 14px var(--sans); letter-spacing: 0; color: var(--muted); }
+.stat-s { font: 13px/1.4 var(--sans); color: var(--muted); }
+.stat.lg .stat-v { font-size: 30px; letter-spacing: var(--k-track-display); }
+.stat.sm .stat-v { font-size: 16px; letter-spacing: var(--k-track-tight); }
+.stat.ok .stat-v { color: var(--ok); }
+.stat.warn .stat-v { color: var(--warn); }
+.stat.bad .stat-v { color: var(--bad); }
+/* Facts about one thing: the name, then the value, on a grid that lines up. */
+dl.kv { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: var(--s1-5) var(--s4); margin: 0; font-size: 14px; }
+.kv dt { color: var(--muted); }
+.kv dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+/* Rows of a list that is not a table: a hairline between, 48 high (.dense 36), the one under the pointer lit, the chosen one in the selection's ground. */
+.rows { list-style: none; margin: 0; padding: 0; }
+.rows > * { display: flex; align-items: center; gap: var(--s3); min-height: 48px; padding: var(--s2) var(--s3); border-bottom: 1px solid var(--line); }
+.rows > :last-child { border-bottom: 0; }
+.rows.dense > * { min-height: 36px; padding-block: var(--s1); }
+.rows > .clickable { cursor: pointer; transition: background-color var(--k-dur-1) var(--k-ease); }
+.rows > .clickable:is(:hover, .is-hover) { background: var(--panel-2); }
+.rows > .on { background: var(--k-accent-soft); }
+/* Code, a path or a payload set apart: the mono in a sunken well. */
+pre.code { margin: 0; padding: var(--s3); background: var(--sunken); border: 1px solid var(--line); border-radius: var(--r-sm); font: 13px/1.55 var(--mono); color: var(--text); overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; tab-size: 2; }
+/* A disclosure: a chevron that turns, a summary the width of its row. */
+details.disc > summary { display: flex; align-items: center; gap: var(--s1-5); min-height: 28px; list-style: none; cursor: pointer; border-radius: var(--r-sm); color: var(--text-dim); font: 500 14px var(--sans); }
+details.disc > summary::-webkit-details-marker { display: none; }
+details.disc > summary::before { content: ""; flex: none; width: 14px; height: 14px; background: currentColor; -webkit-mask: var(--chev) center / contain no-repeat; mask: var(--chev) center / contain no-repeat; transition: transform var(--k-dur-1) var(--k-ease); }
+details.disc[open] > summary::before { transform: rotate(90deg); }
+details.disc > summary:hover { color: var(--text); }
 
 /* ============ tables ============ */
 table.tbl { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 14px; }
@@ -733,6 +772,7 @@ input[type="checkbox"]:disabled, input[type="radio"]:disabled { opacity: .5; cur
 input[type="checkbox"][aria-invalid="true"], input[type="radio"][aria-invalid="true"] { border-color: var(--bad); }
 :root {
   --tick: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='M2.4 6.3l2.5 2.5 4.7-5.2' fill='none' stroke='black' stroke-width='1.9' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  --chev: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3E%3Cpath d='M7.5 4.5L13 10l-5.5 5.5' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
   --dash: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='M2.6 6h6.8' fill='none' stroke='black' stroke-width='1.9' stroke-linecap='round'/%3E%3C/svg%3E");
 }
 /* The switch is the same native checkbox (role="switch"), drawn as a track with a thumb. */
@@ -845,7 +885,8 @@ button.chip:hover { color: var(--text); border-color: var(--line-strong); }
 .verdict.bad { --tone: var(--bad); }
 .verdict.warn { --tone: var(--warn); }
 ul.errs { margin: var(--s1-5) 0; padding-left: 18px; font-size: 14px; color: var(--bad); }
-@media (max-width: 620px) { .banner-acts { flex-basis: 100%; margin-left: 0; align-self: flex-start; } }
+/* On a phone the actions take their own row, under the words (the icon's 20px and the gap beside it are left clear). */
+@media (max-width: 620px) { .banner-acts { flex-basis: calc(100% - 32px); margin-left: 32px; align-self: flex-start; } }
 
 /* ============ empty, error and loading ============
    components.tsx EmptyState / ErrorState: an icon tile (the selection's ground and ink, 56px), what is missing in a 600 line, a
@@ -1068,10 +1109,9 @@ ul.errs { margin: var(--s1-5) 0; padding-left: 18px; font-size: 14px; color: var
   #drawer:not(.hidden):has(.stepv) ~ #toasts { max-width: max(240px, calc(100vw - min(1180px, 96vw) - 36px)); }
   #drawer:not(.hidden) ~ #toasts .toast-msg { overflow-wrap: anywhere; }
 }
-/* Full-width so it is a target, not a link buried in a sentence; 32px clears
-   the 24px pointer floor with room, because this is the one control a user
-   reaches for in a hurry. */
-.toast-act { display: flex; align-items: center; justify-content: center; width: 100%; min-height: 32px; margin-top: var(--s2); padding: 0 var(--s3);
+/* A button under the sentence, not a link buried in it: 32px clears the 24px pointer floor with room, because this is the one control a
+   person reaches for in a hurry. It spans the card on a phone, where it is a 44px bar (below). */
+.toast-act { display: inline-flex; align-items: center; justify-content: center; min-height: 32px; margin-top: var(--s2-5); padding: 0 var(--s3-5);
   border: 1px solid color-mix(in srgb, var(--k-accent) 35%, var(--line-strong)); border-radius: var(--r-sm);
   background: var(--k-accent-soft); color: var(--k-accent-ink);
   font: 600 13px var(--sans); cursor: pointer; transition: background-color var(--k-dur-1), border-color var(--k-dur-1); }
@@ -1087,7 +1127,7 @@ ul.errs { margin: var(--s1-5) 0; padding-left: 18px; font-size: 14px; color: var
   #toasts .toast { animation-name: toastdrop; }
   #drawer:not(.hidden) ~ #toasts, body:has(.ms-bar) #toasts { position: fixed; left: 12px; right: 12px; margin: 0; z-index: var(--z-toasts); }
   #drawer:not(.hidden) ~ #toasts .toast, body:has(.ms-bar) #toasts .toast { animation-name: rise-in; }
-  .toast-act { min-height: 44px; }
+  .toast-act { width: 100%; min-height: 44px; }
 }
 
 /* ============ command palette ============

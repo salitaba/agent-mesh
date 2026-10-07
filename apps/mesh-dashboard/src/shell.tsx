@@ -663,7 +663,7 @@ export function Shell({ viewNode }: { viewNode: React.ReactNode }): React.JSX.El
             </div>
           </div>
           <div className="bar-strip" role="group" aria-label="mission telemetry">
-            <div className="bar-strip-stat agents" title="Agents mid-turn right now"><span className="k">Working</span><b>{facts.working}</b></div>
+            <div className="bar-strip-stat agents" title="Agents mid-turn right now"><span className="k">Working</span><b>{facts.working > 0 ? <i className="live" aria-hidden="true" /> : null}{facts.working}</b></div>
             <div className="bar-strip-stat spent" title="Tokens spent out of the mission budget">
               <span className="k">Tokens</span>
               <b>{fmt(mission?.consumed ?? 0)}{mission?.limit ? <span className="of"> / {fmt(mission.limit)}</span> : null}</b>

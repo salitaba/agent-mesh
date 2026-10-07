@@ -144,10 +144,4 @@
 .fv-md .md-code { margin: var(--s2) 0; padding: var(--s2-5) var(--s3); overflow: auto; background: var(--sunken); border: 1px solid var(--line); border-radius: var(--r-sm); font: 400 13px/1.55 var(--mono); white-space: pre; }
 
 /* ---------- controls shared by the reader and the Product page ---------- */
-/* A switch between views of one thing. Its edge is a control edge (3:1); the chosen view is the accent, as a chip-toggle is. */
-.seg { display: inline-flex; overflow: hidden; background: var(--panel); border: 1px solid var(--line-control); border-radius: var(--r-sm); }
-.seg-btn { min-height: 28px; padding: 0 var(--s3); background: none; border: 0; color: var(--text-dim); font: 500 13px var(--sans); cursor: pointer; }
-.seg-btn + .seg-btn { border-left: 1px solid var(--line); }
-.seg-btn:hover { background: var(--panel-2); color: var(--text); }
-.seg-btn[aria-pressed="true"] { background: color-mix(in srgb, var(--accent) 10%, transparent); color: var(--accent-2); font-weight: 600; }
-.seg-btn:focus-visible { outline-offset: -2px; }
+/* The switch between views of one thing is the segmented control (.seg, styles.css): a trough with the chosen view raised out of it. */

@@ -7,6 +7,7 @@ import { Icon, type IconName } from "./icons";
 import type { TimelineEvent, TurnStep } from "./store";
 import { Kbd } from "./ui/kbd";
 import { Tooltip } from "./ui/tooltip";
+import { useScrolls } from "./ui/scroll-stop";
 
 /* The kit's smaller primitives live in ui/ and are exported from here, so a view imports every primitive from one place and
    the gallery (kit.tsx) and its test read one list. */
@@ -15,6 +16,7 @@ export { Tooltip } from "./ui/tooltip";
 export { Checkbox, Radio, Switch, Field } from "./ui/controls";
 export { Skeleton, SkeletonText, Progress } from "./ui/feedback";
 export { Sparkline, Ring } from "./ui/charts";
+export { Stat } from "./ui/stat";
 
 /**
  * The Curule logo: the name drawn as strokes, its first letter the mark (a ring held open, with one seat filled at the end of the arc). The letters take the
@@ -699,11 +701,14 @@ interface DialogProps {
 /** The dialog's panel on its own: the title row, the body and the actions band, with no scrim and no focus handling. Dialog is this
  *  inside the behaviour; the gallery draws it alone to show it. */
 export function DialogPanel({ title, children, actions, onSubmit, role = "dialog", describedBy, labelId = "dialog-title", panelRef }: DialogProps & { panelRef?: RefObject<HTMLDivElement | null> }): React.JSX.Element {
+  // On a short screen the body scrolls under the title and the actions; a body that scrolls takes a tab stop, so a keyboard can read it.
+  const body = useRef<HTMLDivElement | null>(null);
+  const scrolls = useScrolls(body);
   return (
     <div className="confirm" role={role} aria-modal="true" aria-labelledby={labelId} aria-describedby={describedBy} ref={panelRef}>
       <form onSubmit={onSubmit ?? ((e) => e.preventDefault())}>
         <header className="dlg-head"><h2 id={labelId}>{title}</h2></header>
-        <div className="dlg-body">{children}</div>
+        <div className="dlg-body" ref={body} tabIndex={scrolls ? 0 : undefined}>{children}</div>
         {actions ? <footer className="dlg-foot confirm-acts">{actions}</footer> : null}
       </form>
     </div>
