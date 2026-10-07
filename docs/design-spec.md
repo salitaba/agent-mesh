@@ -8,7 +8,13 @@ Status: **in force**. It was written from the code and then checked against
 rendered screens: every view, in both themes, at 1440 and 390 pixels wide, with
 axe-core and a capture of console errors (§7, `npm run qa:console`). The numbers in
 §2 to §4 are pinned by tests (`tests/build/console-palette.test.ts`,
-`tests/build/icons.test.ts`); the rest is convention and review.
+`tests/build/icons.test.ts`, `tests/dashboard/type-ramp.test.ts`); the rest is convention and review.
+
+The look itself (surfaces, depth, type, shape, motion, states) is the UI kit's, written once for the
+site, the account pages and the console in [brand.md](brand.md#the-ui-kit). Every shared primitive
+is drawn in every state, in both themes, on one page: `/kit.html` of the console build (`npm run dev:ui`
+serves it without a sign-in; on a host it needs one). A primitive added to `components.tsx` that is not
+drawn there fails `tests/dashboard/kit-gallery.test.ts`.
 
 ---
 
@@ -100,16 +106,23 @@ Rules:
 - **`--line-control` is the >=3:1 boundary** for inputs. `--line` / `--line-strong`
   are decorative and must not be the only edge of a control.
 - **`color-scheme`** must be set per theme (done) so native widgets follow.
+- **Status is never colour alone.** A status colour comes with a dot, an icon or a word, so that it reads
+  in Windows High Contrast and to a person who does not see the colour.
+- **A colour is a name.** A seat has one colour (`agentColor(role)`, set as `--tint` on whatever draws the
+  seat) and it is the same one on the avatar, the seat's bar in the Cost strip, its disc in the Graph and
+  its rail in the Designer. A seat colour is not used for anything else, and a seat is not drawn in a colour
+  that is not its own.
 
 ---
 
 ## 3. Typography
 
-One ramp. **Every** `font-size` resolves to one of these nine steps — currently
-true in `styles.css` and `designer/designer.css` after the normalization pass:
+One ramp. **Every** `font-size` resolves to one of these ten steps, and a test
+(`tests/dashboard/type-ramp.test.ts`, which names the file, the rule and the size) fails on one that
+does not:
 
 ```
-11  12  13  14  15  16  18  20  30
+11  12  13  14  15  16  18  20  24  30
 ```
 
 The floor is 11 px (a micro-label in capitals) and body text is 15 px; metadata is
@@ -120,7 +133,8 @@ Tier tokens (weight + size + line-height + family, so one rule = one tier):
 
 | Token | Meaning |
 |---|---|
-| `--tx-title` | view title (`h2`) |
+| `--tx-page` | view title (`h2`), 24 px at weight 650 |
+| `--tx-title` | the title of a card, a dialog or the sign-in page, 20 px |
 | `--tx-section` | uppercase group header |
 | `--tx-label` | uppercase micro-label (nav, chips) |
 | `--tx-value` | primary value / body |
@@ -131,6 +145,10 @@ Rules:
 - No half-pixel sizes. No tenth size. Need a new step → add a token and a reason,
   or use the nearest existing tier.
 - Colour is **not** part of a tier (pair with `.muted`).
+- **Figures are tabular and set in the sans at weight 650** (`.kpi`, `.fig`, `.stat`, the top bar's
+  readout, every big number a view draws). Monospace is for ids, paths, code and JSON only.
+- Headings are balanced (`text-wrap: balance`) and tight (`--k-track-title`); a small label in capitals
+  uses the kit's one tracking (`--k-track-caps`).
 - **Heading order is semantic**: `h1`(app) → `h2`(view) → `h3`(section). Never
   skip a level for visual size.
 
@@ -140,7 +158,7 @@ Rules:
 
 ```
 --s0 2  --s1 4  --s1-5 6  --s2 8  --s2-5 10  --s3 12  --s3-5 14  --s4 16  --s5 20  --s6 28
---r-sm 6  --r 10  --r-lg 14
+--r-sm 6  --r 10  --r-lg 14  --r-xl 20    (the kit's: --k-r-sm, -md, -lg, -xl; and the pill, 999)
 ```
 
 Rules:
@@ -148,8 +166,12 @@ Rules:
 - Rhythm (padding, margin, gap) uses `--s*`. Raw `px` is allowed **only** when
   optical-compensating a border or a glyph (e.g. `1.5px` ring, `padding: 0 0 6px`
   to centre a `3px`-bordered box) — and should say why in a comment.
-- Radii are the three tokens only.
-- Fixed/stuck layers use the `--z-*` ladder; never a bare `z-index`. On a narrow screen the notices lie over the top of the view
+- Radii are the four tokens and the pill only.
+- **Depth is information, in five rungs** (the kit's `--k-shadow-1` to `5`). Rung 1 is a card at rest (in the
+  dark scheme it also has a lit top edge, `--k-hl`, because a shadow on black shows nothing); rung 2 is a card
+  that can be pressed, on hover; rung 3 is what floats (a menu, a toast, a tooltip); rung 4 is a dialog or a
+  drawer (`--shadow`); rung 5 belongs to the site's product frame. Text that is only text stays flat.
+- Fixed/stuck layers use the `--z-*` ladder (a tooltip, `--z-tip`, is above whatever its control sits in); never a bare `z-index`. On a narrow screen the notices lie over the top of the view
   (`--z-notice`: above the page and its bars, under every menu, panel and dialog) instead of at the foot of the screen, where they
   sat on the button a person was about to press.
 
