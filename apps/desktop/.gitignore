@@ -6,5 +6,8 @@ src-tauri/gen/schemas/
 
 node_modules/
 
-# The 1024px master `npm run icon` renders the whole set from (see README.md).
-/icon-1024.png
+# What `tauri icon` renders besides the sizes the bundle names: the mobile sets,
+# which this app does not build. The master it renders from (icon.png, beside
+# this file) is committed, so the set can always be regenerated.
+src-tauri/icons/android/
+src-tauri/icons/ios/
