@@ -221,6 +221,8 @@ apps/
                   built to `dist/` and served by mesh-server on the same port)
   cloud-server    the hosted service's processes and checks: `npm run cloud -- gateway|control|trial|mail-check|preflight|egress`
                   (see [docs/cloud.md](docs/cloud.md))
+  desktop         Tauri 2 shell: the hosted app in a window of its own, bundled into installers by CI
+                  (see [apps/desktop/README.md](apps/desktop/README.md))
 deploy/           Helm chart, fleet provisioning script, container entrypoint
 site/             static landing and pricing page (its numbers are generated from the plan table)
 pricing/          the measured mission and the generated plan data

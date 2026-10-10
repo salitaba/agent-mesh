@@ -1,0 +1,13 @@
+# The Rust crate is compiled in CI, never on a machine without a toolchain.
+src-tauri/target/
+
+# tauri-build writes the capability schemas here on every build.
+src-tauri/gen/schemas/
+
+node_modules/
+
+# What `tauri icon` renders besides the sizes the bundle names: the mobile sets,
+# which this app does not build. The master it renders from (icon.png, beside
+# this file) is committed, so the set can always be regenerated.
+src-tauri/icons/android/
+src-tauri/icons/ios/
