@@ -198,7 +198,17 @@ test("the workflow compiles the crate on all four targets and bundles what each 
   assert.match(args, /--target \$\{\{ matrix\.target \}\}/);
   assert.match(args, /--bundles \$\{\{ matrix\.bundles \}\}/);
   assert.equal(build!.with?.["releaseDraft"], true, "an installer nobody has run is a draft, not a release");
-  assert.equal(build!.with?.["uploadWorkflowArtifacts"], true, "a build from a branch is still an installer somebody can try");
+  // tauri-action has no artifact input — it lists the inputs it accepts and none of
+  // them uploads a branch build's bundles (a run that passes one fails outright), so
+  // the installers are collected by a step of its own.
+  const upload = steps.find((step) => step.uses?.startsWith("actions/upload-artifact@"));
+  assert.ok(upload, "a build from a branch is still an installer somebody can try");
+  assert.match(
+    String(upload!.with?.["path"] ?? ""),
+    /target\/\$\{\{ matrix\.target \}\}\/release\/bundle/,
+    "the directory the bundler writes, per target",
+  );
+  assert.equal(upload!.with?.["if-no-files-found"], "error", "an empty upload is a failed build, not a green one");
 
   const tagName = String(build!.with?.["tagName"] ?? "");
   assert.match(tagName, /github\.ref_type == 'tag'/, "no release is created off a tag");
