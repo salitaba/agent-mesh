@@ -1,0 +1,8 @@
+{
+  "$schema": "../gen/schemas/mobile-schema.json",
+  "identifier": "mobile",
+  "description": "What the bundled page in ui/ may ask the app for, on Android and iOS. The same grant as the desktop capability, and for the same reason: the shell drives every plugin from Rust and the page carries its own behaviour in one script file, so the core baseline is the whole allowlist and the page may ask the app for nothing of its own. No remote address is listed here either, so the app's IPC surface stays away from the page served at app.curule.dev — the bundled page is the only page that may talk to this app.",
+  "platforms": ["android", "iOS"],
+  "windows": ["main"],
+  "permissions": ["core:default"]
+}

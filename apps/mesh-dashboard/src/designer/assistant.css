@@ -30,6 +30,12 @@ button.linklike:hover { text-decoration: underline; }
   font: 13px/1.55 var(--mono); color: var(--text-dim); max-height: 240px; overflow: auto;
 }
 .ms-chat-thinking.live pre { color: var(--muted); }
+/* The stopped marker sits inside the answer it qualifies: it is a note about
+ * that text, not a separate message. */
+.ms-chat-stopped { margin-top: var(--s1-5); color: var(--muted); }
+/* The thinking line carries its own Stop: the reader waiting on a turn should
+ * not have to look away from it to end it. */
+.ms-chat-waiting { display: flex; align-items: center; gap: var(--s2); }
 .ms-chat-compose { display: flex; flex-direction: column; gap: var(--s2); }
 .ms-panel { display: flex; flex-direction: column; gap: var(--s3); }
 ul.diff-list { margin: var(--s1) 0; padding-left: 18px; font-size: 14px; color: var(--text-dim); max-height: 180px; overflow: auto; }

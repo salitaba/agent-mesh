@@ -7,6 +7,74 @@ sections 1 to 24) are described there, run by run.
 
 ## Unreleased
 
+### Added: the desktop app, which is the hosted app in a window of its own
+
+- **`apps/desktop`: a Tauri 2 shell.** The window shows `app.curule.dev`; the dashboard is still deployed, so a change to it
+  reaches the desktop the moment it is deployed, and there is nothing in the shell to rebuild when it changes. The window
+  opens on a page of its own, which holds the address, asks whether the app answers and goes there — and stays, with a
+  Retry and a link to the system browser, when it does not. Tauri and wry report a load that failed to nobody on any of the
+  three platforms, which is why the question is asked by the page that is still there to ask it.
+- **One window, and the desktop's own manners.** A second launch focuses the window that is there; the tray offers Show,
+  Reload and Quit; the size and position are remembered. Anything that is not the app's own origin — a `target="_blank"`
+  link, a sign-in flow that leaves `app.curule.dev` — opens in the system browser rather than in the window, and the
+  capability file grants the bundled page the baseline and nothing else, with no remote address listed.
+- `CURULE_DESKTOP_URL` points the window at a self-hosted control plane or a local run. A value that is not an http(s)
+  address falls back to the hosted app rather than refusing to start.
+- **The installers come from CI, and they are unsigned.** `.github/workflows/desktop.yml` builds an AppImage and a deb, a
+  dmg for each Mac architecture and the Windows NSIS and msi installers, and attaches them to a draft release cut from a
+  `desktop-v*` tag. The crate has not been compiled on the machine it was written on — the first compile is CI's — and no
+  signing secret exists yet, so macOS and Windows will warn about the download until they are added. See
+  [apps/desktop/README.md](apps/desktop/README.md), including what bundling the dashboard's own assets into the installer
+  would take (not done here).
+- Tests: `tests/desktop/desktop-shell.test.ts` — the window the Rust builds against the window the config declares, every
+  icon on disk, the capability grant, the page's own elements, the workflow's four targets, and that nothing in the app
+  carries a credential or a remote IPC grant.
+- **The same app builds for Android.** One crate, one window, one address: what a phone has no use for is behind
+  `#[cfg(desktop)]` — the tray, the remembered window geometry, and noticing a second launch, which Android's
+  `android:launchMode="singleTask"` does for itself — while the address handling, the window and the external-link policy
+  are shared. `bundle.android` carries the `minSdkVersion` (24) and the `versionCode`, and `capabilities/mobile.json`
+  grants the bundled page the baseline and nothing else, scoped to `android` and `iOS`, with no remote address listed.
+- **The APK comes from `.github/workflows/mobile.yml`, and it is unsigned.** JDK 25, the Android SDK, NDK r29 and the four
+  Rust targets, then `tauri android init --ci` (the Gradle project is generated per run, never committed — it cannot be
+  generated on a machine without Rust and an SDK), the launcher icons rendered onto it from `icon.png`, `tauri android
+  build --apk --ci`, and the APK uploaded as that run's artifact. It sideloads on Android 7.0+, and it cannot update over
+  an install Play signed; Play would need a keystore, an upload key and a Console account, and an app bundle rather than
+  an APK. iOS is out of scope for this pass. See
+  [apps/desktop/README.md](apps/desktop/README.md#android).
+- Tests: `tests/desktop/mobile-android.test.ts` — the mobile capability grant and the platforms each capability file is
+  scoped to, the `#[cfg(desktop)]` split in `lib.rs` against the shared shell, the Android bundle settings and the
+  identifier as an application id, the workflow's JDK/SDK/NDK, its four targets and its upload, and that nothing under
+  `apps/desktop` carries a keystore or a remote IPC grant.
+
+### Changed: a workspace cannot be saved out of the models it was given
+
+- **A saved `mesh.yaml` keeps the managed wiring.** The rewrite that points the default and designer runtimes and the
+  `providers` block at the models the host supplies used to run when a project was *created* and nowhere else, so any
+  later save — the designer's own Save, an applied proposal — dropped it. The workspace then fell back to Claude Code,
+  which has no credential inside it, and every seat turn answered `Not logged in · Please run /login`: a mesh whose
+  seats never run and whose progress never moves. It is now applied on the way to disk on every save, whatever the
+  saved document says, and the post-save card says what was rewired rather than leaving it to be found in the file.
+  A service that supplies no models is untouched and is told nothing.
+- **A model id is checked against the provider before it is kept.** `POST /api/workspaces/:id/model-key` reads the
+  provider's own catalogue while it has the key and refuses a model the provider does not serve, naming the closest
+  ids: `deepseek-4.1-flash` next to `deepseek-v4.1-flash` used to be accepted and then fail every single turn with a
+  `400 Model '…' is not available in the active live catalog`. Only a catalogue that arrived and does not list the
+  model refuses; a timeout, a 5xx, an endpoint with no `/models`, an unreadable body and an empty list all let the key
+  through, because a provider that answers unusually must not lock a customer out of a workspace that works.
+
+### Added: stopping a designer turn
+
+- **Stop, in the designer chat.** A turn that is running can be ended from the panel — next to `Send`, and beside the
+  "thinking…" line so whoever is waiting on it does not have to look away to end it. The transcript keeps what the model
+  had already written and marks the entry as stopped; nothing presents a stopped turn's partial text as the whole answer.
+- `POST /designer/chat/stop` names the turn (`turnId`), which the stream sends as its very first frame — before the model
+  has said anything, so a stop pressed during "thinking…" has something to aim at. It is the turn that stops, not the
+  socket: the same conversation in another tab or browser ends with it. An id that is not running is `404 no_such_turn`,
+  because a stop arriving a moment after the model finished is a no-op, not a conflict.
+- **Best-effort by contract.** `signal` is passed to the runtime; a runtime that cannot interrupt answers with the whole
+  reply and no `stopped` flag, and then it was an ordinary turn. Only the result's own `stopped: true` — from the native
+  runtime's `InterruptedTurnError`, or the Claude adapter's `interrupt()` — marks a turn as stopped.
+
 ### Added: Curule Cloud, hosting only
 
 - **Hosting-only plans.** A plan with `byok: true` sells no model usage: no included usage, tiers or top-ups, and a payment grants no

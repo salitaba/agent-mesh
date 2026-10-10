@@ -2615,6 +2615,19 @@ export interface DesignerPromptOptions {
    * both through to its MCP client config verbatim.
    */
   mcp?: { url: string; headers?: Record<string, string> };
+  /**
+   * Abort this turn.
+   *
+   * The operator pressed Stop, or the client that asked for the turn went away.
+   * Either way the answer is no longer wanted and the tokens it would spend are
+   * the operator's, so the runtime should end the model call in flight and
+   * return what the model had written by then, with `stopped: true`.
+   *
+   * Best-effort by contract: a runtime that cannot interrupt returns the turn
+   * finished, so a caller must never read the presence of this signal as proof
+   * that the turn died — only the result's own `stopped` says that.
+   */
+  signal?: AbortSignal;
 }
 
 export interface DesignerStreamDelta {
@@ -2625,6 +2638,14 @@ export interface DesignerStreamDelta {
 export interface DesignerStreamResult {
   reply: string;
   thinking: string;
+  /**
+   * The turn was cut short by `signal` rather than finished by the model.
+   *
+   * `reply` is then whatever it had written — possibly nothing, and possibly a
+   * sentence that stops mid-word — and must not be presented as the whole
+   * answer the turn was going to give.
+   */
+  stopped?: boolean;
 }
 
 export interface ModelCatalogue {

@@ -15,6 +15,7 @@ import { createHmac, randomBytes } from "node:crypto";
 import { defaultTierOf, type Catalogue } from "./catalogue";
 import { ServiceError } from "./errors";
 import type { GatewayAdmin } from "./gateway-client";
+import { checkModelAgainstCatalogue } from "./model-catalogue";
 import type { ModelKeyInput, ModelKeyStore } from "./model-keys";
 import { mintWorkspaceLicence, type LicenceSigner } from "./licences";
 import type { Mailer } from "./mailer";
@@ -43,6 +44,10 @@ export interface WorkspacesOptions {
   workspaceEnv?: Record<string, string>;
   /** How a host is waited for. For tests. */
   waitReady?: (upstream: { host: string; port: number }) => Promise<void>;
+  /** How a provider's model catalogue is read when a customer's key is set. For tests. */
+  fetchImpl?: typeof fetch;
+  /** How long the provider is given to list its models before the check gives up and lets the key through, in ms. */
+  catalogueTimeoutMs?: number;
   /** A workspace that has been starting this long without finishing is given up on, in ms. */
   provisionTimeoutMs?: number;
   graceDays?: number;
@@ -275,6 +280,12 @@ export class Workspaces {
       await store.remove(workspaceId);
       await this.o.log.append({ type: "workspace.model_key_removed", workspaceId });
     } else {
+      // The model id is checked against the provider's own catalogue before it is kept and the workspace is remade
+      // around it: a name the provider does not serve is a workspace whose every turn fails, which reads to the
+      // customer as a mesh that does nothing. Only a catalogue that arrived without the model refuses — see
+      // model-catalogue.ts for why nothing else does.
+      const refusal = await checkModelAgainstCatalogue(input, { fetchImpl: this.o.fetchImpl, timeoutMs: this.o.catalogueTimeoutMs });
+      if (refusal) throw new ServiceError(400, "model_not_found", refusal);
       await store.set(workspaceId, input);
       await this.o.log.append({ type: "workspace.model_key_set", workspaceId, provider: input.provider, model: input.model, ...(input.baseUrl ? { baseUrl: input.baseUrl } : {}) });
     }
