@@ -317,8 +317,8 @@ test("the workflow builds an APK on the toolchain Android needs, and signs nothi
     "the dependencies come first: `npm run tauri` is the CLI they install",
   );
   assert.ok(
-    steps.findIndex((step) => step.run?.includes("sdkmanager")) < order[0]!,
-    "the SDK packages come before the CLI looks for them",
+    steps.findIndex((step) => step.run?.includes("sdkmanager")) < order[2]!,
+    "the SDK packages are installed before the build needs them — and after init, which is where the API comes from",
   );
 
   const upload = use("actions/upload-artifact@");
