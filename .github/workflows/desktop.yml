@@ -1,0 +1,158 @@
+# The desktop shell's compile gate, and the only place installers are produced.
+#
+# Rust is not installed on the machine the shell was written on, and `tauri build`
+# was never run there: this workflow is where the crate is first compiled, and
+# where the first compile error will be read. Nothing here is signed — see the
+# note at the bottom for the secrets that would change that.
+
+name: Desktop
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    # Path filters are not evaluated for tag pushes, so a `desktop-v*` tag always
+    # builds even though it changes no files.
+    tags: ["desktop-v*"]
+    paths:
+      - apps/desktop/**
+      - .github/workflows/desktop.yml
+  pull_request:
+    paths:
+      - apps/desktop/**
+      - .github/workflows/desktop.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: desktop-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  bundle:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    # tauri-action creates the draft release on a `desktop-v*` tag, and uploads
+    # its assets to it.
+    permissions:
+      contents: write
+    strategy:
+      # One platform's failure is that platform's problem: the other three are
+      # what says whether the crate is portable.
+      fail-fast: false
+      matrix:
+        include:
+          - name: Linux x86_64 (AppImage, deb)
+            os: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+            bundles: appimage,deb
+          - name: macOS arm64 (dmg)
+            os: macos-14
+            target: aarch64-apple-darwin
+            bundles: dmg
+          - name: macOS x86_64 (dmg)
+            os: macos-13
+            target: x86_64-apple-darwin
+            bundles: dmg
+          - name: Windows x86_64 (NSIS, msi)
+            os: windows-latest
+            target: x86_64-pc-windows-msvc
+            bundles: nsis,msi
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Cache the crate's dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/desktop/src-tauri
+          key: ${{ matrix.target }}
+
+      # webkit2gtk is the webview, and the appindicator library is the tray. The
+      # rest is what the bundler links and packs. `libayatana-appindicator3-dev`
+      # and `libappindicator3-dev` are the same library under two names, and the
+      # runners carry both.
+      - name: Linux libraries the webview and the tray need
+        if: matrix.os == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev patchelf libxdo-dev
+
+      - run: npm ci
+
+      # The committed set is generated, so it can be regenerated: the master
+      # (apps/desktop/icon.png) is what the installer's icons come from, and the
+      # macOS and Windows formats cannot drift from the PNGs beside them.
+      - name: Render the icon set from the master
+        working-directory: apps/desktop
+        run: npm run icon -- icon.png
+
+      # A tag that disagrees with the app's version would have tauri-action cut a
+      # second tag, so the release would not be the thing that was pushed.
+      - name: A desktop-v tag must match the app version
+        if: github.ref_type == 'tag'
+        shell: bash
+        run: |
+          tag="${GITHUB_REF_NAME#desktop-v}"
+          version="$(node -p "require('./apps/desktop/src-tauri/tauri.conf.json').version")"
+          if [ "$tag" != "$version" ]; then
+            echo "tag $GITHUB_REF_NAME does not match the app version $version" >&2
+            exit 1
+          fi
+
+      - name: Build and bundle
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          projectPath: apps/desktop
+          args: --target ${{ matrix.target }} --bundles ${{ matrix.bundles }}
+          # Empty off a tag: no release is created or uploaded to on a branch or a
+          # pull request, which only get the workflow artifacts.
+          tagName: ${{ github.ref_type == 'tag' && 'desktop-v__VERSION__' || '' }}
+          releaseName: Curule __VERSION__
+          releaseBody: |
+            The Curule desktop shell: the hosted app at app.curule.dev in a window of its own.
+
+            These installers are unsigned, so macOS says the app is damaged and Windows
+            shows a SmartScreen warning. The note in `.github/workflows/desktop.yml`
+            names the secrets that would sign them.
+          releaseDraft: true
+          prerelease: false
+          generateReleaseNotes: true
+
+      # The installers are the run's output even when no release is cut: the
+      # action uploads nothing of its own, so a branch build's artifacts are
+      # collected here. `tauri-action` has no input for this — the inputs it
+      # accepts are the release ones — and asking it for one fails the whole job.
+      - name: Upload the installers
+        uses: actions/upload-artifact@v4
+        with:
+          name: curule-desktop-${{ matrix.target }}
+          path: apps/desktop/src-tauri/target/${{ matrix.target }}/release/bundle/**
+          if-no-files-found: error
+
+# Not configured, and not attempted here: the workflow builds unsigned bundles.
+# Signing needs secrets this repository does not have —
+#
+#   macOS    APPLE_CERTIFICATE, APPLE_CERTIFICATE_PASSWORD, APPLE_SIGNING_IDENTITY,
+#            and APPLE_ID / APPLE_PASSWORD / APPLE_TEAM_ID for notarization
+#   Windows  WINDOWS_CERTIFICATE, WINDOWS_CERTIFICATE_PASSWORD (or the AZURE_TENANT_ID /
+#            AZURE_CLIENT_ID / AZURE_CLIENT_SECRET trio for Azure Trusted Signing)
+#   updates  TAURI_SIGNING_PRIVATE_KEY, TAURI_SIGNING_PRIVATE_KEY_PASSWORD
+#
+# — and until they are here, a build that claims to be signed would be a lie. The
+# draft release is where an unsigned installer is handed over, with the note above
+# in its body.

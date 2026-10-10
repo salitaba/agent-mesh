@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="light dark" />
+    <title>Curule</title>
+    <style>
+      /* The product's own palette (brand/tokens.css). Inline, so this page is one
+         file that works with no network at all. */
+      :root {
+        --paper: #fbfaf8;
+        --panel: #ffffff;
+        --ink: #1c1b1a;
+        --muted: #5d5a55;
+        --line: #e4e0d9;
+        --blue: #2b5fd9;
+        --on-blue: #ffffff;
+        --font: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --paper: #131211;
+          --panel: #1b1a18;
+          --ink: #efece6;
+          --muted: #aaa59c;
+          --line: #302e2a;
+          --blue: #7ba0ff;
+          --on-blue: #0e1220;
+        }
+      }
+      * { box-sizing: border-box; }
+      html, body { height: 100%; margin: 0; }
+      body {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 24px;
+        background: var(--paper);
+        color: var(--ink);
+        font: 15px/1.55 var(--font);
+      }
+      main {
+        width: 100%;
+        max-width: 26rem;
+        padding: 32px;
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        background: var(--panel);
+        text-align: center;
+      }
+      .mark { width: 56px; height: 56px; }
+      .mark .ring { fill: none; stroke: var(--ink); stroke-width: 9.2; stroke-linecap: round; }
+      .mark .seat { fill: var(--blue); }
+      h1 { margin: 14px 0 0; font-size: 22px; letter-spacing: -0.01em; }
+      #status { margin: 8px 0 0; color: var(--muted); }
+      #status[data-state="failed"] { color: var(--ink); }
+      .actions { display: flex; gap: 10px; justify-content: center; margin: 22px 0 0; }
+      button, .browser {
+        padding: 9px 16px;
+        border: 1px solid var(--line);
+        border-radius: 9px;
+        background: var(--panel);
+        color: var(--ink);
+        font: inherit;
+        text-decoration: none;
+        cursor: pointer;
+      }
+      button { border-color: var(--blue); background: var(--blue); color: var(--on-blue); font-weight: 600; }
+      button:focus-visible, .browser:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
+      .note { margin: 20px 0 0; padding: 0; color: var(--muted); font-size: 13px; text-align: left; }
+      .note code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <!-- brand/favicon.svg, the product's own mark. -->
+      <svg class="mark" viewBox="0 0 64 64" role="img" aria-label="Curule">
+        <title>Curule</title>
+        <path class="ring" d="M48.72 15.65A22 22 0 1 0 48.72 48.35" />
+        <circle class="seat" cx="48.72" cy="15.65" r="8" />
+      </svg>
+      <h1>Curule</h1>
+      <p id="status" data-state="connecting">Connecting to <span id="host">app.curule.dev</span>…</p>
+      <div class="actions">
+        <button id="retry" type="button">Retry</button>
+        <a id="browser" class="browser" href="https://app.curule.dev" target="_blank" rel="noreferrer noopener">Open in browser</a>
+      </div>
+      <p class="note" id="note">
+        This is the window's own page, kept inside the app: it needs no network. If the machine is offline, or the
+        address is unreachable, the app cannot open — check the connection and press Retry, or open
+        <span id="note-host">app.curule.dev</span> in a browser.
+      </p>
+    </main>
+    <script src="fallback.js"></script>
+  </body>
+</html>

@@ -7,6 +7,29 @@ sections 1 to 26) are described there, run by run.
 
 ## Unreleased
 
+### Added: the desktop app, which is the hosted app in a window of its own
+
+- **`apps/desktop`: a Tauri 2 shell.** The window shows `app.curule.dev`; the dashboard is still deployed, so a change to it
+  reaches the desktop the moment it is deployed, and there is nothing in the shell to rebuild when it changes. The window
+  opens on a page of its own, which holds the address, asks whether the app answers and goes there — and stays, with a
+  Retry and a link to the system browser, when it does not. Tauri and wry report a load that failed to nobody on any of the
+  three platforms, which is why the question is asked by the page that is still there to ask it.
+- **One window, and the desktop's own manners.** A second launch focuses the window that is there; the tray offers Show,
+  Reload and Quit; the size and position are remembered. Anything that is not the app's own origin — a `target="_blank"`
+  link, a sign-in flow that leaves `app.curule.dev` — opens in the system browser rather than in the window, and the
+  capability file grants the bundled page the baseline and nothing else, with no remote address listed.
+- `CURULE_DESKTOP_URL` points the window at a self-hosted control plane or a local run. A value that is not an http(s)
+  address falls back to the hosted app rather than refusing to start.
+- **The installers come from CI, and they are unsigned.** `.github/workflows/desktop.yml` builds an AppImage and a deb, a
+  dmg for each Mac architecture and the Windows NSIS and msi installers, and attaches them to a draft release cut from a
+  `desktop-v*` tag. The crate has not been compiled on the machine it was written on — the first compile is CI's, and it
+  failed the first time on one missing `?` — and no signing secret exists yet, so macOS and Windows will warn about the
+  download until they are added. See [apps/desktop/README.md](apps/desktop/README.md), including what bundling the
+  dashboard's own assets into the installer would take (not done here).
+- Tests: `tests/desktop/desktop-shell.test.ts` — the window the Rust builds against the window the config declares, every
+  icon on disk, the capability grant, the page's own elements, the workflow's four targets, and that nothing in the app
+  carries a credential or a remote IPC grant.
+
 ### Added: Curule Cloud, hosting only
 
 - **Hosting-only plans.** A plan with `byok: true` sells no model usage: no included usage, tiers or top-ups, and a payment grants no
