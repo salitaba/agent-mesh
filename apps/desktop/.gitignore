@@ -1,0 +1,10 @@
+# The Rust crate is compiled in CI, never on a machine without a toolchain.
+src-tauri/target/
+
+# tauri-build writes the capability schemas here on every build.
+src-tauri/gen/schemas/
+
+node_modules/
+
+# The 1024px master `npm run icon` renders the whole set from (see README.md).
+/icon-1024.png
