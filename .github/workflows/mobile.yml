@@ -46,11 +46,16 @@ jobs:
       # The Android Gradle plugin needs a JDK, and the version matters: the project
       # Tauri 2.12 generates pins Gradle 9.6 in its wrapper, which runs on Java up to
       # 26, and Tauri's own Android workflow builds with temurin 25.
+      #
+      # No `cache: gradle` here: the Gradle project is generated further down, so at
+      # this point there is no `*.gradle*` file in the tree for the cache key to hash
+      # and setup-java fails the job outright ("No file … matched to [**/*.gradle*]",
+      # observed on the first run). Caching `~/.gradle` is a separate `actions/cache`
+      # step, after `init` has written the project, if it is worth it later.
       - uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: 25
-          cache: gradle
 
       - name: Rust
         uses: dtolnay/rust-toolchain@stable
