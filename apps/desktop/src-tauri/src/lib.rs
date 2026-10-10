@@ -1,4 +1,5 @@
-//! The Curule desktop shell: the hosted app in a window of its own.
+//! The Curule shell: the hosted app in a window of its own, on the desktop and on
+//! Android.
 //!
 //! The window opens on the page bundled from `ui/`, which is the shell's own
 //! surface: it knows the address to connect to, it connects, and it is where a
@@ -6,16 +7,26 @@
 //! window needs is policy: which addresses it may show itself, and what a second
 //! launch, the tray and a `target="_blank"` link do.
 //!
+//! One crate builds both apps, and what a phone has no use for is behind
+//! `#[cfg(desktop)]`: the tray, the remembered window geometry, and noticing a
+//! second launch — Android's `launchMode="singleTask"` resumes the activity that
+//! is there instead. The address, the window and the navigation policy are shared,
+//! because Tauri 2 supports all three on both.
+//!
 //! `README.md` (one directory up) says why the bundled page connects rather than
 //! the shell navigating to the app URL from here, and what is left unverified.
 
+use tauri::{webview::NewWindowResponse, App, AppHandle, Manager, Url, WebviewWindowBuilder};
+use tauri_plugin_opener::OpenerExt;
+
+// The tray and its menu are desktop-only: `tauri::menu` is `#[cfg(desktop)]` in the
+// tauri crate, and `tauri::tray` is behind `all(desktop, feature = "tray-icon")`.
+// Importing either on a mobile target does not compile.
+#[cfg(desktop)]
 use tauri::{
     menu::{MenuBuilder, MenuItemBuilder},
     tray::TrayIconBuilder,
-    webview::NewWindowResponse,
-    App, AppHandle, Manager, Url, WebviewWindowBuilder,
 };
-use tauri_plugin_opener::OpenerExt;
 
 /// Where the window connects when nothing says otherwise.
 const DEFAULT_APP_URL: &str = "https://app.curule.dev";
@@ -23,19 +34,40 @@ const DEFAULT_APP_URL: &str = "https://app.curule.dev";
 const APP_URL_ENV: &str = "CURULE_DESKTOP_URL";
 /// The window `tauri.conf.json` declares (with `create: false`, so this module can
 /// build it with the handlers a config-declared window cannot carry).
+///
+/// Desktop-only because only the tray and a second launch address a window by
+/// label; on mobile the activity owns the one window there is.
+#[cfg(desktop)]
 const WINDOW_LABEL: &str = "main";
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
+    let builder = tauri::Builder::default();
+
+    // `single-instance` and `window-state` are desktop crates: both declare
+    // `#![cfg(not(any(target_os = "android", target_os = "ios")))]`, so on a mobile
+    // target their items do not exist and registering them there would not compile.
+    // Nothing is lost on Android: the generated manifest gives the activity
+    // `android:launchMode="singleTask"`, so a second launch resumes the activity
+    // that is there, and a phone — not the app — decides a window's geometry.
+    #[cfg(desktop)]
+    let builder = builder
         // Registered first: a second launch has to be noticed before the rest of
         // setup runs, and before it can open a window of its own.
         .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| focus_window(app)))
-        .plugin(tauri_plugin_window_state::Builder::default().build())
+        .plugin(tauri_plugin_window_state::Builder::default().build());
+
+    builder
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
             let address = app_url();
+            // The same call on both platforms, and deliberately no `#[cfg(mobile)]`
+            // branch: Tauri builds a config-declared window (`create: true`) from
+            // this same config entry, at this same point in startup, on every
+            // platform — this module only builds it by hand because a
+            // config-declared window cannot carry the handlers below.
             open_window(app, &address)?;
+            #[cfg(desktop)]
             tray(app)?;
             Ok(())
         })
@@ -68,6 +100,15 @@ fn is_ours(url: &Url, app_url: &Url) -> bool {
 /// Builds the window from its `tauri.conf.json` declaration — the size, the title
 /// and the minimums live there — and adds what only Rust can: the address handed
 /// to the bundled page, and the two navigation handlers.
+///
+/// The size and the title are desktop manners; on Android the activity and
+/// `strings.xml` own them and the config's are ignored. What is not ignored is
+/// `url`: the webview is built from this entry on both platforms.
+///
+/// `on_new_window` is documented as unsupported on Android and iOS, so on a phone
+/// the navigation handler below is the whole of the external-link behaviour —
+/// which is the one that matters, since it is what keeps somebody else's page out
+/// of the app.
 fn open_window(app: &mut App, address: &Url) -> Result<(), Box<dyn std::error::Error>> {
     let config = app
         .config()
@@ -116,7 +157,9 @@ fn open_in_browser(app: &AppHandle, url: &Url) {
     let _ = app.opener().open_url(url.as_str(), None::<&str>);
 }
 
-/// Brings the window back: a second launch, or the tray's Show.
+/// Brings the window back: a second launch, or the tray's Show. Desktop-only, like
+/// both of its callers.
+#[cfg(desktop)]
 fn focus_window(app: &AppHandle) {
     if let Some(window) = app.get_webview_window(WINDOW_LABEL) {
         let _ = window.show();
@@ -127,7 +170,9 @@ fn focus_window(app: &AppHandle) {
 
 /// Reloads whatever the window is showing: the app, or the bundled page, which
 /// connects again. Always reloading the app URL would strand whoever lost their
-/// connection on the webview's own error page.
+/// connection on the webview's own error page. The tray's Reload is the only
+/// caller, so this is desktop-only with it.
+#[cfg(desktop)]
 fn reload_window(app: &AppHandle) {
     if let Some(window) = app.get_webview_window(WINDOW_LABEL) {
         let _ = window.eval("window.location.reload()");
@@ -135,7 +180,9 @@ fn reload_window(app: &AppHandle) {
 }
 
 /// The tray icon. A window can end up behind everything else, and a desktop app
-/// that cannot be brought back is a desktop app that has to be killed.
+/// that cannot be brought back is a desktop app that has to be killed. There is no
+/// tray on Android or iOS, which is why nothing here is compiled for them.
+#[cfg(desktop)]
 fn tray(app: &App) -> Result<(), Box<dyn std::error::Error>> {
     let show = MenuItemBuilder::with_id("show", "Show Curule").build(app)?;
     let reload = MenuItemBuilder::with_id("reload", "Reload").build(app)?;
