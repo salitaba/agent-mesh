@@ -75,18 +75,6 @@ jobs:
           ndk-version: r29
           local-cache: true
 
-      # The runner image carries an SDK, but not the platform this app compiles
-      # against: the generated Gradle project sets `compileSdk = 37`. Accepting the
-      # licences is what lets sdkmanager install anything at all, and Gradle
-      # downloads whatever else it finds missing once they are accepted.
-      - name: The Android SDK packages the build needs
-        run: |
-          sdk="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
-          sdkmanager="$sdk/cmdline-tools/latest/bin/sdkmanager"
-          [ -x "$sdkmanager" ] || sdkmanager="$(command -v sdkmanager)"
-          yes | "$sdkmanager" --licenses > /dev/null || true
-          "$sdkmanager" "platform-tools" "platforms;android-37"
-
       # The NDK ships symlinks that point into the archive they were unpacked from,
       # which a restored cache leaves dangling. Tauri's own Android workflow carries
       # this workaround while nttld/setup-ndk#518 is open.
@@ -119,6 +107,38 @@ jobs:
         env:
           NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
         run: npm run tauri -- android init --ci --skip-targets-install
+
+      # The runner image carries an SDK, but not the platform this project compiles
+      # against — and that platform cannot be named by hand. From API 36.1 on Google
+      # publishes minor-versioned platforms, so `platforms;android-37` does not exist
+      # while `platforms;android-37.0` … `37.2` do: the first run of this workflow died
+      # on exactly that guess ("Failed to find package 'platforms;android-37'").
+      # So the API is read from the project `init` just generated (compileSdk = 37 in
+      # tauri 2.12.3's template) and the newest published package for it is installed,
+      # which is also what keeps this working when the template moves to 38.
+      # After `init` on purpose: before it there is no project to read the API from.
+      - name: The Android SDK platform the project compiles against
+        run: |
+          sdk="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
+          sdkmanager="$sdk/cmdline-tools/latest/bin/sdkmanager"
+          [ -x "$sdkmanager" ] || sdkmanager="$(command -v sdkmanager)"
+          yes | "$sdkmanager" --licenses > /dev/null || true
+          "$sdkmanager" "platform-tools"
+          gradle=apps/desktop/src-tauri/gen/android/app/build.gradle.kts
+          api=$(grep -oE 'compileSdk *= *[0-9]+' "$gradle" | grep -oE '[0-9]+' | head -1)
+          if [ -z "$api" ]; then
+            echo "::error::no compileSdk in $gradle — the template changed shape"
+            exit 1
+          fi
+          echo "the generated project compiles against API $api"
+          package=$("$sdkmanager" --list | grep -oE "platforms;android-$api(\.[0-9]+)?" | sort -uV | tail -1)
+          if [ -z "$package" ]; then
+            echo "::error::no published SDK platform for API $api; the repository offers:"
+            "$sdkmanager" --list | grep -oE 'platforms;android-[0-9]+(\.[0-9]+)?' | sort -uV | tail -4
+            exit 1
+          fi
+          echo "installing $package"
+          "$sdkmanager" "$package"
 
       # After init, on purpose: `tauri icon` writes the Android launcher icons into
       # the generated project (gen/android/app/src/main/res) when it exists, and into

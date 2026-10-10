@@ -261,10 +261,23 @@ test("the workflow builds an APK on the toolchain Android needs, and signs nothi
   const withNdk = steps.filter((step) => step.env?.["NDK_HOME"]?.includes("steps.setup-ndk.outputs.ndk-path"));
   assert.ok(withNdk.length >= 2, "the NDK is handed to both the init and the build");
 
-  // The SDK: the runner image has one, but not the platform compileSdk 37 in the generated project points at.
-  const sdk = named("sdkmanager");
-  assert.match(sdk.run!, /platforms;android-37/, "the platform the generated Gradle project compiles against");
+  // The SDK: the runner image has one, but not the platform the generated project compiles
+  // against — and that platform cannot be named by hand, because from API 36.1 on Google
+  // publishes minor-versioned platforms (`platforms;android-37` does not exist, `37.0` does).
+  // The first run of this workflow asked for the plain name and died there, before the crate
+  // was ever looked at. The API is read from the project `init` generated, and the published
+  // package for it is installed.
+  const sdk = named("SDK platform the project compiles against");
+  assert.match(sdk.run!, /compileSdk/, "the API comes from the project init just generated");
+  assert.match(sdk.run!, /gen\/android\/app\/build\.gradle\.kts/, "and it is read from that generated project, not assumed");
+  assert.match(sdk.run!, /platforms;android-\$api/, "the package is looked up from that API, never guessed");
   assert.match(sdk.run!, /--licenses/, "sdkmanager installs nothing until the licences are accepted");
+  const initStep = steps.find((candidate) => candidate.run?.includes("android init"));
+  assert.ok(initStep, "the Android project is generated per run");
+  assert.ok(
+    steps.indexOf(sdk) > steps.indexOf(initStep!),
+    "after init: before it there is no project to read compileSdk from",
+  );
 
   const rust = use("dtolnay/rust-toolchain@");
   assert.deepEqual(
