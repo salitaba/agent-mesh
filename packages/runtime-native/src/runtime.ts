@@ -620,6 +620,15 @@ export class NativeRuntime implements AgentRuntime, DesignerRuntime {
     const resolved = this.resolve(opts.model ?? this.options.designerModel, "the designer");
     const turn = new TurnState();
     this.designerTurns.add(turn);
+    // The caller can end this turn the way `interrupt` ends a seat's: the point
+    // of the signal is that the model call in flight stops, and it is the same
+    // mechanism, so a stopped designer turn cannot behave differently from a
+    // stopped agent turn.
+    const stop = (): void => turn.interrupt();
+    opts.signal?.addEventListener("abort", stop, { once: true });
+    if (opts.signal?.aborted) stop();
+    let reply = "";
+    let thinking = "";
     try {
       const bus = opts.mcp
         ? new BusClient({
@@ -659,24 +668,33 @@ export class NativeRuntime implements AgentRuntime, DesignerRuntime {
       let thinking = "";
       const gen = loop.run();
       let end: LoopEnd | undefined;
-      for (;;) {
-        const next = await gen.next();
-        if (next.done) {
-          end = next.value;
-          break;
+      try {
+        for (;;) {
+          const next = await gen.next();
+          if (next.done) {
+            end = next.value;
+            break;
+          }
+          const ev = next.value;
+          if (ev.kind === "agent_message_chunk") {
+            reply += ev.delta;
+            emit(onDelta, { kind: "text", delta: ev.delta });
+          } else if (ev.kind === "agent_thought_chunk") {
+            thinking += ev.delta;
+            emit(onDelta, { kind: "thinking", delta: ev.delta });
+          }
         }
-        const ev = next.value;
-        if (ev.kind === "agent_message_chunk") {
-          reply += ev.delta;
-          emit(onDelta, { kind: "text", delta: ev.delta });
-        } else if (ev.kind === "agent_thought_chunk") {
-          thinking += ev.delta;
-          emit(onDelta, { kind: "thinking", delta: ev.delta });
-        }
+      } catch (err) {
+        // An interrupted turn surfaces as an AbortError from the loop. When the
+        // caller asked for it, that is the ending it wanted: answer with what
+        // was written rather than throwing at a caller that pressed Stop.
+        if (!turn.interrupted) throw err;
+        return { reply, thinking, stopped: true };
       }
       // The last thing the model said is the answer; what it said between tool calls was a preview of it.
       return { reply: end?.text || reply, thinking };
     } finally {
+      opts.signal?.removeEventListener("abort", stop);
       this.designerTurns.delete(turn);
     }
   }

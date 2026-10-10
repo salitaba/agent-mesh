@@ -7,6 +7,19 @@ sections 1 to 24) are described there, run by run.
 
 ## Unreleased
 
+### Added: stopping a designer turn
+
+- **Stop, in the designer chat.** A turn that is running can be ended from the panel — next to `Send`, and beside the
+  "thinking…" line so whoever is waiting on it does not have to look away to end it. The transcript keeps what the model
+  had already written and marks the entry as stopped; nothing presents a stopped turn's partial text as the whole answer.
+- `POST /designer/chat/stop` names the turn (`turnId`), which the stream sends as its very first frame — before the model
+  has said anything, so a stop pressed during "thinking…" has something to aim at. It is the turn that stops, not the
+  socket: the same conversation in another tab or browser ends with it. An id that is not running is `404 no_such_turn`,
+  because a stop arriving a moment after the model finished is a no-op, not a conflict.
+- **Best-effort by contract.** `signal` is passed to the runtime; a runtime that cannot interrupt answers with the whole
+  reply and no `stopped` flag, and then it was an ordinary turn. Only the result's own `stopped: true` — from the native
+  runtime's `InterruptedTurnError`, or the Claude adapter's `interrupt()` — marks a turn as stopped.
+
 ### Added: Curule Cloud, hosting only
 
 - **Hosting-only plans.** A plan with `byok: true` sells no model usage: no included usage, tiers or top-ups, and a payment grants no
