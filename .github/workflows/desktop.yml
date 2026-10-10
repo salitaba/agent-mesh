@@ -132,8 +132,17 @@ jobs:
           releaseDraft: true
           prerelease: false
           generateReleaseNotes: true
-          uploadWorkflowArtifacts: true
-          workflowArtifactNamePattern: curule-desktop-${{ matrix.target }}
+
+      # The installers are the run's output even when no release is cut: the
+      # action uploads nothing of its own, so a branch build's artifacts are
+      # collected here. `tauri-action` has no input for this — the inputs it
+      # accepts are the release ones — and asking it for one fails the whole job.
+      - name: Upload the installers
+        uses: actions/upload-artifact@v4
+        with:
+          name: curule-desktop-${{ matrix.target }}
+          path: apps/desktop/src-tauri/target/${{ matrix.target }}/release/bundle/**
+          if-no-files-found: error
 
 # Not configured, and not attempted here: the workflow builds unsigned bundles.
 # Signing needs secrets this repository does not have —

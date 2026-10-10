@@ -80,7 +80,7 @@ fn open_window(app: &mut App, address: &Url) -> Result<(), Box<dyn std::error::E
     let for_new_window = app.handle().clone();
     let target = address.clone();
 
-    WebviewWindowBuilder::from_config(app.handle(), &config)
+    WebviewWindowBuilder::from_config(app.handle(), &config)?
         .initialization_script(&address_script(address)?)
         .on_navigation(move |url| {
             if is_ours(url, &target) {
