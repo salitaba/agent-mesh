@@ -29,6 +29,22 @@ sections 1 to 24) are described there, run by run.
 - Tests: `tests/desktop/desktop-shell.test.ts` — the window the Rust builds against the window the config declares, every
   icon on disk, the capability grant, the page's own elements, the workflow's four targets, and that nothing in the app
   carries a credential or a remote IPC grant.
+- **The same app builds for Android.** One crate, one window, one address: what a phone has no use for is behind
+  `#[cfg(desktop)]` — the tray, the remembered window geometry, and noticing a second launch, which Android's
+  `android:launchMode="singleTask"` does for itself — while the address handling, the window and the external-link policy
+  are shared. `bundle.android` carries the `minSdkVersion` (24) and the `versionCode`, and `capabilities/mobile.json`
+  grants the bundled page the baseline and nothing else, scoped to `android` and `iOS`, with no remote address listed.
+- **The APK comes from `.github/workflows/mobile.yml`, and it is unsigned.** JDK 25, the Android SDK, NDK r29 and the four
+  Rust targets, then `tauri android init --ci` (the Gradle project is generated per run, never committed — it cannot be
+  generated on a machine without Rust and an SDK), the launcher icons rendered onto it from `icon.png`, `tauri android
+  build --apk --ci`, and the APK uploaded as that run's artifact. It sideloads on Android 7.0+, and it cannot update over
+  an install Play signed; Play would need a keystore, an upload key and a Console account, and an app bundle rather than
+  an APK. iOS is out of scope for this pass. See
+  [apps/desktop/README.md](apps/desktop/README.md#android).
+- Tests: `tests/desktop/mobile-android.test.ts` — the mobile capability grant and the platforms each capability file is
+  scoped to, the `#[cfg(desktop)]` split in `lib.rs` against the shared shell, the Android bundle settings and the
+  identifier as an application id, the workflow's JDK/SDK/NDK, its four targets and its upload, and that nothing under
+  `apps/desktop` carries a keystore or a remote IPC grant.
 
 ### Changed: a workspace cannot be saved out of the models it was given
 
