@@ -61,6 +61,7 @@ import { callerKind, getApiToken, handleAuthRoute, requireAuth, resolveActor } f
 import { SessionStore } from "./sessions";
 import { PREVIEW_PAGE_DIR, PREVIEW_PRESETS_DIR, PREVIEW_PREFIX, PreviewCapabilities } from "./preview";
 import { LicenseProvider, enforceOrWarn, licenseView } from "./license";
+import { MANAGED_PROVIDER, managedModels, rewriteForManagedModels } from "./managed";
 import { configuredPrices, licenseMetrics, parseUsageQuery, usageAnswer } from "./commercial";
 import { serverVersion } from "./version";
 import { checkFeature, checkSeats } from "../../../packages/licensing/src/index";
@@ -71,6 +72,31 @@ import { paginateCompat } from "./pagination";
 import { diffText } from "./diff";
 
 export type ServerMode = "parked" | "live";
+
+/**
+ * The managed wiring a saved mesh.yaml has to keep.
+ *
+ * `rewriteForManagedModels` runs at project creation and nowhere else, so any later save of mesh.yaml — the designer's
+ * own Save, an applied proposal, a hand edit through the API — used to drop `runtime.designer`, the model and the
+ * `providers` block. The designer then fell back to Claude Code, which has no credential inside a workspace, and every
+ * turn answered `Not logged in · Please run /login`: a mesh whose seats never run and whose progress bar never moves.
+ *
+ * A workspace the host was given models for cannot be saved out of them. The rewrite happens here, on the way to disk,
+ * and its note rides the post-save card — the operator is told what was rewired rather than finding it in the file.
+ */
+function rewriteSavedForManagedModels(yamlText: string): { text: string; note: string | null } {
+  const managed = managedModels(process.env);
+  if (!managed) return { text: yamlText, note: null };
+  const rewritten = rewriteForManagedModels(yamlText, managed);
+  if (!rewritten.changed) return { text: yamlText, note: null };
+  return {
+    text: rewritten.text,
+    note:
+      `This workspace runs on the model the host was given (${managed.tier}), so the saved mesh.yaml was rewired for it: ` +
+      `the default and designer runtimes are 'native', and provider '${MANAGED_PROVIDER}' reads the key from the environment. ` +
+      `Saving a mesh.yaml without that wiring would leave every seat unable to run.`,
+  };
+}
 
 /** A verified seat's tool call can carry a long message or file content; 8 MiB is generous and still a bound. */
 const MCP_MAX_BODY_BYTES = 8 * 1024 * 1024;
@@ -2757,6 +2783,9 @@ export function createHttpServer(instance: MeshInstance, opts: { dashboardDir?: 
           }
           let target: string | null = null;
           let archived: string | null = null;
+          // What a save actually writes. It is the validated document except in a workspace the host gives models to,
+          // where the managed wiring is put back (see rewriteSavedForManagedModels).
+          let savedText = yamlText;
           let createdPrompts: ReturnType<typeof materializeRolePrompts> = [];
           if (parts[1] === "save") {
             if (!b.path) return json(400, { valid: false, errors: ["save requires a path"] });
@@ -2776,10 +2805,15 @@ export function createHttpServer(instance: MeshInstance, opts: { dashboardDir?: 
             target = contained;
             if (fs.existsSync(target) && fs.statSync(target).isDirectory()) target = path.join(target, "mesh.yaml");
             fs.mkdirSync(path.dirname(target), { recursive: true });
+            // What goes to disk is not necessarily what was validated: a workspace the host gives models to keeps that
+            // wiring whatever the saved document says (see rewriteSavedForManagedModels).
+            const rewritten = rewriteSavedForManagedModels(yamlText);
+            savedText = rewritten.text;
+            if (rewritten.note) saveWarnings.push(rewritten.note);
             // Keep the bytes we are about to overwrite as a recoverable version:
             // the save UI has no undo once it commits the new baseline.
             const previous = fs.existsSync(target) ? fs.readFileSync(target, "utf8") : null;
-            if (previous !== null && previous !== yamlText) {
+            if (previous !== null && previous !== savedText) {
               const versionsDir = path.join(path.dirname(target), ".mesh-versions");
               fs.mkdirSync(versionsDir, { recursive: true });
               const stamp = new Date().toISOString().replace(/[:.]/g, "-");
@@ -2789,7 +2823,7 @@ export function createHttpServer(instance: MeshInstance, opts: { dashboardDir?: 
               fs.writeFileSync(candidate, previous, "utf8");
               archived = candidate;
             }
-            fs.writeFileSync(target, yamlText, "utf8");
+            fs.writeFileSync(target, savedText, "utf8");
             const dir = path.dirname(target);
             // Make the prompt refs this save just wrote real, or the project
             // opens as invalid_config. Existing files are never overwritten.
@@ -2826,7 +2860,7 @@ export function createHttpServer(instance: MeshInstance, opts: { dashboardDir?: 
           }
           return json(200, {
             valid: true,
-            yaml: yamlText,
+            yaml: savedText,
             savedTo: target,
             archived,
             drift,

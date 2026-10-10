@@ -7,6 +7,22 @@ sections 1 to 24) are described there, run by run.
 
 ## Unreleased
 
+### Changed: a workspace cannot be saved out of the models it was given
+
+- **A saved `mesh.yaml` keeps the managed wiring.** The rewrite that points the default and designer runtimes and the
+  `providers` block at the models the host supplies used to run when a project was *created* and nowhere else, so any
+  later save — the designer's own Save, an applied proposal — dropped it. The workspace then fell back to Claude Code,
+  which has no credential inside it, and every seat turn answered `Not logged in · Please run /login`: a mesh whose
+  seats never run and whose progress never moves. It is now applied on the way to disk on every save, whatever the
+  saved document says, and the post-save card says what was rewired rather than leaving it to be found in the file.
+  A service that supplies no models is untouched and is told nothing.
+- **A model id is checked against the provider before it is kept.** `POST /api/workspaces/:id/model-key` reads the
+  provider's own catalogue while it has the key and refuses a model the provider does not serve, naming the closest
+  ids: `deepseek-4.1-flash` next to `deepseek-v4.1-flash` used to be accepted and then fail every single turn with a
+  `400 Model '…' is not available in the active live catalog`. Only a catalogue that arrived and does not list the
+  model refuses; a timeout, a 5xx, an endpoint with no `/models`, an unreadable body and an empty list all let the key
+  through, because a provider that answers unusually must not lock a customer out of a workspace that works.
+
 ### Added: stopping a designer turn
 
 - **Stop, in the designer chat.** A turn that is running can be ended from the panel — next to `Send`, and beside the
