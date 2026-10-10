@@ -247,7 +247,10 @@ test("the workflow builds an APK on the toolchain Android needs, and signs nothi
   const java = use("actions/setup-java@");
   assert.equal(java.with?.["distribution"], "temurin");
   assert.equal(java.with?.["java-version"], 25, "the JDK the generated Gradle project is known to run on");
-  assert.equal(java.with?.["cache"], "gradle");
+  // And it must NOT ask setup-java to cache Gradle: the cache key is hashed from `**/*.gradle*` at the moment the
+  // step runs, and the Android project is generated further down the job, so the option fails the whole job before
+  // the crate is even looked at ("No file … matched to [**/*.gradle*]", the first run of this workflow).
+  assert.equal(java.with?.["cache"], undefined, "nothing to hash: gen/android does not exist yet at this point");
 
   // The NDK: pinned to a release, because the CLI pins one too (NDK_VERSION = 29.0.13846066, r29, for 2.12), and
   // passed on as NDK_HOME — which is how the CLI finds it, at init and at build.
