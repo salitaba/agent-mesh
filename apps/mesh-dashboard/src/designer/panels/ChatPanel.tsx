@@ -11,7 +11,7 @@ import { summarizeDiff } from "../diff";
 import { confirmationFor, confirmationSatisfied, goalDriftWarning, showsTextProposal, splitByTarget, summarizeMutation, type LiveMission } from "../mutations";
 import { Button, Input, TextArea } from "../../components";
 import { useMesh } from "../../store";
-import { clearChat, getSnapshot, markApplied, sendMessage, setReview, setShowThinking, subscribe } from "../chatStore";
+import { clearChat, getSnapshot, markApplied, sendMessage, setReview, setShowThinking, stopTurn, subscribe } from "../chatStore";
 import { getDraftSnapshot, type DraftState } from "../storage";
 import { list as listCommands, setPendingProposal } from "../../commands";
 
@@ -169,6 +169,9 @@ export default function ChatPanel(): React.JSX.Element {
                 </details>
               ) : null}
               {e.content}
+              {e.role === "assistant" && e.stopped ? (
+                <div className="muted tx-meta ms-chat-stopped">Stopped. Above is what the model had written when you stopped it.</div>
+              ) : null}
               {e.role === "assistant" && e.problems?.length ? (
                 <ul className="ms-chat-problems">
                   {e.problems.map((p) => <li key={p}>{p}</li>)}
@@ -265,7 +268,12 @@ export default function ChatPanel(): React.JSX.Element {
             {live.text}
           </div>
         ) : null}
-        {busy && !live?.text && !(showThinking && live?.thinking) ? <div className="muted" role="status">The designer is thinking…</div> : null}
+        {busy && !live?.text && !(showThinking && live?.thinking) ? (
+          <div className="muted ms-chat-waiting" role="status">
+            The designer is thinking…
+            <Button variant="ghost" onClick={() => stopTurn(client)}>Stop</Button>
+          </div>
+        ) : null}
       </div>
       {failed ? <div className="verdict bad" role="alert">{failed}</div> : null}
       <div className="ms-chat-compose">
@@ -284,6 +292,7 @@ export default function ChatPanel(): React.JSX.Element {
         />
         <div className="ms-chat-actions">
           <Button variant="primary" disabled={busy || !input.trim()} onClick={send}>{busy ? "Waiting…" : "Send"}</Button>
+          <Button variant="ghost" disabled={!busy} onClick={() => stopTurn(client)} title="End this turn and keep what the model has written">Stop</Button>
           <Button variant="ghost" disabled={busy || entries.length === 0} onClick={clearChat}>Clear</Button>
           <label className="ms-chat-think" title="show the model's reasoning as it streams">
             <input type="checkbox" checked={showThinking} onChange={(e) => setShowThinking(e.target.checked)} />

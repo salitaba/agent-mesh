@@ -176,6 +176,9 @@ export async function plane(options: PlaneOptions = {}): Promise<Plane> {
       ...(options.hostingOnly ? {} : { gatewayUrl: "http://gateway.internal:8080/v1" }),
       ...(options.noSigner ? {} : { signer: { kid: "k1", privateKey: privateKeyPem } }),
       waitReady: async () => undefined,
+      // Hermetic by default: no test reaches a real provider. A test that cares about the catalogue passes its own
+      // fetchImpl through `options.workspaces`.
+      fetchImpl: async () => new Response(JSON.stringify({ data: [] }), { status: 200, headers: { "content-type": "application/json" } }),
       ...options.workspaces,
     },
     ...(options.accounts ? { accounts: options.accounts } : {}),

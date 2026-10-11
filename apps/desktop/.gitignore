@@ -1,0 +1,21 @@
+# The Rust crate is compiled in CI, never on a machine without a toolchain.
+src-tauri/target/
+
+# tauri-build writes the capability schemas here on every build.
+src-tauri/gen/schemas/
+
+# `tauri android init` writes the Android project here. It is generated on every
+# CI run instead of committed — see apps/desktop/README.md, "Android" — so a local
+# `tauri android init` leaves the tree clean rather than staging a Gradle project.
+src-tauri/gen/android/
+
+node_modules/
+
+# What `tauri icon` renders besides the sizes the bundle names: the mobile sets.
+# The Android set is rendered straight into the generated project
+# (gen/android/app/src/main/res) on CI, where the launcher icon is read from, so it
+# is not committed either. iOS is out of scope for now. The master the set is
+# rendered from (icon.png, beside this file) is committed, so it can always be
+# regenerated.
+src-tauri/icons/android/
+src-tauri/icons/ios/

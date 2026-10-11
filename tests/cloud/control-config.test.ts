@@ -123,16 +123,22 @@ test("the example configuration that ships is valid once its key is where it say
     const file = path.join(here, "control.yaml");
     const load = (publicKeys: Record<string, string> = { k1: keys.publicKey }): ControlConfig => loadControlConfig(file, ENV, { publicKeys });
 
-    // As it ships, the pages carry places for the operator, and a production service is not started on them.
-    assert.throws(load, /the pages in '[^']*pages' have \d+ places marked TODO\(owner\)/);
-    for (const f of ["terms.html", "privacy.html", path.join("assets", "app.js")]) fs.writeFileSync(path.join(pages, f), fs.readFileSync(path.join(pages, f), "utf8").replace(/TODO\(owner\)/g, "decided"));
-
+    // The pages ship without markers: what is still open is written out in them rather than left as a TODO(owner)
+    // (they are the operator's to read and change, and `OWNER-TODO.md` is the list). So a service starts on them as
+    // they are — and the guard is still a guard, which is the next assertion.
     const c = load();
     assert.equal(c.appHost, "app.curule.example");
     assert.equal(c.pagesDir, pages, "the pages are the product's own");
     assert.deepEqual(c.warnings, []);
     assert.ok(describeControl(c).length > 8);
     assert.throws(() => load({}), /this build trusts no public key 'k1'/);
+    // One place marked in one shipped page is enough to refuse the configuration, and deciding it is enough to go on.
+    const terms = path.join(pages, "terms.html");
+    const shipped = fs.readFileSync(terms, "utf8");
+    fs.writeFileSync(terms, `${shipped}<!-- TODO(owner) have this read by a lawyer -->\n`);
+    assert.throws(load, /the pages in '[^']*pages' have 1 place marked TODO\(owner\)/);
+    fs.writeFileSync(terms, shipped);
+    assert.ok(load());
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }

@@ -49,6 +49,8 @@ apps/
   mesh-server/       HTTP/SSE API, MCP bridge, static serving
   mesh-dashboard/    React 19 + Vite SPA (designer + live console)
   cloud-server/      `curule-cloud`: gateway, control plane, trial; pages/ holds the hosted service's account pages
+  desktop/           Tauri 2 shell (`curule-desktop`): the hosted app in a native window; compiled only by CI
+                     (`.github/workflows/desktop.yml`), never by `npm test`
 packages/
   protocol/          typed model, event catalog, JSON schemas, ids, clock
   config/            mesh.yaml load + validation + role prompts
