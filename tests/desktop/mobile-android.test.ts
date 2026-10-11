@@ -44,6 +44,7 @@ interface Step {
   uses?: string;
   run?: string;
   id?: string;
+  if?: string;
   with?: Record<string, string | number | boolean>;
   env?: Record<string, string>;
 }
@@ -228,7 +229,10 @@ test("the workflow builds an APK on the toolchain Android needs, and signs nothi
   const steps = job.steps;
   assert.equal(job["runs-on"], "ubuntu-22.04", "the runner the desktop job uses, so the two builds read alike");
   assert.ok(job["timeout-minutes"] >= 60, "four ABIs of this crate do not compile in the desktop job's budget");
-  assert.equal(job.permissions, undefined, "nothing here writes to the repository: the APK is an artifact, not a release");
+  // The job writes for exactly one case: a `desktop-v*` tag, where the APK joins the
+  // release `desktop.yml` cuts. `gh release upload` needs the scope, which is why it is
+  // on the job rather than on the workflow (`contents: read` stays the default there).
+  assert.deepEqual(job.permissions, { contents: "write" }, "the tag's APK is attached to the release, and that needs write");
   assert.deepEqual(workflow.permissions, { contents: "read" });
 
   const use = (prefix: string) => {
@@ -326,6 +330,20 @@ test("the workflow builds an APK on the toolchain Android needs, and signs nothi
   assert.equal(upload.with?.["if-no-files-found"], "error", "an empty upload is a failed build, not a green one");
   assert.match(String(upload.with?.["name"] ?? ""), /apk/, "and the artifact says what it is");
 
+  // The tag case, which is the one a person downloads from: the APK joins the release
+  // `desktop.yml` cuts, under the same name the installers use, and only on a tag —
+  // a branch run has no release to attach to.
+  const attach = steps.find((step) => step.run?.includes("gh release upload"));
+  assert.ok(attach, "a tag's APK belongs on the release page, not only inside the run");
+  assert.match(String(attach!.if ?? ""), /github\.ref_type == 'tag'/, "and only a tag has a release to attach to");
+  assert.match(String(attach!.env?.["GH_TOKEN"] ?? ""), /secrets\.GITHUB_TOKEN/, "uploading needs the token GitHub hands the run");
+  assert.match(String(attach!.run ?? ""), /Curule_\$\{version\}_android\.apk/, "named the way the installers are named");
+  assert.match(
+    JSON.stringify((workflow.on["push"] as { tags?: string[] }).tags),
+    /desktop-v\*/,
+    "the tag the release is cut from is what this workflow listens for",
+  );
+
   // Signing is described and not attempted: no step decodes a keystore, and the repository has no secret to
   // decode — the only name this workflow may reach for is the token GitHub hands every run. Prose in a comment
   // block wraps, so the note is read with its comment lines joined before a phrase is looked for.
@@ -348,11 +366,12 @@ test("the workflow builds an APK on the toolchain Android needs, and signs nothi
     assert.equal(match[1], "GITHUB_TOKEN", `the workflow reaches for secrets.${match[1]}, which this repository does not have`);
   }
 
-  // Where it runs, and what it is for: a run from a branch, a pull request or the Actions button, producing an APK.
+  // Where it runs, and what it is for: a branch, a pull request, the Actions button — and
+  // the one tag that cuts a release, where the APK joins the desktop installers on it.
   assert.ok(Object.keys(workflow.on).includes("workflow_dispatch"));
   assert.deepEqual(workflow.on["push"]?.paths, ["apps/desktop/**", ".github/workflows/mobile.yml"], "the app, and this workflow");
   assert.deepEqual(workflow.on["pull_request"]?.paths, ["apps/desktop/**", ".github/workflows/mobile.yml"]);
-  assert.equal(workflow.on["push"]?.tags, undefined, "no tag cuts a release here: the APK is a workflow artifact");
+  assert.deepEqual(workflow.on["push"]?.tags, ["desktop-v*"], "the tag whose release the APK belongs on");
   assert.equal(workflow.concurrency["cancel-in-progress"], true);
 });
 

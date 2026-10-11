@@ -12,6 +12,10 @@ on:
   workflow_dispatch:
   push:
     branches: [main]
+    # Path filters are not evaluated for tag pushes, so a `desktop-v*` tag always
+    # builds: that tag is the one release this repository cuts, and the phone's
+    # installer belongs in it (see the last step of the job).
+    tags: ["desktop-v*"]
     paths:
       - apps/desktop/**
       - .github/workflows/mobile.yml
@@ -35,6 +39,11 @@ jobs:
     # Gradle build on top. Sixty minutes is the desktop job's budget and is not
     # enough for this one.
     timeout-minutes: 90
+    # Write, for one case only: a `desktop-v*` tag. The APK is a run artifact on a
+    # branch or a pull request, and on a tag it is also attached to the release
+    # `desktop.yml` cuts — `gh release upload` needs the scope.
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
 
@@ -165,6 +174,37 @@ jobs:
           name: curule-android-apk
           path: apps/desktop/src-tauri/gen/android/app/build/outputs/apk/**/*.apk
           if-no-files-found: error
+
+      # A `desktop-v*` tag is the one release this repository cuts, and `desktop.yml`
+      # is what cuts it — the four desktop installers on a draft. The phone's installer
+      # belongs on the same page: same version, same product. This waits for that draft
+      # to exist (the two workflows start together and neither is ordered against the
+      # other) and then attaches the APK to it, under the name the installers use.
+      - name: Attach the APK to the release the tag cuts
+        if: github.ref_type == 'tag'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          tag="$GITHUB_REF_NAME"
+          version="${tag#desktop-v}"
+          for attempt in $(seq 1 40); do
+            if gh release view "$tag" > /dev/null 2>&1; then
+              break
+            fi
+            if [ "$attempt" = 40 ]; then
+              echo "::error::$tag has no release to attach to — desktop.yml is what creates it"
+              exit 1
+            fi
+            sleep 15
+          done
+          apk=$(find apps/desktop/src-tauri/gen/android/app/build/outputs/apk -name '*.apk' | head -1)
+          if [ -z "$apk" ]; then
+            echo "::error::no APK was built"
+            exit 1
+          fi
+          cp "$apk" "Curule_${version}_android.apk"
+          gh release upload "$tag" "Curule_${version}_android.apk" --clobber
+          echo "attached Curule_${version}_android.apk to $tag"
 
 # Not configured, and not attempted here: the workflow builds an unsigned release
 # APK (`app-universal-release-unsigned.apk`). An unsigned APK sideloads, and cannot
