@@ -182,14 +182,20 @@ test("the workflow compiles the crate on all four targets and bundles what each 
   const targets = job.strategy.matrix.include;
   assert.deepEqual(
     targets.map((entry) => entry["os"]),
-    ["ubuntu-22.04", "macos-14", "macos-13", "windows-latest"],
-    "the three platforms, with the Mac's two architectures built on the two runners that have them",
+    ["ubuntu-22.04", "macos-14", "macos-14", "windows-latest"],
+    "the three platforms; both Mac architectures are built on the arm64 runner, the Intel one by cross-compiling, " +
+      "because a macos-13 job waits in the queue long enough for the next push to cancel it",
   );
   for (const entry of targets) {
     assert.match(entry["target"]!, /^(x86_64|aarch64)-/, `${entry["os"]}: every build names its target`);
     assert.ok(entry["bundles"]!.length > 0, `${entry["os"]}: an installer format per platform`);
   }
   assert.deepEqual(targets.map((entry) => entry["bundles"]), ["appimage,deb", "dmg", "dmg", "nsis,msi"]);
+  assert.deepEqual(
+    targets.map((entry) => entry["target"]),
+    ["x86_64-unknown-linux-gnu", "aarch64-apple-darwin", "x86_64-apple-darwin", "x86_64-pc-windows-msvc"],
+    "an Intel dmg is still built: the target is what changes, not the deliverable",
+  );
 
   const build = steps.find((step) => step.uses?.startsWith("tauri-apps/tauri-action@"));
   assert.ok(build, "tauri-action is what builds and bundles");
