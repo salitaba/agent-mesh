@@ -4,8 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src 'self'; style-src 'self'; script-src 'self'; base-uri 'none'; form-action 'none'">
-<title>Documentation - Curule</title>
-<meta name="description" content="Where the Curule documents are and what each one is for: quickstart, concepts, configuration, deployment, operations, security, licensing, the protocol and the runtime. Which are reference and which are short.">
+<title>Curule documentation: pick the job, open one document</title>
+<meta name="description" content="Every Curule document, with what each one is for: quickstart, concepts, configuration, deployment, operations, security, licensing, the protocol and the runtime. Each is labelled reference, guide, short or log, and the label is checked against the file.">
 <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="../assets/apple-touch-icon.png">
 <meta name="theme-color" content="#fbfaf8" media="(prefers-color-scheme: light)">
@@ -62,42 +62,42 @@
 <section class="page-head">
   <div class="wrap">
     <p class="eyebrow">Documentation</p>
-    <h1>Read the documents.</h1>
-    <p class="lede">The documents live in the repository, next to the code they describe, and there is no separate documentation site yet. This page is the map: what each document is for, and how much of it there is.</p>
+    <h1>The documents, and where to start.</h1>
+    <p class="lede">The documents live in the repository, next to the code they describe, and there is no separate documentation site yet. This page is the map: what each one is for, and how long it is.</p>
   </div>
 </section>
 
 <section class="section" id="start">
   <div class="wrap">
     <h2 class="legend-title">Start here</h2>
-    <p class="muted mt-s">Pick what you want to do. Each card names the one document to open first.</p>
+    <p class="muted mt-s">Pick the job in front of you. Each card names the one document to open first.</p>
     <ul class="starts mt-m">
       <li class="start">
         <svg class="mark" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="8.5"/><path d="m10.4 8.9 4.8 3.1-4.8 3.1V8.9Z"/></svg>
         <h3>Run the demo</h3>
         <p class="start-doc"><a class="arrow-link" href="#documents" data-doc="commercial/deployment.md#try-it-in-a-minute-with-no-api-key">Try it in a minute</a></p>
-        <p>A scripted team on your own machine, with no API key and no account. You need Docker and git.</p>
+        <p>A scripted team on the real runtime, on your own machine: no API key, no account. You need Docker and git.</p>
         <p class="start-meta"><span class="tag">Guide</span><span class="path">docs/commercial/deployment.md</span></p>
       </li>
       <li class="start">
         <svg class="mark" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect x="3.5" y="4" width="17" height="6.5" rx="2"/><rect x="3.5" y="13.5" width="17" height="6.5" rx="2"/><path d="M7.5 7.25h.01M7.5 16.75h.01"/></svg>
         <h3>Deploy it</h3>
         <p class="start-doc"><a class="arrow-link" href="#documents" data-doc="commercial/deployment.md">Deploying Curule</a></p>
-        <p>One server, a cluster or one instance per tenant: Docker Compose, TLS and a reverse proxy, Kubernetes with Helm.</p>
+        <p>One server with Docker Compose, a cluster with Kubernetes and Helm, or one instance per tenant. TLS and a reverse proxy are in the same document.</p>
         <p class="start-meta"><span class="tag">Guide</span><span class="path">docs/commercial/deployment.md</span></p>
       </li>
       <li class="start">
         <svg class="mark" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="17" r="2"/></svg>
         <h3>Describe a team and its rules</h3>
         <p class="start-doc"><a class="arrow-link" href="#documents" data-doc="configuration.md">Configuration</a></p>
-        <p>Roles, what each may do, who may contact whom, the gates a change must pass and what &ldquo;done&rdquo; means. It is long: start at the example at its top, and search the rest.</p>
+        <p>Roles, what each may do, who may contact whom, the gates a change must pass, and what &ldquo;done&rdquo; means. It is long: start at the example at its top, and search the rest.</p>
         <p class="start-meta"><span class="tag">Reference</span><span class="path">docs/configuration.md</span></p>
       </li>
       <li class="start" data-cloud-only>
         <svg class="mark" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M7 18h10.5a3.5 3.5 0 0 0 .4-6.98A5.5 5.5 0 0 0 7.2 9.6 4.2 4.2 0 0 0 7 18Z"/></svg>
         <h3>Use Curule Cloud</h3>
         <p class="start-doc"><a class="arrow-link" href="#documents" data-doc="cloud.md">Curule Cloud: the hosted service</a></p>
-        <p><a href="https://app.curule.dev/signup" data-cloud="signup">Sign up</a>, choose a plan, give your workspace your own model key and open it in your browser. This document says what a workspace is, and which parts of the service are built and tested.</p>
+        <p><a href="https://app.curule.dev/signup" data-cloud="signup">Sign up</a>, choose a plan and open a workspace in your browser: you give it your own model key. This document says what a workspace is, and which parts of the service are built and tested.</p>
         <p class="start-meta"><span class="tag">Guide</span><span class="path">docs/cloud.md</span></p>
       </li>
     </ul>
@@ -109,12 +109,12 @@
     <div class="cols">
       <div>
         <h2 class="legend-title">How to read the labels</h2>
-        <p class="muted mt-s">A document is labelled by what it is, and each label is checked against the file: a document that grows past its label fails a test until the label is changed.</p>
+        <p class="muted mt-s">Each label says what a document is, and a test checks it against the file: a document that grows past its label fails until the label is changed.</p>
       </div>
       <ul class="rows legend">
-        <li><b><span class="tag">Reference</span> long, to search</b><span>Every field and every message. Hundreds of lines; meant to be searched, not read from the top.</span></li>
-        <li><b><span class="tag">Guide</span> read in order</b><span>One job from start to end: deploying it, running it, licensing it.</span></li>
-        <li><b><span class="tag">Short</span> a page or two</b><span>A summary or a policy; read it whole.</span></li>
+        <li><b><span class="tag">Reference</span> long, to search</b><span>Every field and every message. Hundreds of lines, so search it rather than reading from the top.</span></li>
+        <li><b><span class="tag">Guide</span> read in order</b><span>One job, end to end: deploying it, running it, licensing it.</span></li>
+        <li><b><span class="tag">Short</span> a page or two</b><span>A summary or a policy, short enough to read whole.</span></li>
         <li><b><span class="tag">Log</span> what changed</b><span>A record by version, newest first.</span></li>
       </ul>
     </div>
@@ -124,11 +124,11 @@
     <div class="doc-filter mt-l" id="doc-filter" hidden>
       <label for="doc-filter-input">Filter the documents</label>
       <input id="doc-filter-input" type="search" autocomplete="off" spellcheck="false" aria-describedby="doc-filter-hint">
-      <p class="hint" id="doc-filter-hint">Words from a title, what it is for, a label such as Guide, or a path.</p>
+      <p class="hint" id="doc-filter-hint">Type part of a title, a word from what the document is for, a label such as Guide, or a path.</p>
       <p class="count" id="doc-filter-count" role="status"></p>
     </div>
     <div class="doc-none mt-l" id="doc-filter-none" hidden>
-      <p><b>No document matches <q id="doc-filter-said"></q>.</b> Try fewer words, or a label such as Guide or Reference.</p>
+      <p><b>No document matches <q id="doc-filter-said"></q>.</b> Try fewer words, or a label such as Guide, Reference, Short or Log.</p>
       <p><button class="btn" type="button" id="doc-filter-clear">Clear the filter</button></p>
     </div>
 
@@ -223,7 +223,7 @@
   <div class="wrap cols">
     <div>
       <h2 class="legend-title">Something missing?</h2>
-      <p class="muted mt-s">If a question is not answered in these, the contact page says where to ask. A question a document should have answered is a defect in the document, and we want to hear about it.</p>
+      <p class="muted mt-s">If a question is not answered here, the contact page says where to ask. A question a document should have answered is a defect in that document, and we want to hear about it.</p>
     </div>
     <p class="btn-row"><a class="btn btn-primary" href="../contact/#support">Ask a question</a><a class="btn" href="../security/">Read the security page</a></p>
   </div>

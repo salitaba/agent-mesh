@@ -4,8 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src 'self'; style-src 'self'; script-src 'self'; base-uri 'none'; form-action 'none'">
-<title>Pricing - Curule</title>
-<meta name="description" content="The Community plan is free for one open project and up to eight agents. Team, Business and Enterprise add projects, agents, concurrent turns, usage reporting and support. Model usage is billed by your own provider.">
+<title>Curule pricing: you pay for the runtime, not the model</title>
+<meta name="description" content="The Community plan is free: one open project, up to eight agents. Team, Business and Enterprise lift the limits, add usage reporting and support, and are priced per month. Model usage goes on your own provider's bill.">
 <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="../assets/apple-touch-icon.png">
 <meta name="theme-color" content="#fbfaf8" media="(prefers-color-scheme: light)">
@@ -62,9 +62,9 @@
 <section class="page-head has-toc">
   <div class="wrap">
     <p class="eyebrow">Pricing</p>
-    <h1>Pricing for the runtime.</h1>
-    <p class="lede" data-selfhost-only hidden>You pay for the licensed limits and the support that comes with them. The model is billed to you by your own provider, at your own rates, and we never touch it. Prices are in US dollars and exclude taxes.</p>
-    <p class="lede" data-cloud-only>There are two ways to pay: a flat monthly plan where we run it for you, or a licence for the software you run yourself. Either way the model is billed to you by your own provider, at your own rates, and we never touch it. Prices are in US dollars and exclude taxes.</p>
+    <h1>Pricing: the runtime, not the model.</h1>
+    <p class="lede" data-selfhost-only hidden>You pay for the licence: the limits it lifts and the support that comes with it. The model goes on your provider&rsquo;s bill at your own rates, and we do not resell it. Prices are in US dollars and exclude taxes.</p>
+    <p class="lede" data-cloud-only>There are two ways to pay: a flat monthly plan where we run it for you, or a licence for software you run yourself. Either way the model goes on your provider&rsquo;s bill at your own rates, and we do not resell it. Prices are in US dollars and exclude taxes.</p>
   </div>
 </section>
 <nav class="toc-bar" aria-label="On this page">
@@ -86,7 +86,7 @@
         <p class="way-kind"><svg class="mark" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M7 18h10.5a3.5 3.5 0 0 0 .4-6.98A5.5 5.5 0 0 0 7.2 9.6 4.2 4.2 0 0 0 7 18Z"/></svg>Curule Cloud</p>
         <h3>We run it for you</h3>
         <dl>
-          <div><dt><svg class="mark" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="8" r="3.5"/><path d="M5 19.5a7 7 0 0 1 14 0"/></svg>Who it is for</dt><dd>You would rather not run servers. Sign up, pick a plan and open a workspace in your browser.</dd></div>
+          <div><dt><svg class="mark" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="8" r="3.5"/><path d="M5 19.5a7 7 0 0 1 14 0"/></svg>Who it is for</dt><dd>You would rather not run a server at all. Sign up, pick a plan and open a workspace in your browser.</dd></div>
           <div><dt><svg class="mark" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect x="3" y="6.5" width="18" height="11" rx="2"/><circle cx="12" cy="12" r="2.5"/><path d="M6.5 12h.01M17.5 12h.01"/></svg>What you pay</dt><dd>A flat monthly plan for the hosting. Its plans and prices are on the sign-up page, because they are kept in one place. You bring your own model key and pay your provider directly: we do not resell model usage.</dd></div>
         </dl>
         <p class="way-action"><a class="btn btn-primary" href="https://app.curule.dev/" data-cloud="home">See the Curule Cloud plans</a></p>
@@ -207,7 +207,7 @@
 </div>
 </fieldset>
 <!-- generated:plan-cards:end -->
-    <p class="small muted mt-m">Plan prices are for the runtime. Model usage is separate: the agents run on model credentials you own (any OpenAI-compatible provider, the Anthropic API, Bedrock, Vertex or Foundry), and your provider bills you for it.</p>
+    <p class="small muted mt-m">Plan prices are for the runtime. Model usage is separate: the agents run on model credentials you own, and your provider bills you for it. That is any OpenAI-compatible provider, the Anthropic API, Bedrock, Vertex or Foundry.</p>
     <p class="notice mt-m"><b>Planned, not included:</b> single sign-on, per-operator identity and roles, and audit-log export with operator identity are on the roadmap. Today there is one shared operator credential: put the instance behind your VPN or an authenticating proxy.</p>
   </div>
 </section>
@@ -235,7 +235,7 @@
   </table>
 </div>
 <!-- generated:plan-table:end -->
-    <p class="small muted mt-m">A seat is one agent in a mesh; the operator at the console is not a seat. A project is one mesh, and the limit is how many are open at once: registering more is free. Concurrent turns is how many agent turns may run at the same moment across the whole host.</p>
+    <p class="small muted mt-m">A seat is one agent in a mesh; the operator at the console is not a seat. A project is one mesh: the limit is how many may be open at once, and registering more is free. Concurrent turns is how many agent turns may run at the same moment across the host.</p>
   </div>
 </section>
 
@@ -247,13 +247,13 @@
       <p class="lede">A plan is a licence to run the runtime up to a size, plus the help that goes with it. It is not a price for the model, and it is not a lock.</p>
     </div>
     <div class="grid grid-3">
-      <div class="card"><svg class="mark" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M6.3 18.3a8.5 8.5 0 1 1 11.4 0"/><path d="m12 13.5 3.2-4.2"/><circle cx="12" cy="13.5" r="1.2"/></svg><h3>Licensed limits</h3><p>How many projects may be open at once, how many agents a mesh may have, and how many agent turns may run at the same moment. The Community plan&rsquo;s limits are what the source licence lets anyone run in production for free; a paid plan is the licence to run beyond them.</p></div>
-      <div class="card"><svg class="mark" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M5 20V11M12 20V4M19 20v-6.5"/></svg><h3>Features</h3><p>Usage export (JSON and CSV) and Prometheus metrics, from the Team plan. The event log that the usage report is computed from is yours on every plan.</p></div>
+      <div class="card"><svg class="mark" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M6.3 18.3a8.5 8.5 0 1 1 11.4 0"/><path d="m12 13.5 3.2-4.2"/><circle cx="12" cy="13.5" r="1.2"/></svg><h3>Licensed limits</h3><p>How many projects may be open at once, how many agents a mesh may have, and how many agent turns may run at the same moment. The source licence lets anyone run within the Community plan&rsquo;s limits in production, for free; a paid plan licenses running beyond them.</p></div>
+      <div class="card"><svg class="mark" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M5 20V11M12 20V4M19 20v-6.5"/></svg><h3>Features</h3><p>Usage export (JSON and CSV) and Prometheus metrics, from the Team plan. The event log the usage report is computed from is yours on every plan.</p></div>
       <div class="card"><svg class="mark" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="3.5"/><path d="m6 6 3.5 3.5M18 6l-3.5 3.5M6 18l3.5-3.5M18 18l-3.5-3.5"/></svg><h3>Support</h3><p>The Community plan is supported through the issue tracker and the documentation. Team and Business add email support with the response targets in the table, and Business adds support for the container image and Helm chart deployment. Enterprise has a named contact and a support agreement.</p></div>
     </div>
     <h3 class="mt-xl">What you are not paying for</h3>
     <ul class="rows mt-s">
-      <li><b>Model usage.</b><span>The agents run on credentials that belong to you, and your provider bills you for them, with your own discounts and rate limits. We do not resell it and we do not add a margin to it.</span></li>
+      <li><b>Model usage.</b><span>The agents run on credentials that belong to you, and your provider bills you for them, with your own discounts and rate limits. We do not resell it, and we add no margin.</span></li>
       <li data-selfhost-only hidden><b>A hosted service.</b><span>Curule is software you run, on your own infrastructure. We cannot see, start or stop anything on it.</span></li>
       <li data-cloud-only><b>A hosted service.</b><span>A licence is for software you run, on your own infrastructure; we cannot see, start or stop anything on it. Curule Cloud, where we run it for you, is priced separately.</span></li>
       <li><b>Anything on the roadmap.</b><span>A feature is listed as planned until it exists and is tested, and it is never sold as included.</span></li>
@@ -271,7 +271,7 @@
     <noscript><p class="notice">The calculator needs JavaScript. The table below holds the same numbers.</p></noscript>
     <div class="calc">
       <form id="calc" autocomplete="off" hidden data-needs-script>
-        <div class="field"><label for="c-projects">Projects open at the same time</label><input id="c-projects" type="number" min="1" max="1000" value="1" inputmode="numeric"><div class="hint">A project is one team&rsquo;s mesh. Registering more is free; the limit is how many are open at once.</div></div>
+        <div class="field"><label for="c-projects">Projects open at the same time</label><input id="c-projects" type="number" min="1" max="1000" value="1" inputmode="numeric"><div class="hint">A project is one team&rsquo;s mesh. Registering more is free: the limit is how many are open at once.</div></div>
         <div class="field"><label for="c-seats">Agents in your biggest team</label><input id="c-seats" type="number" min="1" max="1000" value="7" inputmode="numeric"></div>
         <div class="field"><label for="c-missions">Missions a month, across all projects</label><input id="c-missions" type="number" min="0" max="100000" value="25" inputmode="numeric"><div class="hint">A mission like the one we measured: a small library built by five agents.</div></div>
         <div class="field"><label for="c-model">Model your agents run on</label><select id="c-model"></select></div>
@@ -280,7 +280,7 @@
       <div class="result" id="result" aria-live="polite" hidden data-needs-script></div>
     </div>
     <h3 class="mt-xl">The mission it is based on</h3>
-    <p class="mt-s measure">We have measured one mission class: five agents built a small library in 31 minutes for $5.52 of model usage, and an independent check scored it 99.6%. One run is not a rate. The table prices the same tokens at each model&rsquo;s list price; another model would take a different number of turns, so read the spread as a range of prices and not as a forecast.</p>
+    <p class="mt-s measure">We have measured one mission class: five agents built a small library in 31 minutes for $5.52 of model usage, and an independent check scored it 99.6%. One run is not a rate. The table prices the same tokens at each model&rsquo;s list price; another model would take a different number of turns, so read the spread as a range, not a forecast.</p>
 <!-- generated:run-costs:start (scripts/export-pricing.mjs; do not edit between the markers) -->
 <div class="table-wrap" role="region" aria-label="What the measured mission costs at each model's list price" tabindex="0">
   <table class="compare">
@@ -327,7 +327,7 @@
       </li>
       <li>
         <h3>When it expires</h3>
-        <p>You are told 30 days ahead. After the date the plan&rsquo;s limits stay in force for a grace period (14 days by default), and then the instance is on the Community plan. Nothing is deleted and nothing that is running is stopped; install a renewed key and the plan returns.</p>
+        <p>You are told 30 days ahead. After the date the plan&rsquo;s limits stay in force for a grace period (14 days by default), and then the instance is on the Community plan. Nothing is deleted, and nothing running is stopped: install a renewed key and the plan returns.</p>
       </li>
     </ol>
   </div>
@@ -343,9 +343,9 @@
       <h2 class="title">Pricing questions.</h2>
     </div>
     <div class="faq">
-      <details><summary>Is the price per agent?</summary><div class="answer"><p>No. A price is flat for a plan. The plan sets how many projects may be open, how many agents one mesh may have and how many agent turns may run at the same moment.</p></div></details>
-      <details><summary>Does the price include the model?</summary><div class="answer"><p>No. The agents run on model credentials you own (any OpenAI-compatible provider, the Anthropic API, Bedrock, Vertex or Foundry), and your provider bills you for the model. The calculator above shows the two figures separately, and the model figure is an estimate from one measured mission.</p></div></details>
-      <details><summary>What happens if we go over a limit?</summary><div class="answer"><p>By default you are told and nothing is refused. Running beyond the Community plan&rsquo;s limits in production is what a paid plan licenses; without one it is outside the source licence, whatever the runtime lets you do.</p></div></details>
+      <details><summary>Is the price per agent?</summary><div class="answer"><p>No. A plan has one price. It sets how many projects may be open at once, how many agents one mesh may have, and how many agent turns may run at the same moment.</p></div></details>
+      <details><summary>Does the price include the model?</summary><div class="answer"><p>No. The agents run on model credentials you own, and your provider bills you for the model. The calculator above keeps the two figures apart, and the model figure is an estimate from one measured mission.</p></div></details>
+      <details><summary>What happens if we go over a limit?</summary><div class="answer"><p>By default you are told, and nothing is refused. Running beyond the Community plan&rsquo;s limits in production is what a paid plan licenses; without one it is outside the source licence, whatever the runtime lets you do.</p></div></details>
       <details><summary>Can the price change under us?</summary><div class="answer"><p>A licence carries its plan, its limits and its expiry, so a change to the list price takes effect at renewal, when a new licence is issued.</p></div></details>
       <details data-selfhost-only hidden><summary>How do we buy?</summary><div class="answer"><p>Write to us: see <a href="#licences">how licences work</a> above. There is no checkout, and we agree the terms with you before we issue a key.</p></div></details>
       <details data-cloud-only><summary>How do we buy?</summary><div class="answer"><p>For a licence, write to us: see <a href="#licences">how licences work</a> above. There is no checkout for it, and we agree the terms with you before we issue a key. For Curule Cloud, <a href="https://app.curule.dev/signup" data-cloud="signup">create an account</a> and choose a plan there.</p></div></details>
