@@ -26,6 +26,9 @@ export interface ChatEntry {
   proposed?: any;
   proposal?: StagedProposal;
   problems?: string[];
+  /** The operator stopped this turn. What is here is what the model had
+   *  written when it was stopped, not the whole answer it was going to give. */
+  stopped?: boolean;
 }
 
 export interface ChatState {
@@ -155,6 +158,33 @@ export function clearChat(): void {
   for (const l of listeners) l();
 }
 
+/* The running turn: the handle Stop names. Kept here rather than in `state`
+ * because an AbortController is not renderable data — the UI only needs
+ * `busy`, and a second panel rendering the same turn must not see two. */
+let turn: { ctrl: AbortController; serverId: string | null; stopRequested: boolean } | null = null;
+
+/**
+ * Stop the designer turn that is running now: the model ends where it is and
+ * the transcript keeps what it had already written.
+ *
+ * Two halves, because the turn exists in two places. The POST is what really
+ * ends it — the server owns the turn, so stopping it there stops it for every
+ * other view of this conversation and stops the tokens being spent. The local
+ * abort is what makes the button always work: an unresponsive runtime, or a
+ * stop that arrives before the stream announced its turn id, would otherwise
+ * leave the panel waiting on a model nobody is listening to.
+ *
+ * Best-effort by contract: a runtime that cannot interrupt answers with the
+ * whole reply and no `stopped` flag, and then this was an ordinary turn.
+ */
+export function stopTurn(client: ProjectClient): void {
+  const run = turn;
+  if (!run || !state.busy) return;
+  run.stopRequested = true;
+  if (run.serverId) void client.post("/designer/chat/stop", { turnId: run.serverId }).catch(() => undefined);
+  run.ctrl.abort();
+}
+
 export async function sendMessage(client: ProjectClient, text: string, currentConfig: any): Promise<void> {
   const body = text.trim();
   if (!body || state.busy) return;
@@ -162,6 +192,29 @@ export async function sendMessage(client: ProjectClient, text: string, currentCo
   set({ entries: next, busy: true, failed: null, review: null, live: { thinking: "", text: "" } });
 
   const finish = (patch: Partial<ChatState>): void => set({ busy: false, live: null, ...patch });
+
+  /* The turn exists in two places, so it is held in two places: this controller
+   * owns the local fetch, and `running.serverId` is the id the stream announced
+   * — the handle the server's stop endpoint names. */
+  const ctrl = new AbortController();
+  const running = { ctrl, serverId: null as string | null, stopRequested: false };
+  turn = running;
+
+  /* An ending the operator asked for, not a failure to report: keep what the
+   * model had written when it was stopped, and only that. */
+  const finishStopped = (): void => {
+    if (!state.busy) return;
+    const live = state.live ?? { thinking: "", text: "" };
+    if (!live.text) {
+      // Nothing had been written: no entry is better than an empty answer
+      // presented as the model's work.
+      finish({});
+      return;
+    }
+    finish({
+      entries: [...next, { id: nextId(), role: "assistant", content: live.text, thinking: live.thinking || undefined, stopped: true }],
+    });
+  };
 
   // Echo the latest proposal's validation problems so the next turn can fix
   // them; older ones are dropped once a newer proposal supersedes them.
@@ -175,12 +228,20 @@ export async function sendMessage(client: ProjectClient, text: string, currentCo
     { messages: wireMessages, currentConfig },
     (evt) => {
       if (!evt || typeof evt !== "object") return;
-      if (evt.type === "thinking" && typeof evt.delta === "string") {
+      if (evt.type === "turn" && typeof evt.turnId === "string") {
+        // The handle Stop names, announced before the model has said anything
+        // so a stop pressed while it is still thinking is understood.
+        running.serverId = evt.turnId;
+      } else if (evt.type === "thinking" && typeof evt.delta === "string") {
         const live = state.live ?? { thinking: "", text: "" };
         set({ live: { ...live, thinking: live.thinking + evt.delta } });
       } else if (evt.type === "text" && typeof evt.delta === "string") {
         const live = state.live ?? { thinking: "", text: "" };
         set({ live: { ...live, text: live.text + evt.delta } });
+      } else if (evt.type === "stopped") {
+        // The server ended this turn on someone's Stop (possibly another view
+        // of the conversation) before it produced a final frame.
+        finishStopped();
       } else if (evt.type === "final") {
         if (!state.busy) return;
         const live = state.live ?? { thinking: "", text: "" };
@@ -195,14 +256,23 @@ export async function sendMessage(client: ProjectClient, text: string, currentCo
             proposed: evt.proposedConfig,
             proposal: isStagedProposal(evt.proposal) ? evt.proposal : undefined,
             problems: Array.isArray(evt.problems) ? evt.problems : [],
+            // Only the runtime's own flag says the turn ended early; without it
+            // this is a whole reply, however short it looks.
+            stopped: evt.stopped === true ? true : undefined,
           }],
         });
       } else if (evt.type === "error") {
         finish({ failed: String(evt.error ?? "designer chat failed") });
       }
     },
+    { signal: ctrl.signal },
   );
 
-  // The stream ended without a final frame (server died or transport dropped).
-  if (state.busy) finish({ failed: result.error || `designer chat failed (${result.status})` });
+  turn = null;
+  // The stream ended without a final frame (server died, transport dropped, or
+  // the operator stopped the turn before the model produced one).
+  if (state.busy) {
+    if (running.stopRequested || result.canceled === true) finishStopped();
+    else finish({ failed: result.error || `designer chat failed (${result.status})` });
+  }
 }

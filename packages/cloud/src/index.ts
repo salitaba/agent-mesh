@@ -25,3 +25,4 @@ export * from "./owner";
 export * from "./control-config";
 export * from "./control";
 export * from "./model-keys";
+export * from "./model-catalogue";

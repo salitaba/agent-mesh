@@ -29,6 +29,12 @@
 .ms-chat-thinking summary { cursor: pointer; font: 600 12px var(--sans); color: var(--muted); }
 .ms-chat-thinking pre { margin: var(--s1-5) 0 0; white-space: pre-wrap; overflow-wrap: anywhere; font: 13px/1.55 var(--mono); color: var(--text-dim); max-height: 240px; overflow: auto; }
 .ms-chat-thinking.live pre { color: var(--muted); }
+/* The stopped marker sits inside the answer it qualifies: it is a note about
+ * that text, not a separate message. */
+.ms-chat-stopped { margin-top: var(--s1-5); color: var(--muted); }
+/* The thinking line carries its own Stop: the reader waiting on a turn should
+ * not have to look away from it to end it. */
+.ms-chat-waiting { display: flex; align-items: center; gap: var(--s2); }
 .ms-chat-compose { display: flex; flex-direction: column; gap: var(--s2); }
 
 /* A proposal is a card in the message that made it: a rail in the colour of what it touches (the draft is the page's own, the running mission is a live change). */

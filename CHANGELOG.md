@@ -44,6 +44,35 @@ sections 1 to 26) are described there, run by run.
   `#[cfg(desktop)]`, the Android bundle settings, and that the workflow installs a JDK, an SDK and an NDK, names the four
   targets, uploads an APK and signs nothing.
 
+### Changed: a workspace cannot be saved out of the models it was given
+
+- **A saved `mesh.yaml` keeps the managed wiring.** The rewrite that points the default and designer runtimes and the
+  `providers` block at the models the host supplies used to run when a project was *created* and nowhere else, so any
+  later save — the designer's own Save, an applied proposal — dropped it. The workspace then fell back to Claude Code,
+  which has no credential inside it, and every seat turn answered `Not logged in · Please run /login`: a mesh whose
+  seats never run and whose progress never moves. It is now applied on the way to disk on every save, whatever the
+  saved document says, and the post-save card says what was rewired rather than leaving it to be found in the file.
+  A service that supplies no models is untouched and is told nothing.
+- **A model id is checked against the provider before it is kept.** `POST /api/workspaces/:id/model-key` reads the
+  provider's own catalogue while it has the key and refuses a model the provider does not serve, naming the closest
+  ids: `deepseek-4.1-flash` next to `deepseek-v4.1-flash` used to be accepted and then fail every single turn with a
+  `400 Model '…' is not available in the active live catalog`. Only a catalogue that arrived and does not list the
+  model refuses; a timeout, a 5xx, an endpoint with no `/models`, an unreadable body and an empty list all let the key
+  through, because a provider that answers unusually must not lock a customer out of a workspace that works.
+
+### Added: stopping a designer turn
+
+- **Stop, in the designer chat.** A turn that is running can be ended from the panel — next to `Send`, and beside the
+  "thinking…" line so whoever is waiting on it does not have to look away to end it. The transcript keeps what the model
+  had already written and marks the entry as stopped; nothing presents a stopped turn's partial text as the whole answer.
+- `POST /designer/chat/stop` names the turn (`turnId`), which the stream sends as its very first frame — before the model
+  has said anything, so a stop pressed during "thinking…" has something to aim at. It is the turn that stops, not the
+  socket: the same conversation in another tab or browser ends with it. An id that is not running is `404 no_such_turn`,
+  because a stop arriving a moment after the model finished is a no-op, not a conflict.
+- **Best-effort by contract.** `signal` is passed to the runtime; a runtime that cannot interrupt answers with the whole
+  reply and no `stopped` flag, and then it was an ordinary turn. Only the result's own `stopped: true` — from the native
+  runtime's `InterruptedTurnError`, or the Claude adapter's `interrupt()` — marks a turn as stopped.
+
 ### Added: Curule Cloud, hosting only
 
 - **Hosting-only plans.** A plan with `byok: true` sells no model usage: no included usage, tiers or top-ups, and a payment grants no
