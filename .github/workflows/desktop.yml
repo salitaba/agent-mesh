@@ -53,7 +53,13 @@ jobs:
             target: aarch64-apple-darwin
             bundles: dmg
           - name: macOS x86_64 (dmg)
-            os: macos-13
+            # Built on the arm64 runner with `--target x86_64-apple-darwin`, not on
+            # `macos-13`: the Intel image is scarce enough that a job sits queued long
+            # enough for the next push to cancel it (`cancel-in-progress`), which is
+            # what happened to the first three runs. Cross-compiling an Intel dmg on
+            # Apple-silicon is what the toolchain expects; the target is installed by
+            # the Rust step above from `matrix.target`.
+            os: macos-14
             target: x86_64-apple-darwin
             bundles: dmg
           - name: Windows x86_64 (NSIS, msi)
