@@ -43,6 +43,10 @@
     "macOS": {
       "minimumSystemVersion": "10.15"
     },
+    "android": {
+      "minSdkVersion": 24,
+      "versionCode": 1000
+    },
     "windows": {
       "webviewInstallMode": {
         "type": "downloadBootstrapper",
