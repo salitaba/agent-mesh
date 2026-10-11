@@ -4,8 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src 'self'; style-src 'self'; script-src 'self'; base-uri 'none'; form-action 'none'">
-<title>Security - Curule</title>
-<meta name="description" content="What Curule protects, what leaves your environment, and what it does not do: one shared operator token, agents that run commands inside a container you must narrow, and no independent audit. How to report a vulnerability.">
+<title>Curule security: the controls, the limits and how to report a problem</title>
+<meta name="description" content="What Curule protects, what leaves your environment, and what it does not do: one shared operator token, no isolation between projects in one instance, no independent audit, and how to report a vulnerability.">
 <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="../assets/apple-touch-icon.png">
 <meta name="theme-color" content="#fbfaf8" media="(prefers-color-scheme: light)">
@@ -62,8 +62,8 @@
 <section class="page-head has-toc">
   <div class="wrap">
     <p class="eyebrow">Security</p>
-    <h1>Security, stated plainly.</h1>
-    <p class="lede">Curule runs agents that execute shell commands and write code. That is the product, and it sets the posture: a prompt is not a sandbox, so the box is the container and the unit of isolation is one instance per team. This page says what is built around that, and where it ends.</p>
+    <h1>Security, including what it does not do.</h1>
+    <p class="lede">Curule runs agents that execute shell commands and write code, so a prompt is not a sandbox: the box is the container, and the unit of isolation is one instance per team. This page says what is built around that, and where it ends.</p>
   </div>
 </section>
 <nav class="toc-bar" aria-label="On this page">
@@ -85,12 +85,12 @@
     <li>
       <svg class="mark mark-ok" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M12 3 4.5 6v5.5c0 4.4 3.1 7.6 7.5 9 4.4-1.4 7.5-4.6 7.5-9V6L12 3Z"/><path d="m8.8 12 2.4 2.4L15.6 10"/></svg>
       <h3><a href="#protects">What it protects</a></h3>
-      <p>It fails closed on the network, and agents never hold the operator&rsquo;s credentials. The controls are pinned by tests.</p>
+      <p>It fails closed on the network, and agents never hold the operator&rsquo;s credentials. Every control is pinned by tests.</p>
     </li>
     <li>
       <svg class="mark mark-out" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M9 5H6.5A1.5 1.5 0 0 0 5 6.5v11A1.5 1.5 0 0 0 6.5 19h11a1.5 1.5 0 0 0 1.5-1.5V15"/><path d="M13 5h6v6"/><path d="M19 5 11 13"/></svg>
       <h3><a href="#leaves">What leaves your environment</a></h3>
-      <p>The agents&rsquo; calls to your model provider. No telemetry, no analytics, no update check and no licence server.</p>
+      <p>The agents&rsquo; calls to your model provider, and what they fetch. Nothing else in the product calls out: no telemetry, no analytics, no update check and no licence server.</p>
     </li>
     <li>
       <svg class="mark mark-no" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="8.5"/><path d="m6 6 12 12"/></svg>
@@ -104,7 +104,7 @@
 <section class="split" id="protects">
   <header>
     <h2>What it protects</h2>
-    <p>The controls on the server, the agents and the records are each pinned by tests that <code>npm test</code> runs, and the security document names them. The container&rsquo;s settings are checked in continuous integration, by a smoke test of the built image and by linting and rendering the chart.</p>
+    <p>Every control on the server, the agents and the records is pinned by tests that <code>npm test</code> runs, and the security document names them. The container&rsquo;s settings are checked in continuous integration too: a smoke test of the built image, and linting and rendering the chart.</p>
     <p><a class="arrow-link" href="../docs/" data-doc="commercial/security.md">The security document</a></p>
   </header>
   <div>
@@ -120,8 +120,8 @@
     <ul class="rows">
       <li><b>Agents never hold the operator&rsquo;s credentials.</b><span>The operator token, the licence and the other <code>MESH_*</code> secrets are removed from the environment the agents&rsquo; commands run in. An agent reaches the mesh with a credential minted in memory for each turn.</span></li>
       <li><b>A page an agent wrote is sandboxed.</b><span>It is served in a sandboxed frame on an opaque origin, through a signed link that expires, with no cookie and no route back to the API.</span></li>
-      <li><b>Files stay where they belong.</b><span>Paths are resolved through their real locations, so a link in a workspace cannot point out of it, and in the image the project registry is confined to one folder.</span></li>
-      <li><b>Only the human changes the mission.</b><span>The tools that change the mission itself (its goal, criteria, seats and budgets) answer only to the human operator, not to an agent that is asked to call them.</span></li>
+      <li><b>Files stay where they belong.</b><span>Paths are resolved through their real locations, so a link in a workspace cannot point out of it. In the image, the project registry is confined to one folder.</span></li>
+      <li><b>Only the human changes the mission.</b><span>The tools that change the mission itself (its goal, criteria, seats and budgets) answer only to the human operator, never to an agent that calls them.</span></li>
       <li><b>Cost has a ceiling.</b><span>Budgets per agent, thread and mission, and a host-wide spend ceiling that prices all four token classes. It is a backstop; the control is a spend limit at your provider.</span></li>
     </ul>
 
@@ -152,7 +152,7 @@
       <li><b>The Claude Code binary is Anthropic&rsquo;s.</b><span>Left alone it reports telemetry and errors and checks for updates, so the image sets <code>CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1</code>. Setting it to an empty value turns that off.</span></li>
       <li><b>Whatever the agents themselves fetch.</b><span>Package registries, git hosts, the web: wherever your network lets them reach.</span></li>
     </ul>
-    <p class="mt-m">This website holds itself to the same rule. It makes no request to any other site and sets no cookie; see the <a href="../legal/#privacy">privacy section</a>.</p>
+    <p class="mt-m">This website holds itself to the same rule: it makes no request to any other site and sets no cookie. See the <a href="../legal/#privacy">privacy section</a>.</p>
   </div>
 </section>
 
@@ -190,7 +190,7 @@
       <li><b>Ship the audit trail</b> to a log store you retain.</li>
       <li><b>Pin the image by digest</b> and verify its signature once releases are published.</li>
       <li><b>Watch the metrics</b>: crashed projects, spend against the ceiling, escalations waiting for a person.</li>
-      <li><b>Plan for the agents being wrong.</b> Review what they merge before it ships. A gate somebody configured is the control; the agents&rsquo; good behaviour is not.</li>
+      <li><b>Plan for the agents being wrong.</b> Review what they merge before it ships. A gate somebody configured is the control: the agents&rsquo; good behaviour is not.</li>
     </ol>
   </div>
 </section>
@@ -216,7 +216,7 @@
     <p>Privately, please.</p>
   </header>
   <div>
-    <p class="measure"><b>Please do not open a public issue for a security problem.</b> Report it through GitHub&rsquo;s private vulnerability reporting, or by email to the security address on the <a href="../contact/#security">contact page</a>. Say what you found, how to reproduce it, what an attacker gains, and whether you have told anyone else.</p>
+    <p class="measure"><b>Please do not open a public issue for a security problem:</b> report it through GitHub&rsquo;s private vulnerability reporting, or by email to the security address on the <a href="../contact/#security">contact page</a>. Say what you found, how to reproduce it, what an attacker gains, and whether you have told anyone else.</p>
     <ul class="rows mt-m">
       <li><b>We acknowledge your report within 3 business days.</b><span>And tell you within 10 business days whether we think it is a vulnerability and how serious.</span></li>
       <li><b>A fix, or a mitigation and a date, within 30 days</b><span>for a high or critical issue. Public disclosure follows a fix, coordinated with you, and we credit you unless you prefer not.</span></li>
