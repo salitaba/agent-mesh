@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Curule",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "identifier": "dev.curule.desktop",
   "build": {
     "devUrl": "https://app.curule.dev",
@@ -45,7 +45,7 @@
     },
     "android": {
       "minSdkVersion": 24,
-      "versionCode": 1000
+      "versionCode": 1001
     },
     "windows": {
       "webviewInstallMode": {

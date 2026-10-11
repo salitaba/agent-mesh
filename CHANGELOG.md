@@ -7,6 +7,22 @@ sections 1 to 26) are described there, run by run.
 
 ## Unreleased
 
+### Fixed: the desktop app kept its own workspace console out of itself
+
+- **A workspace console opened in Chrome.** Signing in and opening a workspace is `POST /api/workspaces/:id/open` →
+  `location.assign(<workspace url>)`, and workspaces are served from `<workspace>.ws.curule.dev` — a different host
+  from `app.curule.dev`. The shell's `is_ours` compared the whole host, so the console was "somebody else's page" and
+  was handed to the system browser: the customer signed in, pressed their workspace, and left the app. It now knows its
+  own domain family — the app's origin, any sibling under the same registrable domain, and the bundled page — and a
+  `target="_blank"` to one of those opens a second window **inside** the app rather than in the browser. A payment
+  provider's checkout, or any other host, still leaves for the browser.
+- `CURULE_DESKTOP_HOSTS` names hosts beside that family — a control plane whose workspaces live on an unrelated host,
+  or a deployment under a two-label public suffix (`example.co.uk`), where "the last two labels" is not the registrable
+  domain. Comma- or space-separated; a leading dot includes subdomains.
+- Version 0.1.1. The workspace console shares the app's cookie jar, which is the trade the hosted service already makes
+  by serving workspaces from a subdomain of the app's domain; `apps/desktop/README.md` says so, and says what a
+  deployment that wants them apart should do instead.
+
 ### Added: the desktop app, which is the hosted app in a window of its own
 
 - **`apps/desktop`: a Tauri 2 shell.** The window shows `app.curule.dev`; the dashboard is still deployed, so a change to it
