@@ -483,11 +483,11 @@ test("the page for a wrong address offers a visitor the plans and the way in, an
 
 // ---- what a page does for the person at it ----
 
-test("a page's heading and the tab's title say what the page is now: a link that was sent is no longer \"Create your account\"", async () => {
+test("a page's heading and the tab's title say what the page is now: a link that was sent is no longer \"Start with an email and a password\"", async () => {
   const w = world((x) => (x.signedIn = false));
   w.answers.set("POST /api/signup", { status: 202, json: { ok: true, message: "Check your email for a link to confirm your address." } });
   const v = await visit("signup", { routes: w.routes });
-  assert.equal(v.text("title"), "Create your account");
+  assert.equal(v.text("title"), "Start with an email and a password");
   assert.equal(v.shows(v.$("lede")), true);
   v.type("email", "ada@example.com");
   v.type("password", "correct horse battery staple");
