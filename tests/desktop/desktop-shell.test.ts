@@ -143,8 +143,19 @@ test("the Rust the crate compiles is the shell: one window, the three plugins, a
   for (const plugin of ["single_instance", "window_state", "opener"]) {
     assert.match(lib, new RegExp(`tauri_plugin_${plugin}::`), `${plugin} is a dependency and has to be registered`);
   }
-  assert.match(lib, /on_new_window/, "a target=_blank link is the system browser's, not a second window");
-  assert.match(lib, /on_navigation/, "and so is any address that is not the app's own");
+  // The navigation policy, including the bug that took the console out of the app: a
+  // workspace is served from `<workspace>.ws.curule.dev`, a different host from the
+  // app's, and while `is_ours` compared the whole host the account page's
+  // `location.assign(workspace url)` handed the console to the system browser. One
+  // product, several names: the shell has to know its own domain family.
+  assert.match(lib, /fn is_ours/, "the window decides for itself what it may show");
+  assert.match(lib, /fn registrable/, "`app.curule.dev` and `<workspace>.ws.curule.dev` are one product to it");
+  assert.match(lib, /registrable\(host\) == registrable\(app_host\)/, "so a sibling is ours, not the browser's");
+  assert.match(lib, /CURULE_DESKTOP_HOSTS|EXTRA_HOSTS_ENV/, "and a deployment the guess does not fit can name its hosts");
+  assert.match(lib, /fn open_child_window/, "a page of ours that asks for a window gets one, inside the app");
+  assert.match(lib, /on_new_window/, "the webview is still never allowed to stack a window of its own");
+  assert.match(lib, /open_in_browser/, "and somebody else's page — a checkout — still leaves for the system browser");
+  assert.match(lib, /on_navigation/, "every navigation is checked, not only the first");
   assert.match(lib, /TrayIconBuilder/, "the window can end up behind everything else");
 });
 

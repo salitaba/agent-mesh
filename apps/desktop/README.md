@@ -48,12 +48,29 @@ CURULE_DESKTOP_URL=http://127.0.0.1:7500 npm run dev
 ```
 
 A value that is not an http(s) address is a value somebody mistyped: the shell starts on the hosted app rather
-than refusing to start, and the value is never handed to a webview. Whatever the address is, it is the only
-origin the window will show itself; everything else opens in the system browser, `target="_blank"` links included.
+than refusing to start, and the value is never handed to a webview.
 
-The window is the only window: a second launch focuses the one that is there, and the tray offers Show, Reload
-and Quit. Reload reloads what is showing — the app, or the bundled page, which connects again. The window's size
-and position are remembered (they live in the app data directory for `dev.curule.desktop`).
+## What the window shows itself, and what leaves for the browser
+
+One product has several names, and the shell has to know they are one thing:
+
+- the app's own origin — `app.curule.dev`, or whatever `CURULE_DESKTOP_URL` names;
+- **any sibling under the same registrable domain** — the workspace consoles are served from
+  `<workspace>.ws.curule.dev`, and they are the point of the app. Until this rule existed, signing in and pressing a
+  workspace handed the console to Chrome, because the host was not the app's;
+- the bundled page in `ui/`, which is the shell's own surface;
+- anything `CURULE_DESKTOP_HOSTS` names, comma- or space-separated, as a host (`console.example.com`) or a domain that
+  includes its subdomains (`.example.com`). It exists for deployments the sibling rule cannot guess: a control plane
+  whose workspaces live on an unrelated host, or a domain under a two-label public suffix like `example.co.uk`, where
+  "the last two labels" is not the registrable domain.
+
+Everything else is somebody else's page and opens in the system browser — a payment provider's checkout above all.
+A `target="_blank"` **to one of ours** opens a second window inside the app (titled with the host it shows); a
+`target="_blank"` to anybody else goes to the browser. The webview is never allowed to stack a window of its own.
+
+The window is the only window besides those: a second launch focuses the one that is there, and the tray offers Show,
+Reload and Quit. Reload reloads what is showing — the app, or the bundled page, which connects again. The window's
+size and position are remembered (they live in the app data directory for `dev.curule.desktop`).
 
 ## Releasing
 
@@ -123,10 +140,15 @@ Two consequences worth knowing:
 
 - The CSP in `tauri.conf.json` is injected into the bundled page, which is the only page it applies to: Tauri does
   not inject it into a page served over https. The app brings its own headers.
-- The window shows the app's **origin** and the bundled page, nothing else. A sign-in flow that leaves the origin
-  — an OAuth provider, or a `curule.dev` host that is not `app.curule.dev` — opens in the system browser rather
-  than in the window, and comes back to the window through the browser. Widening that is a change to `is_ours` in
-  `src/lib.rs`, and it should be a decision, not a default.
+- The window shows the app's own domain family and the bundled page (see *What the window shows itself*). A sign-in
+  flow that leaves it — an OAuth provider, a payment provider — opens in the system browser and comes back to the
+  window through the browser.
+- **The workspace console shares this window's cookie jar.** `<workspace>.ws.curule.dev` runs the customer's own
+  agent team's dashboard, and a page from there is now loaded inside the app that also holds the session cookie for
+  `app.curule.dev` — the same trade the hosted service already makes by serving workspaces from a subdomain of the
+  app's registrable domain (`workspaces.allow_same_site`). A deployment that wants them apart names the app and not
+  the workspace domain in `CURULE_DESKTOP_HOSTS`… and loses the console to the browser, which is exactly the bug this
+  fixed. Serve the workspaces from a domain of their own if that matters more.
 
 ## What has not been verified
 
