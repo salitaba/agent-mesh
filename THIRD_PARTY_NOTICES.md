@@ -18,15 +18,15 @@ Google or Microsoft for their hosting of the models) and their own credentials.
 
 | Package | Version |
 |---|---|
-| @anthropic-ai/claude-agent-sdk | 0.3.270 |
-| @anthropic-ai/claude-agent-sdk-darwin-arm64 (optional, per platform) | 0.3.270 |
-| @anthropic-ai/claude-agent-sdk-darwin-x64 (optional, per platform) | 0.3.270 |
-| @anthropic-ai/claude-agent-sdk-linux-arm64 (optional, per platform) | 0.3.270 |
-| @anthropic-ai/claude-agent-sdk-linux-arm64-musl (optional, per platform) | 0.3.270 |
-| @anthropic-ai/claude-agent-sdk-linux-x64 (optional, per platform) | 0.3.270 |
-| @anthropic-ai/claude-agent-sdk-linux-x64-musl (optional, per platform) | 0.3.270 |
-| @anthropic-ai/claude-agent-sdk-win32-arm64 (optional, per platform) | 0.3.270 |
-| @anthropic-ai/claude-agent-sdk-win32-x64 (optional, per platform) | 0.3.270 |
+| @anthropic-ai/claude-agent-sdk | 0.3.293 |
+| @anthropic-ai/claude-agent-sdk-darwin-arm64 (optional, per platform) | 0.3.293 |
+| @anthropic-ai/claude-agent-sdk-darwin-x64 (optional, per platform) | 0.3.293 |
+| @anthropic-ai/claude-agent-sdk-linux-arm64 (optional, per platform) | 0.3.293 |
+| @anthropic-ai/claude-agent-sdk-linux-arm64-musl (optional, per platform) | 0.3.293 |
+| @anthropic-ai/claude-agent-sdk-linux-x64 (optional, per platform) | 0.3.293 |
+| @anthropic-ai/claude-agent-sdk-linux-x64-musl (optional, per platform) | 0.3.293 |
+| @anthropic-ai/claude-agent-sdk-win32-arm64 (optional, per platform) | 0.3.293 |
+| @anthropic-ai/claude-agent-sdk-win32-x64 (optional, per platform) | 0.3.293 |
 
 ## Open-source packages by licence
 
@@ -125,12 +125,12 @@ generator fails if one appears, so adding such a dependency is a decision somebo
 | qs (peer) | 6.16.0 | BSD-3-Clause |
 | range-parser (peer) | 1.3.0 | MIT |
 | raw-body (peer) | 3.0.2 | MIT |
-| react | 19.2.8 | MIT |
-| react-dom | 19.2.8 | MIT |
+| react | 19.3.0 | MIT |
+| react-dom | 19.3.0 | MIT |
 | require-from-string | 2.0.2 | MIT |
 | router (peer) | 2.2.0 | MIT |
 | safer-buffer (peer) | 2.1.2 | MIT |
-| scheduler | 0.27.0 | MIT |
+| scheduler | 0.28.0 | MIT |
 | send (peer) | 1.2.1 | MIT |
 | serve-static (peer) | 2.2.1 | MIT |
 | setprototypeof (peer) | 1.2.0 | ISC |
@@ -145,11 +145,11 @@ generator fails if one appears, so adding such a dependency is a decision somebo
 | toidentifier (peer) | 1.0.1 | MIT |
 | ts-algebra (peer) | 2.0.0 | MIT |
 | type-is (peer) | 2.1.0 | MIT |
-| undici | 7.29.1 | MIT |
+| undici | 8.11.2 | MIT |
 | unpipe (peer) | 1.0.0 | MIT |
 | vary (peer) | 1.1.2 | MIT |
 | which (peer) | 2.0.2 | ISC |
 | wrappy (peer) | 1.0.2 | ISC |
-| yaml | 2.9.0 | ISC |
+| yaml | 2.9.1 | ISC |
 | zod | 4.6.2 | MIT |
 | zod-to-json-schema (peer) | 3.25.2 | ISC |
