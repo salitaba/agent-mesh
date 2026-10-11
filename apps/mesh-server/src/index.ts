@@ -61,6 +61,7 @@ import { callerKind, getApiToken, handleAuthRoute, requireAuth, resolveActor } f
 import { SessionStore } from "./sessions";
 import { PREVIEW_PAGE_DIR, PREVIEW_PRESETS_DIR, PREVIEW_PREFIX, PreviewCapabilities } from "./preview";
 import { LicenseProvider, enforceOrWarn, licenseView } from "./license";
+import { MANAGED_PROVIDER, managedModels, rewriteForManagedModels } from "./managed";
 import { configuredPrices, licenseMetrics, parseUsageQuery, usageAnswer } from "./commercial";
 import { serverVersion } from "./version";
 import { checkFeature, checkSeats } from "../../../packages/licensing/src/index";
@@ -71,6 +72,31 @@ import { paginateCompat } from "./pagination";
 import { diffText } from "./diff";
 
 export type ServerMode = "parked" | "live";
+
+/**
+ * The managed wiring a saved mesh.yaml has to keep.
+ *
+ * `rewriteForManagedModels` runs at project creation and nowhere else, so any later save of mesh.yaml — the designer's
+ * own Save, an applied proposal, a hand edit through the API — used to drop `runtime.designer`, the model and the
+ * `providers` block. The designer then fell back to Claude Code, which has no credential inside a workspace, and every
+ * turn answered `Not logged in · Please run /login`: a mesh whose seats never run and whose progress bar never moves.
+ *
+ * A workspace the host was given models for cannot be saved out of them. The rewrite happens here, on the way to disk,
+ * and its note rides the post-save card — the operator is told what was rewired rather than finding it in the file.
+ */
+function rewriteSavedForManagedModels(yamlText: string): { text: string; note: string | null } {
+  const managed = managedModels(process.env);
+  if (!managed) return { text: yamlText, note: null };
+  const rewritten = rewriteForManagedModels(yamlText, managed);
+  if (!rewritten.changed) return { text: yamlText, note: null };
+  return {
+    text: rewritten.text,
+    note:
+      `This workspace runs on the model the host was given (${managed.tier}), so the saved mesh.yaml was rewired for it: ` +
+      `the default and designer runtimes are 'native', and provider '${MANAGED_PROVIDER}' reads the key from the environment. ` +
+      `Saving a mesh.yaml without that wiring would leave every seat unable to run.`,
+  };
+}
 
 /** A verified seat's tool call can carry a long message or file content; 8 MiB is generous and still a bound. */
 const MCP_MAX_BODY_BYTES = 8 * 1024 * 1024;
@@ -1474,6 +1500,18 @@ export function createHttpServer(instance: MeshInstance, opts: { dashboardDir?: 
   const MAX_DESIGNER_TURNS = 2;
   let designerInFlight = 0;
 
+  /**
+   * The designer turns a client can still stop, keyed by the id the stream
+   * announced for them.
+   *
+   * The attempt is registered for the whole turn and removed when it ends, so
+   * a Stop that arrives after the model answered finds nothing and is answered
+   * as such. Two operators stopping two conversations is why this is a map and
+   * not one controller: `stopAll` is the host shutting down, not a person
+   * changing their mind.
+   */
+  const designerStops = new Map<string, AbortController>();
+
   // Event-loop lag radar: a 1s interval measures how late it actually fires.
   // Exposed on /health so "server doesn't respond" can be split into
   // "loop blocked" (lag spikes) vs "one endpoint slow" (slow-request log).
@@ -2745,6 +2783,9 @@ export function createHttpServer(instance: MeshInstance, opts: { dashboardDir?: 
           }
           let target: string | null = null;
           let archived: string | null = null;
+          // What a save actually writes. It is the validated document except in a workspace the host gives models to,
+          // where the managed wiring is put back (see rewriteSavedForManagedModels).
+          let savedText = yamlText;
           let createdPrompts: ReturnType<typeof materializeRolePrompts> = [];
           if (parts[1] === "save") {
             if (!b.path) return json(400, { valid: false, errors: ["save requires a path"] });
@@ -2764,10 +2805,15 @@ export function createHttpServer(instance: MeshInstance, opts: { dashboardDir?: 
             target = contained;
             if (fs.existsSync(target) && fs.statSync(target).isDirectory()) target = path.join(target, "mesh.yaml");
             fs.mkdirSync(path.dirname(target), { recursive: true });
+            // What goes to disk is not necessarily what was validated: a workspace the host gives models to keeps that
+            // wiring whatever the saved document says (see rewriteSavedForManagedModels).
+            const rewritten = rewriteSavedForManagedModels(yamlText);
+            savedText = rewritten.text;
+            if (rewritten.note) saveWarnings.push(rewritten.note);
             // Keep the bytes we are about to overwrite as a recoverable version:
             // the save UI has no undo once it commits the new baseline.
             const previous = fs.existsSync(target) ? fs.readFileSync(target, "utf8") : null;
-            if (previous !== null && previous !== yamlText) {
+            if (previous !== null && previous !== savedText) {
               const versionsDir = path.join(path.dirname(target), ".mesh-versions");
               fs.mkdirSync(versionsDir, { recursive: true });
               const stamp = new Date().toISOString().replace(/[:.]/g, "-");
@@ -2777,7 +2823,7 @@ export function createHttpServer(instance: MeshInstance, opts: { dashboardDir?: 
               fs.writeFileSync(candidate, previous, "utf8");
               archived = candidate;
             }
-            fs.writeFileSync(target, yamlText, "utf8");
+            fs.writeFileSync(target, savedText, "utf8");
             const dir = path.dirname(target);
             // Make the prompt refs this save just wrote real, or the project
             // opens as invalid_config. Existing files are never overwritten.
@@ -2814,7 +2860,7 @@ export function createHttpServer(instance: MeshInstance, opts: { dashboardDir?: 
           }
           return json(200, {
             valid: true,
-            yaml: yamlText,
+            yaml: savedText,
             savedTo: target,
             archived,
             drift,
@@ -2881,12 +2927,20 @@ export function createHttpServer(instance: MeshInstance, opts: { dashboardDir?: 
         if (designerInFlight >= MAX_DESIGNER_TURNS) return designerBusy();
         designerInFlight += 1;
         const { turnId, mcp: mcpOpts } = openDesignerTurn();
+        // Same stop the stream route gets: this route's caller cannot name the
+        // turn (nothing tells it the id), so its only stop is its own departure.
+        const attempt = new AbortController();
+        designerStops.set(turnId, attempt);
+        let answered = false;
+        res.on("close", () => { if (!answered) attempt.abort(); });
         try {
-          const reply = await instance.designerRuntime.prompt(built.promptText, { system: DESIGNER_SYSTEM_PROMPT, mcp: mcpOpts, effort: DESIGNER_EFFORT });
+          const reply = await instance.designerRuntime.prompt(built.promptText, { system: DESIGNER_SYSTEM_PROMPT, mcp: mcpOpts, effort: DESIGNER_EFFORT, signal: attempt.signal });
           const { proposedConfig, problems, proposal } = closeDesignerTurn(turnId, reply, built.currentConfig);
+          answered = true;
           return json(200, { reply, proposedConfig, problems, proposal });
         } finally {
           designerInFlight -= 1;
+          designerStops.delete(turnId);
           // `closeDesignerTurn` drains on the happy path; this is the abort
           // path, where the runtime threw and nothing drained the buffer.
           designerTurns.close(turnId);
@@ -2904,8 +2958,16 @@ export function createHttpServer(instance: MeshInstance, opts: { dashboardDir?: 
         designerInFlight += 1;
         // A client that navigates away must not keep the model turn writing
         // into a dead socket; the runtime tap stops when this route returns.
+        // It must not keep it *thinking* either: the turn is stopped with it,
+        // because a socket nobody is reading is a turn nobody wants, and the
+        // tokens are the operator's.
         let closed = false;
-        res.on("close", () => { closed = true; });
+        const attempt = new AbortController();
+        let settled = false;
+        res.on("close", () => {
+          closed = true;
+          if (!settled) attempt.abort();
+        });
         res.writeHead(200, {
           "content-type": "text/event-stream",
           "cache-control": "no-cache",
@@ -2916,18 +2978,27 @@ export function createHttpServer(instance: MeshInstance, opts: { dashboardDir?: 
           if (!closed) res.write(`data: ${JSON.stringify(frame)}\n\n`);
         };
         const { turnId, mcp: mcpOpts } = openDesignerTurn();
+        designerStops.set(turnId, attempt);
+        // The turn id goes out first, before the model has said anything: it is
+        // the handle the operator's Stop names, and they may press it while the
+        // designer is still thinking.
+        send({ type: "turn", turnId });
         try {
-          const { reply, thinking } = await instance.designerRuntime.promptStream(
+          const { reply, thinking, stopped } = await instance.designerRuntime.promptStream(
             built.promptText,
-            { system: DESIGNER_SYSTEM_PROMPT, mcp: mcpOpts, effort: DESIGNER_EFFORT },
+            { system: DESIGNER_SYSTEM_PROMPT, mcp: mcpOpts, effort: DESIGNER_EFFORT, signal: attempt.signal },
             (delta) => send({ type: delta.kind, delta: delta.delta }),
           );
           const { proposedConfig, problems, proposal } = closeDesignerTurn(turnId, reply, built.currentConfig);
-          send({ type: "final", reply, thinking, proposedConfig, problems, proposal });
+          send({ type: "final", reply, thinking, ...(stopped === true ? { stopped: true } : {}), proposedConfig, problems, proposal });
         } catch (err) {
-          send({ type: "error", error: err instanceof Error ? err.message : String(err) });
+          // A stop is an ending the operator asked for, not a failure to report.
+          if (attempt.signal.aborted) send({ type: "stopped" });
+          else send({ type: "error", error: err instanceof Error ? err.message : String(err) });
         } finally {
+          settled = true;
           designerInFlight -= 1;
+          designerStops.delete(turnId);
           // A client that navigated away mid-turn never reaches the drain, and
           // an abandoned buffer that outlived its turn is exactly the
           // cross-turn write this design must not have.
@@ -2936,6 +3007,23 @@ export function createHttpServer(instance: MeshInstance, opts: { dashboardDir?: 
           res.end();
         }
         return;
+      }
+
+      // The operator's Stop, aimed at the turn the stream named.
+      //
+      // Separate from the stream so the button does not have to end the socket
+      // to be understood: the turn is what stops, and it stops for every view
+      // of it — another tab, another browser, the console. An id that is not
+      // running is answered 404 rather than 409: a stop that arrives a moment
+      // after the model finished is not a conflict, it is a no-op, and the
+      // client tells the operator the same thing either way.
+      if (parts[0] === "designer" && parts[1] === "chat" && parts[2] === "stop" && req.method === "POST" && parts.length === 3) {
+        const b = await body();
+        const turnId = typeof b?.turnId === "string" ? b.turnId : "";
+        const attempt = turnId ? designerStops.get(turnId) : undefined;
+        if (!attempt) return json(404, { error: "that designer turn is not running", code: "no_such_turn" });
+        attempt.abort();
+        return json(200, { stopped: true, turnId });
       }
 
       // ----------------------------------------------------------- models

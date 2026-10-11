@@ -2209,6 +2209,17 @@ export class ClaudeRuntimeAdapter implements AgentRuntime, DesignerRuntime {
       },
     });
 
+    // The operator can stop this turn. `interrupt` is what the CLI itself
+    // answers a Ctrl-C with: the query ends, the text it had written stays in
+    // the stream above, and the loop below ends on its own terms.
+    let stopped = false;
+    const stop = (): void => {
+      stopped = true;
+      void q.interrupt?.().catch(() => undefined);
+    };
+    opts.signal?.addEventListener("abort", stop, { once: true });
+    if (opts.signal?.aborted) stop();
+
     let reply = "";
     let thinking = "";
     try {
@@ -2233,9 +2244,10 @@ export class ClaudeRuntimeAdapter implements AgentRuntime, DesignerRuntime {
     } finally {
       // A designer turn owns its process. Abandoning the generator without
       // this leaves a CLI parked for the life of the server.
+      opts.signal?.removeEventListener("abort", stop);
       await q.interrupt?.().catch(() => undefined);
     }
-    return { reply, thinking };
+    return { reply, thinking, ...(stopped ? { stopped: true } : {}) };
   }
 
   /** A delta consumer must never take the turn down with it. */

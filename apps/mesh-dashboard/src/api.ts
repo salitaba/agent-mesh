@@ -18,6 +18,10 @@ export interface ApiOptions {
   projectId?: string | null;
   /** The caller shows a failure itself, in place: a 5xx does not also raise the generic "server error" notice, which says only the route and the code. */
   quiet?: boolean;
+  /** Cancel the call. Only `postStream` honours it today: designer chat is the
+   *  one call that outlives a person's patience, and Stop is why it must be
+   *  cancellable at all. `api`/`post` already own a timeout of their own. */
+  signal?: AbortSignal;
 }
 
 let down = false;
@@ -134,6 +138,13 @@ export const getText = async (path: string, opts: ApiOptions = {}): Promise<stri
 export interface StreamResult {
   status: number;
   error?: string;
+  /** The caller aborted this stream (Stop). Not a failure, and not reported as one. */
+  canceled?: boolean;
+}
+
+/** A fetch that ended because someone asked it to, not because it failed. */
+function isAbort(err: unknown): boolean {
+  return typeof err === "object" && err !== null && (err as { name?: string }).name === "AbortError";
 }
 
 /**
@@ -141,7 +152,8 @@ export interface StreamResult {
  * `data:` frame. Used by designer chat: the turn is long-lived (the model may
  * think for minutes), so there is no client timeout and the caller owns error
  * surfacing. Resolves when the server ends the stream; a transport drop is
- * reported instead of thrown so the caller can settle its busy state.
+ * reported instead of thrown so the caller can settle its busy state, and an
+ * abort of its own is reported as `canceled` rather than as a dropped server.
  */
 export async function postStream(
   path: string,
@@ -155,8 +167,10 @@ export async function postStream(
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(body ?? {}),
+      ...(opts.signal ? { signal: opts.signal } : {}),
     });
-  } catch {
+  } catch (err) {
+    if (isAbort(err)) return { status: 0, canceled: true };
     return { status: 0, error: "designer chat failed — the server is unreachable" };
   }
   notifyAuthRequired(res.status);
@@ -185,7 +199,8 @@ export async function postStream(
         }
       }
     }
-  } catch {
+  } catch (err) {
+    if (isAbort(err)) return { status: res.status, canceled: true };
     return { status: res.status, error: "designer chat — the stream was interrupted" };
   } finally {
     try {
