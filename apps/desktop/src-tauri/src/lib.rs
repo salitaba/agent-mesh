@@ -1,11 +1,18 @@
-//! The Curule shell: the hosted app in a window of its own, on the desktop and on
+//! The Curule shell: the dashboard in a window of its own, on the desktop and on
 //! Android.
 //!
-//! The window opens on the page bundled from `ui/`, which is the shell's own
-//! surface: it knows the address to connect to, it connects, and it is where a
-//! connection that fails leaves the user — with a Retry. Everything else the
-//! window needs is policy: which addresses it may show itself, and what a second
-//! launch, the tray and a `target="_blank"` link do.
+//! Since 0.2.0 the window opens on the dashboard the installer carries: the control
+//! plane's own pages, staged into `ui/app` at build time and served from an origin this
+//! shell owns (`curule://localhost`) with the page's `/api/...` calls proxied to the
+//! control plane from there. `serve.rs` is that server and the scheme handler in front
+//! of it. `CURULE_DESKTOP_MODE=hosted` is the 0.1.1 shell instead — the app's own page
+//! in `ui/`, which asks the address whether it answers and connects to it — and it is
+//! also what the shell falls back to when the bundle is not there, the control plane
+//! does not answer, or the local server cannot bind. A fallback is never a blank
+//! window.
+//!
+//! Everything else the window needs is policy: which addresses it may show itself, and
+//! what a second launch, the tray and a `target="_blank"` link do.
 //!
 //! One crate builds both apps, and what a phone has no use for is behind
 //! `#[cfg(desktop)]`: the tray, the remembered window geometry, and noticing a
@@ -13,11 +20,14 @@
 //! is there instead. The address, the window and the navigation policy are shared,
 //! because Tauri 2 supports all three on both.
 //!
-//! `README.md` (one directory up) says why the bundled page connects rather than
-//! the shell navigating to the app URL from here, and what is left unverified.
+//! `README.md` (one directory up) says why the window is served the way it is, what a
+//! bundle costs, and what is left unverified.
 
-use tauri::{webview::NewWindowResponse, App, AppHandle, Manager, Url, WebviewWindowBuilder};
+use tauri::{webview::NewWindowResponse, App, AppHandle, Manager, Url, WebviewUrl, WebviewWindowBuilder};
 use tauri_plugin_opener::OpenerExt;
+
+// The bundled dashboard's server, and the `curule` scheme that reaches it.
+mod serve;
 
 // The tray and its menu are desktop-only: `tauri::menu` is `#[cfg(desktop)]` in the
 // tauri crate, and `tauri::tray` is behind `all(desktop, feature = "tray-icon")`.
@@ -64,17 +74,32 @@ pub fn run() {
         .plugin(tauri_plugin_window_state::Builder::default().build());
 
     builder
+        // Registered before the window exists, because the window is opened on it: in
+        // bundled mode every request the webview makes — the page, its script, its
+        // styles, its `/api/...` calls — arrives here, and is answered by the local
+        // server `serve::place` starts in `setup`.
+        .register_asynchronous_uri_scheme_protocol(serve::SCHEME, |_context, request, responder| {
+            // A thread of its own per request, and not the one the webview asked on:
+            // an answer waits on the control plane, and on Windows that thread is the
+            // window's own. The responder is what Tauri waits on, and it is `Send`.
+            std::thread::spawn(move || responder.respond(serve::on_request(request)));
+        })
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
             let address = app_url();
+            // Which shell to be is decided once, here, and everything downstream reads
+            // the answer: the address the window opens on, and what the tray says it is
+            // showing. The decision is logged where it is made (serve.rs), because a
+            // fallback nobody can see is a fallback nobody can explain.
+            let place = serve::place(app.handle(), &address);
             // The same call on both platforms, and deliberately no `#[cfg(mobile)]`
             // branch: Tauri builds a config-declared window (`create: true`) from
             // this same config entry, at this same point in startup, on every
             // platform — this module only builds it by hand because a
             // config-declared window cannot carry the handlers below.
-            open_window(app, &address)?;
+            open_window(app, &address, &place)?;
             #[cfg(desktop)]
-            tray(app)?;
+            tray(app, &place, &address)?;
             Ok(())
         })
         .run(tauri::generate_context!())
@@ -93,9 +118,9 @@ fn app_url() -> Url {
         .unwrap_or_else(|| Url::parse(DEFAULT_APP_URL).expect("the default app URL is an address"))
 }
 
-/// Whether the window may show this address itself: the page bundled with the app,
-/// the app's own origin, a sibling under the same registrable domain, or a host the
-/// operator named in `CURULE_DESKTOP_HOSTS`.
+/// Whether the window may show this address itself: the bundled dashboard, the app's
+/// own origin, a sibling under the same registrable domain, or a host the operator named
+/// in `CURULE_DESKTOP_HOSTS`.
 ///
 /// The sibling rule is not a nicety. The workspace consoles live at
 /// `<workspace>.ws.curule.dev` — a different host from `app.curule.dev` — and the
@@ -104,8 +129,15 @@ fn app_url() -> Url {
 /// person signed in, pressed the workspace, and the console opened in the system
 /// browser. One product, several names, and the shell has to know they are one
 /// thing. A payment provider's checkout is still somebody else's page.
+///
+/// The bundled dashboard is the same kind of answer: the pages in `ui/app` are the
+/// product's own, served from an origin this shell owns, and a link between them —
+/// `/login`, `/account` — is a navigation inside the app, not a page for the browser.
 fn is_ours(url: &Url, app_url: &Url) -> bool {
     if url.scheme() == "tauri" || url.host_str() == Some("tauri.localhost") {
+        return true;
+    }
+    if serve::is_local_url(url) {
         return true;
     }
     if !matches!(url.scheme(), "http" | "https") {
@@ -153,6 +185,24 @@ fn extra_hosts() -> Vec<String> {
         .unwrap_or_default()
 }
 
+/// Where the window opens: the bundled dashboard at the origin this shell serves it
+/// from, or — in hosted mode, and whenever the bundle is not being served — the shell's
+/// own page in `ui/`, which asks the address whether it answers and connects to it.
+///
+/// The second is 0.1.1 exactly, and the difference matters: a webview that cannot reach
+/// an address shows an error page of its own and says nothing to the Rust beside it, so
+/// a window sent straight at the control plane is a window that fails silently. The
+/// bundle has the same problem in reverse — it is local, so it opens — and the proxy
+/// answers a control plane it cannot reach with a sentence on the page rather than
+/// nothing.
+fn window_url(place: &serve::Place) -> WebviewUrl {
+    if place.bundled {
+        WebviewUrl::CustomProtocol(serve::page_url())
+    } else {
+        WebviewUrl::App("index.html".into())
+    }
+}
+
 /// Builds the window from its `tauri.conf.json` declaration — the size, the title
 /// and the minimums live there — and adds what only Rust can: the address handed
 /// to the bundled page, and the two navigation handlers.
@@ -165,14 +215,17 @@ fn extra_hosts() -> Vec<String> {
 /// the navigation handler below is the whole of the external-link behaviour —
 /// which is the one that matters, since it is what keeps somebody else's page out
 /// of the app.
-fn open_window(app: &mut App, address: &Url) -> Result<(), Box<dyn std::error::Error>> {
-    let config = app
+fn open_window(app: &mut App, address: &Url, place: &serve::Place) -> Result<(), Box<dyn std::error::Error>> {
+    let mut config = app
         .config()
         .app
         .windows
         .first()
         .cloned()
         .ok_or("tauri.conf.json declares no window to open")?;
+    // The config names the bundled page, which is what a build without a staged bundle
+    // would fail on; which of the two the window actually opens on is decided here.
+    config.url = window_url(place);
     let for_navigation = app.handle().clone();
     let for_new_window = app.handle().clone();
     let target = address.clone();
@@ -297,8 +350,12 @@ fn reload_window(app: &AppHandle) {
 /// The tray icon. A window can end up behind everything else, and a desktop app
 /// that cannot be brought back is a desktop app that has to be killed. There is no
 /// tray on Android or iOS, which is why nothing here is compiled for them.
+///
+/// Its tooltip says what the window is showing — the bundled dashboard, or the control
+/// plane and the reason the bundle was not used — because when the shell falls back, the
+/// person looking at it is the one who needs to know, and the log is not where they are.
 #[cfg(desktop)]
-fn tray(app: &App) -> Result<(), Box<dyn std::error::Error>> {
+fn tray(app: &App, place: &serve::Place, address: &Url) -> Result<(), Box<dyn std::error::Error>> {
     let show = MenuItemBuilder::with_id("show", "Show Curule").build(app)?;
     let reload = MenuItemBuilder::with_id("reload", "Reload").build(app)?;
     let quit = MenuItemBuilder::with_id("quit", "Quit").build(app)?;
@@ -306,6 +363,7 @@ fn tray(app: &App) -> Result<(), Box<dyn std::error::Error>> {
 
     let mut tray = TrayIconBuilder::with_id("curule")
         .menu(&menu)
+        .tooltip(place.tooltip(address))
         // Linux shows the menu on a click and reports no click event of its own.
         .show_menu_on_left_click(true)
         .on_menu_event(|app, event| match event.id().as_ref() {

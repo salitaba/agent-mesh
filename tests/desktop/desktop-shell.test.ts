@@ -53,20 +53,36 @@ test("the config names the app, and the window the Rust builds from it", () => {
   const main = windows[0]!;
   assert.equal(main.label, "main", "the label the capability file and the Rust both name");
   assert.equal(main.title, "Curule");
-  assert.equal(main.url, "index.html", "the window opens on the shell's own page, which connects");
+  assert.equal(main.url, "app/index.html", "the window opens on the dashboard the installer carries; src/lib.rs decides whether to build it at all");
   assert.equal(main.create, false, "a window Rust builds cannot also be created by the config, or there are two");
   assert.ok(main.width >= main.minWidth && main.height >= main.minHeight, "a minimum larger than the size it opens at");
   assert.deepEqual([main.width, main.height, main.minWidth, main.minHeight], [1280, 860, 900, 600]);
 });
 
-test("the window loads the hosted app, and the bundled page is what it falls back to", () => {
+test("the installer carries the dashboard, and the shell's own page is what it falls back to", () => {
   assert.equal(config.build.devUrl, "https://app.curule.dev", "the address the shell connects to when nothing overrides it");
   assert.equal(config.build.frontendDist, "../ui");
   const ui = path.resolve(SRC_TAURI, config.build.frontendDist!);
   assert.ok(fs.existsSync(path.join(ui, "index.html")), "frontendDist has to be a directory with the page in it");
   assert.ok(fs.existsSync(path.join(ui, "fallback.js")), "the page's whole behaviour is one file beside it");
-  assert.equal(config.build.beforeDevCommand, undefined, "nothing is built on the way in: the SPA is served, not bundled");
-  assert.equal(config.build.beforeBuildCommand, undefined);
+
+  // The staged dashboard is the destination now, and it is built on the way into a bundle rather than committed:
+  // `ui/app` is generated, so a build that skips the staging step would embed nothing and open on an empty window.
+  assert.equal(
+    config.build.beforeBuildCommand,
+    "node scripts/stage-pages.mjs",
+    "the dashboard has to be staged on the way into every build, or the installer carries an empty window",
+  );
+  assert.ok(fs.existsSync(path.join(APP, "scripts", "stage-pages.mjs")), "the command above has to exist");
+  assert.equal(config.build.beforeDevCommand, undefined, "nothing is staged on the way into dev: dev opens the deployed app");
+});
+
+test("the shell's own page stays a working fallback, because bundled mode is not the only mode", () => {
+  // Nothing about hosted mode changes in 0.2.0: the same one file is still what `CURULE_DESKTOP_MODE=hosted` opens,
+  // and it is what a window falls back to when the bundle is missing or the control plane cannot be reached.
+  const html = read(path.join(APP, "ui", "index.html"));
+  assert.match(html, /CURULE_DESKTOP_URL|app\.curule\.dev/, "the fallback page names the address it connects to");
+  assert.match(read(path.join(APP, "ui", "fallback.js")), /fetch\(/, "it asks the control plane whether it answers");
 });
 
 test("the CSP forbids what the shell has no use for, and eval above all", () => {
@@ -157,6 +173,41 @@ test("the Rust the crate compiles is the shell: one window, the three plugins, a
   assert.match(lib, /open_in_browser/, "and somebody else's page — a checkout — still leaves for the system browser");
   assert.match(lib, /on_navigation/, "every navigation is checked, not only the first");
   assert.match(lib, /TrayIconBuilder/, "the window can end up behind everything else");
+
+  // Phase 2: the dashboard is served out of the app. It cannot be served any other way — the page calls
+  // root-absolute `/api/...` paths with `credentials: "same-origin"`, the session cookie is `__Host-`
+  // (host-only, `Secure`), and the control plane refuses a state-changing request whose `Origin` is not its
+  // own. So the bundle is served from an origin this shell owns and the API is proxied from there.
+  assert.match(lib, /register_asynchronous_uri_scheme_protocol/, "the bundled page is served by the shell, not read from a path");
+  assert.match(lib, /serve::SCHEME/, "under the one scheme src/serve.rs owns");
+  assert.match(lib, /serve::place\(/, "the mode is decided once and the window is built from that decision");
+  assert.match(lib, /WebviewUrl::CustomProtocol/, "the bundled origin is the URL the handler receives");
+
+  const serve = read(path.join(SRC_TAURI, "src", "serve.rs"));
+  assert.match(serve, /MODE_ENV/, "which shell to be is one environment variable");
+  assert.match(serve, /Mode::Hosted/, "hosted is 0.1.1, kept as a fallback and as a choice");
+  assert.match(serve, /fn default_mode/, "and one of the two is the default");
+  assert.match(serve, /fn fall_back/, "a bundle that is missing, a control plane that does not answer, a port that will not bind: all three fall back");
+  assert.ok(!/Mode::Bundled\s*=>\s*Mode::Hosted|Mode::Bundled\s*\}\s*else\s*\{\s*Mode::Hosted/.test(serve), "a fallback is not the default: bundled mode is what an unset variable means on the desktop");
+  assert.match(serve, /fn refused/, "a request that did not come from the app's own page is refused");
+  assert.match(serve, /sec-fetch-site/, "including one that announces it came from another site");
+  assert.match(serve, /is_local_origin/, "and one whose Origin is not this shell's own");
+  assert.match(serve, /fn escapes/, "a path written to leave the bundle is not a path this server serves");
+  assert.match(serve, /request\.set\("origin", &self\.origin\)/, "a state-changing call names the control plane's own origin, which is what it demands");
+  assert.match(serve, /all\(&name\)/, "several Set-Cookie headers come back as several: the session cookie is one of them");
+  assert.match(serve, /FORWARDED/, "the page's headers go upstream by a list, not by whatever a caller sends");
+  assert.match(serve, /fn rewrite_redirects/, "a redirect to the control plane stays inside the app");
+  assert.match(serve, /MAX_BODY/, "one request cannot make the app hold more than it should");
+
+  // The crate's version and the config's are one version: the release tag is checked against one of them, and a
+  // versionCode is derived from the other.
+  assert.match(
+    manifest,
+    new RegExp(`^version = "${config.version}"$`, "m"),
+    "Cargo.toml and tauri.conf.json disagree about the version",
+  );
+  assert.match(manifest, /^ureq = \{ version = "2", default-features = false, features = \["tls"\] \}$/m, "the proxy's HTTP client, with rustls rather than native-tls");
+  assert.ok(!/^\s*(openssl|native-tls)\s*=/m.test(manifest), "no OpenSSL as a dependency: the same crate builds for Android in CI");
 });
 
 test("the fallback page offers what a failed connection needs, and names elements that exist", () => {

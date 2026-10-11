@@ -1,11 +1,12 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Curule",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "identifier": "dev.curule.desktop",
   "build": {
     "devUrl": "https://app.curule.dev",
-    "frontendDist": "../ui"
+    "frontendDist": "../ui",
+    "beforeBuildCommand": "node scripts/stage-pages.mjs"
   },
   "app": {
     "windows": [
@@ -17,7 +18,7 @@
         "minWidth": 900,
         "minHeight": 600,
         "center": true,
-        "url": "index.html",
+        "url": "app/index.html",
         "create": false
       }
     ],
@@ -39,13 +40,13 @@
     "publisher": "Ali Tabatabaei",
     "copyright": "© 2026 Ali Tabatabaei",
     "shortDescription": "Curule in a native window.",
-    "longDescription": "The Curule desktop shell: the hosted app at app.curule.dev in a window of its own, with the machine's own browser kept out of the way and the app's links opening where they belong.",
+    "longDescription": "The Curule desktop shell: the dashboard in a window of its own, carried in the installer and served from the app rather than the network, with the machine's own browser kept out of the way and the app's links opening where they belong.",
     "macOS": {
       "minimumSystemVersion": "10.15"
     },
     "android": {
       "minSdkVersion": 24,
-      "versionCode": 1001
+      "versionCode": 2000
     },
     "windows": {
       "webviewInstallMode": {

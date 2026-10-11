@@ -167,7 +167,7 @@ test("the desktop crates are behind #[cfg(desktop)] and the shell is not", () =>
     !/tauri_plugin_opener::/.test(registration![1]!),
     "opener is supported on Android and iOS (opening a link is an Intent), so it is registered for every platform",
   );
-  assert.match(run.body, /#\[cfg\(desktop\)\]\s*\n\s*tray\(app\)\?;/, "the tray is set up on the desktop, and only there");
+  assert.match(run.body, /#\[cfg\(desktop\)\]\s*\n\s*tray\(app, &place, &address\)\?;/, "the tray is set up on the desktop, and only there");
 
   // The one branch a reader might expect and that is deliberately absent. Comments are dropped first, because the
   // code says in prose which attribute it does not use.

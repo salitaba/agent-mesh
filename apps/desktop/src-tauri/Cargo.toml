@@ -1,7 +1,7 @@
 [package]
 name = "curule-desktop"
-version = "0.1.1"
-description = "The Curule desktop shell: the hosted app in a native window."
+version = "0.2.0"
+description = "The Curule desktop shell: the dashboard in a native window."
 authors = ["Ali Tabatabaei"]
 edition = "2021"
 # The floor the tauri crate itself declares (2.12.3); CI installs stable.
@@ -28,6 +28,12 @@ tauri-plugin-single-instance = "2"
 tauri-plugin-window-state = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+# The one dependency the bundled dashboard adds: the HTTP client src/serve.rs proxies
+# `/api/...` with. Blocking, so it needs no async runtime; `tls` and no default
+# features pulls rustls and webpki-roots rather than native-tls, so the crate carries
+# no OpenSSL and compiles for Android. The alternative — speaking TLS by hand — is not
+# a thing to hand-write.
+ureq = { version = "2", default-features = false, features = ["tls"] }
 
 # The size profile from the Tauri documentation (concept/size).
 [profile.release]

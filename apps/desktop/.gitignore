@@ -4,6 +4,12 @@ src-tauri/target/
 # tauri-build writes the capability schemas here on every build.
 src-tauri/gen/schemas/
 
+# The dashboard, copied out of apps/cloud-server/pages by scripts/stage-pages.mjs on
+# every `tauri build` — the copy the installer carries. Generated, never edited and
+# never committed: it is one `git rev-parse HEAD` away from being reproduced, and a
+# committed copy is a dashboard that quietly stops matching the one it was copied from.
+ui/app/
+
 # `tauri android init` writes the Android project here. It is generated on every
 # CI run instead of committed — see apps/desktop/README.md, "Android" — so a local
 # `tauri android init` leaves the tree clean rather than staging a Gradle project.

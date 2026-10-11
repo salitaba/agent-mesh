@@ -50,11 +50,18 @@ CURULE_DESKTOP_URL=http://127.0.0.1:7500 npm run dev
 A value that is not an http(s) address is a value somebody mistyped: the shell starts on the hosted app rather
 than refusing to start, and the value is never handed to a webview.
 
+`CURULE_DESKTOP_MODE` decides what the window opens on: `bundled` serves the dashboard out of the installer,
+`hosted` opens `CURULE_DESKTOP_URL` and is 0.2.0's behaviour unchanged. Unset means bundled on the desktop and
+hosted on Android; *The dashboard inside the installer* below says why, and what falls back when it cannot be
+bundled.
+
 ## What the window shows itself, and what leaves for the browser
 
 One product has several names, and the shell has to know they are one thing:
 
 - the app's own origin — `app.curule.dev`, or whatever `CURULE_DESKTOP_URL` names;
+- the bundled dashboard's own origin — `curule://localhost`, or `http://curule.localhost` where Tauri maps the
+  scheme onto a loopback name — in either spelling, on whichever platform gave it that spelling;
 - **any sibling under the same registrable domain** — the workspace consoles are served from
   `<workspace>.ws.curule.dev`, and they are the point of the app. Until this rule existed, signing in and pressing a
   workspace handed the console to Chrome, because the host was not the app's;
@@ -152,33 +159,68 @@ Two consequences worth knowing:
 
 ## What has not been verified
 
-- **The crate has never been compiled.** Rust is not installed on the machine this was written on, and installing
-  it was out of scope. No `tauri build` and no `tauri dev` has run. The first compile is CI's, and the first
-  compile error will be read there.
-- **Nothing has run on a phone either.** No Rust, no JDK, no Android SDK and no NDK on the machine this was written
-  on, so `tauri android init` never ran here (it stops at `cargo metadata`, before it looks at any SDK), no Android
-  project was ever generated, and no APK exists. The Android compile and the first APK are `.github/workflows/mobile.yml`'s
-  to produce, and that run is also the first test of the assumption the mobile path rests on: that a window built by
-  Rust from `tauri.conf.json` on a phone is the same window Tauri builds for a config-declared one.
-- **No installer exists.** Every icon format, every bundle format and the workflow's own steps were written from
-  the Tauri 2 documentation and the action's published inputs, not from a build.
+- **Nothing has run.** The crate compiles — CI builds it for Linux, both macOS targets, Windows and Android, and
+  every release from 0.1.0 on came out of that — but no window has ever been opened: no `tauri dev`, no installer
+  launched, no APK installed on a phone by whoever wrote this. Nothing here has been seen working.
+- **The bundled session has never been exercised.** A webview on this machine does not exist, so `serve.rs` has
+  never served a page or proxied a call: that the pages come out right, that the `__Host-` cookie survives the
+  proxy, that `Sec-Fetch-Site` is what the guard expects on each platform — all of it is reasoning and CI's
+  compile, not a run. This is why hosted is the Android default and why the three fallbacks exist.
+- **No code-signing, and no auto-update.** macOS will call an unsigned installer "damaged" and Windows will warn;
+  a new version is a new download.
 - What *was* checked: `tauri.conf.json` validates against the published Tauri 2 config schema; every API the Rust
-  calls was read from the docs for the versions `Cargo.toml` pins; the icon set was rendered by the Tauri CLI
-  itself from `icon.png`; and `tests/desktop/desktop-shell.test.ts` and `tests/desktop/mobile-android.test.ts` pin
-  the wiring between the files — the window the Rust builds, the icons the bundle lists, the two capability grants
-  and the platforms each is scoped to, the workflow's four targets on each side, and the JDK, SDK and NDK the
-  Android build needs.
+  calls was read from the docs for the versions `Cargo.toml` pins (`register_asynchronous_uri_scheme_protocol`,
+  `UriSchemeResponder::respond` and `WebviewUrl::CustomProtocol` from the `tauri` source at the tag being pinned);
+  the icon set was rendered by the Tauri CLI itself from `icon.png`; and the three test files pin the wiring
+  between the files — the window the Rust builds, the icons the bundle lists, the capability grants and the
+  platforms each is scoped to, the workflow's four targets on each side, the JDK, SDK and NDK the Android build
+  needs, the staged bundle against the server's route table, and the navigation policy that keeps a workspace
+  console inside the app.
 
-## Phase 2: the dashboard inside the installer
+## The dashboard inside the installer
 
-Not implemented here, on purpose. The window loads the deployed app today; bundling the dashboard's built assets
-into the app instead is a second pass, and the seams for it are already in place:
+The window opens on the dashboard the installer carries. `scripts/stage-pages.mjs` — the `beforeBuildCommand` —
+copies the control plane's own pages (`apps/cloud-server/pages`) into `ui/app`, and `src/serve.rs` serves them from
+an origin this shell owns. Nothing about the session leaves the machine that is not an API call.
 
-1. `build.frontendDist` (`../ui`) becomes the built dashboard, and a `beforeBuildCommand` builds it.
-2. The address the window opens becomes the bundled page — `DEFAULT_APP_URL` in `src/lib.rs` and the default in
-   `ui/fallback.js` — with the hosted app kept as the fallback rather than the destination.
+The bundle is a snapshot: `ui/app/bundle.json` names the commit it was staged from, so an installer's dashboard is
+the dashboard it was built with, and a deploy of the hosted app does not change it. Shipping a page change is then
+two steps — change the pages, cut an installer.
 
-What that buys: an app that opens with no network at all, a version of the dashboard that cannot change under the
-user, and no dependency on a deploy being up. What it costs: an installer release for every dashboard change, and
-a second place the SPA is built. It is a configuration change and a decision about which one is the default, not
-a rewrite — which is why this pass wrote the address down in one place on each side.
+### Why the bundle is served, and not just loaded
+
+It cannot be served from `tauri://`, from a file path, or from the hosted origin:
+
+- the pages call root-absolute `/api/...` paths with `credentials: "same-origin"`;
+- the session cookie is `__Host-`-prefixed — host-only, `Path=/`, `Secure` — so a page on any other origin can
+  neither read it nor send it;
+- the control plane refuses a state-changing request whose `Origin` is not its own address.
+
+So the pages are served from `curule://localhost` (`http://curule.localhost` on Windows and Android, which is the
+spelling Tauri maps a custom scheme onto) and `/api/...` is proxied to `CURULE_DESKTOP_URL` from there: the same
+method, path, query and body; the headers the control plane reads; `Origin` set to the control plane's own address
+for anything that changes state; `Set-Cookie` handed back untouched, the `__Host-` session cookie among them; and a
+`Location` pointing at the control plane rewritten to the same path inside the app, so a redirect cannot bounce the
+window into a browser.
+
+The proxy refuses a request that did not come from the app's own page (`Origin`, and `Sec-Fetch-Site: cross-site`),
+serves nothing out of the bundle that its own table does not name, and never joins a caller's path onto a directory.
+
+### The two modes, and what falls back
+
+`CURULE_DESKTOP_MODE=bundled|hosted`. Unset means **bundled on the desktop**, **hosted on Android** — and the
+Android default is not a preference. The platform reaches the scheme's origin through `shouldInterceptRequest`,
+which is handed a request with **no body**: a GET survives that, a sign-in POST does not. A phone that opens the
+deployed app is a phone that works; `CURULE_DESKTOP_MODE=bundled` asks for the bundle anyway, once the platform
+can carry a body.
+
+Three things fall the window back to 0.1.1's behaviour rather than leaving it blank, and each says why on stderr
+and in the tray tooltip: the bundle is not staged, the control plane does not answer, or the local server cannot
+bind.
+
+### What it costs
+
+- An installer release per dashboard change, and the app's copy of a page is the deploy it was built from.
+- One address table in two places: `page_file` in `src/serve.rs` names the routes these pages are served at.
+  `tests/desktop/staged-pages.test.ts` runs the staging step against the real pages and fails, naming the page,
+  when that table and the bundle disagree.

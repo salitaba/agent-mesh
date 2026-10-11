@@ -7,6 +7,34 @@ sections 1 to 26) are described there, run by run.
 
 ## Unreleased
 
+### Added: the dashboard inside the installer (the desktop app's phase 2)
+
+- **The installer carries the dashboard.** `apps/desktop/scripts/stage-pages.mjs` is the `beforeBuildCommand`: it
+  copies `apps/cloud-server/pages` into the app's own `ui/app`, records the commit it staged from in
+  `ui/app/bundle.json`, and refuses to stage at all when a file a session cannot start without is missing — a
+  sign-in form that does nothing is otherwise found by a customer.
+- **The app serves those pages and proxies the API from one origin** (`apps/desktop/src-tauri/src/serve.rs`). They
+  cannot be served any other way: the pages call root-absolute `/api/...` paths with `credentials: "same-origin"`,
+  the session cookie is `__Host-`-prefixed (host-only, `Secure`), and the control plane refuses a state-changing
+  request whose `Origin` is not its own address. So the bundle is served from `curule://localhost` — the
+  `http://curule.localhost` spelling on Windows and Android — and `/api/...` is proxied to `CURULE_DESKTOP_URL`:
+  same method, path, query and body, `Origin` put back to the control plane's own address for anything that changes
+  state, `Set-Cookie` handed back untouched (the session cookie among them), and a `Location` naming the control
+  plane rewritten to the same path inside the app. A request that did not come from the app's own page is refused,
+  and nothing is read out of the bundle that the server's own table does not name.
+- **`CURULE_DESKTOP_MODE=bundled|hosted`.** Unset means bundled on the desktop and **hosted on Android**, which is
+  not a preference: the platform reaches the scheme's origin through `shouldInterceptRequest`, which is handed a
+  request with no body, so a sign-in POST would arrive empty. Three things fall the window back to the hosted app
+  rather than leaving it blank — the bundle is not staged, the control plane does not answer, the local server
+  cannot bind — and each says why on stderr and in the tray tooltip.
+- **Version 0.2.0.** One new dependency: `ureq` with rustls and no OpenSSL, so the same crate still builds for
+  Android. `tests/desktop/staged-pages.test.ts` runs the staging step against the real pages and fails, naming the
+  page, when the staged bundle and `serve.rs`'s route table disagree.
+- **Said plainly, in `apps/desktop/README.md` and here**: no window has ever been opened, so the bundled session —
+  the pages being served, the `__Host-` cookie surviving the proxy, `Sec-Fetch-Site` behaving the same way on each
+  platform — has never been exercised. Reasoning and CI's compile are not a run. That is why the Android default is
+  the hosted app, and why there are three fallbacks.
+
 ### Fixed: the desktop app kept its own workspace console out of itself
 
 - **A workspace console opened in Chrome.** Signing in and opening a workspace is `POST /api/workspaces/:id/open` →
