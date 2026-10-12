@@ -45,6 +45,20 @@ into something a person reads (`mission.ts`, `overview-model.ts`, `attention.ts`
   the catalog's fallback for an empty code reads "Mission stopped", which is a claim about a mission that may be running;
 - an empty `needsOperator` renders nothing at all: no empty panel, no zero badge.
 
+### Fixed: five dependency advisories (2 high, 3 critical)
+
+`npm audit` found five, all with a fix inside the existing ranges — no major bump was needed and no API changed:
+
+- `proxy-addr` 2.0.7 → 2.0.8 (critical, IP spoofing via an IPv4-mapped IPv6 trust subnet; reaches production through
+  express) — this is the one the scheduled `Security` workflow has been failing on.
+- `shell-quote` 1.9.0 → 1.12.0 (critical, command injection in `quote()`) and `concurrently` 10.0.5 → 10.0.6 (dev only;
+  `concurrently` is how the dev scripts run two processes).
+- `@modelcontextprotocol/sdk` 1.30.0 → 1.32.1 (high, OAuth client secret handling in the MCP bridge).
+- `source-map-js` 1.2.1 → 1.2.2 (high, event-loop denial of service; build time).
+
+`npm audit` is now clean (314 packages), and `THIRD_PARTY_NOTICES.md` was regenerated from the new lockfile in the same
+commit.
+
 ### Added: the dashboard inside the installer (the desktop app's phase 2)
 
 - **The installer carries the dashboard.** `apps/desktop/scripts/stage-pages.mjs` is the `beforeBuildCommand`: it

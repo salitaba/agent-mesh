@@ -49,7 +49,7 @@ generator fails if one appears, so adding such a dependency is a decision somebo
 | @anthropic-ai/sdk (peer) | 0.125.0 | MIT |
 | @babel/runtime (peer) | 7.29.7 | MIT |
 | @hono/node-server (peer) | 2.1.1 | MIT |
-| @modelcontextprotocol/sdk (peer) | 1.30.0 | MIT |
+| @modelcontextprotocol/sdk (peer) | 1.32.1 | MIT |
 | @stablelib/base64 (peer) | 1.0.1 | MIT |
 | @tauri-apps/api | 2.12.3 | Apache-2.0 OR MIT |
 | accepts (peer) | 2.0.0 | MIT |
@@ -121,7 +121,7 @@ generator fails if one appears, so adding such a dependency is a decision somebo
 | path-key (peer) | 3.1.1 | MIT |
 | path-to-regexp (peer) | 8.4.2 | MIT |
 | pkce-challenge (peer) | 5.0.1 | MIT |
-| proxy-addr (peer) | 2.0.7 | MIT |
+| proxy-addr (peer) | 2.0.8 | MIT |
 | qs (peer) | 6.16.0 | BSD-3-Clause |
 | range-parser (peer) | 1.3.0 | MIT |
 | raw-body (peer) | 3.0.2 | MIT |
