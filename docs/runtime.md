@@ -275,8 +275,8 @@ woken, had written "awaiting operator acceptance testing": it did not know the a
 
 ### A mission does not complete over a rejected patch
 
-The termination verdict completes a mission when every mandatory criterion is evidenced, no
-escalation is open and no claimed task has its owner on it. It also waits for a patch a reviewer
+The termination verdict completes a mission when every mandatory criterion is evidenced and no
+claimed task has its owner on it. It also waits for a patch a reviewer
 rejected: when `implementation-merged` is among the goal's mandatory criteria, no CodePatch of the
 goal may be REJECTED, nor have been rejected and not yet reached MERGED or ARCHIVED (`openRejections`,
 in `projections-helpers.ts`; the verdict, the watchdog and the merge note all read that one function).
@@ -935,6 +935,21 @@ attributed to `termination-manager`, not to the operator (`docs/protocol.md` § 
 A run report read off a mesh that was stopped mid-mission (goal still `ACTIVE`, no
 termination reason in the log) says so — `Stopped before the goal was met` — rather than
 that the build has no phrasing for `goal_active`.
+
+### A card is answered or carried, never a completion gate
+
+The verdict used to complete a mission only with `openEscalations.length === 0`, so every escalation was
+a halt — and nothing retires a seat's card except its raiser or the human seat answering it (the one
+`escalation.auto_resolved` emitter is the provider-breaker card at boot). One live mission whose every
+mandatory criterion was `EVIDENCED` sat at `[goal-halted]` for 36 hours on one stale tech-lead card
+nobody had answered, while the seat that could see the card was stale could only file another card about
+it. A card is a request for a decision, not a halt, so it no longer gates completion: it stays `OPEN`
+(completing does not answer it — a fabricated `escalation.responded` would forge a decision nobody made)
+and is carried, named, into the completion record (`openCards` on `goal.completed`, and the audit line
+beside it) and into `status.needsOperator`, the status payload's list of the cards an operator still owes
+an answer. It still keeps the mission `worth: true` for the stall watchdog (`wakeValue`), and `liveClaims`
+and `openRejections` stay in the gate as before: a claimed task or a rejected patch has an owner who can
+still act on it, a card has none.
 
 ### What counts as satisfied, and what a reopen withdraws
 

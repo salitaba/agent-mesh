@@ -13235,17 +13235,39 @@ export class Supervisor {
     // What the sweep could not raise is parked, and its card goes to the
     // operator here — the verdict below no longer halts the goal over one seat.
     await this.parkExhaustedSeats();
+    const nowMs = this.nowMs();
     const verdict = this.termination.evaluate({
       state: this.state,
       config: this.config,
-      wallClockMs: this.nowMs() - this.startedAt,
+      wallClockMs: nowMs - this.startedAt,
+      nowMs,
     });
     const goalId = this.state.activeGoalId;
     if (!goalId) return;
     const goal = this.state.goals.get(goalId);
     if (!goal) return;
     if (verdict.kind === "complete" && goal.status !== "COMPLETED") {
-      await this.deps.kernel.emit("goal.completed", { goalId, reason: verdict.reason, evidence: verdict.evidenceSummary }, { actorId: TERMINATION_ACTOR_ID });
+      // A card no longer gates completion (`termination.ts`); it is carried
+      // instead. The completion record names it — in the event payload and in
+      // the audit line — so the log says what was still on the table when the
+      // mission closed, and the card itself stays OPEN for the operator.
+      const carried = verdict.openCards ?? [];
+      await this.deps.kernel.emit(
+        "goal.completed",
+        {
+          goalId,
+          reason: verdict.reason,
+          evidence: verdict.evidenceSummary,
+          ...(carried.length > 0 ? { openCards: carried } : {}),
+        },
+        { actorId: TERMINATION_ACTOR_ID },
+      );
+      if (carried.length > 0) {
+        this.auditLine(
+          `mission completed with ${carried.length} open card(s) still unanswered: ` +
+            carried.map((c) => `${c.id} (${c.reason}; raised by ${c.raisedBy}; open ${Math.round(c.ageMs / 60_000)}m)`).join("; "),
+        );
+      }
       await this.completeMission();
     } else if (verdict.kind === "escalate" && goal.status !== "ESCALATED") {
       await this.escalate({
@@ -14877,7 +14899,9 @@ export class Supervisor {
   }
 
   async status(): Promise<MissionStatus> {
-    return missionStatus(this.state, this.deps.budget.snapshot());
+    // The kernel's clock dates the carried cards (`needsOperator[].ageMs`), so a
+    // test with a manual clock reads the age it set.
+    return missionStatus(this.state, this.deps.budget.snapshot(), this.nowMs());
   }
 }
 

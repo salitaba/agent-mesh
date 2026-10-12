@@ -1,6 +1,7 @@
 import type { BudgetProjectionEntry, Escalation, Goal, LifecycleState, MeshEvent } from "../../protocol/src/index";
 import type { ResolvedMeshConfig } from "../../config/src/index";
 import { applyEvent, projectionConfigFor } from "./projections";
+import { openCardSummary, type OpenCardSummary } from "./termination";
 import { budgetEntries, createInitialState, readableMailDepth, type Projections } from "./state";
 
 /**
@@ -32,13 +33,25 @@ export interface MissionStatus {
   budgets: BudgetProjectionEntry[];
   progress: { completed: number; total: number; ratio: number } | null;
   openEscalations: Escalation[];
+  /**
+   * The OPEN escalation cards an operator still owes an answer, as summaries: the same list `openEscalations` carries, dated and
+   * trimmed to what one acts on. They no longer gate completion (`termination.ts`), so without this a finished mission's unanswered
+   * cards would be invisible to anything reading the status payload — a run that closes with one is exactly the state a reader has to
+   * be able to see. Empty when there are none.
+   */
+  needsOperator: OpenCardSummary[];
   eventCount: number;
 }
 
-export function missionStatus(state: Projections, budgets: BudgetProjectionEntry[] = budgetEntries(state)): MissionStatus {
+export function missionStatus(
+  state: Projections,
+  budgets: BudgetProjectionEntry[] = budgetEntries(state),
+  nowMs: number = Date.now(),
+): MissionStatus {
   const goalId = state.activeGoalId;
   const goal = goalId ? state.goals.get(goalId) : undefined;
   const progress = goalId ? state.progress.get(goalId) : undefined;
+  const openEscalations = [...state.escalations.values()].filter((e) => e.status === "OPEN");
   return {
     goal,
     agents: [...state.agents.values()].map((r) => ({
@@ -55,7 +68,8 @@ export function missionStatus(state: Projections, budgets: BudgetProjectionEntry
     })),
     budgets,
     progress: progress ? { completed: progress.completed, total: progress.total, ratio: progress.ratio } : null,
-    openEscalations: [...state.escalations.values()].filter((e) => e.status === "OPEN"),
+    openEscalations,
+    needsOperator: openEscalations.map((e) => openCardSummary(e, nowMs)),
     eventCount: state.eventCount,
   };
 }

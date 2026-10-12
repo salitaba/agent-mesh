@@ -1,4 +1,12 @@
-import { isSettledArtifactStatus, type AcceptanceCriterion, type Goal, type GoalId, type Task } from "../../protocol/src/index";
+import {
+  isSettledArtifactStatus,
+  type AcceptanceCriterion,
+  type Escalation,
+  type EscalationId,
+  type Goal,
+  type GoalId,
+  type Task,
+} from "../../protocol/src/index";
 import type { ResolvedMeshConfig } from "../../config/src/index";
 import type { Projections } from "./state";
 import { outstandingDebtors } from "./state";
@@ -60,10 +68,12 @@ export function liveClaims(state: Projections): Task[] {
 /**
  * Would a goal holding exactly `criteria` be judged complete on criteria alone?
  *
- * Deliberately ignores the open-escalation and owned-task conditions that the
- * full verdict also requires: those clear on their own within a tick or two,
- * so treating them as protection would make the guard pass at 10:00:01 and
- * fail at 10:00:02 for the same edit.
+ * Deliberately ignores the owned-task and rejected-patch conditions that the
+ * full verdict also requires: those have live owners who may be mid-flight, and
+ * treating them as protection would make the guard pass at 10:00:01 and fail at
+ * 10:00:02 for the same edit. It once also ignored the open-escalation
+ * condition; a card no longer gates completion at all (see the verdict below),
+ * so there is nothing there left to ignore.
  */
 export function criteriaWouldComplete(goal: Goal, criteria: AcceptanceCriterion[]): boolean {
   const mandatory = criteria.filter((c) => c.mandatory);
@@ -376,6 +386,13 @@ export interface TerminationInputs {
   state: Projections;
   config: ResolvedMeshConfig;
   wallClockMs: number;
+  /**
+   * The wall-clock instant this evaluation runs at, for dating the OPEN cards a
+   * completion would carry (`openCards[].ageMs`). Optional because the many
+   * callers that pin a verdict from a hand-built state need not thread a clock;
+   * the supervisor passes its own (the kernel's) clock.
+   */
+  nowMs?: number;
 }
 
 /**
@@ -385,9 +402,48 @@ export interface TerminationInputs {
  */
 export const STALEMATE_RAISERS = ["deadlock-detector", "recovery-manager"];
 
+/**
+ * An OPEN escalation card, as the operator needs to see it.
+ *
+ * A card is a question addressed to a human, and it does not gate completion
+ * (see the verdict below). What it does instead is ride surfaces the operator
+ * reads — the completion verdict and `status.needsOperator` — so the fields
+ * here are the ones one acts on: which card, what it asks, who raised it, when
+ * it was opened, and how long it has sat unanswered.
+ */
+export interface OpenCardSummary {
+  id: EscalationId;
+  reason: string;
+  raisedBy: string;
+  openedAt: string;
+  ageMs: number;
+}
+
+/**
+ * Date one OPEN card against `nowMs`. Shared by the termination verdict and
+ * `status.needsOperator`, so both surfaces describe the same card identically.
+ * A stamp that will not parse reports an age of zero rather than NaN, which
+ * would serialize as `null` in the completion event and the status response.
+ */
+export function openCardSummary(e: Escalation, nowMs: number): OpenCardSummary {
+  const openedMs = Date.parse(e.createdAt);
+  return {
+    id: e.id,
+    reason: e.reason,
+    raisedBy: e.raisedBy,
+    openedAt: e.createdAt,
+    ageMs: Number.isFinite(openedMs) ? Math.max(0, nowMs - openedMs) : 0,
+  };
+}
+
 export type TerminationVerdict =
   | { kind: "continue" }
-  | { kind: "complete"; reason: string; evidenceSummary: string[] }
+  /**
+   * `openCards` names the OPEN escalations that were still on the table when
+   * the mission closed. Absent when there were none, so a clean completion
+   * reads exactly as it always did. The cards are reported, NOT resolved.
+   */
+  | { kind: "complete"; reason: string; evidenceSummary: string[]; openCards?: OpenCardSummary[] }
   /**
    * `supports` is set only for derived verdicts (stalemate): the ids of the
    * open primary escalations that justify it. Absent means "this verdict
@@ -556,7 +612,28 @@ export class TerminationManager {
     // six times and delivering nothing new.
     const satisfied = (c: (typeof mandatory)[number]): boolean => criterionSatisfied(goal, c);
     if (mandatory.length > 0 && mandatory.every(satisfied)) {
-      const openEscalations = [...state.escalations.values()].filter((e) => e.status === "OPEN");
+      // A card does NOT hold a finished mission shut.
+      //
+      // This used to require `openEscalations.length === 0`, which made every
+      // escalation a completion gate — and no path retires a seat's card except
+      // its raiser or the human seat answering it (the only
+      // `escalation.auto_resolved` emitter is the provider-breaker card at
+      // boot). One live mission whose every mandatory criterion was EVIDENCED
+      // sat at [goal-halted] for 36 hours on a single stale tech-lead card
+      // nobody had answered; the seat that could see the card was stale could
+      // only file another one about it. An escalation is a request for a
+      // decision, not a halt: it must not be able to freeze a mission that has
+      // met its own contract. This is the same fix already made here twice for
+      // work objects — OPEN tasks stopped gating completion (one live run ended
+      // 5/5 criteria EVIDENCED with 7 unclaimed OPEN tasks and could never
+      // complete), and abandoned claims were dropped for the same reason.
+      //
+      // The card is REPORTED, not resolved. It stays OPEN and rides the verdict
+      // (and the `goal.completed` the supervisor emits from it) as `openCards`,
+      // so the operator can still answer it and the audit trail still shows
+      // that no human did. Emitting `escalation.responded` or
+      // `escalation.auto_resolved` here would forge a decision nobody made.
+      const openCards = [...state.escalations.values()].filter((e) => e.status === "OPEN");
       // Only work SOMEONE OWNS can hold a finished mission open.
       //
       // This used to block on any OPEN task too, which turned routine
@@ -584,16 +661,23 @@ export class TerminationManager {
       // claiming agent still exists and its `activeTaskId` is this task.
       // A claim whose owner is gone, or who has moved on to another task, is
       // residue — the same as an unclaimed OPEN ticket.
+      //
+      // Unlike a card, these objects have an owner who can still act on them,
+      // and the watchdog wakes that owner; they stay in the gate unchanged.
       const ownedTasks = liveClaims(state);
       // A patch a reviewer rejected that has neither landed nor been withdrawn is work the mission left
       // in limbo, however many criteria a merge of its sibling evidenced (`openRejections`). Like a
       // claimed task, it has an owner who has to act, and the watchdog wakes them for it.
       const rejectedPatches = openRejections(state, goalId);
-      if (openEscalations.length === 0 && ownedTasks.length === 0 && rejectedPatches.length === 0) {
+      if (ownedTasks.length === 0 && rejectedPatches.length === 0) {
+        const nowMs = input.nowMs ?? Date.now();
         return {
           kind: "complete",
           reason: "all_mandatory_criteria_evidenced",
           evidenceSummary: mandatory.flatMap((c) => c.evidence.map((e) => `${c.id}:${e.kind}:${e.eventId ?? e.artifactRef?.uri ?? "manual"}`)),
+          // Omitted entirely when nothing was carried: a mission that finished
+          // with a clean table reads exactly as it did before.
+          ...(openCards.length > 0 ? { openCards: openCards.map((e) => openCardSummary(e, nowMs)) } : {}),
         };
       }
     }

@@ -156,6 +156,144 @@ test("termination: all five mechanisms are represented in the manager", () => {
   assert.equal(typeof m.evaluate, "function");
 });
 
+/**
+ * A card requests a decision; it does not gate completion.
+ *
+ * The verdict used to require `openEscalations.length === 0`, so every card
+ * was a halt — and nothing retires a seat's card except its raiser or the human
+ * seat answering it. One live mission whose every mandatory criterion was
+ * EVIDENCED sat at [goal-halted] for 36 hours on one stale tech-lead card
+ * nobody had answered; the seat that could see the card was stale could only
+ * file another card about it. The card is carried instead: reported on the
+ * verdict, never resolved.
+ */
+const OPEN_CARD = {
+  id: "esc-1",
+  goalId: "g",
+  reason: "the API shape is still contested",
+  raisedBy: "tech-lead",
+  status: "OPEN",
+  detail: {},
+  createdAt: "2026-01-01T00:00:00.000Z",
+};
+
+/** The state a finished mission presents to the verdict: one EVIDENCED mandatory criterion, nothing else. */
+function finishedState(over: { escalations?: unknown[]; tasks?: unknown[]; activeTaskId?: string } = {}) {
+  return {
+    activeGoalId: "g",
+    goals: new Map([
+      [
+        "g",
+        {
+          id: "g",
+          status: "ACTIVE",
+          acceptanceCriteria: [{ id: "c1", mandatory: true, status: "EVIDENCED", evidence: [{ kind: "approval", recordedAt: "2026-01-01T00:00:00.000Z" }] }],
+        },
+      ],
+    ]),
+    budgets: new Map(),
+    threads: new Map(),
+    agents: new Map([["developer", { state: { agentId: "developer", lifecycle: "IDLE", activeTaskId: over.activeTaskId } }]]),
+    eventsSinceActivation: new Map(),
+    escalations: new Map((over.escalations ?? []).map((e) => [(e as { id: string }).id, e])),
+    tasks: new Map((over.tasks ?? []).map((t) => [(t as { id: string }).id, t])),
+    pendingRequests: new Map(),
+    eventCount: 1,
+  } as never;
+}
+
+test("termination: an OPEN card does not gate completion; the verdict carries it", () => {
+  const state = finishedState({ escalations: [OPEN_CARD] });
+  const verdict = new TerminationManager().evaluate({
+    state,
+    config: { budgets: { mission: { tokens: 100000, wallClockMinutes: 600, maxEvents: 100000 } } } as never,
+    wallClockMs: 1000,
+    nowMs: Date.parse("2026-01-01T00:12:34.000Z"),
+  });
+  assert.equal(verdict.kind, "complete", "a card requests a decision; it must not freeze a mission that has met its own contract");
+  if (verdict.kind !== "complete") return;
+  assert.deepEqual(
+    verdict.openCards,
+    [
+      {
+        id: "esc-1",
+        reason: "the API shape is still contested",
+        raisedBy: "tech-lead",
+        openedAt: "2026-01-01T00:00:00.000Z",
+        ageMs: 754_000,
+      },
+    ],
+    "the carried card names what an operator needs to act",
+  );
+  assert.deepEqual(verdict.evidenceSummary, ["c1:approval:manual"], "and the evidence summary is unchanged");
+});
+
+test("termination: a live claim still holds a finished mission open, card or no card", () => {
+  // The fix must not widen the one work gate that remains: a CLAIMED task whose
+  // owner still points at it is somebody mid-flight, not residue.
+  const state = finishedState({
+    escalations: [OPEN_CARD],
+    tasks: [{ id: "task-1", status: "CLAIMED", claimedBy: "developer" }],
+    activeTaskId: "task-1",
+  });
+  const config = { budgets: { mission: { tokens: 100000, wallClockMinutes: 600, maxEvents: 100000 } } } as never;
+  assert.equal(new TerminationManager().evaluate({ state, config, wallClockMs: 1000 }).kind, "continue");
+});
+
+test("termination: with no OPEN card the verdict is exactly what it was", () => {
+  const config = { budgets: { mission: { tokens: 100000, wallClockMinutes: 600, maxEvents: 100000 } } } as never;
+  const verdict = new TerminationManager().evaluate({ state: finishedState(), config, wallClockMs: 1000 });
+  assert.equal(verdict.kind, "complete");
+  if (verdict.kind !== "complete") return;
+  assert.equal(verdict.reason, "all_mandatory_criteria_evidenced");
+  assert.equal(Object.prototype.hasOwnProperty.call(verdict, "openCards"), false, "nothing was carried, so the key is absent");
+
+  // An answered card is not carried either: only OPEN ones are on the table.
+  const answered = finishedState({ escalations: [{ ...OPEN_CARD, status: "RESPONDED", response: "yes" }] });
+  const second = new TerminationManager().evaluate({ state: answered, config, wallClockMs: 1000 });
+  assert.equal(second.kind, "complete");
+  if (second.kind !== "complete") return;
+  assert.equal(Object.prototype.hasOwnProperty.call(second, "openCards"), false);
+});
+
+test("termination: completing over an OPEN card carries it without answering it", async () => {
+  const m = await makeMesh({
+    agents: [
+      { id: "pm", role: "product-manager", authority: ["requirements.accept"], interests: [] },
+      { id: "lead", role: "tech-lead", interests: [] },
+    ],
+    mayContact: { pm: [], lead: [] },
+    criteria: [{ id: "c1", description: "one", mandatory: true }],
+  });
+  try {
+    const card = await m.supervisor.escalate({ reason: "the API shape is still contested", raisedBy: "lead", conflictKey: "shape" });
+    assert.equal(m.kernel.state.escalations.get(card.id)?.status, "OPEN", "fixture: the card is open");
+
+    const created = await m.supervisor.createArtifact({ actorId: "pm", name: "e1", type: "ADR", content: evidenceContent("e1 decision record") });
+    if (!("artifact" in created)) throw new Error("artifact failed");
+    await m.supervisor.transitionArtifact("pm", created.artifact.id, { to: "READY_FOR_REVIEW" });
+    await m.supervisor.recordDecision("pm", "accept", "criterion:c1", created.artifact.id);
+    await waitFor("completed", () => goalOf(m)?.status === "COMPLETED", 5000);
+
+    // The card is not resolved by completing: it is still OPEN, and the log
+    // holds no answer that would forge a decision nobody made.
+    assert.equal(m.kernel.state.escalations.get(card.id)?.status, "OPEN", "the card is carried, not answered");
+    const types = eventTypes(await m.store.read());
+    assert.ok(!types.includes("escalation.responded"), "no response is fabricated");
+    assert.ok(!types.includes("escalation.auto_resolved"), "no auto-resolution is fabricated");
+
+    // And the completion record names what was still on the table.
+    const completed = (await m.store.read()).find((e) => e.type === "goal.completed");
+    const carried = (completed?.payload as { openCards?: Array<{ id: string; reason: string; raisedBy: string }> } | undefined)?.openCards ?? [];
+    assert.equal(carried.length, 1, "the goal.completed payload carries the card");
+    assert.equal(carried[0]!.id, card.id);
+    assert.equal(carried[0]!.reason, "the API shape is still contested");
+    assert.equal(carried[0]!.raisedBy, "lead");
+  } finally {
+    await m.cleanup();
+  }
+});
+
 test("caps: goal.budget_changed raises the cap and termination honors it", async () => {
   const m = await makeMesh({
     agents: [{ id: "dev", role: "developer", interests: [], capabilities: ["repository.write"] }],
