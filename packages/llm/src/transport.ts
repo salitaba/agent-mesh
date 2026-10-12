@@ -9,6 +9,7 @@
  * not fit, an exhausted account) is never retried, since asking again changes nothing.
  */
 import { ProviderError, ProviderTimeoutError, abortError, classifyHttpFailure, describeErrorBody, retryAfterMs } from "./errors";
+import { providerFetch } from "./proxy";
 
 export interface TransportOptions {
   /** Retries after the first attempt. */
@@ -43,7 +44,7 @@ export function resolveTransport(o: TransportOptions = {}): ResolvedTransport {
     retryMaxMs: o.retryMaxMs ?? 20_000,
     headersTimeoutMs: o.headersTimeoutMs ?? 120_000,
     idleTimeoutMs: o.idleTimeoutMs ?? 180_000,
-    fetch: o.fetch ?? ((input, init) => fetch(input, init)),
+    fetch: o.fetch ?? providerFetch(),
     sleep: o.sleep ?? defaultSleep,
     random: o.random ?? Math.random,
   };
