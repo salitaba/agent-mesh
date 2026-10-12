@@ -43,8 +43,19 @@ export type ControlEntry = Stamp &
     /** A model key was stored for a workspace. The key is not in the log: only which provider it is for, and where. */
     | { type: "workspace.model_key_set"; workspaceId: string; provider: ModelProviderKind; model: string; baseUrl?: string }
     | { type: "workspace.model_key_removed"; workspaceId: string }
+    /**
+     * The owner was told that a run in one of their workspaces is waiting on them. What was told is `state`: the goal's
+     * status and the ids of the cards it owes, so a run that changes is told about again while the same run is not
+     * (see `run-notifications.ts`). The entry is the record that the message went out — the mail itself is not kept.
+     */
+    | { type: "run.notified"; workspaceId: string; accountId: string; projectId: string; goalId: string; state: string }
     | { type: "owner.action"; action: string; detail: string }
   );
+
+/** The key a run that its owner was told about is remembered under: one per workspace, project, goal and state. */
+export function runNotificationKey(e: { workspaceId: string; projectId: string; goalId: string; state: string }): string {
+  return JSON.stringify([e.workspaceId, e.projectId, e.goalId, e.state]);
+}
 
 type DistributiveOmit<T, K extends PropertyKey> = T extends unknown ? Omit<T, K> : never;
 export type ControlEntryBody = DistributiveOmit<ControlEntry, "id" | "at">;
@@ -103,6 +114,8 @@ export class ControlState {
   readonly customers = new Map<string, string>();
   /** The credit that refunds have taken back for each payment so far, in micro-units, by the payment's reference. */
   readonly creditRefundedMicros = new Map<string, number>();
+  /** When the owner was last told a run is waiting on them, by {@link runNotificationKey}. */
+  readonly runNotified = new Map<string, string>();
 
   apply(e: ControlEntry): void {
     switch (e.type) {
@@ -231,6 +244,9 @@ export class ControlState {
         if (w) w.plan = e.plan;
         return;
       }
+      case "run.notified":
+        this.runNotified.set(runNotificationKey(e), e.at);
+        return;
       case "owner.action":
         return;
     }

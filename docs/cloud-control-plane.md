@@ -290,6 +290,7 @@ prints what the service would run (no secret is in it), and touches nothing.
 | `provisioner` | `kind: container` with `image`, `network`, an optional `subnet` (the network's own, to give each workspace an address of its own), `egress_proxy`, `no_proxy` and `limits` (`cpus`, `memory_mb`, `pids`), or `kind: local` for a trial. |
 | `billing` | `provider: manual` with `pay_url` (where a customer is sent to pay, with `{ref}` for the reference to pay under), or `provider: hosted-checkout` with `api_key_env` and `webhook_secret_env`. |
 | `reconcile_minutes` | How often unpaid and stuck workspaces are looked at, and workspaces the log calls running whose host is not. Default 15. |
+| `run_notifications` | Telling the owner, by mail, when a run in one of their workspaces is waiting on them: `enabled` (default true), `every_minutes` (how often a workspace's host is asked, at most; default 15) and `repeat_hours` (how long the same state stays quiet; default 12). [Below](#telling-the-owner-when-a-run-needs-them). |
 
 **What the check refuses**, because none of it can be seen from outside once the service is running:
 
@@ -356,6 +357,36 @@ is still running is not started again, and one that fails is logged and the time
 taking requests, gives the ones in flight ten seconds and then ends them (an open event stream included), waits for
 workspaces that are being made for the same time (what is not finished is looked at at the next start), and closes the log.
 
+## Telling the owner when a run needs them
+
+A mission that has stopped — escalated, paused, blocked — is waiting for a person, and so is one that finished with a
+decision nobody answered. Nothing in a workspace can send mail, and an owner who is not watching the console is not told.
+So the same tick that keeps workspaces honest asks each running workspace's host what its runs are doing, and mails the
+account's address when one of them needs a person.
+
+It asks the workspace with the operator credential derived from the service secret — the credential the edge presents, not
+the customer's session — at `GET /api/projects` for the projects the host holds, then `GET /api/p/<project>/status` for
+each. A run needs its owner when the goal has stopped and not failed (`ESCALATED`, `PAUSED`, `BLOCKED`), or when the
+status carries cards an operator still owes an answer to (`needsOperator`, which is not empty for a finished run whose
+decisions were never answered: the case this is for). The mail names the workspace and the project, says how long the first
+card has waited, quotes that card's own words so it is actionable without signing in, and links the account page to open
+the workspace from. Nothing else is in it: no id a customer cannot see, no token, no address of a workspace's host, and a
+host's answer is never logged.
+
+The same state is not said twice. What was told is a `run.notified` entry in the control log, one per workspace, project,
+goal and state — the state being the goal's status and the ids of the cards it owes — so a restart does not tell an owner
+everything again, a reminder waits `repeat_hours`, and a run that has changed (another status, a new card) is told about at
+once. A workspace that is down, slow or answering with something that is not a status is skipped, said in the service's
+log, and looked at again at the next check; a message that could not be delivered is not recorded as one that was, so the
+next check tries again. None of it can end the tick it is part of.
+
+```yaml
+run_notifications:
+  enabled: true          # default true: the point is that nobody has to go looking
+  every_minutes: 15      # how often workspaces are asked, at most (default 15)
+  repeat_hours: 12       # how long the same state stays quiet before it is said again (default 12)
+```
+
 ## Mail
 
 The control plane sends the link that confirms an address, the link that resets a password, and notices that a payment failed,
@@ -373,6 +404,7 @@ a person can act on is a link to the account page, and what is said about time i
 | `signup-existing` | You already have a Curule account | Sent when someone signs up with an address that has an account: links to the sign-in and the forgotten-password pages, and no token. |
 | `payment-failed` | A Curule payment did not go through | How many days the workspaces keep running (the grace period, three), that they are then stopped and not deleted, and the account page to update the payment details at. |
 | `subscription-ended` | Your Curule subscription has ended | That the workspaces are stopped, how many days the data is kept before it is deleted (the retention period, 30), and the account page to subscribe again or delete them at. |
+| `run-needs-you` | A Curule run needs you | That a run in the workspace has stopped and is waiting, or has finished with decisions never answered; the project, how long the first card has waited, that card's own words, and the account page to open the workspace from. Sent once per state, and at most once per `run_notifications.repeat_hours` ([above](#telling-the-owner-when-a-run-needs-them)). |
 
 **An outbox file** (`mail.outbox`) delivers nothing. Each message is appended to the file as a JSON object on a line, readable
 by its owner alone, for something of the operator's to deliver or for a person to read while trying the service (the

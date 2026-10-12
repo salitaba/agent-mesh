@@ -82,3 +82,9 @@ billing:
   # webhook_secret_env: BILLING_WEBHOOK_SECRET
 
 reconcile_minutes: 15                 # how often unpaid and stuck workspaces are looked at
+
+run_notifications:                    # telling the account owner when a run in one of their workspaces is waiting on them
+  enabled: true                       # on by default: a run that has stopped, or one that finished with a decision nobody
+                                      # answered, waits for a person, and nobody in the workspace can send mail
+  every_minutes: 15                   # how often a workspace's host is asked what its runs are doing, at most
+  repeat_hours: 12                    # how long the same state stays quiet before the owner is told again

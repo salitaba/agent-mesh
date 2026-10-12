@@ -21,6 +21,7 @@ import { OwnerWeb } from "./owner";
 import { ContainerProvisioner, ProcessRunner, type CommandRunner } from "./provision-container";
 import { LocalProcessProvisioner } from "./provision-local";
 import type { Provisioner } from "./provisioner";
+import { RunNotifier } from "./run-notifications";
 import { SmtpTransport } from "./smtp";
 import { ControlLog, JsonlControlStore, type ControlStore } from "./store";
 import { ControlWeb } from "./web";
@@ -200,11 +201,37 @@ export async function startControl(config: ControlConfig, options: StartOptions 
     // What was waiting from before the last stop is delivered now; from here on a message is delivered as it is queued.
     queue?.start();
 
+    // Whether a run in a workspace is waiting on its owner is asked on the same tick as the checks on workspaces, so
+    // there is one clock and one failure mode.
+    const notifier = config.runNotifications.enabled
+      ? new RunNotifier({
+          log: controlLog,
+          mailer,
+          workspaces: plane.workspaces,
+          appUrl: config.appUrl,
+          clock,
+          everyMs: config.runNotifications.everyMinutes * 60_000,
+          repeatMs: config.runNotifications.repeatHours * 3_600_000,
+        })
+      : undefined;
+
     let checking: Promise<string[]> | undefined;
     const reconcile = (): Promise<string[]> => {
       // A check that is still running is not started again on top of itself.
       checking ??= plane.workspaces
         .reconcile()
+        .then(async (actions) => {
+          if (notifier) {
+            // Telling an owner is a courtesy; the checks on workspaces are not. Whatever this cannot do is said and
+            // does not end the tick.
+            const told = await notifier.check().catch((err: unknown) => {
+              log({ level: "error", msg: "the check for runs that need their owner failed", error: err instanceof Error ? `${err.name}: ${err.message}` : String(err) });
+              return [] as string[];
+            });
+            for (const action of told) log({ level: "info", msg: "a check looked at the runs in workspaces", action });
+          }
+          return actions;
+        })
         .then(
           (actions) => {
             for (const action of actions) log({ level: "info", msg: "a check changed a workspace", action });
@@ -286,6 +313,11 @@ export function describeControl(config: ControlConfig): string[] {
   lines.push(c.licence ? `workspace licences are signed with key ${c.licence.kid}` : "workspace licences are not signed: workspaces run on the Community plan");
   lines.push(c.billing.provider === "manual" ? `billing is manual: customers are sent to ${c.billing.payUrl.replace("{ref}", "<reference>")}, and the operator records what arrives` : `billing is by a hosted checkout, with messages verified by signature${c.billing.baseUrl ? ` (API at ${c.billing.baseUrl})` : ""}`);
   lines.push(`the checks on workspaces run every ${c.reconcileMinutes} minute${c.reconcileMinutes === 1 ? "" : "s"}`);
+  lines.push(
+    c.runNotifications.enabled
+      ? `the owner is told when a run in one of their workspaces is waiting on them: workspaces are asked every ${c.runNotifications.everyMinutes} minute${c.runNotifications.everyMinutes === 1 ? "" : "s"} at most, and the same state is not told again within ${c.runNotifications.repeatHours} hour${c.runNotifications.repeatHours === 1 ? "" : "s"}`
+      : "the owner is not told when a run in one of their workspaces is waiting on them (run_notifications.enabled is false)",
+  );
   for (const w of c.warnings) lines.push(`WARNING: ${w}`);
   return lines;
 }

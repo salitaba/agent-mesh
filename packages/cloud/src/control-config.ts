@@ -64,6 +64,14 @@ export interface ControlConfig {
     | { kind: "local"; baseDir: string; hostCommand: string[]; limits: WorkspaceLimits };
   billing: { provider: "manual"; payUrl: string } | { provider: "hosted-checkout"; apiKey: string; webhookSecret: string; baseUrl?: string };
   reconcileMinutes: number;
+  /** Telling the account owner when a run in one of their workspaces is waiting on them (see `run-notifications.ts`). */
+  runNotifications: {
+    enabled: boolean;
+    /** Workspaces are asked at most this often, in minutes. */
+    everyMinutes: number;
+    /** The same state is not mailed about again until this long has passed, in hours. */
+    repeatHours: number;
+  };
   /** Things that are allowed and that the operator should know about. */
   warnings: string[];
 }
@@ -518,6 +526,20 @@ export function loadControlConfig(file: string, env: NodeJS.ProcessEnv = process
 
   const reconcileMinutes = wholeNumber(raw.reconcile_minutes, "reconcile_minutes", 1, 1_440, 15, problems);
 
+  // ---- telling the owner when a run is waiting on them: on by default, because the whole point is that nobody has to ask
+  let notifications: Record<string, unknown> = {};
+  if (raw.run_notifications !== undefined && raw.run_notifications !== null) {
+    if (isObject(raw.run_notifications)) notifications = raw.run_notifications;
+    else problems.push("run_notifications must be a mapping with enabled, every_minutes and repeat_hours");
+  }
+  let notificationsEnabled = true;
+  if (notifications.enabled !== undefined) {
+    if (typeof notifications.enabled === "boolean") notificationsEnabled = notifications.enabled;
+    else problems.push("run_notifications.enabled must be true or false");
+  }
+  const notifyEveryMinutes = wholeNumber(notifications.every_minutes, "run_notifications.every_minutes", 1, 1_440, 15, problems);
+  const notifyRepeatHours = wholeNumber(notifications.repeat_hours, "run_notifications.repeat_hours", 1, 720, 12, problems);
+
   if (problems.length > 0 || elsewhere.length > 0) throw new Error([...problems.map((p) => `${file}: ${p}`), ...elsewhere].join("\n"));
   return {
     appUrl,
@@ -539,6 +561,7 @@ export function loadControlConfig(file: string, env: NodeJS.ProcessEnv = process
     provisioner: provisioner!,
     billing: billing!,
     reconcileMinutes,
+    runNotifications: { enabled: notificationsEnabled, everyMinutes: notifyEveryMinutes, repeatHours: notifyRepeatHours },
     warnings,
   };
 }

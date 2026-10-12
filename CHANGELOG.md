@@ -7,6 +7,28 @@ sections 1 to 26) are described there, run by run.
 
 ## Unreleased
 
+### Added: mail to the owner when a run is waiting on them
+
+A mission on this host finished, stopped on one stale card, and sat there for **38 hours with the owner never told** — a
+workspace cannot send mail, and the control plane, which can, did not look at a run's state.
+
+`RunNotifier` (`packages/cloud/src/run-notifications.ts`) answers each hosting workspace's own status and mails the account
+owner when a run **has stopped** (`ESCALATED`/`PAUSED`/`BLOCKED`) or **has closed with cards nobody answered**
+(`needsOperator`, added in `bc1e97f`) — the second case being the one that burned, since a delivered run with cards left
+looks clean from the outside:
+
+- no clock of its own: `control.ts` calls it from the tick that already checks the workspaces, so there is one clock and one
+  failure mode;
+- deduped by one `run.notified` entry per `(workspace, project, goal, state)` in the control log — a restart tells nobody
+  twice, the same state waits out the repeat window (12 h by default), and a changed state is told at once;
+- the mail carries what a customer can already see in the workspace: the run's state, the project, how long it has waited,
+  and the first card's own words (bounded), with no ids and no tokens;
+- a workspace that is down, slow, or answers with something that is not a status is skipped quietly; nothing throws out of
+  the tick and a mail failure never stops the reconcile.
+
+Configured under the control plane's own config (`examples/cloud/control.yaml`, `docs/cloud-control-plane.md`): on by
+default, disableable, with the interval and the repeat window adjustable.
+
 ### Added: the console shows the cards a finished run still owes
 
 `bc1e97f` made a card stop gating completion, which means a mission can now close **carrying unanswered cards** — and

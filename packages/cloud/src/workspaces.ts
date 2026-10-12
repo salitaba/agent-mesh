@@ -102,6 +102,11 @@ export class Workspaces {
     return [...this.state.workspaces.values()].filter((w) => w.accountId === accountId && w.status !== "destroyed").sort((a, b) => a.createdAt.localeCompare(b.createdAt));
   }
 
+  /** The workspaces whose hosts are up: what a check of the missions running inside them asks for (see `run-notifications.ts`). */
+  hosting(): Workspace[] {
+    return [...this.state.workspaces.values()].filter((w) => w.status === "running" && w.upstream !== undefined);
+  }
+
   /** The workspace a request for this host is for, if it is one that can be served. */
   byHost(host: string): Workspace | undefined {
     const suffix = `.${this.o.workspaceDomain}`;

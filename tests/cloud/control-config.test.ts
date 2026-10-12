@@ -127,6 +127,7 @@ test("the example configuration that ships is valid once its key is where it say
     const c = load();
     assert.equal(c.appHost, "app.curule.example");
     assert.equal(c.pagesDir, pages, "the pages are the product's own");
+    assert.deepEqual(c.runNotifications, { enabled: true, everyMinutes: 15, repeatHours: 12 }, "and a run that needs its owner is told about without the operator having to say so");
     assert.deepEqual(c.warnings, []);
     assert.ok(describeControl(c).length > 8);
     assert.throws(() => load({}), /this build trusts no public key 'k1'/);
@@ -548,6 +549,29 @@ test("the checks on workspaces run at least once a minute and at most once a day
   }
 });
 
+test("telling the owner when a run needs them is on by default, with an interval and a repeat window that can be set or turned off", () => {
+  using(workdir(), (w) => assert.deepEqual(load(w).runNotifications, { enabled: true, everyMinutes: 15, repeatHours: 12 }));
+  using(workdir((raw) => (raw.run_notifications = { enabled: false, every_minutes: 1, repeat_hours: 720 })), (w) => assert.deepEqual(load(w).runNotifications, { enabled: false, everyMinutes: 1, repeatHours: 720 }));
+  using(workdir((raw) => (raw.run_notifications = { enabled: true })), (w) => assert.deepEqual(load(w).runNotifications, { enabled: true, everyMinutes: 15, repeatHours: 12 }));
+});
+
+test("a run_notifications block that is not what it says is refused, naming the key that is wrong", () => {
+  using(workdir((raw) => (raw.run_notifications = "yes")), (w) => assert.match(refusal(w), /run_notifications must be a mapping with enabled, every_minutes and repeat_hours/));
+  using(workdir((raw) => (raw.run_notifications = { enabled: "yes" })), (w) => assert.match(refusal(w), /run_notifications\.enabled must be true or false/));
+  for (const [minutes, ok] of [[1, true], [1440, true], [0, false], [1441, false], [1.5, false]] as const) {
+    using(workdir((raw) => (raw.run_notifications = { every_minutes: minutes })), (w) => {
+      if (ok) assert.equal(load(w).runNotifications.everyMinutes, minutes);
+      else assert.match(refusal(w), /run_notifications\.every_minutes must be a whole number from 1 to 1440/);
+    });
+  }
+  for (const [hours, ok] of [[1, true], [720, true], [0, false], [721, false]] as const) {
+    using(workdir((raw) => (raw.run_notifications = { repeat_hours: hours })), (w) => {
+      if (ok) assert.equal(load(w).runNotifications.repeatHours, hours);
+      else assert.match(refusal(w), /run_notifications\.repeat_hours must be a whole number from 1 to 720/);
+    });
+  }
+});
+
 // ---- what is shown ----
 
 test("what the configuration would run is shown for a person to check, and no secret is in it", () => {
@@ -567,8 +591,10 @@ test("what the configuration would run is shown for a person to check, and no se
     assert.match(shown, /workspace licences are signed with key k1/);
     assert.match(shown, /billing is manual: customers are sent to https:\/\/app\.curule\.example\/pay\?ref=<reference>, and the operator records what arrives/);
     assert.match(shown, /the checks on workspaces run every 15 minutes/);
+    assert.match(shown, /the owner is told when a run in one of their workspaces is waiting on them: workspaces are asked every 15 minutes at most, and the same state is not told again within 12 hours/);
     for (const secret of [ENV.CONTROL_SECRET, ENV.CONTROL_OWNER_TOKEN, ENV.GATEWAY_ADMIN_TOKEN, w.privateKeyPem, w.privateKeyPem.split("\n")[1]!]) assert.ok(!shown.includes(secret), "no secret is shown");
   });
+  using(workdir((raw) => (raw.run_notifications = { enabled: false })), (w) => assert.match(describeControl(load(w)).join("\n"), /the owner is not told when a run in one of their workspaces is waiting on them \(run_notifications\.enabled is false\)/));
   using(workdir((raw) => ((raw.owner = { host: "0.0.0.0", port: 7501, token_env: "CONTROL_OWNER_TOKEN" }), delete raw.pages, (raw.provisioner.limits = { cpus: 2, memory_mb: 4096, pids: 1024 }), (raw.billing = { provider: "manual", pay_url: "https://app.curule.example/pay?ref={ref}" }))), (w) => {
     const shown = describeControl(load(w)).join("\n");
     assert.match(shown, /no pages, the API only/);
