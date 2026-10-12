@@ -16,6 +16,7 @@
  * again, the same state is not told again until the repeat window has passed, and a state that has changed — a new card,
  * a different status — is told about at once.
  */
+import * as http from "node:http";
 import type { Mailer } from "./mailer";
 import { runNotificationKey, type ControlLog, type Workspace } from "./store";
 import { accountPageUrl, type Workspaces } from "./workspaces";
@@ -65,8 +66,6 @@ export interface RunNotifierOptions {
   repeatMs?: number;
   /** Workspaces are looked at no more often than this, in ms. Default {@link DEFAULT_NOTIFY_EVERY_MS}. */
   everyMs?: number;
-  /** For tests. */
-  fetch?: typeof fetch;
 }
 
 const isObject = (v: unknown): v is Record<string, unknown> => v !== null && typeof v === "object" && !Array.isArray(v);
@@ -140,7 +139,6 @@ export class RunNotifier {
   private readonly timeoutMs: number;
   private readonly repeatMs: number;
   private readonly everyMs: number;
-  private readonly doFetch: typeof fetch;
   /** When workspaces were last looked at, in ms. Not persisted: a restart looks at once, and the log stops a repeat. */
   private lookedAt: number | undefined;
 
@@ -149,7 +147,6 @@ export class RunNotifier {
     this.timeoutMs = o.timeoutMs ?? DEFAULT_NOTIFY_TIMEOUT_MS;
     this.repeatMs = o.repeatMs ?? DEFAULT_NOTIFY_REPEAT_MS;
     this.everyMs = o.everyMs ?? DEFAULT_NOTIFY_EVERY_MS;
-    this.doFetch = o.fetch ?? ((input, init) => fetch(input, init));
   }
 
   /** One pass: ask every running workspace and mail the owner of each run that needs them. Returns what it did, for the log. */
@@ -212,24 +209,49 @@ export class RunNotifier {
   }
 
   /**
-   * One GET on a workspace's host, as JSON, with the workspace's own operator credential. Never throws: a host that is
-   * down, slow or answering with something that is not JSON is undefined, which the caller skips.
+   * One GET on a workspace's host, as JSON, with the workspace's own operator credential and with the name that host
+   * answers to. Never throws: a host that is down, slow or answering with something that is not JSON is undefined,
+   * which the caller skips.
+   *
+   * The `Host` header is not decoration. A workspace's host answers only to the names it serves — ask its private
+   * address, which is how the control plane reaches it, and it refuses with `421 host not allowed`. That is also why
+   * this does not use `fetch`: Node's fetch rewrites `Host` from the URL and silently drops an explicit one (measured),
+   * so the request would look correct here and be refused there. `http.request` sends what it is told.
    */
-  private async get(w: Workspace, path: string): Promise<unknown> {
+  private get(w: Workspace, path: string): Promise<unknown> {
     const upstream = w.upstream!;
-    const headers = { authorization: `Bearer ${this.o.workspaces.operatorToken(w.workspaceId)}`, accept: "application/json" };
-    let res: Response;
-    try {
-      res = await this.doFetch(`http://${upstream.host}:${upstream.port}${path}`, { headers, signal: AbortSignal.timeout(this.timeoutMs) });
-    } catch {
-      return undefined;
-    }
-    try {
-      const text = await res.text();
-      if (!res.ok) return undefined;
-      return text === "" ? {} : JSON.parse(text);
-    } catch {
-      return undefined;
-    }
+    return new Promise((resolve) => {
+      const req = http.request(
+        {
+          host: upstream.host,
+          port: upstream.port,
+          path,
+          method: "GET",
+          headers: {
+            authorization: `Bearer ${this.o.workspaces.operatorToken(w.workspaceId)}`,
+            accept: "application/json",
+            Host: this.o.workspaces.hostOf(w.slug),
+          },
+        },
+        (res) => {
+          const chunks: Buffer[] = [];
+          res.on("data", (chunk: Buffer) => chunks.push(chunk));
+          res.on("end", () => {
+            const status = res.statusCode ?? 0;
+            if (status < 200 || status >= 300) return resolve(undefined);
+            const text = Buffer.concat(chunks).toString("utf8");
+            if (text === "") return resolve({});
+            try {
+              resolve(JSON.parse(text));
+            } catch {
+              resolve(undefined);
+            }
+          });
+        },
+      );
+      req.setTimeout(this.timeoutMs, () => req.destroy());
+      req.on("error", () => resolve(undefined));
+      req.end();
+    });
   }
 }

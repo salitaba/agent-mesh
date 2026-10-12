@@ -378,3 +378,42 @@ test("mail that cannot be sent does not end the check it was made from, and the 
     await host.close();
   }
 });
+
+test("the host is asked by the name it serves, not by the address the control plane reaches it at", async () => {
+  // A workspace's mesh host answers only to the names it serves. Ask its private address — which is how the control
+  // plane reaches it, and what its `upstream` records — and it refuses with `421 host not allowed`: measured against
+  // the live host, whose allowlist carries exactly one name (`<slug>.<workspace domain>`).
+  //
+  // This is where the transport matters, and why this module does not use `fetch`: Node's fetch rewrites `Host` from
+  // the URL and silently drops an explicit one, so a fetch-based check looks correct here and is refused there, every
+  // single time, without ever throwing. `http.request` sends what it is told.
+  const denied: string[] = [];
+  const r = await rig({
+    repeatMs: 12 * HOUR,
+    behaviour: (req, res) => {
+      const asked = req.headers.host ?? "";
+      if (/^\d+\.\d+\.\d+\.\d+(:\d+)?$/.test(asked)) {
+        denied.push(asked);
+        res.writeHead(421, { "content-type": "application/json" });
+        return void res.end(
+          JSON.stringify({ error: `host '${asked}' is not one this server answers to. If you reach it by that name on purpose, add it to MESH_ALLOWED_HOSTS.`, code: "host_not_allowed" }),
+        );
+      }
+      meshHost({
+        projects: [{ id: "payment-api", name: "Payment API" }],
+        statuses: { "payment-api": status({ status: "ESCALATED" }, [card("esc_1", "Which licence should the new SDK ship under?", 38 * HOUR, "ada")]) },
+      })(req, res, { method: req.method ?? "", url: req.url ?? "", headers: req.headers, body: Buffer.alloc(0) });
+    },
+  });
+
+  await r.notifier.check();
+
+  assert.deepEqual(denied, [], "the check asked the host by its address, which that host refuses: the run would never be noticed");
+  assert.equal(r.mails().length, 1, "asked by the name it serves, the host answers, and the run reaches the owner");
+  const hosts = r.host.requests.map((s) => s.headers.host ?? "");
+  assert.ok(
+    hosts.length > 0 && hosts.every((h) => !/^\d+\.\d+\.\d+\.\d+/.test(h)),
+    `every request carries a name the host serves; it carried ${JSON.stringify(hosts)}`,
+  );
+  await r.close();
+});
