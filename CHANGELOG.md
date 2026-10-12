@@ -7,6 +7,22 @@ sections 1 to 26) are described there, run by run.
 
 ## Unreleased
 
+### Added: the console shows the cards a finished run still owes
+
+`bc1e97f` made a card stop gating completion, which means a mission can now close **carrying unanswered cards** — and
+nothing rendered them, so a delivered run with three cards waiting looked exactly like a clean one.
+
+`status.needsOperator` (`{id, reason, raisedBy, openedAt, ageMs}`) is now read where the console already turns escalations
+into something a person reads (`mission.ts`, `overview-model.ts`, `attention.ts`, `escalation-card.ts`):
+
+- the delivery notice names what is still owed, in the cards' own words, longest-waiting first (`Waiting: …`) — so someone
+  who reads only the notice knows there is still something to answer, which is the case this exists for;
+- each card's line carries **how long it has waited** (`2h 5m waiting`) from the payload's own `ageMs`, so a 38-hour card
+  does not look like a fresh one;
+- a reason is cut to the one line a person acts on (`briefReason`), and a card that carries no reason is **not given one** —
+  the catalog's fallback for an empty code reads "Mission stopped", which is a claim about a mission that may be running;
+- an empty `needsOperator` renders nothing at all: no empty panel, no zero badge.
+
 ### Added: the dashboard inside the installer (the desktop app's phase 2)
 
 - **The installer carries the dashboard.** `apps/desktop/scripts/stage-pages.mjs` is the `beforeBuildCommand`: it

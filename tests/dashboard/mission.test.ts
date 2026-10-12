@@ -18,6 +18,7 @@ const facts = (over: Partial<MissionFacts> = {}): MissionFacts => ({
   blockingDecisions: 0,
   seatHeldDecisions: [],
   advisoryDecisions: 0,
+  owedCards: [],
   hostCeilingTripped: false,
   working: 2,
   waiting: 1,
@@ -237,6 +238,27 @@ test("a finished mission is not reopened by a seat card that is still open", () 
   assert.equal(describeMission(facts({ goalStatus: "COMPLETED", blockingDecisions: 1, seatHeldDecisions: ["developer"], working: 0 })).phase, "done");
 });
 
+test("a delivered mission that still owes cards is not the clean green done: nothing is paused, and the headline counts what waits", () => {
+  const card = { id: "esc-1", reason: "budget_exhausted", raisedBy: "termination-manager", openedAt: "2026-10-04T09:00:00Z", ageMs: 38 * 3_600_000 };
+  const one = describeMission(facts({ goalStatus: "COMPLETED", working: 0, blockingDecisions: 1, owedCards: [card] }));
+  assert.equal(one.phase, "done", "a card stopped gating completion: the mission is delivered, not held");
+  assert.equal(one.tone, "warn", "the tone says a person is still needed before any word is read");
+  assert.equal(one.label, "Delivered");
+  assert.equal(one.headline, "Delivered. 1 decision is still waiting on you.");
+  assert.equal(one.primary, null, "the way to answer is the attention list and the inbox, not a new button");
+  assert.deepEqual(one.secondary.map((c) => c.action), ["reopen"]);
+  assert.deepEqual(one.next, describeMission(facts({ goalStatus: "COMPLETED", working: 0 })).next, "what a person does with the result is unchanged");
+  const three = describeMission(facts({ goalStatus: "COMPLETED", working: 0, blockingDecisions: 3, owedCards: [card, card, card] }));
+  assert.equal(three.headline, "Delivered. 3 decisions are still waiting on you.");
+  assert.equal(three.tone, "warn");
+});
+
+test("a delivered mission with nothing owed reads exactly as it always did", () => {
+  const clean = describeMission(facts({ goalStatus: "COMPLETED", working: 0 }));
+  assert.deepEqual([clean.tone, clean.headline], ["ok", "Delivered. Every mandatory check is evidenced."]);
+  assert.equal(describeMission(facts({ goalStatus: "FAILED", working: 0, blockingDecisions: 1, owedCards: [{ id: "esc-1", reason: "x", raisedBy: "dev", openedAt: "t", ageMs: 1 }] })).headline, "The mission failed.", "a failed run's headline is why it stopped; its cards are listed beside it");
+});
+
 test("factsFromStatus reads the payload: human excluded, blocking and advisory decisions split, parked from either field", () => {
   const f = factsFromStatus(
     {
@@ -249,6 +271,11 @@ test("factsFromStatus reads the payload: human excluded, blocking and advisory d
         { id: "pm", lifecycle: "IDLE" },
       ],
       openEscalations: [{ id: "a" }, { id: "b", advisory: true }, { id: "c", conflictKey: "budget:agent:goal-1/developer", goalId: "goal-1" }],
+      needsOperator: [
+        { id: "a", reason: "which licence?", raisedBy: "developer", openedAt: "2026-10-04T10:00:00Z", ageMs: 2 * 3_600_000 },
+        { id: "b", reason: "a conversation ran long", raisedBy: "collab-watchdog", openedAt: "2026-10-04T11:00:00Z", ageMs: 5 * 3_600_000 },
+        { id: "c", reason: "budget_exhausted", raisedBy: "termination-manager", openedAt: "2026-10-04T12:00:00Z", ageMs: 38 * 3_600_000 },
+      ],
       startupActivateCount: 0,
     },
     { runningSteps: 2, hasHistory: true },
@@ -257,9 +284,31 @@ test("factsFromStatus reads the payload: human excluded, blocking and advisory d
     { w: f.working, q: f.waiting, b: f.blockingDecisions, held: f.seatHeldDecisions, a: f.advisoryDecisions, p: f.parked, s: f.startupSeats, r: f.runningSteps },
     { w: 1, q: 1, b: 2, held: ["developer"], a: 1, p: true, s: 0, r: 2 },
   );
+  assert.deepEqual(f.owedCards.map((c) => [c.id, c.ageMs]), [["c", 38 * 3_600_000], ["a", 2 * 3_600_000]], "the decisions the count is about, longest waiting first, and not the notice");
   assert.equal(factsFromStatus({ goal: { status: "ACTIVE" }, uiOnly: true }).parked, true);
   assert.equal(factsFromStatus(null).hasStatus, false);
   assert.equal(factsFromStatus({ goal: {} }).startupSeats, null, "a server that predates the field");
+});
+
+test("the cards a run owes are the ones the count is about: a notice is not owed, and a card the list no longer holds is not named", () => {
+  const row = (over: Record<string, unknown>) => ({ reason: "x", raisedBy: "developer", openedAt: "2026-10-05T09:00:00Z", ageMs: 60_000, ...over });
+  const f = factsFromStatus({
+    goal: { status: "ACTIVE" },
+    openEscalations: [{ id: "esc-1", reason: "budget_exhausted" }, { id: "esc-2", reason: "collab_overrun:expired", advisory: true }, { id: "esc-3", reason: "stalemate" }],
+    needsOperator: [row({ id: "esc-3", ageMs: 5 * 60_000 }), row({ id: "esc-2" }), row({ id: "esc-1", ageMs: 38 * 3_600_000 }), row({ id: "esc-9" })],
+  });
+  assert.deepEqual(f.owedCards.map((c) => c.id), ["esc-1", "esc-3"], "the notice holds nothing, and esc-9 is not open");
+  assert.equal(f.blockingDecisions, f.owedCards.length, "the item's count and its lines are the same set of cards");
+});
+
+test("a server that does not send the field, or sends a row with no id, is read as saying nothing rather than as owing nothing", () => {
+  assert.deepEqual(factsFromStatus({ goal: { status: "ACTIVE" }, openEscalations: [{ id: "esc-1" }] }).owedCards, [], "a server that predates needsOperator");
+  const rows = factsFromStatus({
+    goal: { status: "ACTIVE" },
+    openEscalations: [{ id: "esc-1", reason: "x" }, { reason: "no id" }],
+    needsOperator: [{ id: "esc-1", reason: "x", raisedBy: "dev", openedAt: "2026-10-05T09:00:00Z", ageMs: "nope" }, { reason: "no id" }],
+  }).owedCards;
+  assert.deepEqual(rows, [{ id: "esc-1", reason: "x", raisedBy: "dev", openedAt: "2026-10-05T09:00:00Z", ageMs: 0 }], "a card with no id cannot be opened, and an age that is not a number is not a wait");
 });
 
 test("the tab title leads with the count of decisions and says what is true of the mission", () => {

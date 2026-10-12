@@ -29,6 +29,12 @@ export interface AttentionInput {
   decisionIds: readonly string[];
   /** What each of those is about, phrased, longest-waiting first. */
   decisionTitles: readonly string[];
+  /**
+   * What a run that is over still owes, phrased, longest-waiting first (`facts.owedCards`): the cards nobody answered before it
+   * closed. A delivery that carried cards names them, so a person away from the console learns there is still something to
+   * answer — while the mission runs these are the same cards `decisionTitles` already carries.
+   */
+  owedTitles: readonly string[];
   /** Why a failed mission stopped, in a sentence, when the log says. */
   reason: string | null;
   goalId: string | null;
@@ -50,6 +56,8 @@ export interface Attention {
   label: string;
   headline: string;
   titles: readonly string[];
+  /** What the run still owes (`owedTitles`), for the kinds whose notice names it. */
+  owedTitles: readonly string[];
   reason: string | null;
   /** What a notice's tag is scoped to: one per project, so a newer notice replaces the older one instead of stacking. */
   scope: string;
@@ -63,7 +71,7 @@ export interface Attention {
  */
 export function attentionOf(i: AttentionInput): Attention | null {
   if (i.phase === "loading" || i.phase === "offline") return null;
-  const base = { label: i.label, headline: i.headline, titles: i.decisionTitles, reason: i.reason, scope: i.projectId ?? "mesh", project: i.projectName };
+  const base = { label: i.label, headline: i.headline, titles: i.decisionTitles, owedTitles: i.owedTitles, reason: i.reason, scope: i.projectId ?? "mesh", project: i.projectName };
   const goal = i.goalId ?? "";
   switch (i.phase) {
     case "needs-you":
@@ -112,6 +120,13 @@ const list = (items: readonly string[]): string => (items.length <= 1 ? items.jo
 /** The notice's body leaves out what its title already says: "Delivered. Every mandatory check is evidenced." under "Delivered". */
 const withoutLabel = (headline: string, label: string): string => (headline.startsWith(`${label}. `) ? headline.slice(label.length + 2) : headline);
 
+/** What is waiting, in the cards' own words: at most two of them, then a count for the rest. Empty when there is nothing to name. */
+const waitingTail = (titles: readonly string[]): string => {
+  const shown = titles.slice(0, 2);
+  const more = titles.length - shown.length;
+  return shown.length ? ` Waiting: ${list(shown)}${more > 0 ? `, and ${more} more` : ""}.` : "";
+};
+
 /**
  * What the notice says is what the page says: the mission's own sentence (mission.ts), then, for a decision, what is waiting in
  * the cards' own words. No ids, no codes, no exclamation marks.
@@ -120,14 +135,12 @@ function noticeOf(a: Attention): Notice {
   const title = a.project ? `${a.label} · ${a.project}` : a.label;
   const tag = `curule:${a.kind}:${a.scope}`;
   switch (a.kind) {
-    case "needs-you": {
-      const shown = a.titles.slice(0, 2);
-      const more = a.titles.length - shown.length;
-      const waiting = shown.length ? ` Waiting: ${list(shown)}${more > 0 ? `, and ${more} more` : ""}.` : "";
-      return { tag, title, body: `${a.headline}${waiting}`, goTo: "escalations", renotify: true };
-    }
+    case "needs-you":
+      return { tag, title, body: `${a.headline}${waitingTail(a.titles)}`, goTo: "escalations", renotify: true };
     case "delivered":
-      return { tag, title, body: withoutLabel(a.headline, a.label), goTo: "overview", renotify: false };
+      // A delivery that carried cards says so: the headline (mission.ts) already counts them, and the cards' own words follow, so
+      // someone who reads only the notice knows there is still something to answer. A clean delivery is unchanged.
+      return { tag, title, body: `${withoutLabel(a.headline, a.label)}${waitingTail(a.owedTitles)}`, goTo: "overview", renotify: false };
     default:
       return { tag, title, body: a.reason ?? a.headline, goTo: "overview", renotify: false };
   }

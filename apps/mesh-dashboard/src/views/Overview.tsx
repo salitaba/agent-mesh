@@ -9,7 +9,7 @@ import { useProjectsOptional } from "../projects";
 import { useMission } from "../useMission";
 import { useMissionActions } from "../useMissionActions";
 import { useToolApprovals } from "../useToolApprovals";
-import { escalationText, holdsOf } from "../escalation-card";
+import { escalationText, holdsOf, owedLine } from "../escalation-card";
 import { orderDecisions, toolRequestsBySeat, type LoadState } from "../inbox-model";
 import type { HeroAction, MissionAction } from "../mission";
 import { buildAttention, bufferIsBehind, bySeq, capacityWaits, checkSegments, checksSummary, heroLook, heroNote, missionRead, splitHeadline, staleRunning, standingBlocks, unlistedRunning, type FixTarget } from "../overview-model";
@@ -233,11 +233,17 @@ export default function Overview(): React.JSX.Element {
   const runningSteps = (steps || []).filter((s) => s.status === "running" && !ended.includes(s.turnId));
   const holding = orderDecisions(escOpen).blocking;
   const seatHolds = holding.flatMap((e) => { const h = holdsOf(e); return h.scope === "seat" ? [h.seat] : []; });
+  // The cards the run still owes, one line each, longest waiting first: who raised it, how long it has waited, what it asks. In
+  // the ceiling phase the host's own card is the hero, so its line is not named again here (as its count is not).
+  const owed = facts.owedCards
+    .filter((c) => !(state.phase === "ceiling" && c.reason === HOST_SPEND_CEILING_REASON))
+    .map((c) => owedLine(c, verdictText));
   const attention = buildAttention({
     phase: state.phase,
     parked: facts.parked,
     blockingDecisions: facts.blockingDecisions,
     ceilingCards: holding.filter((e) => e.reason === HOST_SPEND_CEILING_REASON).length,
+    owed,
     notices: escOpen.filter((e) => e.advisory === true).map((e) => ({ title: escalationText(e, { status, parked: facts.parked, phrase: verdictText }).title })),
     toolRequests: toolRequestsBySeat(tools.seats),
     spend: spend ? { ...spend, tripped: hostSpend?.ceilingTripped === true } : null,
@@ -254,6 +260,7 @@ export default function Overview(): React.JSX.Element {
     verdict,
     blockingDecisions: facts.blockingDecisions,
     decisionTitles: holding.map((e) => escalationText(e, { status, parked: facts.parked, phrase: verdictText }).title),
+    owedCards: facts.owedCards.length,
     startupSeats: facts.startupSeats,
     lastBoot: status.lastBoot,
     spend,

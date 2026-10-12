@@ -17,6 +17,7 @@ const input = (over: Partial<AttentionInput> = {}): AttentionInput => ({
   headline: "2 agents working.",
   decisionIds: [],
   decisionTitles: [],
+  owedTitles: [],
   reason: null,
   goalId: "goal-1",
   deliveredAt: null,
@@ -101,6 +102,7 @@ test("the icon follows the kind: a badge for each of the three, the plain one fo
   const icon = (over: Partial<AttentionInput>): string => faviconFor(attentionOf(input(over)));
   assert.equal(icon({ phase: "needs-you", tone: "bad", decisionIds: ["esc-1"] }), "needs-you");
   assert.equal(icon({ phase: "done" }), "delivered");
+  assert.equal(icon({ phase: "done", tone: "warn", owedTitles: ["Mission ran out of tokens"] }), "delivered", "a delivery that carried cards is still a delivery, not a second kind of news");
   assert.equal(icon({ phase: "failed", tone: "bad" }), "stopped");
   assert.equal(icon({ phase: "ceiling", tone: "bad" }), "stopped");
   assert.equal(icon({ phase: "down", tone: "bad" }), "stopped");
@@ -111,7 +113,7 @@ test("the icon follows the kind: a badge for each of the three, the plain one fo
 
 const facts = (over: Partial<MissionFacts> = {}): MissionFacts => ({
   hasStatus: true, serverDown: false, projectDown: null, goalStatus: "ACTIVE", parked: false, blockingDecisions: 0, seatHeldDecisions: [],
-  advisoryDecisions: 0, hostCeilingTripped: false, working: 2, waiting: 1, runningSteps: 0, hasHistory: true, startupSeats: 2, ...over,
+  advisoryDecisions: 0, owedCards: [], hostCeilingTripped: false, working: 2, waiting: 1, runningSteps: 0, hasHistory: true, startupSeats: 2, ...over,
 });
 const fromMission = (f: MissionFacts, over: Partial<AttentionInput> = {}): Attention | null => {
   const s = describeMission(f);
@@ -121,6 +123,8 @@ const fromMission = (f: MissionFacts, over: Partial<AttentionInput> = {}): Atten
 test("read through describeMission: a decision on the mission, a delivery and a crash are news; a pause is not", () => {
   assert.equal(fromMission(facts({ blockingDecisions: 1 }), { decisionIds: ["esc-1"] })?.kind, "needs-you");
   assert.equal(fromMission(facts({ goalStatus: "COMPLETED", parked: true, working: 0 }))?.kind, "delivered");
+  // A finished mission can still owe answers: that is the delivery's news, told once by its stamp, not a new kind of alert.
+  assert.equal(fromMission(facts({ goalStatus: "COMPLETED", working: 0, blockingDecisions: 1, owedCards: [{ id: "esc-1", reason: "budget_exhausted", raisedBy: "termination-manager", openedAt: "2026-10-04T09:00:00Z", ageMs: 38 * 3_600_000 }] }))?.kind, "delivered");
   assert.equal(fromMission(facts({ goalStatus: "FAILED" }))?.kind, "stopped");
   assert.equal(fromMission(facts({ projectDown: { label: "crashed", hint: "The process exited.", severe: true } }))?.kind, "stopped");
   assert.equal(fromMission(facts({ projectDown: { label: "closed", hint: "Closed.", severe: false } }))?.kind, "none");
@@ -200,6 +204,22 @@ test("a delivery is told once, by its stamp; delivered again after a reopen, it 
   assert.equal(notificationFor(delivered(), delivered("2026-10-06T11:30:00Z"), HIDDEN, ENABLED) !== null, true, "a new stamp is a new delivery even without a step between");
 });
 
+test("a delivery that carried cards says so, in the cards' own words; a clean one is the notice it always was", () => {
+  const owing = (titles: string[]): Attention =>
+    at({
+      phase: "done", tone: "warn", label: "Delivered",
+      headline: `Delivered. ${titles.length} decision${titles.length === 1 ? " is" : "s are"} still waiting on you.`,
+      owedTitles: titles, deliveredAt: "2026-10-06T10:00:00Z",
+    });
+  const n = notificationFor(running(), owing(["Mission ran out of tokens"]), HIDDEN, ENABLED)!;
+  assert.equal(n.title, "Delivered · Payments");
+  assert.equal(n.body, "1 decision is still waiting on you. Waiting: Mission ran out of tokens.", "the page's sentence first, the card's own words after");
+  assert.equal(n.goTo, "overview");
+  assert.equal(n.renotify, false, "a delivery is told once, cards or not");
+  assert.equal(notificationFor(running(), owing(["A", "B", "C", "D"]), HIDDEN, ENABLED)!.body, "4 decisions are still waiting on you. Waiting: A and B, and 2 more.");
+  assert.equal(notificationFor(running(), delivered(), HIDDEN, ENABLED)!.body, "Every mandatory check is evidenced.", "nothing owed: nothing added");
+});
+
 test("a mission that stops on its own says why when the log does, and what the page says when it does not", () => {
   const n = notificationFor(running(), failed(), HIDDEN, ENABLED)!;
   assert.equal(n.title, "Failed · Payments");
@@ -251,6 +271,7 @@ test("a notice never carries an id, a code or an exclamation mark", () => {
     notificationFor(running(), cards, HIDDEN, ENABLED)!,
     notificationFor(running(), delivered(), HIDDEN, ENABLED)!,
     notificationFor(running(), failed(), HIDDEN, ENABLED)!,
+    notificationFor(running(), at({ phase: "done", tone: "warn", label: "Delivered", headline: "Delivered. 2 decisions are still waiting on you.", owedTitles: ["Mission ran out of tokens", "Stalemate (1 waiting)"], deliveredAt: "2026-10-06T10:00:00Z" }), HIDDEN, ENABLED)!,
   ];
   for (const n of all) {
     const text = `${n.title} ${n.body}`;

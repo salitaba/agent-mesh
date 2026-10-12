@@ -57,6 +57,52 @@ export interface NextStep {
   look: "primary" | "soft" | "quiet";
 }
 
+/**
+ * One OPEN card an operator still owes an answer, as `/status` reports it in `needsOperator` (the server's `OpenCardSummary`):
+ * what it asks, who raised it, when it opened, and how long it has waited, dated by the server so the console does not have to
+ * trust its own clock against the log's.
+ */
+export interface OperatorCard {
+  id: string;
+  reason: string;
+  raisedBy: string;
+  openedAt: string;
+  ageMs: number;
+}
+
+/**
+ * The cards `/status` lists in `needsOperator`, read defensively: a row with no id is dropped rather than rendered under an
+ * empty name, and an age that is not a number reads as 0 — the server's own rule, that an unreadable stamp is not a wait. Empty
+ * on a server that predates the field, which a caller must read as "nothing more is known", never as "nothing is owed".
+ */
+export function operatorCards(status: any): OperatorCard[] {
+  const rows: any[] = Array.isArray(status?.needsOperator) ? status.needsOperator : [];
+  return rows.flatMap((r: any) => {
+    const id = typeof r?.id === "string" ? r.id : "";
+    if (!id) return [];
+    const age = Number(r?.ageMs);
+    return [{
+      id,
+      reason: String(r?.reason ?? ""),
+      raisedBy: String(r?.raisedBy ?? ""),
+      openedAt: String(r?.openedAt ?? ""),
+      ageMs: Number.isFinite(age) && age > 0 ? age : 0,
+    }];
+  });
+}
+
+/**
+ * The cards a run still owes, from one `/status` payload: the open decisions, dated by the server (`needsOperator`), longest
+ * waiting first. Joined by id to the blocking cards, so the lines and the count cannot disagree — a summary whose card is not
+ * open (a status caught mid-update) is not named, and a notice, which holds nothing, is not owed.
+ */
+export function owedOf(status: any): OperatorCard[] {
+  const holding = new Set((status?.openEscalations ?? []).filter((e: any) => e?.advisory !== true).map((e: any) => String(e?.id ?? "")));
+  return operatorCards(status)
+    .filter((c) => holding.has(c.id))
+    .sort((a, b) => b.ageMs - a.ageMs);
+}
+
 export interface MissionFacts {
   hasStatus: boolean;
   serverDown: boolean;
@@ -75,6 +121,16 @@ export interface MissionFacts {
   seatHeldDecisions: string[];
   /** Open decisions that are notices: the mission carries on whether or not anyone answers them. */
   advisoryDecisions: number;
+  /**
+   * The same cards `blockingDecisions` counts, as the server dates each one (`status.needsOperator`), longest waiting first:
+   * who raised it, what it asks and how long it has waited. `needsOperator` also lists notices, which hold nothing and are
+   * counted by `advisoryDecisions`, so they are not read here — a notice is not something the operator owes. Empty when the
+   * server does not send the field.
+   *
+   * This is the state a card no longer being able to freeze a mission created: a run can finish while still owing answers,
+   * and a person has to be able to see which answers those are.
+   */
+  owedCards: OperatorCard[];
   /** The host parked every project because aggregate spend crossed its ceiling. */
   hostCeilingTripped: boolean;
   /** Agents in the middle of a turn. */
@@ -152,6 +208,7 @@ export function factsFromStatus(
       return held.scope === "seat" ? [held.seat] : [];
     }),
     advisoryDecisions: decisions.filter((e) => e?.advisory === true).length,
+    owedCards: owedOf(status),
     hostCeilingTripped: extra.hostCeilingTripped === true,
     working: agents.filter((a) => RUNNING.has(a.lifecycle)).length,
     waiting: agents.filter((a) => a.lifecycle === "WAITING").length,
@@ -174,13 +231,15 @@ export function factsFromStatus(
  * 5. A decision holds the mission, or the goal is ESCALATED: the operator is the blocker. A decision that holds only one seat
  *    is still a call on the operator, but says what it holds and does not claim the mission has stopped.
  * 6. The goal is over (failed, delivered): a parked process is irrelevant to a finished mission, so "parked" never
- *    outranks "delivered".
+ *    outranks "delivered". A delivered mission that still owes cards is not a clean one: the phase stays done (nothing is
+ *    paused) and the headline counts what is waiting.
  * 7. Paused, then parked: two ways of not running, and the action for each is different. A mission that has never run on a goal nobody
  *    wrote is not offered Start: the goal is the first thing to do.
  * 8. Running: nobody working and nobody waiting is a fault worth naming; waiting without working is quiet; otherwise it is
  *    simply running.
  *
  * Open decisions that are only notices do not change the phase: they hold nothing, and they are counted by the caller.
+ * Neither do the cards a finished mission still owes (`owedCards`): they are shown beside the state, not instead of it.
  */
 export function describeMission(f: MissionFacts): MissionState {
   const s = describePhase(f);
@@ -252,9 +311,19 @@ function describePhase(f: MissionFacts): Omit<MissionState, "next"> & { next?: N
     };
   }
   if (f.goalStatus === "COMPLETED") {
+    // A card stopped gating completion, so a delivered mission can still owe answers. That is not the clean green "done": the
+    // tone says a person is still needed before any word is read, and the headline names what is waiting. The phase stays
+    // "done" — nothing is paused, and the needs-you wording ("the mission is paused until…") would be false of a finished run.
+    const owed = f.owedCards.length;
     return {
-      ...base, phase: "done", tone: "ok", label: "Delivered", primary: null,
-      headline: "Delivered. Every mandatory check is evidenced.",
+      ...base,
+      phase: "done",
+      tone: owed > 0 ? "warn" : "ok",
+      label: "Delivered",
+      primary: null,
+      headline: owed > 0
+        ? `Delivered. ${plural(owed, "decision")} ${owed === 1 ? "is" : "are"} still waiting on you.`
+        : "Delivered. Every mandatory check is evidenced.",
       secondary: [REOPEN],
       next: DELIVERED_NEXT,
     };

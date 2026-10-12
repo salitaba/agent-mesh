@@ -260,7 +260,7 @@ test("the workspace is read from the first artifact that names one, and each pat
 /* ---------------------------------- hero ----------------------------------- */
 
 const note = (over: Partial<HeroNoteInput> = {}): HeroNoteInput => ({
-  phase: "running", hasHistory: true, parked: false, parkedNotice: null, verdict: null, blockingDecisions: 0, decisionTitles: [], startupSeats: 2, lastBoot: null, spend: null,
+  phase: "running", hasHistory: true, parked: false, parkedNotice: null, verdict: null, blockingDecisions: 0, decisionTitles: [], owedCards: 0, startupSeats: 2, lastBoot: null, spend: null,
   ...over,
 });
 
@@ -282,12 +282,13 @@ test("a parked mission says whether progress is loaded, and keeps the server's o
 /** What each phase's facts look like, for the rule below: the line under the headline adds to it and never repeats it. */
 const FACTS: MissionFacts = {
   hasStatus: true, serverDown: false, projectDown: null, goalStatus: "ACTIVE", parked: false, blockingDecisions: 0, seatHeldDecisions: [], advisoryDecisions: 0,
-  hostCeilingTripped: false, working: 0, waiting: 0, runningSteps: 0, hasHistory: true, startupSeats: 2,
+  owedCards: [], hostCeilingTripped: false, working: 0, waiting: 0, runningSteps: 0, hasHistory: true, startupSeats: 2,
 };
 const SENTENCES = (s: string): string[] => s.split(/(?<=\.)\s+/).map((x) => x.trim()).filter(Boolean);
 
 test("the line under the headline never repeats a sentence of it, in any phase", () => {
   const verdict = { title: "Goal met", summary: "Every mandatory acceptance criterion was evidenced, with no open escalations and no work still claimed." };
+  const owed = { id: "esc-1", reason: "budget_exhausted", raisedBy: "termination-manager", openedAt: "2026-10-04T09:00:00Z", ageMs: 38 * 3_600_000 };
   const cases: Array<[string, Partial<MissionFacts>, Partial<HeroNoteInput>]> = [
     ["parked, nothing done", { parked: true, hasHistory: false }, { parked: true, hasHistory: false }],
     ["parked, progress loaded", { parked: true, hasHistory: true }, { parked: true, hasHistory: true }],
@@ -296,6 +297,7 @@ test("the line under the headline never repeats a sentence of it, in any phase",
     ["a decision with no verdict", { blockingDecisions: 1 }, { blockingDecisions: 1, decisionTitles: ["Choose v2 or v3"] }],
     ["a decision with a verdict", { blockingDecisions: 1 }, { blockingDecisions: 1, verdict: { title: "The mission ran out of tokens", summary: "It will not run until the limit is raised." } }],
     ["delivered", { goalStatus: "COMPLETED" }, { verdict }],
+    ["delivered, still owing a card", { goalStatus: "COMPLETED", blockingDecisions: 1, owedCards: [owed] }, { owedCards: 1, verdict }],
     ["delivered, no verdict", { goalStatus: "COMPLETED" }, {}],
     ["failed with a verdict", { goalStatus: "FAILED" }, { verdict: { title: "The wall clock ran out", summary: "The goal was marked failed." } }],
     ["failed, no verdict", { goalStatus: "FAILED" }, {}],
@@ -323,6 +325,15 @@ test("a delivered mission shows the sentence that makes a green headline trustwo
   assert.deepEqual(n.detail, ["The project is parked. A finished mission does not need it running."]);
   assert.deepEqual(heroNote(note({ phase: "done", parked: false, verdict }))!.detail, []);
   assert.equal(heroNote(note({ phase: "done" }))!.summary, "All mandatory checks passed.", "no phrased verdict: the plain fallback");
+});
+
+test("a delivered mission that still owes cards does not quote the sentence that says nothing is outstanding", () => {
+  const verdict = { title: "Goal met", summary: "Every mandatory acceptance criterion was evidenced, with no open escalations and no work still claimed." };
+  assert.equal(heroNote(note({ phase: "done", verdict }))!.summary, verdict.summary, "with nothing owed, the catalog's own words are exactly right");
+  const owed = heroNote(note({ phase: "done", verdict, owedCards: 3 }))!;
+  assert.equal(owed.summary, "All mandatory checks passed.");
+  assert.doesNotMatch(owed.summary, /no open escalations/, "a card no longer gates completion, so the gate's sentence can be false of a delivered run");
+  assert.deepEqual(owed.detail, []);
 });
 
 test("a mission halted by its own stopping condition leads with the verdict and says it will not clear on its own", () => {
@@ -372,7 +383,7 @@ test("paused and failed say what the log says when it phrased a verdict, and pau
 /* ------------------------------- attention --------------------------------- */
 
 const attn = (over: Partial<AttentionInput> = {}): AttentionInput => ({
-  phase: "running", parked: false, blockingDecisions: 0, notices: [], toolRequests: [], spend: null, blocks: [], capacity: [], triagedAway: 0, ...over,
+  phase: "running", parked: false, blockingDecisions: 0, owed: [], notices: [], toolRequests: [], spend: null, blocks: [], capacity: [], triagedAway: 0, ...over,
 });
 const block = (actorId: string, deny: boolean, reason = "max_activations 3 reached", ruleId?: string) => ({ actorId, seq: 1, reason, ruleId, deny });
 
@@ -384,6 +395,31 @@ test("the list never repeats the hero: decisions are listed only when they are n
   assert.deepEqual(buildAttention(attn({ phase: "needs-you", blockingDecisions: 2 })), []);
   const other = buildAttention(attn({ phase: "ceiling", parked: true, blockingDecisions: 2 }));
   assert.deepEqual(other.map((i) => [i.kind, i.title, i.fix?.target]), [["decisions", "2 decisions waiting on you.", "inbox"]]);
+});
+
+test("the decisions item names the card that has waited longest, so a 38-hour-old one does not read like a fresh one", () => {
+  const lines = [
+    "Raised by the mesh watchdog, 38h waiting: Mission ran out of tokens",
+    "Raised by developer, 2h waiting: An agent is waiting for an answer",
+  ];
+  const item = buildAttention(attn({ phase: "done", blockingDecisions: 2, owed: lines }))[0]!;
+  assert.equal(item.title, "2 decisions waiting on you.");
+  assert.equal(item.context, lines[0], "the oldest card is on the line: who raised it, how long it has waited, what it asks");
+  assert.deepEqual(item.detail, [lines[1]], "the rest are behind the disclosure, not stacked on the line");
+  assert.deepEqual(item.fix, { label: "Review decisions", target: "inbox" }, "one way to answer, the one the product already has");
+});
+
+test("a run that owes nothing says nothing, and one whose cards the server does not date keeps the plain count", () => {
+  assert.deepEqual(buildAttention(attn({ phase: "done", blockingDecisions: 0, owed: [] })), [], "no empty panel, no zero badge");
+  const one = buildAttention(attn({ phase: "done", blockingDecisions: 1, owed: ["Raised by developer, just now: Which licence?"] }))[0]!;
+  assert.deepEqual([one.context, one.detail], ["Raised by developer, just now: Which licence?", []], "one card is a line, not a list");
+  const plain = buildAttention(attn({ phase: "done", blockingDecisions: 2 }))[0]!;
+  assert.deepEqual([plain.title, plain.context, plain.detail], ["2 decisions waiting on you.", undefined, []], "the count is known even when the cards are not");
+  assert.equal(
+    buildAttention(attn({ phase: "failed", blockingDecisions: 3, owed: ["A", "B", "C"] }))[0]!.context,
+    "A",
+    "a failed mission lists its cards the same way as a delivered one",
+  );
 });
 
 test("a refusal that only restates the headline is not listed: the policy denying every wake because the mission is halted", () => {
@@ -555,7 +591,7 @@ test("the headline is cut after its first sentence, and says nothing different f
 
 const BASE_FACTS: MissionFacts = {
   hasStatus: true, serverDown: false, projectDown: null, goalStatus: "ACTIVE", parked: false, blockingDecisions: 0, seatHeldDecisions: [], advisoryDecisions: 0,
-  hostCeilingTripped: false, working: 1, waiting: 0, runningSteps: 1, hasHistory: true, startupSeats: 3, goalWritten: true,
+  owedCards: [], hostCeilingTripped: false, working: 1, waiting: 0, runningSteps: 1, hasHistory: true, startupSeats: 3, goalWritten: true,
 };
 
 test("every phase of the mission has a mark, and only a mission with agents in a turn moves", () => {

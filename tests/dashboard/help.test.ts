@@ -21,7 +21,7 @@ const help = (() => {
 
 const parked = (hasHistory: boolean): MissionFacts => ({
   hasStatus: true, serverDown: false, projectDown: null, goalStatus: "ACTIVE", parked: true, blockingDecisions: 0, seatHeldDecisions: [],
-  advisoryDecisions: 0, hostCeilingTripped: false, working: 0, waiting: 0, runningSteps: 0, hasHistory, startupSeats: 2,
+  advisoryDecisions: 0, owedCards: [], hostCeilingTripped: false, working: 0, waiting: 0, runningSteps: 0, hasHistory, startupSeats: 2,
 });
 
 test("the tip names the button a parked console shows: Start mission, and Continue only once the mission has run", () => {

@@ -12,7 +12,7 @@ import { GOAL_PLACEHOLDER } from "../../apps/mesh-dashboard/src/goal";
 
 const facts = (over: Partial<MissionFacts> = {}): MissionFacts => ({
   hasStatus: true, serverDown: false, projectDown: null, goalStatus: "ACTIVE", parked: true, blockingDecisions: 0, seatHeldDecisions: [],
-  advisoryDecisions: 0, hostCeilingTripped: false, working: 0, waiting: 1, runningSteps: 0, hasHistory: false, startupSeats: 1, ...over,
+  advisoryDecisions: 0, owedCards: [], hostCeilingTripped: false, working: 0, waiting: 1, runningSteps: 0, hasHistory: false, startupSeats: 1, ...over,
 });
 
 test("a mission that has never run, on a goal nobody wrote, is offered the goal and not Start", () => {

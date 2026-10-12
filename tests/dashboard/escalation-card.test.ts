@@ -7,6 +7,7 @@ import {
   answerOutcome,
   answerPlan,
   answerToast,
+  briefReason,
   budgetInfoOf,
   capTarget,
   cardKind,
@@ -17,10 +18,13 @@ import {
   ifLeftAlone,
   isSystemRaiser,
   openSupports,
+  owedLine,
+  owedTitle,
   raisedByLabel,
   resolveArtifactId,
   seatOfBudgetCard,
   stuckInfoOf,
+  waitedFor,
   type AnswerInput,
   type CardKind,
   type EscalationLike,
@@ -224,6 +228,44 @@ test("waiting time reads as minutes under an hour and hours and minutes after, a
   assert.equal(ageOf("2026-10-04T11:05:00Z", now), "1h waiting");
   assert.equal(ageOf("nope", now), "");
   assert.equal(ageOf("2026-10-04T13:00:00Z", now), "", "a stamp in the future is not a wait");
+});
+
+test("an age the server already worked out reads the same way, and a card nobody dated is not a card that just arrived", () => {
+  // `status.needsOperator` dates each card itself (`ageMs`), so the line is built from the age and never from this machine's clock.
+  assert.equal(waitedFor(40_000), "just now");
+  assert.equal(waitedFor(17 * 60_000 + 20_000), "17m waiting");
+  assert.equal(waitedFor(38 * 3_600_000 + 12 * 60_000), "38h 12m waiting");
+  assert.equal(waitedFor(3_600_000), "1h waiting");
+  assert.equal(waitedFor(0), "just now");
+  assert.equal(waitedFor(-1), "");
+  assert.equal(waitedFor("nope"), "");
+  assert.equal(waitedFor(undefined), "", "an absent age says nothing about time rather than saying 'just now'");
+});
+
+test("a reason longer than a line is cut at a word, and a paragraph becomes one line", () => {
+  assert.equal(briefReason("which licence do you want?"), "which licence do you want?");
+  assert.equal(briefReason("  two\n\nlines\there  "), "two lines here", "a wall of context is one line");
+  assert.equal(briefReason(`${"x".repeat(10)} ${"y".repeat(200)}`), `${"x".repeat(10)}…`, "cut at the last space inside the limit");
+  assert.equal(briefReason(`${"w".repeat(135)} , and more`), `${"w".repeat(135)}…`, "punctuation the cut left dangling goes with the rest");
+  assert.equal(briefReason("z".repeat(200)), `${"z".repeat(140)}…`, "a reason with no space to cut at is cut where it stands");
+  assert.equal(briefReason(""), "");
+  assert.equal(briefReason(undefined), "");
+});
+
+test("a card a run still owes is one line: who raised it, how long it has waited, what it asks", () => {
+  const owed = (over: Record<string, unknown> = {}) => ({ reason: "budget_exhausted", raisedBy: "termination-manager", ageMs: 38 * 3_600_000, ...over });
+  assert.equal(owedLine(owed(), verdictText), "Raised by the mesh watchdog, 38h waiting: Mission ran out of tokens");
+  assert.equal(owedTitle(owed(), verdictText), "Mission ran out of tokens");
+  assert.equal(owedLine(owed({ raisedBy: "developer", ageMs: 40_000 }), verdictText), "Raised by developer, just now: Mission ran out of tokens");
+  assert.equal(owedLine(owed({ raisedBy: "host-limiter" }), verdictText), "Raised by the host, 38h waiting: Mission ran out of tokens");
+  assert.equal(owedLine(owed({ ageMs: undefined }), verdictText), "Raised by the mesh watchdog: Mission ran out of tokens", "an undated card claims no time");
+  assert.equal(owedLine(owed({ reason: "" }), verdictText), "Raised by the mesh watchdog, 38h waiting", "a card with no reason is not handed one: the catalog's fallback reads 'Mission stopped'");
+  assert.equal(
+    owedLine(owed({ reason: "budget_exhausted_tokens", raisedBy: "host-limiter" }), verdictText),
+    "Raised by the host, 38h waiting: Out of tokens",
+    "the cards' own words, so a bare reason code is never shown to a person",
+  );
+  assert.ok(owedLine(owed({ reason: `${"long ".repeat(60)}` }), verdictText).length < 200, "a several-sentence reason is cut to what a person acts on");
 });
 
 /* ------------------------------ the answer --------------------------------- */

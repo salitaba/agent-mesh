@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useRef } from "react";
 import { useMesh } from "./store";
 import { useMission } from "./useMission";
+import { owedOf } from "./mission";
 import { orderDecisions } from "./inbox-model";
 import { bySeq } from "./overview-model";
-import { decisionTitles, stoppedBecause } from "./toasttext";
+import { decisionTitles, owedTitles, stoppedBecause } from "./toasttext";
 import { advance, attentionOf, faviconFor, type Attention } from "./attention";
 import { faviconHref, type FaviconKind } from "./favicon";
 import { notificationsOn, pageHidden, raiseNotice } from "./notifyclient";
@@ -42,6 +43,9 @@ function useAttention(projectId: string | null, projectName: string | null): Att
       headline: state.headline,
       decisionIds: holding.map((e) => String(e.id)),
       decisionTitles: decisionTitles(holding, { status, parked: facts.parked }),
+      // The cards the run still owes, which a finished mission can carry past its own end: a delivery's notice names them. Read
+      // from the same payload as the decisions above, so the memo stays keyed to the status and not to a fresh array per render.
+      owedTitles: owedTitles(owedOf(status)),
       reason: state.phase === "failed" ? stoppedBecause(bySeq(events), String(status?.goal?.status ?? "")) : null,
       goalId: status?.goal?.id ?? null,
       deliveredAt: status?.goal?.completedAt ?? null,

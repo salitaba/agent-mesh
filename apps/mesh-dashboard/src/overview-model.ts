@@ -380,6 +380,12 @@ export interface HeroNoteInput {
   blockingDecisions: number;
   /** What each open decision that holds the mission is about, phrased, longest-waiting first. */
   decisionTitles: string[];
+  /**
+   * How many cards a finished mission still owes (`facts.owedCards`). The verdict's own sentence for a completion says the run
+   * had no open escalations, which was true of the gate and is no longer true of the payload: with cards still waiting, the
+   * note falls back to the sentence that stays true.
+   */
+  owedCards: number;
   startupSeats: number | null;
   lastBoot: LastBoot | null | undefined;
   spend: { usd: number; ceilingUsd: number | null; parked: string[] } | null;
@@ -426,7 +432,10 @@ export function heroNote(i: HeroNoteInput): HeroNote | null {
       return i.verdict ? { summary: `${i.verdict.title}. ${i.verdict.summary}`, detail: [] } : null;
     case "done":
       return {
-        summary: i.verdict ? i.verdict.summary : "All mandatory checks passed.",
+        // The catalog's completion line ends "with no open escalations". That was the gate's truth; a card no longer gating
+        // completion means a delivered run can owe cards, and quoting the sentence over them would be the console telling a
+        // person there is nothing to answer. With none owed it is exactly right and is still quoted.
+        summary: i.verdict && i.owedCards === 0 ? i.verdict.summary : "All mandatory checks passed.",
         detail: i.parked ? ["The project is parked. A finished mission does not need it running."] : [],
       };
     case "paused":
@@ -601,6 +610,12 @@ export interface AttentionInput {
   blockingDecisions: number;
   /** How many of those are the host's ceiling card. In the ceiling phase the hero is that card, so it is not counted again. */
   ceilingCards?: number;
+  /**
+   * The cards the run still owes, one line each, longest waiting first (`facts.owedCards`): who raised each, how long it has
+   * waited, what it asks. These are the cards behind `blockingDecisions`; empty on a server that does not date them, and then
+   * the item keeps the plain count.
+   */
+  owed: readonly string[];
   /** Open advisory notices, already phrased. */
   notices: Array<{ title: string }>;
   /** Seats with a tool request waiting, and what each asked for. */
@@ -634,9 +649,14 @@ export function buildAttention(i: AttentionInput): AttentionItem[] {
 
   const others = i.blockingDecisions - (i.phase === "ceiling" ? i.ceilingCards ?? 0 : 0);
   if (others > 0 && i.phase !== "needs-you") {
+    // The count is the claim, and the cards' own lines are what it is about: who is waiting and for how long, so a card nobody
+    // has answered since yesterday does not read like one raised a minute ago. The oldest stays on the line and the rest are one
+    // click away — a finished run that owes cards has to read as one at a glance without the page becoming a wall.
+    const [oldest, ...rest] = i.owed;
     out.push({
-      kind: "decisions", tone: "bad", detail: [],
+      kind: "decisions", tone: "bad", detail: rest,
       title: `${plural(others, "decision")} waiting on you.`,
+      context: oldest,
       fix: { label: "Review decisions", target: "inbox" },
     });
   }

@@ -7,7 +7,7 @@
  * seat. A budget running out is not announced twice: the decision it raises already says so.
  */
 import { terminalMissionVerdict, verdictText } from "../../../packages/protocol/src/catalog";
-import { escalationText, holdsOf, type EscalationLike } from "./escalation-card";
+import { escalationText, holdsOf, owedTitle, type EscalationLike, type OwedCard } from "./escalation-card";
 import type { View } from "./route";
 
 export type ToastKind = "ok" | "warn" | "bad";
@@ -73,6 +73,15 @@ export function eventToast(e: { type: string; payload?: unknown }): ToastText | 
  */
 export function decisionTitles(cards: readonly EscalationLike[], ctx: { status: unknown; parked: boolean }): string[] {
   return cards.map((e) => escalationText(e, { status: ctx.status, parked: ctx.parked, phrase: verdictText }).title);
+}
+
+/**
+ * What each card a run still owes is about, in the same words the cards lead with (`owedTitle`), longest waiting first. These are
+ * the cards nobody answered, which a finished mission can still carry: a delivery's notice names them so a person away from the
+ * console knows there is something left to answer.
+ */
+export function owedTitles(cards: readonly OwedCard[]): string[] {
+  return cards.map((c) => owedTitle(c, verdictText));
 }
 
 /**

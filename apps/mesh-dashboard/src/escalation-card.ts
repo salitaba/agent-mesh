@@ -115,14 +115,64 @@ export function requestLabelOf(m: any, fallbackType: string): string {
   return q ? `${head}${art}: “${q.slice(0, 160)}”` : `${head}${art}`;
 }
 
-/** How long a card has been waiting: `just now`, `12m waiting`, `2h 5m waiting`. Empty when the stamp cannot be read. */
-export function ageOf(iso: unknown, nowMs: number = Date.now()): string {
-  const ms = nowMs - Date.parse(String(iso ?? ""));
+/** How long a card has been waiting, from a millisecond age: `just now`, `12m waiting`, `2h 5m waiting`. Empty when the age is not a number. */
+export function waitedFor(ageMs: unknown): string {
+  const ms = Number(ageMs);
   if (!Number.isFinite(ms) || ms < 0) return "";
   const m = Math.floor(ms / 60000);
   if (m < 1) return "just now";
   if (m < 60) return `${m}m waiting`;
   return `${Math.floor(m / 60)}h${m % 60 ? ` ${m % 60}m` : ""} waiting`;
+}
+
+/** How long a card has been waiting, dated from its stamp: `just now`, `12m waiting`, `2h 5m waiting`. Empty when the stamp cannot be read. */
+export function ageOf(iso: unknown, nowMs: number = Date.now()): string {
+  const ms = nowMs - Date.parse(String(iso ?? ""));
+  if (!Number.isFinite(ms) || ms < 0) return "";
+  return waitedFor(ms);
+}
+
+/** How much of a card's reason one line carries. Enough to know what is being asked, not the wall some cards carry. */
+const REASON_FITS = 140;
+
+/**
+ * A card's reason, cut to what a person acts on: whitespace folded to single spaces, and anything past the limit cut at a
+ * word with an ellipsis. Some reasons are one question and some are several paragraphs of context; a line that names the
+ * card has room for the first.
+ */
+export function briefReason(reason: unknown, max: number = REASON_FITS): string {
+  const t = String(reason ?? "").replace(/\s+/g, " ").trim();
+  if (t.length <= max) return t;
+  const cut = t.slice(0, max);
+  const at = cut.lastIndexOf(" ");
+  return `${(at > 0 ? cut.slice(0, at) : cut).replace(/[\s,;:.]+$/, "")}…`;
+}
+
+/** An OPEN card an operator still owes an answer, as `status.needsOperator` summarizes it (mission.ts reads it as `OperatorCard`). */
+export interface OwedCard {
+  reason?: unknown;
+  raisedBy?: unknown;
+  ageMs?: unknown;
+}
+
+/** What an owed card asks, in the words every card leads with (the catalog's phrasing, cut to one line). Empty when the card carries no reason. */
+export function owedTitle(c: OwedCard, phrase: Phrase): string {
+  const reason = String(c.reason ?? "").trim();
+  // A card the payload gives no reason for is not given one here: the catalog's fallback for an empty code reads "Mission stopped",
+  // which is a claim about a mission that may be running, or delivered, or fine. The line says who raised it instead.
+  return reason ? briefReason(phrase(reason).title) : "";
+}
+
+/**
+ * One owed card as a single line: who raised it, how long it has waited, and what it asks. This is what an operator reads
+ * at a glance when a run still owes cards — including one that has already finished — so the wait is on the line: a card
+ * nobody has answered for 38 hours must not read like one raised a minute ago.
+ */
+export function owedLine(c: OwedCard, phrase: Phrase): string {
+  const wait = waitedFor(c.ageMs);
+  const head = `Raised by ${raisedByLabel(c.raisedBy)}${wait ? `, ${wait}` : ""}`;
+  const what = owedTitle(c, phrase);
+  return what ? `${head}: ${what}` : head;
 }
 
 export function stuckInfoOf(e: EscalationLike, msgs?: Map<string, any>, nowMs: number = Date.now()): StuckInfo {
