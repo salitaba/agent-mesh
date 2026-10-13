@@ -279,11 +279,25 @@ test("patches that were never rejected hold nothing, in whatever state: one on t
   }
 });
 
-test("a goal that does not ask for the implementation to be merged is not held by a rejected patch", async () => {
-  const m = await makeMesh({ agents: AGENTS, mayContact: COMM, mode: "parked", criteria: [{ id: "report-written", description: "a report", mandatory: true }] } as never);
+test("a rejected patch holds a mission whose criteria never mention code, and archiving it releases the mission", async () => {
+  // The criteria are sentences here on purpose. The scope of this guard used to be read off them — it ran only when a
+  // mandatory criterion was named `implementation-merged` — so a mesh whose criteria are written as sentences got no
+  // guard at all and nothing said so (one live mesh completed over five rejected patches, 2026-10-13). A rejected patch
+  // is work the mission left behind whatever its criteria are called, and its owner can release the mission by
+  // archiving it: a REJECTED patch reaches ARCHIVED through DRAFT, which is a move the owner can make.
+  const m = await makeMesh({
+    agents: AGENTS,
+    mayContact: COMM,
+    mode: "parked",
+    criteria: [{ id: "a report is written and accepted", description: "a report", mandatory: true }],
+  } as never);
   try {
-    await rejected(m, "cli");
-    assert.deepEqual(openRejections(m.kernel.state, m.kernel.state.activeGoalId ?? ""), []);
+    const cli = await rejected(m, "cli");
+    const goalId = m.kernel.state.activeGoalId ?? "";
+    assert.deepEqual(openRejections(m.kernel.state, goalId).map((a) => a.id), [cli], "a rejected patch holds the mission however its criteria are worded");
+    assert.equal((await m.supervisor.transitionArtifact("dev", cli, { to: "DRAFT" })).ok, true);
+    assert.equal((await m.supervisor.transitionArtifact("dev", cli, { to: "ARCHIVED" })).ok, true);
+    assert.deepEqual(openRejections(m.kernel.state, goalId), [], "withdrawn and said so: the mission is free");
   } finally {
     await m.cleanup();
   }
@@ -342,10 +356,23 @@ test("openRejections: a patch that was rejected stays listed until it is MERGED 
   assert.deepEqual(openRejections(state, "g").map((a) => a.id).sort(), ["approved-again", "resubmitted", "reworked"]);
 });
 
-test("openRejections: only for a goal whose mandatory criteria include implementation-merged", () => {
-  const rejectedPatch = [art({ id: "rejected" })];
-  assert.equal(openRejections(stateWith(rejectedPatch, {}, [{ id: "implementation-merged", mandatory: true }]), "g").length, 1);
-  assert.equal(openRejections(stateWith(rejectedPatch, {}, [{ id: "implementation-merged", mandatory: false }]), "g").length, 0, "an optional criterion does not make the mission wait");
-  assert.equal(openRejections(stateWith(rejectedPatch, {}, [{ id: "something-else", mandatory: true }]), "g").length, 0);
-  assert.equal(openRejections(stateWith(rejectedPatch, {}, []), "nope").length, 0, "no such goal");
+test("openRejections: a rejected patch is listed whatever the mission's criteria are called", () => {
+  const merged = art({ id: "landed", status: "MERGED" });
+  const rejectedPatch = art({ id: "rejected" });
+  // The criteria do not enter into it: an id is a free-form string the author of a mesh chooses, and reading the scope
+  // off one silently disabled this guard for every mesh that worded its criteria as sentences.
+  for (const criteria of [
+    [{ id: "implementation-merged", mandatory: true }],
+    [{ id: "the skill manager installs, lists and removes skills safely", mandatory: true }],
+    [{ id: "Unified skill discovery", mandatory: true }],
+    [],
+  ]) {
+    assert.equal(
+      openRejections(stateWith([merged, rejectedPatch], {}, criteria), "g").length,
+      1,
+      `a rejected patch has to be listed with criteria ${JSON.stringify(criteria)}: whether a mission asks for code is not something its criterion ids can say`,
+    );
+  }
+  assert.equal(openRejections(stateWith([rejectedPatch], {}, []), "g").length, 1, "even with nothing merged: this is the live mesh the bug was found on (47 merged, five rejected, criteria worded as sentences)");
+  assert.equal(openRejections(stateWith([merged, rejectedPatch], {}, []), "nope").length, 0, "no such goal");
 });

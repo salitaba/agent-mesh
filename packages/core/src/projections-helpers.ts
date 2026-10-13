@@ -340,8 +340,9 @@ export function passOnlyDomains(authority: readonly string[] | undefined): strin
 /**
  * The CodePatches a reviewer rejected that have not ended up MERGED or ARCHIVED: REJECTED and waiting
  * on its owner, or reworked since (DRAFT, back in review, on the merge ladder) and not yet landed. Only
- * for a goal that asks for the implementation to be merged (`implementation-merged` among its
- * mandatory criteria); [] for the rest.
+ * for a mission that merged a patch of its own — then the implementation is part of what it delivered,
+ * and a patch of it left in limbo is work it left behind; [] for a mission that merged none, whatever
+ * its criteria are called.
  *
  * A rejection is a decision someone has to finish: the owner reworks the patch (a new version, then a
  * review request) and it lands, or the owner withdraws it (ARCHIVED, which a REJECTED patch reaches
@@ -364,10 +365,20 @@ export function passOnlyDomains(authority: readonly string[] | undefined): strin
  * status alone.
  */
 export function openRejections(state: Projections, goalId: string): Artifact[] {
-  const goal = state.goals.get(goalId);
-  if (!goal?.acceptanceCriteria.some((c) => c.mandatory && c.id === "implementation-merged")) return [];
+  // The goal has to be one this state knows: the verdict is evaluated against partial states in tests and during
+  // replay, and a predicate that answers a question about a goal nobody has heard of has no answer to give.
+  if (!state.goals.get(goalId)) return [];
+  // The scope used to be read off the criteria — the guard ran only when a mandatory criterion was *named*
+  // `implementation-merged` — which silently switched it off for every mesh whose criteria are written as sentences,
+  // and nothing reported that it had: one live mesh (2026-10-13, six criteria in plain English, 47 patches merged)
+  // completed over five rejected patches that nobody reworked, the last rejection 23 minutes before the completion,
+  // leaving its operator looking at "Delivered" beside rejected work with no way to act on it. A criterion id is a
+  // free-form string the author of a mesh chooses, so it cannot decide whether a patch in limbo holds a mission.
+  // Anything narrower (only goals that merged a patch, say) re-opens the same hole for the missions that are still
+  // running when the first rejection lands: a rejected patch IS the work left behind, and its owner can always release
+  // the mission by archiving it (a REJECTED patch reaches ARCHIVED through DRAFT, and the watchdog wakes its owner).
   const out: Artifact[] = [];
-  for (const a of state.artifacts.values()) {
+  for (const a of state.artifacts?.values() ?? []) {
     if (a.type !== "CodePatch" || a.goalId !== goalId || a.status === "MERGED" || a.status === "ARCHIVED") continue;
     if (a.status === "REJECTED" || (state.artifactHistory.get(a.id) ?? []).some((h) => h.status === "REJECTED")) out.push(a);
   }
