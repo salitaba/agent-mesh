@@ -4,7 +4,8 @@
 # Nobody on the machine it was written on can build it: no Rust, no JDK, no Android
 # SDK, no NDK, and installing any of them is out of scope — so this workflow is where
 # the crate is first compiled for the four Android targets, and where the first
-# compile error will be read. Nothing here is signed — see the note at the bottom.
+# compile error will be read. The APK is signed here, and the signature is verified
+# before it leaves the runner — see the note at the bottom.
 
 name: Mobile
 
@@ -166,6 +167,36 @@ jobs:
           NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
         run: npm run tauri -- android build --apk --ci
 
+      # Android refuses to install an APK that is not signed, and the build above produces exactly that
+      # (`app-universal-release-unsigned.apk`): without this step the run succeeds, the artifact downloads and the file
+      # cannot be installed by anyone. A signing step that silently did nothing would look the same from here, so the
+      # signature is verified on the runner — `apksigner verify --print-certs` — before the APK is uploaded. The
+      # keystore is a repository secret; no password is written into this file or printed.
+      - name: Sign the APK, and verify what was signed
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          apk=$(find apps/desktop/src-tauri/gen/android/app/build/outputs/apk -name '*.apk' | head -1)
+          if [ -z "$apk" ]; then
+            echo "::error::no APK was built"
+            exit 1
+          fi
+          keystore="$RUNNER_TEMP/curule-signing.p12"
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 -d > "$keystore"
+          apksigner=$(find "${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/lib/android-sdk}}/build-tools" -name apksigner 2>/dev/null | sort -V | tail -1)
+          if [ -z "$apksigner" ] || [ ! -x "$apksigner" ]; then
+            echo "::error::apksigner was not found in the SDK's build-tools"
+            exit 1
+          fi
+          "$apksigner" sign --ks "$keystore" --ks-pass env:ANDROID_KEYSTORE_PASSWORD \
+            --ks-key-alias "$ANDROID_KEY_ALIAS" --key-pass env:ANDROID_KEY_PASSWORD "$apk"
+          "$apksigner" verify --print-certs "$apk"
+          rm -f "$keystore"
+          echo "signed $(basename "$apk")"
+
       # The APK is the run's output even when nothing is released: no release is cut
       # here at all, so the artifact is how an APK reaches a person.
       - name: Upload the APK
@@ -206,18 +237,18 @@ jobs:
           gh release upload "$tag" "Curule_${version}_android.apk" --clobber
           echo "attached Curule_${version}_android.apk to $tag"
 
-# Not configured, and not attempted here: the workflow builds an unsigned release
-# APK (`app-universal-release-unsigned.apk`). An unsigned APK sideloads, and cannot
-# update over an install that Play signed — the signatures differ, so Android
-# refuses the update and asks for an uninstall first.
+# The APK is signed with the app's own key, kept as repository secrets
+# (ANDROID_KEYSTORE_BASE64 — a PKCS#12 bundle — ANDROID_KEY_ALIAS,
+# ANDROID_KEYSTORE_PASSWORD, ANDROID_KEY_PASSWORD). The same key signs every
+# release, which is what lets a new APK install over the last one: Android refuses
+# an update whose signature differs, and an unsigned APK it refuses outright. The
+# key's certificate is valid for thirty years and its fingerprint is worth writing
+# down wherever the app is described — a lost keystore means every future release
+# needs an uninstall first.
 #
-# Signing needs a keystore and an upload key, kept as repository secrets
-# (ANDROID_KEY_BASE64, ANDROID_KEY_ALIAS, ANDROID_KEY_PASSWORD) and written into a
-# `signingConfigs` block in the generated project's app/build.gradle.kts — which,
-# since that project is generated per run, means a step between init and build that
-# decodes the keystore and patches the file. Google Play additionally needs a Play
-# Console developer account (a one-time $25 registration) and an app bundle; an
-# unsigned AAB is of no use to it, which is why this workflow does not build one.
+# Google Play is a different door and out of scope: it takes an app bundle (an AAB,
+# not this APK, which is why one is not built here), a Play Console developer
+# account, and its own upload key. An unsigned AAB is of no use to it either.
 #
 # iOS is out of scope for this pass, and half-wiring it would be worse than saying
 # so: it needs a macOS runner, Xcode, an Apple Developer account and a provisioning

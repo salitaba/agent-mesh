@@ -12,8 +12,10 @@ import { parse as parseYaml } from "yaml";
  * crates behind `#[cfg(desktop)]` while the address, the window and the link policy stay shared; that
  * `tauri.conf.json` carries the Android bundle settings and an identifier Android will accept as an application
  * id; that the workflow installs the JDK, the SDK and a pinned NDK, names all four Android targets, builds an APK
- * and pretends to sign nothing; and that nothing in the app carries a keystore, a password or a remote IPC grant.
- * A phone with a blank window and an unsigned APK nobody can update are the failures this catches on paper.
+ * signs the APK with the app's key and verifies the signature; and that nothing in the app carries a keystore, a
+ * password or a remote IPC grant. A phone with a blank window, and an APK Android refuses to install because nobody
+ * signed it, are the failures this catches on paper — the second of which it shipped for two days while asserting the
+ * workflow signed nothing.
  */
 
 const ROOT = path.resolve(__dirname, "..", "..", "..");
@@ -213,7 +215,7 @@ test("tauri.conf.json carries the Android bundle settings, and an identifier And
   assert.ok(!config.identifier.endsWith(".app"), "the CLI refuses an identifier ending in .app (it collides with the macOS bundle)");
 });
 
-test("the workflow builds an APK on the toolchain Android needs, and signs nothing", () => {
+test("the workflow builds an APK on the toolchain Android needs, signs it with the app's key, and verifies the signature", () => {
   const workflow = parseYaml(workflowSource) as {
     on: Record<string, { paths?: string[]; tags?: string[] }>;
     permissions: Record<string, string>;
@@ -344,26 +346,58 @@ test("the workflow builds an APK on the toolchain Android needs, and signs nothi
     "the tag the release is cut from is what this workflow listens for",
   );
 
-  // Signing is described and not attempted: no step decodes a keystore, and the repository has no secret to
-  // decode — the only name this workflow may reach for is the token GitHub hands every run. Prose in a comment
-  // block wraps, so the note is read with its comment lines joined before a phrase is looked for.
+  // The APK has to be signed, and the signature verified on the runner. This spec used to assert the opposite — that
+  // the workflow signs nothing and no step may even look like it does — and that is how a run stayed green while
+  // every release this repository cut carried an APK Android refuses to install ("app-universal-release-unsigned").
+  // What a phone needs is the outcome, so that is what is pinned: exactly one step signs, with the keystore and
+  // passwords from the repository's secrets (none of them written here), it verifies what it signed, and it runs
+  // after the build and before anything a person downloads.
+  const signing = steps.filter((step) => /apksigner/i.test(`${step.name ?? ""} ${step.run ?? ""}`));
+  assert.equal(signing.length, 1, "exactly one step signs the APK: the build's own output is unsigned and Android refuses it");
+  const sign = signing[0]!;
+  assert.match(String(sign.name ?? ""), /sign/i, `${sign.name}: the signing step has to say it signs`);
+  assert.match(String(sign.run ?? ""), /apksigner/, "it signs with apksigner, the tool the SDK ships");
+  assert.match(
+    String(sign.run ?? ""),
+    /apksigner"?\s+verify|verify --print-certs/,
+    "and it verifies what it signed: a signing step that silently did nothing looks exactly like one that worked",
+  );
+  for (const secret of ["ANDROID_KEYSTORE_BASE64", "ANDROID_KEY_ALIAS", "ANDROID_KEYSTORE_PASSWORD", "ANDROID_KEY_PASSWORD"]) {
+    assert.match(
+      JSON.stringify(sign.env ?? {}),
+      new RegExp(`secrets\\.${secret}`),
+      `${secret} has to come from the repository's secrets, not from the file`,
+    );
+  }
+  assert.ok(
+    !/--ks-pass\s+(?!env:)|--key-pass\s+(?!env:)/.test(String(sign.run ?? "")),
+    "both passwords are passed as env:, so neither is ever an argument a process listing can read",
+  );
+  const names = steps.map((step) => `${step.name ?? ""} ${step.uses ?? ""}`);
+  const builtAt = names.findIndex((name) => /Build the APK/i.test(name));
+  const signedAt = names.findIndex((name) => /Sign the APK/i.test(name));
+  const uploadedAt = names.findIndex((name) => /Upload the APK/i.test(name));
+  assert.ok(
+    builtAt >= 0 && signedAt > builtAt && uploadedAt > signedAt,
+    `the order has to be build → sign → upload (got ${builtAt} → ${signedAt} → ${uploadedAt}): signing after the upload signs nothing a person gets`,
+  );
+
+  // The prose says what the APK is, and what losing the key would cost. Comment blocks wrap, so the note is read with
+  // its comment lines joined before a phrase is looked for.
   const note = workflowSource
     .split("\n")
     .filter((line) => line.trimStart().startsWith("#"))
     .map((line) => line.trimStart().replace(/^#\s?/, ""))
     .join(" ");
-  assert.match(note, /unsigned/i, "the note has to say what the APK is, or a download claims more than it is");
-  assert.match(note, /keystore/i, "and what signing would need: a keystore and an upload key");
-  assert.match(note, /Play Console/i, "and the Play Console account a store release also needs");
-  for (const step of steps) {
-    const body = `${step.name ?? ""} ${step.run ?? ""}`;
-    assert.ok(
-      !/keystore|apksigner|jarsigner|signingConfig/i.test(body),
-      `${step.name ?? step.uses}: this workflow signs nothing, so no step may look like it does`,
-    );
-  }
+  assert.match(note, /signed/i, "the note has to say what the APK is, or a download claims more than it is");
+  assert.match(note, /keystore/i, "and where the key lives: repository secrets");
+  assert.match(note, /fingerprint/i, "and that the key's fingerprint is worth writing down");
+  assert.match(note, /Play/i, "and that a store release is a different door (an AAB, and its own key)");
   for (const match of workflowSource.matchAll(/secrets\.([A-Za-z_][A-Za-z0-9_]*)/g)) {
-    assert.equal(match[1], "GITHUB_TOKEN", `the workflow reaches for secrets.${match[1]}, which this repository does not have`);
+    assert.ok(
+      ["GITHUB_TOKEN", "ANDROID_KEYSTORE_BASE64", "ANDROID_KEY_ALIAS", "ANDROID_KEYSTORE_PASSWORD", "ANDROID_KEY_PASSWORD"].includes(match[1]!),
+      `the workflow reaches for secrets.${match[1]}, which is not one this repository keeps`,
+    );
   }
 
   // Where it runs, and what it is for: a branch, a pull request, the Actions button — and
