@@ -1194,6 +1194,7 @@ const BEFORE = "curule:before-payment";
 const NOTHING_YET = JSON.stringify([null, [20_000_000, 0]]);
 const THANKS_KNOWN = "Thank you. The payment provider confirms a payment a few moments after checkout, and this page updates when yours is confirmed.";
 const THANKS_UNKNOWN = "Thank you. The payment provider confirms a payment a few moments after checkout, and your plan and balance below update when it does.";
+const PENDING_UNKNOWN = "If your payment is not in the figures below yet, it can take a few minutes. Nothing more is needed from you. Reload this page later to see it.";
 
 test("coming back from a payment that was applied while the person was away: what was remembered is compared with now, and it is said at once", async () => {
   const w = world(paid);
@@ -1232,18 +1233,26 @@ test("a payment that does not show up in a minute is said to be on its way, and 
 test("coming back with nothing remembered (another tab, a browser that keeps nothing): the page cannot say whether the payment has landed, and does not pretend to", async () => {
   const landed = world(paid);
   landed.balance = balance({ purchased: 10_000_000 });
-  const v = await visit("account", { routes: landed.routes, search: "?paid=1" });
-  assert.equal(v.text("notice"), THANKS_UNKNOWN);
-  await v.until("the page to stop waiting", () => /^If your payment is not in the figures below yet/.test(v.text("notice")), 5_000);
-  assert.equal(v.text("notice"), "If your payment is not in the figures below yet, it can take a few minutes. Nothing more is needed from you. Reload this page later to see it.");
+  // Started, not visited: `visit()` drives the page to the end of its own waited-for timeline, so which phase a read
+  // lands on is the runner's business — this test passed on a fast machine and failed on a slow one for exactly that
+  // reason (green at 54d47d4, red at 1f21fcd, a commit that touched only the workflow and the changelog). Waiting for
+  // each phase is what the test above it already does, and it is the difference between observing the page and racing
+  // it.
+  const v = new Visit("account", { routes: landed.routes, search: "?paid=1" });
+  const started = v.start();
+  await v.until("the notice that says a payment was made, without claiming it landed", () => v.text("notice") === THANKS_UNKNOWN);
+  await v.until("the page to stop waiting", () => v.text("notice") === PENDING_UNKNOWN, 5_000);
   assert.equal(v.$("notice").className, "note", "it is not a warning: the figures may already show it");
   assert.match(v.text("figures"), /^Available \$30\.00 /);
+  await started;
 
   const later = world();
-  const w = await visit("account", { routes: later.routes, search: "?paid=1" });
-  assert.equal(w.text("notice"), THANKS_UNKNOWN);
+  const w = new Visit("account", { routes: later.routes, search: "?paid=1" });
+  const startedLater = w.start();
+  await w.until("the same notice with nothing remembered in this tab either", () => w.text("notice") === THANKS_UNKNOWN);
   later.subscription = ACTIVE;
   await w.until("the arrival to be seen", () => w.text("notice") === "Your payment has arrived.");
+  await startedLater;
 });
 
 test("a checkout that was cancelled says nothing was charged and that what there was is as it was, and leaves the address", async () => {
