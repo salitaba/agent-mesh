@@ -7,6 +7,24 @@ sections 1 to 26) are described there, run by run.
 
 ## Unreleased
 
+### Fixed: the Android APK was unsigned, and Android will not install one of those
+
+Every APK this repository has published — `0.1.0`, `0.1.1`, `0.2.0` — was unsigned: no `META-INF` signature and no APK
+Signing Block. Android refuses to install such a file, so no Android download was ever installable, and the report that
+arrived was "the APK won't install on my phone".
+
+The suite asserted the opposite, in a test named *"the workflow builds an APK on the toolchain Android needs, and signs
+nothing"*, whose body forbade any step from mentioning `apksigner` — so a green run and an unusable download were the
+same thing. A spec that pins the absence of a step pins nothing a device needs.
+
+The workflow now signs the APK with the app's own key, kept as repository secrets (`ANDROID_KEYSTORE_BASE64`, a PKCS#12
+bundle, plus the alias and both passwords; the passwords are passed as `env:` so neither is ever an argument a process
+listing can read), and runs `apksigner verify --print-certs` before the file is uploaded, because a signing step that
+silently did nothing looks exactly like one that worked. It is the same key for every release, which is what lets a new
+APK install over the last one. The test now pins that outcome: one step signs, with `apksigner`, from those secrets,
+verifying what it signed, after the build and before the upload. The `0.2.0` release's asset was replaced with a signed
+build (certificate `CN=Curule`, sha256 `DB:B6:65:0F…A6:37`), so the link already given out installs.
+
 ### Added: mail to the owner when a run is waiting on them
 
 A mission on this host finished, stopped on one stale card, and sat there for **38 hours with the owner never told** — a

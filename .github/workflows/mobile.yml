@@ -195,6 +195,12 @@ jobs:
             --ks-key-alias "$ANDROID_KEY_ALIAS" --key-pass env:ANDROID_KEY_PASSWORD "$apk"
           "$apksigner" verify --print-certs "$apk"
           rm -f "$keystore"
+          # The build's own name is `app-universal-release-unsigned.apk`, and after this step that name is a lie: the
+          # next person to look at the run's artifacts should not have to open the file to find out which it is.
+          if [ "${apk%-unsigned.apk}" != "$apk" ]; then
+            mv "$apk" "${apk%-unsigned.apk}.apk"
+            apk="${apk%-unsigned.apk}.apk"
+          fi
           echo "signed $(basename "$apk")"
 
       # The APK is the run's output even when nothing is released: no release is cut
