@@ -7,6 +7,19 @@ sections 1 to 26) are described there, run by run.
 
 ## Unreleased
 
+### Fixed: the phone's clock was drawn over the app's own header
+
+Tauri's Android activity calls `enableEdgeToEdge()`, which is right — the app's background should reach the screen's
+edges — and the platform then draws the status bar over whatever is at the top of the window. Nothing kept it out of the
+way, so on a real phone the account page's header (`curule`, Plans, Account, Sign out) sat **under the clock and battery,
+half cut off**.
+
+The content view is now padded by the inset the platform reports for the system bars and the display cutout, which is
+Android's own guidance for an app that has opted into edge to edge. The Android project is generated per run and Kotlin
+cannot be compiled on the author's machine, so the workflow patches `MainActivity.kt` between `android init` and the
+build, and fails loudly if the template stops having the `onCreate` it anchors on. The test pins that wiring, the insets
+it reads, and the order it runs in. Released as `0.2.1` (`versionCode` 2001).
+
 ### Fixed: the Android APK was unsigned, and Android will not install one of those
 
 Every APK this repository has published — `0.1.0`, `0.1.1`, `0.2.0` — was unsigned: no `META-INF` signature and no APK

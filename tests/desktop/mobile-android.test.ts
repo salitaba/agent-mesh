@@ -12,7 +12,8 @@ import { parse as parseYaml } from "yaml";
  * crates behind `#[cfg(desktop)]` while the address, the window and the link policy stay shared; that
  * `tauri.conf.json` carries the Android bundle settings and an identifier Android will accept as an application
  * id; that the workflow installs the JDK, the SDK and a pinned NDK, names all four Android targets, builds an APK
- * signs the APK with the app's key and verifies the signature; and that nothing in the app carries a keystore, a
+ * signs the APK with the app's key and verifies the signature; that the platform's status bar is kept out of the
+ * app's own header, which is what an edge-to-edge window needs and did not have; and that nothing in the app carries a
  * password or a remote IPC grant. A phone with a blank window, and an APK Android refuses to install because nobody
  * signed it, are the failures this catches on paper — the second of which it shipped for two days while asserting the
  * workflow signed nothing.
@@ -450,5 +451,38 @@ test("nothing in the app carries a keystore, a password or a remote IPC grant", 
     read(path.join(APP, ".gitignore")),
     /^src-tauri\/gen\/android\/$/m,
     "`tauri android init` output is generated per run, so it is ignored rather than committed",
+  );
+});
+
+test("the workflow keeps the platform's furniture out of the app's own header", () => {
+  const source = read(path.join(ROOT, ".github", "workflows", "mobile.yml"));
+  const workflow = parseYaml(source) as { jobs: Record<string, { steps?: Step[] }> };
+  const steps = Object.values(workflow.jobs).flatMap((job) => job.steps ?? []);
+  const names = steps.map((step) => `${step.name ?? ""} ${step.uses ?? ""}`);
+
+  // Tauri's own activity calls `enableEdgeToEdge()` — right, the app's background should reach the screen's edges — and
+  // the platform then draws its clock and battery over whatever is at the top. On a real phone (13 October 2026) that
+  // was the app's header, under the status bar. Kotlin cannot be compiled on this machine, so what is pinned here is
+  // the wiring: the content view is padded by the inset the platform reports, before the build.
+  const step = steps.find((candidate) => /Keep the status bar out/i.test(candidate.name ?? ""));
+  assert.ok(step, "a step has to keep the platform's furniture out of the way: the window is edge to edge and nothing else does");
+  const run = String(step.run ?? "");
+  assert.match(run, /MainActivity\.kt/, "it patches the activity, which is where the window is set up");
+  assert.match(run, /setOnApplyWindowInsetsListener/, "an inset listener is what Android's own guidance gives for an edge-to-edge app");
+  assert.match(run, /WindowInsetsCompat\.Type\.systemBars\(\)/, "the system bars are the furniture in question");
+  assert.match(run, /Type\.displayCutout\(\)/, "and the camera cutout, which is not a system bar");
+  assert.match(run, /view\.setPadding\(/, "the inset becomes padding on the content view");
+  assert.match(run, /android\.R\.id\.content/, "android.R.id.content holds the webview, whatever the template calls it");
+  assert.match(
+    run,
+    /has no onCreate to patch/,
+    "and it fails loudly when the template changes shape: a patch that quietly matches nothing is how an unsigned APK shipped",
+  );
+  const generatedAt = names.findIndex((name) => /Generate the Android project/i.test(name));
+  const patchedAt = names.findIndex((name) => /Keep the status bar out/i.test(name));
+  const builtAt = names.findIndex((name) => /Build the APK/i.test(name));
+  assert.ok(
+    generatedAt >= 0 && patchedAt > generatedAt && builtAt > patchedAt,
+    `the order has to be generate → patch → build (got ${generatedAt} → ${patchedAt} → ${builtAt}): patching the project after the build changes nothing in the APK`,
   );
 });

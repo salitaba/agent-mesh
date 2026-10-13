@@ -155,9 +155,59 @@ jobs:
       # src-tauri/icons/android when it does not. The launcher icon is read from the
       # project, and it is rendered from the same 1024px master the desktop
       # installers use.
+
       - name: Render the icon set onto the generated project
         working-directory: apps/desktop
         run: npm run icon -- icon.png
+
+      # Tauri's own activity calls `enableEdgeToEdge()`, which is right — the app's background should reach the screen's
+      # edges — but nothing then keeps the platform's furniture out of the way, and on a real phone (13 October 2026)
+      # the status bar's clock and battery were drawn straight over the app's header. The fix is the one Android's own
+      # guidance gives for an app that has opted into edge to edge: pad the content by the inset the platform reports.
+      # It happens here because the Android project is generated per run and nobody on the author's machine can compile
+      # Kotlin — and the anchor is checked, so a template that changes shape fails loudly instead of quietly doing
+      # nothing.
+      - name: Keep the status bar out of the app's header
+        run: |
+          activity=$(find apps/desktop/src-tauri/gen/android/app/src/main -name 'MainActivity.kt' | head -1)
+          if [ -z "$activity" ]; then
+            echo "::error::MainActivity.kt was not generated where this expects it"
+            exit 1
+          fi
+          python3 - "$activity" <<'PY'
+          import pathlib, sys
+
+          path = pathlib.Path(sys.argv[1])
+          source = path.read_text()
+          anchor = "super.onCreate(savedInstanceState)"
+          if anchor not in source:
+              sys.exit(f"::error::{path} has no onCreate to patch: the template changed shape")
+          if "setOnApplyWindowInsetsListener" in source:
+              print(f"{path} is already patched")
+              raise SystemExit(0)
+          patch = """
+              // The window is edge to edge (Tauri's activity calls enableEdgeToEdge), so the platform's own furniture
+              // has to be kept out of the way by hand: without this the status bar's clock and battery are drawn over
+              // the app's own header. The inset is the platform's own measurement of that furniture, and padding the
+              // content by it is the whole fix.
+              val content = findViewById<android.view.View>(android.R.id.content)
+              ViewCompat.setOnApplyWindowInsetsListener(content) { view, insets ->
+                val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout())
+                view.setPadding(bars.left, bars.top, bars.right, bars.bottom)
+                insets
+              }
+          """
+          source = source.replace(anchor, anchor + "\n" + patch, 1)
+          lines = source.split("\n")
+          last = max(index for index, line in enumerate(lines) if line.startswith("import "))
+          lines[last + 1:last + 1] = [
+              "import androidx.core.view.ViewCompat",
+              "import androidx.core.view.WindowInsetsCompat",
+          ]
+          path.write_text("\n".join(lines))
+          print(f"patched {path}")
+          PY
+          grep -n "setOnApplyWindowInsetsListener\|^import androidx.core" "$activity"
 
       # APKs only. An AAB is what Play takes, and Play refuses an unsigned one, so
       # building one here would produce a file nobody can use — see the note below.
