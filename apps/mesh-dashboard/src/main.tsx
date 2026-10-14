@@ -13,6 +13,7 @@ import Steps from "./views/Steps";
 import Agents from "./views/Agents";
 import Events from "./views/Events";
 import Artifacts from "./views/Artifacts";
+import Playground from "./views/Playground";
 import Cost from "./views/Cost";
 import Escalations from "./views/Escalations";
 import Gates from "./views/Gates";
@@ -43,6 +44,8 @@ function CurrentView({ view }: { view: string }): React.JSX.Element {
       return <Cost />;
     case "product":
       return <Product />;
+    case "playground":
+      return <Playground />;
     case "escalations":
       return <Escalations />;
     case "gates":

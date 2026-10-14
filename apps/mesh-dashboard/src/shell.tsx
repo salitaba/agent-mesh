@@ -45,6 +45,7 @@ const NAV: Array<{ section: string; items: NavItem[] }> = [
     items: [
       { view: "artifacts", icon: "files", label: "Files", title: "Files and documents agents produced, with versions." },
       { view: "product", icon: "product", label: "Product", title: "The delivered codebase: browse files, build, test, run scenarios, open the playground." },
+      { view: "playground", icon: "code", label: "Playground", title: "Type a command and run it in the delivered product's own checkout, then read what it prints." },
       { view: "cost", icon: "cost", label: "Cost", title: "Token spend and budgets." },
     ],
   },

@@ -3172,6 +3172,38 @@ export function createHttpServer(instance: MeshInstance, opts: { dashboardDir?: 
         const minted = previews.mint();
         return json(200, { path: minted.path, expiresAt: new Date(minted.expiresAt).toISOString() });
       }
+      // The operator's own terminal for the thing they paid for. The seats have had this all along (`test.execute`);
+      // this points it at the person who owns the workspace. Same hygiene as the script runner above: the code being
+      // run comes from seats, so every `MESH_*` variable is withheld from it by `productRunEnv`.
+      //
+      // A console is not a terminal, so nothing here waits forever: a run is killed on a clock the caller may shorten
+      // but never lengthen past five minutes.
+      if (parts[0] === "playground" && parts[1] === "exec" && parts.length === 2 && req.method === "POST") {
+        const b = await body();
+        const command = typeof b.command === "string" ? b.command.trim() : "";
+        if (!command) return json(400, { error: "provide a `command`" });
+        if (command.length > 2000) return json(400, { error: "command is too long" });
+        const win = process.platform === "win32";
+        const run = startRun(wsRoot, command, { cmd: win ? "cmd" : "sh", args: win ? ["/c", command] : ["-c", command] });
+        if (!run) return json(409, { error: "a run is already in progress" });
+        // The log opens with what the operator typed rather than the shell that carried it: pasted output should say
+        // what produced it, and `sh -c` is this server's detail, not theirs.
+        run.log = `$ ${command}\n`;
+        const timeoutMs = Math.min(Math.max(Number(b.timeoutMs) || 60_000, 1_000), 300_000);
+        setTimeout(() => {
+          const active = runs.get(run.id);
+          if (active && !active.done) killRun(run.id);
+        }, timeoutMs).unref();
+        return json(201, { runId: run.id, timeoutMs });
+      }
+      if (parts[0] === "playground" && parts[1] === "exec" && parts.length === 3 && req.method === "GET") {
+        return json(200, runStatus(parts[2]));
+      }
+      if (parts[0] === "playground" && parts[1] === "commands" && parts.length === 2 && req.method === "GET") {
+        // The checkout is named in the answer as well: the panel can say where a command will run, and a reader of the
+        // route does not have to know this server's layout to use it.
+        return json(200, { productRoot: wsRoot, commands: playgroundCommands(wsRoot) });
+      }
       if (parts[0] === "playground" && req.method === "GET") return servePlayground(res, parts.slice(1), false);
 
       // ---------------------------------------------------------- dashboard
@@ -3420,6 +3452,31 @@ const RUN_ENV_WITHHELD = new Set(["ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "
  * above. The rest passes through so PATH, HOME, npm config and the like keep
  * builds working. The bridge secrets are never in the environment at all.
  */
+/**
+ * The commands a product declares for itself: the entry points in its `bin`, and its package scripts. That is the
+ * operator's first move in the playground, without having to know the product's layout — for the CLI a mesh just built
+ * (`bin/skillctl.js`) this is `node bin/skillctl.js --help`, which is also how its own subcommands are found. Nothing
+ * here guesses a subcommand: the product is asked, which is what a playground is for.
+ */
+function playgroundCommands(root: string): Array<{ command: string; label: string; kind: "bin" | "script" }> {
+  const out: Array<{ command: string; label: string; kind: "bin" | "script" }> = [];
+  try {
+    const pkg = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8")) as {
+      bin?: string | Record<string, string>;
+      scripts?: Record<string, string>;
+    };
+    const bin = pkg.bin;
+    if (typeof bin === "string") out.push({ command: `node ${bin} --help`, label: "run the product", kind: "bin" });
+    else if (bin && typeof bin === "object") {
+      for (const [name, rel] of Object.entries(bin)) out.push({ command: `node ${rel} --help`, label: `run ${name}`, kind: "bin" });
+    }
+    for (const name of Object.keys(pkg.scripts ?? {})) out.push({ command: `npm run ${name}`, label: name, kind: "script" });
+  } catch {
+    /* no package.json to read: the operator can still type a command, which is the whole point of the box */
+  }
+  return out;
+}
+
 function productRunEnv(): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = {};
   for (const [k, v] of Object.entries(process.env)) {

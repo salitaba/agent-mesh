@@ -7,6 +7,22 @@ sections 1 to 26) are described there, run by run.
 
 ## Unreleased
 
+### Added: a playground the owner can run the product in
+
+A mesh builds a product in a workspace, and the seats have always been able to run it (`test.execute`) — the person who
+paid could not. The complaint that produced this: *"when it delivered I can run it in playground"*, about a CLI whose own
+`--help` worked the moment anyone typed it, and whose owner had nowhere to type it.
+
+The console now has a **Playground**: it offers the entry points the product declares for itself (`bin` and package
+scripts, via `GET /playground/commands`, which also names the checkout they will run in), runs any command the operator
+types there (`POST /playground/exec`), and streams what it prints back (`GET /playground/exec/<id>`, with the command as
+the log's first line so a pasted output says what produced it). A run is killed on a clock — a console is not a terminal
+— and carries the same hygiene as the script runner beside it: `productRunEnv()` withholds every `MESH_*` variable,
+because the code being run was written by agents.
+
+This is the owner-side twin of the run gate above: the mesh must run the product before it may say "Delivered", and the
+owner can now run it whenever they like, from a phone.
+
 ### Fixed: a mission that ships code may not call itself delivered until the product has been run
 
 A live mesh delivered a repository of tests and docs around a CLI that **no seat had ever started**. 47 CodePatches
