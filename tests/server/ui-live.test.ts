@@ -22,14 +22,23 @@ const PRODUCT_UI = [
   'const TOKEN = "testtoken1234";',
   "const server = http.createServer((req, res) => {",
   '  const u = new URL(req.url ?? "/", "http://127.0.0.1");',
-  '  if (u.searchParams.get("t") !== TOKEN) { res.writeHead(403, { "content-type": "text/plain" }); return res.end("no token"); }',
+  '  const cookie = String(req.headers.cookie ?? "");',
+  '  const handed = /(^|;\\s*)sid=testtoken1234(;|$)/.test(cookie);',
+  "  // The handshake the live mesh's product uses: the tokenized URL answers 302 with a cookie, and then the cookie is",
+  "  // what authenticates. A sandboxed page keeps no cookies, so the console has to hold this session for it.",
+  '  if (u.pathname === "/" && u.searchParams.get("t") === TOKEN && !handed) {',
+  '    res.writeHead(302, { "set-cookie": `sid=${TOKEN}; HttpOnly; Path=/`, location: "/" });',
+  '    return res.end();',
+  "  }",
+  '  if (!handed) { res.writeHead(403, { "content-type": "text/plain" }); return res.end("no session"); }',
   '  if (u.pathname === "/") {',
   '    res.writeHead(200, { "content-type": "text/html" });',
-  '    return res.end(\'<!doctype html><link rel="stylesheet" href="/style.css"><p id="out"></p><script>fetch("/api/action").then((r) => r.text()).then((t) => { document.getElementById("out").textContent = t; });</script>\');',
+  `    return res.end('<!doctype html><link rel="stylesheet" href="/style.css"><p id="out"></p><script>fetch("/api/action").then((r) => r.text()).then((t) => { document.getElementById("out").textContent = t; });</script>');`,
   "  }",
+  '  if (u.pathname === "/style.css") { res.writeHead(200, { "content-type": "text/css" }); return res.end("body{color:red}"); }',
   '  if (u.pathname === "/api/action") {',
   '    res.writeHead(200, { "content-type": "application/json" });',
-  '    return res.end(JSON.stringify({ ran: "upstream", token: u.searchParams.get("t") }));',
+  '    return res.end(JSON.stringify({ ran: "upstream", via: cookie }));',
   "  }",
   '  res.writeHead(404, { "content-type": "text/plain" });',
   '  res.end("nothing there");',
@@ -68,17 +77,20 @@ test("the product's UI: started on request, port and token learned from what it 
     assert.ok(state.port && state.port > 0, `the port came from the product's own line: ${state.log}`);
     assert.equal(state.log.includes("listening on"), true, "and the owner can read what it printed");
 
+    // The product answers its tokenized URL with a redirect and a cookie. The page cannot hold the cookie, so this is
+    // the check that the console held it: the redirected request comes back 200 instead of another 403.
     const page = await fetch(`${base}${state.livePath!}`);
-    assert.equal(page.status, 200, "the sandboxed page loads through the console");
+    assert.equal(page.status, 200, "the sandboxed page loads through the console after the product's own handshake");
+    assert.equal((await fetch(`${base}${state.livePath!}style.css`)).status, 200, "and the file it links, likewise");
     const html = await page.text();
     assert.match(html, /href="\.\/style\.css"/, "a path written for the product's root is made relative to the page");
     assert.match(html, /fetch\("\.\/api\/action"\)/, "including one inside its script, which is how this product's page asks for data");
 
     const api = await fetch(`${base}${state.livePath!}api/action`);
     assert.equal(api.status, 200, "the page's own fetch reaches the product's API through the proxy");
-    const answer = (await api.json()) as { ran: string; token: string };
+    const answer = (await api.json()) as { ran: string; via: string };
     assert.equal(answer.ran, "upstream", "and it is the product answering, not the console");
-    assert.equal(answer.token, "testtoken1234", "with the token the product printed, which the proxy carries for the page");
+    assert.match(answer.via, /sid=testtoken1234/, "carrying the session cookie the product handed out, which the page could not keep");
     assert.equal(api.headers.get("access-control-allow-origin"), "*", "readable from an opaque origin, or the data would never arrive");
 
     assert.equal((await post("/ui/stop", {})).status, 200);

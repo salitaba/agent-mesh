@@ -3314,7 +3314,10 @@ export function createHttpServer(instance: MeshInstance, opts: { dashboardDir?: 
         // Everything after `<prefix>/<capability>/`, with the page's own query — this proxy mirrors the product's root,
         // so a path the page addressed absolutely means here exactly what it meant there.
         const rest = `${parts.slice(2).join("/")}${u.search}`;
-        return proxyToUi(req, res, target, rest);
+        return proxyToUi(req, res, target, rest, {
+          cookies: () => liveUi.cookies(),
+          absorb: (v) => liveUi.absorb(v),
+        });
       }
       if (parts[0] === "playground" && parts[1] === "commands" && parts.length === 2 && req.method === "GET") {
         // The checkout is named in the answer as well: the panel can say where a command will run, and a reader of the

@@ -56,12 +56,37 @@ export class LiveUi {
   private child: ChildProcess | null = null;
   private state: LiveUiState | null = null;
   private timer: NodeJS.Timeout | null = null;
+  /**
+   * The session the product hands out, held here rather than in the page.
+   *
+   * A UI that authenticates by handing `Set-Cookie` to the browser cannot authenticate a sandboxed page at all — an
+   * opaque origin keeps no cookies — and the live mesh's product does exactly that: its tokenized URL answers `302`
+   * with a cookie and then serves. So the console keeps the jar and presents it upstream, which is also why nothing the
+   * product sets can reach the page or the console's own cookies.
+   */
+  private readonly jar = new Map<string, string>();
 
   constructor(private readonly opts: { cwd: string; env: NodeJS.ProcessEnv; maxLifetimeMs?: number }) {}
 
   /** What the console knows: the command, whether it is up, where it listens, and everything it has printed. */
   get(): LiveUiState | null {
     return this.state;
+  }
+
+  /** The cookie header to present upstream: what the product set, and nothing else. */
+  cookies(): string {
+    return [...this.jar.entries()].map(([k, v]) => `${k}=${v}`).join("; ");
+  }
+
+  /** Remember what the product set, keeping only name and value: attributes govern a browser, and there is none here. */
+  absorb(setCookie: string[] | string | undefined): void {
+    if (!setCookie) return;
+    for (const line of Array.isArray(setCookie) ? setCookie : [setCookie]) {
+      const pair = line.split(";")[0];
+      const eq = pair.indexOf("=");
+      if (eq <= 0) continue;
+      this.jar.set(pair.slice(0, eq).trim(), pair.slice(eq + 1).trim());
+    }
   }
 
   /** Where the sandboxed page should load the proxy, or null while the product has not named its port. */
@@ -78,6 +103,7 @@ export class LiveUi {
     if (!trimmed) return { ok: false, code: 400, error: "a command is required: the product's own way of starting its UI" };
     if (trimmed.length > 400) return { ok: false, code: 400, error: "that command is too long to be one" };
 
+    this.jar.clear();
     const startedAt = Date.now();
     const expiresAt = startedAt + (this.opts.maxLifetimeMs ?? MAX_LIFETIME_MS);
     this.state = { command: trimmed, startedAt, port: null, token: null, url: null, log: "", exitCode: null, stopped: false, expiresAt };
@@ -164,6 +190,7 @@ export function proxyToUi(
   res: http.ServerResponse,
   target: { port: number; token: string | null },
   rest: string,
+  session: { cookies(): string; absorb(v: string[] | string | undefined): void } = { cookies: () => "", absorb: () => {} },
 ): Promise<void> {
   return new Promise<void>((resolve) => {
     const query = rest.includes("?") ? rest.slice(rest.indexOf("?")) : "";
@@ -177,6 +204,9 @@ export function proxyToUi(
     }
     headers["accept-encoding"] = "identity";
     headers.host = `127.0.0.1:${target.port}`;
+    // The product's own handshake, carried for the page: it cannot hold a cookie, so the console holds it.
+    const jar = session.cookies();
+    if (jar) headers.cookie = jar;
     const upstream = http.request({ host: "127.0.0.1", port: target.port, method: req.method, path: `/${path}${auth}`, headers }, (up) => {
       const type = String(up.headers["content-type"] ?? "");
       const textual = /^(text\/|application\/(json|javascript|xml)|image\/svg)/.test(type);
@@ -193,6 +223,11 @@ export function proxyToUi(
       out["access-control-allow-methods"] = "GET,POST,OPTIONS";
       out["cache-control"] = "no-cache";
       delete out["content-length"];
+      session.absorb(up.headers["set-cookie"]);
+      delete out["set-cookie"];
+      // A redirect the product wrote against its own root, kept inside the proxy: the browser cannot reach its port.
+      const location = String(up.headers["location"] ?? "");
+      if (location.startsWith("/") && !location.startsWith("//")) out.location = `./${location.slice(1)}`;
       res.writeHead(up.statusCode ?? 502, out);
       if (!textual) {
         up.pipe(res);
