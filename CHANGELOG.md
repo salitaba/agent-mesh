@@ -7,6 +7,23 @@ sections 1 to 26) are described there, run by run.
 
 ## Unreleased
 
+### Added: the product's own UI, running — started from the console, proxied into it
+
+Some products do not ship a playground page; they *serve* their UI from a command of their own. The console could frame
+a file but not that, so the Product page now starts the command and proxies the port: a live mesh's product printed
+`listening on http://127.0.0.1:41839/?t=…`, bound loopback, and authenticated every request with that token.
+
+- The port and the token are read out of what the product prints. Nothing is guessed, and no request can point the
+  proxy elsewhere: the target is fixed when the command starts.
+- The frame keeps its opaque origin (no `allow-same-origin`), so the product's script can read neither the console nor
+  its API. The token the product printed is appended to every upstream request, and its `Set-Cookie` is dropped — a
+  sandboxed page could not keep one anyway.
+- A page written for its own origin addresses its API absolutely (`/api/action`), which breaks the moment it is served
+  from somewhere else. Those paths are made relative to the page. That is sound rather than clever here: the proxy
+  mirrors the product's root one to one, so a made-relative path reaches exactly the request the absolute one would.
+- One at a time, stopped by the owner, and killed on a generous clock besides; it dies with the engine, since it is that
+  process's child.
+
 ### Fixed: a product cannot be delivered without the playground the console opens
 
 The console frames `apps/playground/index.html` out of the product's own tree — the platform's promise that an owner can

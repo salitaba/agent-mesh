@@ -1,4 +1,15 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+
+/** What `GET /<project>/ui` answers with (see apps/mesh-server/src/ui-live.ts). */
+type LiveUiAnswer = {
+  running: boolean;
+  command: string | null;
+  port: number | null;
+  log: string;
+  livePath: string | null;
+  exitCode?: number | null;
+  stopped?: boolean;
+};
 import type { FormEvent } from "react";
 import "./product.css";
 import { dur } from "../format";
@@ -183,6 +194,14 @@ export default function Product(): React.JSX.Element {
   // Which page the console will open, and which others the product ships (its own UI), both named by the server.
   const [pgPage, setPgPage] = useState<string | null>(null);
   const [pgAlt, setPgAlt] = useState<{ dir?: string; file?: string }[]>([]);
+  // The product's own UI, running (see apps/mesh-server/src/ui-live.ts): the owner starts its command, the console
+  // proxies the loopback port it names, and the sandboxed frame loads it with the data flowing.
+  const [live, setLive] = useState<LiveUiAnswer>({ running: false, command: null, port: null, log: "", livePath: null });
+  const [liveCmd, setLiveCmd] = useState("");
+  const [liveAsked, setLiveAsked] = useState(false);
+  const [liveOpen, setLiveOpen] = useState(false);
+  const [liveSrc, setLiveSrc] = useState<string | null>(null);
+  const [liveErr, setLiveErr] = useState<string | null>(null);
   const [pg, setPg] = useState(false);
   const [pgErr, setPgErr] = useState(false);
   // The playground is agent-written, so it is framed by a signed link and in a sandbox (see apps/mesh-server/src/preview.ts),
@@ -255,6 +274,59 @@ export default function Product(): React.JSX.Element {
     });
     return () => { dead = true; };
   }, [dir, goalId, attempt, client]);
+
+  // Poll only while it matters: while the product is starting, and while it is up (so its dying is noticed too).
+  const liveWorth = liveAsked && (live.running || live.exitCode == null);
+  useEffect(() => {
+    if (!liveWorth) return;
+    let dead = false;
+    const tick = (): void => {
+      client.api("GET", "/ui").then(({ json }) => {
+        if (dead || !json) return;
+        const s = json as LiveUiAnswer;
+        setLive(s);
+        setLiveCmd((c) => (c ? c : (s.command ?? "")));
+      }).catch(() => { /* the next tick asks again */ });
+    };
+    tick();
+    const id = setInterval(tick, 1500);
+    return () => { dead = true; clearInterval(id); };
+  }, [liveWorth, client]);
+
+  const startLive = (): void => {
+    setLiveErr(null);
+    setLiveAsked(true);
+    client.api("POST", "/ui/start", { command: liveCmd }).then(({ status, json }) => {
+      if (status >= 400) {
+        const why = (json as { error?: unknown } | null)?.error;
+        setLiveErr(typeof why === "string" ? why : "the product's UI would not start");
+        setLiveAsked(false);
+        return;
+      }
+      if (json) {
+        const s = json as LiveUiAnswer;
+        setLive(s);
+        setLiveCmd((c) => (c ? c : (s.command ?? "")));
+      }
+    }).catch(() => { setLiveErr("the console could not reach the host"); setLiveAsked(false); });
+  };
+
+  const stopLive = (): void => {
+    setLiveOpen(false);
+    setLiveSrc(null);
+    client.api("POST", "/ui/stop", {}).then(({ json }) => {
+      const s = (json as { state?: LiveUiAnswer } | null)?.state;
+      if (s) setLive(s);
+    }).catch(() => { /* stopping is best-effort; the clock on the host stops it too */ });
+  };
+
+  const openLive = (): void => {
+    if (liveOpen) { setLiveOpen(false); setLiveSrc(null); return; }
+    if (!live.livePath) return;
+    // Captured once: the link is minted per poll, and re-pointing the frame at a new one would reload it under the owner.
+    setLiveSrc(projectPath(projectId, live.livePath));
+    setLiveOpen(true);
+  };
 
   // Whether the product ships a page the console can open, asked of the server rather than guessed from a path: it
   // looks in apps/playground/ first and then where products put their own UI (public/, dist/, build/, a root
@@ -537,6 +609,45 @@ export default function Product(): React.JSX.Element {
                 <iframe title="Playground" src={pgSrc} sandbox="allow-scripts allow-forms allow-popups allow-modals" className="playframe" onError={() => setPgErr(true)} />
               ) : (
                 <p className="prod-note" role="status">Opening the playground…</p>
+              )
+            ) : null}
+          </section>
+
+          <section className="card prod-pg" aria-labelledby="live-h">
+            <div className="prod-h">
+              <h3 id="live-h">The product&apos;s UI, running</h3>
+              <span className="grow" />
+              {live.running ? <Button variant="small" onClick={openLive}>{liveOpen ? "Close it" : "Open it"}</Button> : null}
+              {live.running ? <Button variant="small" onClick={stopLive}>Stop</Button> : null}
+            </div>
+            <p className="prod-note">
+              {live.running
+                ? `Running on port ${live.port} of the workspace, which only the console can reach: every byte of it loads through here, and the page keeps its opaque origin, so it can read neither this console nor its API.`
+                : "Some products serve their UI rather than shipping a page to frame — a command of their own, on a loopback port. Start it here and use it in this window: the console learns the port from what the product prints, and proxies it."}
+            </p>
+            {!live.running ? (
+              <div className="prod-live-start">
+                <label htmlFor="live-cmd">how this product starts its UI</label>
+                <input
+                  id="live-cmd"
+                  value={liveCmd}
+                  placeholder="node bin/skillctl.js ui"
+                  onChange={(e) => setLiveCmd(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === "Enter") startLive(); }}
+                />
+                <Button variant="small" onClick={startLive}>Start it</Button>
+              </div>
+            ) : null}
+            {liveErr ? <p className="prod-note" role="alert">{liveErr}</p> : null}
+            {live.log ? (
+              <pre className="prod-log" aria-label="what the product printed">{live.log.split("\n").slice(-12).join("\n")}</pre>
+            ) : null}
+            {liveOpen ? (
+              liveSrc ? (
+                // No allow-same-origin: the product's script cannot reach the console's API with the owner's session.
+                <iframe title="The product's UI" src={liveSrc} sandbox="allow-scripts allow-forms allow-popups allow-modals" className="playframe" />
+              ) : (
+                <p className="prod-note" role="status">Opening it…</p>
               )
             ) : null}
           </section>

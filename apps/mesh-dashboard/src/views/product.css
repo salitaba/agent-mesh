@@ -124,3 +124,44 @@
   .prod-facts > div { padding-right: var(--s4); }
   .prod-facts > div + div { padding-left: var(--s4); }
 }
+
+/* The product's own UI, running: a command the owner starts, and the log it prints while it does. */
+.prod-live-start {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 4px 0 10px;
+}
+.prod-live-start label {
+  font-size: 12px;
+  color: var(--ink-3, #8b94a3);
+  letter-spacing: 0.02em;
+}
+.prod-live-start input {
+  flex: 1 1 16rem;
+  min-width: 0;
+  background: var(--panel-2, #1b1e24);
+  border: 1px solid var(--line, #2a2f38);
+  border-radius: 6px;
+  color: inherit;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 13px;
+  padding: 7px 9px;
+}
+.prod-live-start input:focus { outline: 2px solid var(--accent, #7dd3a0); outline-offset: 1px; }
+.prod-log {
+  margin: 0 0 10px;
+  max-height: 12rem;
+  overflow: auto;
+  background: var(--panel-2, #1b1e24);
+  border: 1px solid var(--line, #2a2f38);
+  border-radius: 6px;
+  padding: 9px 11px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--ink-3, #c3cad6);
+}

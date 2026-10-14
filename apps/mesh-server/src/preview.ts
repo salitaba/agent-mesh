@@ -22,6 +22,9 @@ export const PREVIEW_TTL_MS = 8 * 60 * 60 * 1000;
 /** Where a capability's files are served from, under the project's own path. */
 export const PREVIEW_PREFIX = "_pg";
 
+/** The same mechanism for the product's own live UI: a separate prefix, so neither capability opens the other. */
+export const LIVE_UI_PREFIX = "_ui";
+
 /**
  * What a capability opens, laid out as the product's own tree: the page at `apps/playground/` and the
  * `presets/` beside `apps/`. Keeping the layout is what lets a page's own relative URL
@@ -54,6 +57,7 @@ export class PreviewCapabilities {
   constructor(
     private readonly now: () => number = Date.now,
     private readonly ttlMs: number = PREVIEW_TTL_MS,
+    private readonly prefix: string = PREVIEW_PREFIX,
   ) {}
 
   private sign(expiresAt: number): string {
@@ -71,7 +75,7 @@ export class PreviewCapabilities {
     const expiresAt = this.now() + this.ttlMs;
     const capability = `${expiresAt}.${this.sign(expiresAt)}`;
     const trailing = pageDir.length > 0 ? `${pageDir.join("/")}/` : "";
-    return { capability, path: `/${PREVIEW_PREFIX}/${capability}/${trailing}`, expiresAt };
+    return { capability, path: `/${this.prefix}/${capability}/${trailing}`, expiresAt };
   }
 
   /** Whether `capability` was minted by this server and has not lapsed. */

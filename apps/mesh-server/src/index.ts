@@ -59,7 +59,8 @@ import { createNativeRuntime } from "./native";
 import { ClaudeRuntimeAdapter, describeHostLeaks, describeIsolation, toClaudeModelId } from "../../../packages/runtime-claude/src/index";
 import { callerKind, getApiToken, handleAuthRoute, requireAuth, resolveActor } from "./auth";
 import { SessionStore } from "./sessions";
-import { PREVIEW_PAGE_CANDIDATES, PREVIEW_PRESETS_DIR, PREVIEW_PREFIX, PreviewCapabilities } from "./preview";
+import { LIVE_UI_PREFIX, PREVIEW_PAGE_CANDIDATES, PREVIEW_PRESETS_DIR, PREVIEW_PREFIX, PreviewCapabilities } from "./preview";
+import { LiveUi, proxyToUi } from "./ui-live";
 import { LicenseProvider, enforceOrWarn, licenseView } from "./license";
 import { MANAGED_PROVIDER, managedModels, rewriteForManagedModels } from "./managed";
 import { configuredPrices, licenseMetrics, parseUsageQuery, usageAnswer } from "./commercial";
@@ -1536,6 +1537,10 @@ export function createHttpServer(instance: MeshInstance, opts: { dashboardDir?: 
   const sessions = new SessionStore();
   const limiter = new FailureLimiter();
   const previews = new PreviewCapabilities();
+  // The product's own UI, running: the owner starts it, the console proxies its loopback port, the sandboxed iframe
+  // loads it. Its capability is minted under its own prefix, so a playground link cannot open this and vice versa.
+  const liveUi = new LiveUi({ cwd: instance.productPath, env: productRunEnv() });
+  const liveUiLinks = new PreviewCapabilities(Date.now, undefined, LIVE_UI_PREFIX);
   // The licence, re-read on a short timer so one installed while this server is up applies without a restart.
   const licenses = opts.licenses ?? new LicenseProvider({ home: meshHome() });
 
@@ -1637,6 +1642,27 @@ export function createHttpServer(instance: MeshInstance, opts: { dashboardDir?: 
       if (!abs || !fs.existsSync(abs)) return whole;
       return `${pre}./${target}${post}`;
     });
+  };
+
+  /**
+   * What the console tells the owner about the product's UI: its command, whether it is up, the port it named, the
+   * tail of what it printed, and — once it is up — the link the sandboxed page loads it through.
+   */
+  const describeLiveUi = (): Record<string, unknown> => {
+    const s = liveUi.get();
+    if (!s) return { running: false, command: null, port: null, url: null, log: "", livePath: null };
+    const up = liveUi.target();
+    return {
+      running: up !== null && s.exitCode === null,
+      command: s.command,
+      port: s.port,
+      url: s.url,
+      log: s.log.slice(-4000),
+      exitCode: s.exitCode,
+      stopped: s.stopped,
+      expiresAt: new Date(s.expiresAt).toISOString(),
+      livePath: up ? liveUiLinks.mint([]).path : null,
+    };
   };
 
   const servePlayground = async (res: http.ServerResponse, rest: string[], readable: boolean): Promise<void> => {
@@ -3254,6 +3280,41 @@ export function createHttpServer(instance: MeshInstance, opts: { dashboardDir?: 
       }
       if (parts[0] === "playground" && parts[1] === "exec" && parts.length === 3 && req.method === "GET") {
         return json(200, runStatus(parts[2]));
+      }
+      // ------------------------------------------------- the product's own UI, running
+      // Some products serve their UI rather than shipping a page for the console to frame. Everything below is that:
+      // start it as the owner asks, watch what it prints (its port and token come from its own output — nothing is
+      // guessed), and let the sandboxed page load it through here. The target is fixed at start; no request can move it.
+      if (parts[0] === "ui" && parts[1] === "start" && parts.length === 2 && req.method === "POST") {
+        const asked = (await body().catch(() => ({}))) as { command?: unknown };
+        const started = liveUi.start(typeof asked?.command === "string" ? asked.command : "");
+        if (!started.ok) return json(started.code, { error: started.error });
+        return json(201, describeLiveUi());
+      }
+      if (parts[0] === "ui" && parts[1] === "stop" && parts.length === 2 && req.method === "POST") {
+        const stopped = liveUi.stop();
+        return json(200, { stopped, state: describeLiveUi() });
+      }
+      if (parts[0] === "ui" && parts.length === 1 && req.method === "GET") return json(200, describeLiveUi());
+      if (parts[0] === LIVE_UI_PREFIX && parts.length >= 2 && req.method === "OPTIONS") {
+        // The page is an opaque origin, so its own writes preflight. The product's server does not answer these.
+        res.writeHead(204, {
+          "access-control-allow-origin": "*",
+          "access-control-allow-headers": "content-type",
+          "access-control-allow-methods": "GET,POST,OPTIONS",
+          "access-control-max-age": "600",
+        });
+        res.end();
+        return;
+      }
+      if (parts[0] === LIVE_UI_PREFIX && parts.length >= 2 && req.method === "GET") {
+        const target = liveUi.target();
+        if (!liveUiLinks.verify(parts[1])) return json(403, { error: "this UI link is not valid, or has expired: start it again" });
+        if (!target) return json(409, { error: "the product's UI is not running" });
+        // Everything after `<prefix>/<capability>/`, with the page's own query — this proxy mirrors the product's root,
+        // so a path the page addressed absolutely means here exactly what it meant there.
+        const rest = `${parts.slice(2).join("/")}${u.search}`;
+        return proxyToUi(req, res, target, rest);
       }
       if (parts[0] === "playground" && parts[1] === "commands" && parts.length === 2 && req.method === "GET") {
         // The checkout is named in the answer as well: the panel can say where a command will run, and a reader of the
