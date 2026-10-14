@@ -1,4 +1,6 @@
 import { test } from "node:test";
+import * as fs from "fs";
+import * as path from "path";
 import assert from "node:assert/strict";
 import { makeMesh } from "../helpers";
 import { runEvidence, shippedCode } from "../../packages/core/src/projections";
@@ -56,7 +58,14 @@ type Mesh = Awaited<ReturnType<typeof makeMesh>>;
 /** A mesh whose seats could run the product: the default fixture runtime is the stub, which cannot. */
 async function fixture(runtime = "claude"): Promise<Mesh> {
   const m = await makeMesh({ agents: AGENTS, mayContact: COMM, mode: "parked", criteria: CRITERIA, runtime } as never);
-  (m.supervisor as unknown as { deps: { workspace?: WorkspacePort } }).deps.workspace = landing();
+  // A product checkout that already carries the page the console opens: the playground hold is a different gate
+  // (`tests/core/playground-page.test.ts`), and this spec is about the run.
+  const product = fs.mkdtempSync(path.join(process.env.TMPDIR ?? "/tmp", "run-evidence-"));
+  fs.mkdirSync(path.join(product, "apps", "playground"), { recursive: true });
+  fs.writeFileSync(path.join(product, "apps", "playground", "index.html"), "<!doctype html><title>the product</title>", "utf8");
+  const workspace = landing();
+  (workspace as { mainPath: string }).mainPath = product;
+  (m.supervisor as unknown as { deps: { workspace?: WorkspacePort } }).deps.workspace = workspace;
   return m;
 }
 

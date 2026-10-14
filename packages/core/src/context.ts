@@ -1607,7 +1607,11 @@ export function renderContextInstructions(bundle: AgentContextBundle): string {
           + "code, its product must be RUN before it can be delivered: start the command a user would actually type, in "
           + "the product's own directory, and record it as an `ExecutionRecord` — the command, the working directory, its "
           + "exit status and what it printed — then get that record verified. A test that imports a module is not a run of "
-          + "the thing a user invokes.",
+          + "the thing a user invokes. And the product must ship a PLAYGROUND: the console opens `apps/playground/index.html` "
+          + "for the owner, so a page there is what makes the product usable without a terminal. Write it with relative "
+          + "references (it is served from that directory, in a sandbox), and have it work on its own: a page that only "
+          + "works while a server of the product is running is not a playground the console can open. A mission that merged "
+          + "code does not complete while the product has none.",
       );
     }
     lines.push("");

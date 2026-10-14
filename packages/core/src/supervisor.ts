@@ -13247,6 +13247,14 @@ export class Supervisor {
     const goal = this.state.goals.get(goalId);
     if (!goal) return;
     if (verdict.kind === "complete" && goal.status !== "COMPLETED") {
+      // The platform promises the owner a playground: the console frames `apps/playground/index.html` from the product's
+      // own tree, read-only, in a sandbox (see `PREVIEW_PAGE_DIR`). Nothing ever asked the seats for one, so a live mesh
+      // (2026-10-14) delivered a product whose UI was a page served by its own command only, and the console said "this
+      // checkout has none" about a product that had one. A mission that ships code is not complete without the page the
+      // console opens. Checked here rather than in the termination verdict on purpose: the verdict is evaluated from
+      // projections alone so that a replay reaches the same answer, and a file on disk is not a projection. Holding is
+      // safe — the page is one file a seat can write, and the stall watchdog asks for it like any other unfinished work.
+      if (!this.productHasPlayground()) return;
       // A card no longer gates completion (`termination.ts`); it is carried
       // instead. The completion record names it — in the event payload and in
       // the audit line — so the log says what was still on the table when the
@@ -14695,6 +14703,31 @@ export class Supervisor {
   private stallIdleFor(): number {
     const idle = this.config.scheduling.stallIdleMs;
     return this.acceptanceReady() || this.finishLineClaims().length > 0 ? Math.max(100, Math.min(idle, Math.floor(idle / ACCEPTANCE_GRACE_DIVISOR))) : idle;
+  }
+
+  /**
+   * Does the product checkout hold the page the console opens as a playground?
+   *
+   * The product's own tree is the truth, so the path is resolved the way the HTTP server resolves it: the artifact
+   * store's `main` checkout when there is one, else the workspace directory itself. Nothing to check is not a reason to
+   * hold a mission, so an absent root, an unmerged tree, a scripted mesh (whose seats cannot write a page) and an
+   * already-completed goal all answer yes — the same scoping, and the same reason, as the run gate.
+   */
+  private productHasPlayground(): boolean {
+    if (this.state.goals.get(this.state.activeGoalId ?? "")?.status === "COMPLETED") return true;
+    const root = this.deps.workspace?.mainPath ?? this.config.workspacePath;
+    if (!root) return true;
+    if (fs.existsSync(path.join(root, "apps", "playground", "index.html"))) return true;
+    const canWrite = Object.values(this.config.agents ?? {}).some((a) => {
+      const rt = a.runtime ?? this.config.defaultRuntime;
+      return !!rt && rt !== "stub";
+    });
+    if (!canWrite) return true;
+    if (![...this.state.artifacts.values()].some((a) => a.type === "CodePatch" && a.status === "MERGED")) return true;
+    this.auditLine(
+      "mission held: the product has no playground at apps/playground/index.html, which is the page the console opens for its owner",
+    );
+    return false;
   }
 
   /** Who to wake for a stalled mission: someone with real work, else rotate across the stuck. */

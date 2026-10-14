@@ -7,6 +7,23 @@ sections 1 to 26) are described there, run by run.
 
 ## Unreleased
 
+### Fixed: a product cannot be delivered without the playground the console opens
+
+The console frames `apps/playground/index.html` out of the product's own tree — the platform's promise that an owner can
+*use* what was built, without a terminal. Nothing ever asked the seats for that page, so a live mesh delivered a UI that
+existed only while its own command was running, and the console said "this checkout has none" about a product that
+visibly had one.
+
+A mission that merged code now cannot complete until the product carries that page, and the seats are told where it goes
+— and that it has to work on its own, with relative references, because it is served from that directory inside a
+sandbox: a page that only works while a server of the product is running is not a playground the console can open.
+
+The check lives in the supervisor rather than in the termination verdict, deliberately: the verdict is evaluated from the
+projections alone so that a replay reaches the same answer, and a file on disk is not a projection. So the verdict may
+say `complete` while the mission is held, and the new spec asserts exactly that as the design. It is scoped from the
+state like the run gate beside it — it applies when the mission merged a patch and its seats could write a file (a
+runtime that is not the stub) — so a scripted mesh is never held.
+
 ### Added: a playground the owner can run the product in
 
 A mesh builds a product in a workspace, and the seats have always been able to run it (`test.execute`) — the person who
