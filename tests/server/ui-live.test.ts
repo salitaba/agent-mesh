@@ -26,7 +26,9 @@ const PRODUCT_UI = [
   '  const handed = /(^|;\\s*)sid=testtoken1234(;|$)/.test(cookie);',
   "  // The handshake the live mesh's product uses: the tokenized URL answers 302 with a cookie, and then the cookie is",
   "  // what authenticates. A sandboxed page keeps no cookies, so the console has to hold this session for it.",
-  '  if (u.pathname === "/" && u.searchParams.get("t") === TOKEN && !handed) {',
+  // Exactly the live product's shape: a tokenized request is answered with the handshake even when a session is
+  // already held. A proxy that appends the token to every request loops for ever here — which is how this was found.
+  '  if (u.searchParams.has("t")) {',
   '    res.writeHead(302, { "set-cookie": `sid=${TOKEN}; HttpOnly; Path=/`, location: "/" });',
   '    return res.end();',
   "  }",

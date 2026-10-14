@@ -195,7 +195,8 @@ export function proxyToUi(
   return new Promise<void>((resolve) => {
     const query = rest.includes("?") ? rest.slice(rest.indexOf("?")) : "";
     const path = rest.includes("?") ? rest.slice(0, rest.indexOf("?")) : rest;
-    const auth = target.token ? `${query ? "&" : "?"}t=${encodeURIComponent(target.token)}` : "";
+    const spend = target.token !== null && session.cookies() === "";
+    const auth = spend ? `${query ? "&" : "?"}t=${encodeURIComponent(target.token!)}` : "";
     const headers: http.OutgoingHttpHeaders = {};
     for (const [k, v] of Object.entries(req.headers)) {
       if (v === undefined) continue;
@@ -205,6 +206,10 @@ export function proxyToUi(
     headers["accept-encoding"] = "identity";
     headers.host = `127.0.0.1:${target.port}`;
     // The product's own handshake, carried for the page: it cannot hold a cookie, so the console holds it.
+    //
+    // The printed token is spent once. A product that answers *every* tokenized request with a redirect (a live one did
+    // exactly that, whatever cookie came with it) turns a token appended forever into an endless redirect; presenting it
+    // only until the product has handed out a session is what that product is asking for.
     const jar = session.cookies();
     if (jar) headers.cookie = jar;
     const upstream = http.request({ host: "127.0.0.1", port: target.port, method: req.method, path: `/${path}${auth}`, headers }, (up) => {
