@@ -15,7 +15,6 @@ import {
   describeScript,
   failureLines,
   hasManifest,
-  hasPlayground,
   isCapped,
   lastLines,
   noScriptsCopy,
@@ -181,6 +180,9 @@ export default function Product(): React.JSX.Element {
   const [run, setRun] = useState<RunState | null>(null);
   const [builtCheck, setBuiltCheck] = useState(0);
   const [playground, setPlayground] = useState<"checking" | "ready" | "missing">("checking");
+  // Which page the console will open, and which others the product ships (its own UI), both named by the server.
+  const [pgPage, setPgPage] = useState<string | null>(null);
+  const [pgAlt, setPgAlt] = useState<{ dir?: string; file?: string }[]>([]);
   const [pg, setPg] = useState(false);
   const [pgErr, setPgErr] = useState(false);
   // The playground is agent-written, so it is framed by a signed link and in a sandbox (see apps/mesh-server/src/preview.ts),
@@ -254,12 +256,19 @@ export default function Product(): React.JSX.Element {
     return () => { dead = true; };
   }, [dir, goalId, attempt, client]);
 
-  // Whether the product ships a playground, asked of the checkout rather than found out by clicking: the server opens
-  // apps/playground/index.html and nothing else. A build that has just passed may have written it, so it is asked again.
+  // Whether the product ships a page the console can open, asked of the server rather than guessed from a path: it
+  // looks in apps/playground/ first and then where products put their own UI (public/, dist/, build/, a root
+  // index.html), and answers with the file it found and any others there are. A build that has just passed may have
+  // written one, so it is asked again.
   useEffect(() => {
     let dead = false;
-    client.api("GET", "/workspace/tree?path=apps%2Fplayground").then(({ json }) => {
-      if (!dead) setPlayground(hasPlayground(Array.isArray(json) ? (json as TreeEntry[]) : null) ? "ready" : "missing");
+    client.api("GET", "/playground/commands").then(({ json }) => {
+      if (dead) return;
+      const answer = (json ?? {}) as { page?: { file?: string } | null; alternates?: { dir?: string; file?: string }[] };
+      const page = answer.page && typeof answer.page.file === "string" ? answer.page.file : null;
+      setPgPage(page);
+      setPgAlt(Array.isArray(answer.alternates) ? answer.alternates.filter((a) => typeof a?.file === "string") : []);
+      setPlayground(page ? "ready" : "missing");
     }).catch(() => { if (!dead) setPlayground("missing"); });
     return () => { dead = true; };
   }, [goalId, attempt, client, builtCheck]);
@@ -389,7 +398,7 @@ export default function Product(): React.JSX.Element {
     requestAnimationFrame(() => document.querySelector<HTMLButtonElement>(".run-btn:not(:disabled)")?.focus());
   };
 
-  const openPg = (): void => {
+  const openPg = (dir?: string): void => {
     if (pg) {
       setPg(false);
       return;
@@ -397,7 +406,8 @@ export default function Product(): React.JSX.Element {
     setPgSrc(null);
     client.api("GET", "/playground/").then(async ({ status, timeout }) => {
       if (timeout || status >= 400) { setPgErr(true); setPg(true); return; }
-      const minted = await client.api("POST", "/playground/session", {});
+      // No `dir` means the page the console frames for this product; naming one opens that page of the product's own.
+      const minted = await client.api("POST", "/playground/session", dir ? { dir } : {});
       const link = typeof minted.json?.path === "string" ? (minted.json.path as string) : null;
       if (minted.status >= 400 || !link) { setPgErr(true); setPg(true); return; }
       // The link is relative to the project, like every other path this view calls.
@@ -502,18 +512,25 @@ export default function Product(): React.JSX.Element {
             <div className="prod-h">
               <h3 id="pg-h">Playground</h3>
               <span className="grow" />
-              {playground === "ready" ? <Button variant="small" onClick={openPg}>{pg ? "Close the playground" : "Open the playground"}</Button> : null}
+              {playground === "ready" ? <Button variant="small" onClick={() => openPg()}>{pg ? "Close the playground" : "Open the playground"}</Button> : null}
             </div>
             <p className="prod-note">
               {playground === "ready"
-                ? "The page this product built at apps/playground/index.html, shown in a sandbox: its scripts run, but they cannot reach this console or its API."
+                ? `The page this product ships at ${pgPage ?? "apps/playground/index.html"}, shown in a sandbox: its scripts run, but they cannot reach this console or its API.`
                 : playground === "checking"
                   ? "Looking for the page this product builds."
-                  : `A playground shows the page at apps/playground/index.html, in a sandbox. This checkout has none.${scripts.some((s) => s.name === "build") ? " If the product's build writes one, run build and the button appears here." : ""}`}
+                  : `A playground shows a page out of the product's own tree — apps/playground/index.html, public/index.html, dist/, build/, or a root index.html. This checkout has none.${scripts.some((s) => s.name === "build") ? " If the product's build writes one, run build and the button appears here." : ""}`}
             </p>
+            {playground === "ready" && !pg && pgAlt.length > 0 ? (
+              <p className="prod-note">
+                The product also ships its own page at {pgAlt.map((a) => a.file).join(" and ")} —{" "}
+                <Button variant="small" onClick={() => openPg(pgAlt[0].dir)}>open that one</Button>. It is written for the
+                product&apos;s own server, so it renders here but cannot fetch its data.
+              </p>
+            ) : null}
             {pg ? (
               pgErr ? (
-                <p className="prod-note">The playground could not be opened. The host did not serve apps/playground/index.html; run the product&apos;s build, then open it again.</p>
+                <p className="prod-note">The playground could not be opened. The host did not serve {pgPage ?? "the product's page"}; run the product&apos;s build, then open it again.</p>
               ) : pgSrc ? (
                 // `sandbox` without allow-same-origin gives the page an opaque origin: its scripts run,
                 // but they cannot call this server's API with the operator's session or read what it answers.

@@ -59,7 +59,7 @@ import { createNativeRuntime } from "./native";
 import { ClaudeRuntimeAdapter, describeHostLeaks, describeIsolation, toClaudeModelId } from "../../../packages/runtime-claude/src/index";
 import { callerKind, getApiToken, handleAuthRoute, requireAuth, resolveActor } from "./auth";
 import { SessionStore } from "./sessions";
-import { PREVIEW_PAGE_DIR, PREVIEW_PRESETS_DIR, PREVIEW_PREFIX, PreviewCapabilities } from "./preview";
+import { PREVIEW_PAGE_CANDIDATES, PREVIEW_PRESETS_DIR, PREVIEW_PREFIX, PreviewCapabilities } from "./preview";
 import { LicenseProvider, enforceOrWarn, licenseView } from "./license";
 import { MANAGED_PROVIDER, managedModels, rewriteForManagedModels } from "./managed";
 import { configuredPrices, licenseMetrics, parseUsageQuery, usageAnswer } from "./commercial";
@@ -1582,7 +1582,7 @@ export function createHttpServer(instance: MeshInstance, opts: { dashboardDir?: 
         reply(404, "text/html; charset=utf-8", "<!doctype html><meta charset=utf-8><title>Playground</title><body style='font-family:monospace;padding:24px'>No product build in this workspace — expected apps/playground/index.html, and the mission has not written one.</body>");
         return;
       }
-      reply(200, "text/html; charset=utf-8", html);
+      reply(200, "text/html; charset=utf-8", selfRelative(html, dir));
       return;
     }
     let relative: string;
@@ -1602,10 +1602,56 @@ export function createHttpServer(instance: MeshInstance, opts: { dashboardDir?: 
       ext === ".json" ? "application/json" :
       ext === ".html" ? "text/html" :
       ext === ".svg" ? "image/svg+xml" : "application/octet-stream";
-    reply(200, `${type}; charset=utf-8`, await fs.promises.readFile(ab));
+    const body = await fs.promises.readFile(ab);
+    reply(200, `${type}; charset=utf-8`, ext === ".html" ? selfRelative(body.toString("utf8"), dir) : body);
   };
-  const servePlayground = (res: http.ServerResponse, rest: string[], readable: boolean): Promise<void> =>
-    servePreviewFile(res, PREVIEW_PAGE_DIR, rest, readable, `missing build output (${rest.join("/")}) — run "build playground" first`);
+  /** Does this product keep a page at `dir`? */
+  const hasPage = (dir: readonly string[]): boolean =>
+    fs.existsSync(path.join(instance.productPath, ...dir, "index.html"));
+
+  /** Directories this product actually has a page in, most specific first. */
+  const pageRoots = (): readonly (readonly string[])[] => PREVIEW_PAGE_CANDIDATES.filter((dir) => hasPage(dir));
+
+  /**
+   * The page the console opens: the convention first, then where products put their own UI.
+   *
+   * A live mesh built a real UI at `public/index.html` and served it from its own command, so the console — which only
+   * ever looked at `apps/playground/` — told its owner the checkout had none. See `PREVIEW_PAGE_CANDIDATES`.
+   */
+  const pageRoot = (): readonly string[] | null => pageRoots()[0] ?? null;
+
+  /**
+   * Point a page's root-absolute references at itself.
+   *
+   * A product's own page is written for the root of *its* server (`<link href="/style.css">`, because its own command
+   * serves it from `/`), while the console serves it out of a directory, so every such reference would 404 and the page
+   * would arrive unstyled and inert. Only references naming a file that really is beside the page are rewritten;
+   * anything else — an API path, a CDN — is left exactly as the product wrote it.
+   */
+  const selfRelative = (html: string, dir: readonly string[]): string => {
+    const rootAbs = path.join(instance.productPath, ...dir);
+    return html.replace(/(\s(?:href|src)\s*=\s*")\/(?!\/)([^"]*)(")/gi, (whole, pre: string, target: string, post: string) => {
+      const clean = target.split(/[?#]/)[0];
+      if (!clean) return whole;
+      const abs = resolveInside(rootAbs, clean);
+      if (!abs || !fs.existsSync(abs)) return whole;
+      return `${pre}./${target}${post}`;
+    });
+  };
+
+  const servePlayground = async (res: http.ServerResponse, rest: string[], readable: boolean): Promise<void> => {
+    const dir = pageRoot();
+    if (!dir) {
+      // 404 (not 200) so the dashboard's probe reads this as "no page", and the words name every place one may live.
+      applySecurityHeaders(res, "preview");
+      res.writeHead(404, { "content-type": "text/html; charset=utf-8", "cache-control": "no-cache" });
+      res.end(
+        "<!doctype html><meta charset=utf-8><title>Playground</title><body style='font-family:monospace;padding:24px'>No product build in this workspace — looked for a page at apps/playground/index.html, public/index.html, dist/index.html, build/index.html and index.html, and the mission has written none.</body>",
+      );
+      return;
+    }
+    return servePreviewFile(res, dir, rest, readable, `missing build output (${rest.join("/")}) — run "build playground" first`);
+  };
 
   /**
    * What a capability opens, in the product's own layout: `apps/playground/...` is the page and
@@ -1613,8 +1659,11 @@ export function createHttpServer(instance: MeshInstance, opts: { dashboardDir?: 
    * way to name the rest of the checkout.
    */
   const servePreviewCapability = (res: http.ServerResponse, rest: string[]): Promise<void> => {
-    const under = (prefix: readonly string[]): boolean => prefix.every((segment, i) => rest[i] === segment);
-    if (under(PREVIEW_PAGE_DIR)) return servePlayground(res, rest.slice(PREVIEW_PAGE_DIR.length), true);
+    const under = (prefix: readonly string[]): boolean =>
+      prefix.length > 0 && prefix.every((segment, i) => rest[i] === segment);
+    for (const dir of pageRoots()) {
+      if (under(dir)) return servePreviewFile(res, dir, rest.slice(dir.length), true, `missing file under ${dir.join("/")}`);
+    }
     if (under(PREVIEW_PRESETS_DIR) && rest.length > PREVIEW_PRESETS_DIR.length) {
       return servePreviewFile(res, PREVIEW_PRESETS_DIR, rest.slice(PREVIEW_PRESETS_DIR.length), true, "no such preset");
     }
@@ -3169,8 +3218,15 @@ export function createHttpServer(instance: MeshInstance, opts: { dashboardDir?: 
       // The dashboard does not frame this path: it asks for a link first. The page then runs in an
       // opaque origin and could not authenticate its own sub-requests here.
       if (parts[0] === "playground" && parts[1] === "session" && parts.length === 2 && req.method === "POST") {
-        const minted = previews.mint();
-        return json(200, { path: minted.path, expiresAt: new Date(minted.expiresAt).toISOString() });
+        // `dir` names which of the product's pages to open — "public" for the UI it serves itself rather than the page
+        // written for this console. Only directories the product really has are accepted, so this widens nothing.
+        const asked = (await body().catch(() => ({}))) as { dir?: unknown };
+        const wanted =
+          typeof asked?.dir === "string" ? asked.dir.split("/").filter((s) => s.length > 0) : null;
+        const dir = wanted && pageRoots().some((d) => d.join("/") === wanted.join("/")) ? wanted : pageRoot();
+        if (!dir) return json(404, { error: "this product ships no page to open" });
+        const minted = previews.mint(dir);
+        return json(200, { path: minted.path, dir: dir.join("/") || ".", expiresAt: new Date(minted.expiresAt).toISOString() });
       }
       // The operator's own terminal for the thing they paid for. The seats have had this all along (`test.execute`);
       // this points it at the person who owns the workspace. Same hygiene as the script runner above: the code being
@@ -3202,7 +3258,13 @@ export function createHttpServer(instance: MeshInstance, opts: { dashboardDir?: 
       if (parts[0] === "playground" && parts[1] === "commands" && parts.length === 2 && req.method === "GET") {
         // The checkout is named in the answer as well: the panel can say where a command will run, and a reader of the
         // route does not have to know this server's layout to use it.
-        return json(200, { productRoot: wsRoot, commands: playgroundCommands(wsRoot) });
+        const roots = pageRoots();
+        return json(200, {
+          productRoot: wsRoot,
+          commands: playgroundCommands(wsRoot),
+          page: roots[0] ? { dir: roots[0].join("/") || ".", file: [...roots[0], "index.html"].join("/") } : null,
+          alternates: roots.slice(1).map((d) => ({ dir: d.join("/") || ".", file: [...d, "index.html"].join("/") })),
+        });
       }
       if (parts[0] === "playground" && req.method === "GET") return servePlayground(res, parts.slice(1), false);
 

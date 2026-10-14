@@ -29,6 +29,23 @@ export const PREVIEW_PREFIX = "_pg";
  * capability prefix with nothing rewritten. Nothing else in the checkout is reachable through it.
  */
 export const PREVIEW_PAGE_DIR = ["apps", "playground"] as const;
+
+/**
+ * Where a product may have put the page the console opens, in the order worth trying.
+ *
+ * `apps/playground/` is the convention and wins when it exists: that page is written *for* this sandbox, so it works
+ * with no server of the product running. But products also ship their own UI in the ordinary places — a live mesh built
+ * a real one at `public/index.html` and had it served by its own `ui` command, and the console could not see it at all,
+ * which its owner reported as "I can't see it in playground". The last entry is the product root itself, for a
+ * single-page product that kept `index.html` where it is.
+ */
+export const PREVIEW_PAGE_CANDIDATES: readonly (readonly string[])[] = [
+  PREVIEW_PAGE_DIR,
+  ["public"],
+  ["dist"],
+  ["build"],
+  [],
+] as const;
 export const PREVIEW_PRESETS_DIR = ["presets"] as const;
 
 export class PreviewCapabilities {
@@ -43,11 +60,18 @@ export class PreviewCapabilities {
     return createHmac("sha256", this.secret).update(`preview:${expiresAt}`).digest("base64url");
   }
 
-  /** A capability and the path of the page it opens, with its trailing slash so relative URLs resolve beneath it. */
-  mint(): { capability: string; path: string; expiresAt: number } {
+  /**
+   * A capability and the path of the page it opens, with its trailing slash so relative URLs resolve beneath it.
+   *
+   * The page's directory is in the path, so the same capability opens whichever of a product's pages the console asked
+   * for — its own (`apps/playground/`, the default) or one the product ships (`public/`). The signature covers only the
+   * expiry, so the caller can choose among the candidates the server serves, and nothing else.
+   */
+  mint(pageDir: readonly string[] = PREVIEW_PAGE_DIR): { capability: string; path: string; expiresAt: number } {
     const expiresAt = this.now() + this.ttlMs;
     const capability = `${expiresAt}.${this.sign(expiresAt)}`;
-    return { capability, path: `/${PREVIEW_PREFIX}/${capability}/${PREVIEW_PAGE_DIR.join("/")}/`, expiresAt };
+    const trailing = pageDir.length > 0 ? `${pageDir.join("/")}/` : "";
+    return { capability, path: `/${PREVIEW_PREFIX}/${capability}/${trailing}`, expiresAt };
   }
 
   /** Whether `capability` was minted by this server and has not lapsed. */
