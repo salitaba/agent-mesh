@@ -386,6 +386,45 @@ export function openRejections(state: Projections, goalId: string): Artifact[] {
 }
 
 /**
+ * The artifacts of a goal that were put forward and still wait on a verdict: READY_FOR_REVIEW (nobody has decided) and
+ * UNDER_REVIEW (someone has it in hand).
+ *
+ * The mirror of `openRejections`, for the same reason: an artifact with a verdict owed has an owner who has to act, so
+ * a mission cannot close over it. Measured 2026-10-13: a live mesh completed with 41 artifacts awaiting review — 36 of
+ * them QA TestReports — while its operator read "Delivered" and looked at a list of files still "in review". The engine
+ * already chases these (each REQUEST_REVIEW is re-addressed to the same reviewers, and the stall watchdog nudges them),
+ * but the termination verdict never asked, so the chasing had no bearing on whether the mission could close.
+ *
+ * A DRAFT is deliberately not here: a working copy nobody put forward is its owner's own business, not a verdict anyone
+ * owes. See `draftArtifacts`, which the supervisor archives when the mission closes.
+ */
+export function openReviews(state: Projections, goalId: string): Artifact[] {
+  const out: Artifact[] = [];
+  for (const a of state.artifacts?.values() ?? []) {
+    if (a.goalId !== goalId || a.status === "ARCHIVED") continue;
+    if (a.status === "READY_FOR_REVIEW" || a.status === "UNDER_REVIEW") out.push(a);
+  }
+  return out;
+}
+
+/**
+ * The goal's working copies that were never put forward.
+ *
+ * A DRAFT is residue, not an obligation: nobody owes it a verdict and it does not hold the mission open — the same
+ * reading that keeps an unclaimed OPEN task from freezing a mission that has met its contract. It is not nothing,
+ * either: left alone, "still in draft" is exactly what an operator sees as unfinished work after a mission reports
+ * itself delivered, so the supervisor archives them as the mission closes and says so on the audit line. Nothing is
+ * lost — an archived artifact is still in the store, and a reopened mission can version it forward.
+ */
+export function draftArtifacts(state: Projections, goalId: string): Artifact[] {
+  const out: Artifact[] = [];
+  for (const a of state.artifacts?.values() ?? []) {
+    if (a.goalId === goalId && a.status === "DRAFT") out.push(a);
+  }
+  return out;
+}
+
+/**
  * Which capability lets an agent review each kind of artifact?
  *
  * The single table. It used to have a twin in the policy engine, also called

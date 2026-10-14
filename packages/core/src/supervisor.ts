@@ -87,7 +87,7 @@ import type { MessageControl, CollabSession, DeliveryClass } from "../../protoco
 import { MAX_CONTINUITY_BELIEFS, MAX_CONTINUITY_COMMITMENTS, MAX_CONTINUITY_REJECTIONS, MAX_CONTINUITY_TEXT } from "./state";
 import { artifactKey, approvalKey, ensureBudget, INFERRED_DISCHARGE_REASONS, MAX_PENDING_REQUESTS, outstandingDebtors, overdueCommitments, PER_DEBTOR_DISCHARGE_REASONS, readableMailDepth, stillOwes, UNANSWERED_DISCHARGE_REASONS } from "./state";
 import type { DischargeReason, Projections } from "./state";
-import { applyEvent, approverMayAdvance, artifactForRef, capabilityForReview, checkApprovals, domainOfSubject, givesPassForApprove, hasPeerReviewerFor, holdsAuthority, mayAcceptCriteria, mayReviewArtifact, openRejections, projectionConfigFor, settlersOf, standingBlocks, transitionLifecycle, unqualifiedAuthor, type StandingBlock } from "./projections";
+import { applyEvent, approverMayAdvance, artifactForRef, capabilityForReview, checkApprovals, domainOfSubject, givesPassForApprove, hasPeerReviewerFor, holdsAuthority, draftArtifacts, mayAcceptCriteria, mayReviewArtifact, openRejections, openReviews, projectionConfigFor, settlersOf, standingBlocks, transitionLifecycle, unqualifiedAuthor, type StandingBlock } from "./projections";
 import { missionStatus, type MissionStatus } from "./status";
 import { pageCut } from "./text-page";
 import { extractPatchFiles, safeProductPath, type PatchFile } from "./patch-files";
@@ -13252,6 +13252,23 @@ export class Supervisor {
       // the audit line — so the log says what was still on the table when the
       // mission closed, and the card itself stays OPEN for the operator.
       const carried = verdict.openCards ?? [];
+      // A working copy nobody put forward is residue and does not hold the mission (see `draftArtifacts`), but leaving it
+      // "in draft" after the mission closed is what an operator reads as unfinished work: the mission closes its own.
+      // The reason goes on the record and the content stays in the store; a reopened mission can version it forward.
+      const leftoverDrafts = draftArtifacts(this.state, goalId);
+      for (const draft of leftoverDrafts) {
+        await this.deps.kernel.emit(
+          "artifact.transition",
+          { artifactId: draft.id, to: "ARCHIVED", reason: "the mission is closed and this working copy was never put forward" },
+          { actorId: TERMINATION_ACTOR_ID },
+        );
+      }
+      if (leftoverDrafts.length > 0) {
+        this.auditLine(
+          `mission closed and archived ${leftoverDrafts.length} working cop${leftoverDrafts.length === 1 ? "y" : "ies"} that were never put forward: ` +
+            leftoverDrafts.map((d) => `${d.type} "${d.name}" (${d.id})`).join("; "),
+        );
+      }
       await this.deps.kernel.emit(
         "goal.completed",
         {
@@ -13259,9 +13276,18 @@ export class Supervisor {
           reason: verdict.reason,
           evidence: verdict.evidenceSummary,
           ...(carried.length > 0 ? { openCards: carried } : {}),
+          ...((verdict.openReviews ?? []).length > 0 ? { openReviews: verdict.openReviews } : {}),
+          ...(leftoverDrafts.length > 0 ? { closedDrafts: leftoverDrafts.length } : {}),
         },
         { actorId: TERMINATION_ACTOR_ID },
       );
+      const leftInReview = verdict.openReviews ?? [];
+      if (leftInReview.length > 0) {
+        this.auditLine(
+          `mission closed leaving ${leftInReview.length} artifact(s) awaiting review: ` +
+            leftInReview.map((a) => `${a.type} "${a.name}" (${a.status}, owner ${a.owner})`).join("; "),
+        );
+      }
       if (carried.length > 0) {
         this.auditLine(
           `mission completed with ${carried.length} open card(s) still unanswered: ` +

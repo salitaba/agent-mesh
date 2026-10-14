@@ -1,6 +1,7 @@
 import {
   isSettledArtifactStatus,
   type AcceptanceCriterion,
+  type Artifact,
   type Escalation,
   type EscalationId,
   type Goal,
@@ -10,7 +11,7 @@ import {
 import type { ResolvedMeshConfig } from "../../config/src/index";
 import type { Projections } from "./state";
 import { outstandingDebtors } from "./state";
-import { openRejections } from "./projections-helpers";
+import { openRejections, openReviews } from "./projections-helpers";
 import { agentKey, autoRaiseExhausted, budgetParkedSeats, liveSeats, missionKey, taskKey, threadKey } from "./budgets";
 import { verdictText, type VerdictText } from "../../protocol/src/catalog";
 
@@ -436,6 +437,19 @@ export function openCardSummary(e: Escalation, nowMs: number): OpenCardSummary {
   };
 }
 
+/** One artifact the mission closed with, put forward and never decided. Named so the completion record says it. */
+export interface OpenReviewSummary {
+  id: string;
+  name: string;
+  type: string;
+  status: string;
+  owner: string;
+}
+
+export function openReviewSummary(a: Artifact): OpenReviewSummary {
+  return { id: a.id, name: a.name, type: a.type, status: a.status, owner: a.owner };
+}
+
 export type TerminationVerdict =
   | { kind: "continue" }
   /**
@@ -443,7 +457,7 @@ export type TerminationVerdict =
    * the mission closed. Absent when there were none, so a clean completion
    * reads exactly as it always did. The cards are reported, NOT resolved.
    */
-  | { kind: "complete"; reason: string; evidenceSummary: string[]; openCards?: OpenCardSummary[] }
+  | { kind: "complete"; reason: string; evidenceSummary: string[]; openCards?: OpenCardSummary[]; openReviews?: OpenReviewSummary[] }
   /**
    * `supports` is set only for derived verdicts (stalemate): the ids of the
    * open primary escalations that justify it. Absent means "this verdict
@@ -669,6 +683,16 @@ export class TerminationManager {
       // in limbo, however many criteria a merge of its sibling evidenced (`openRejections`). Like a
       // claimed task, it has an owner who has to act, and the watchdog wakes them for it.
       const rejectedPatches = openRejections(state, goalId);
+      // Artifacts put forward and still waiting on a verdict are REPORTED, not held. An earlier version of this made
+      // them gate completion, and eleven of this suite's own specs said no: the scripted missions submit artifacts
+      // whose reviews nobody ever gets to, so the gate turned routine bookkeeping into a deadlock — the exact mistake
+      // OPEN tasks were removed from this gate for ("one live run ended 5/5 criteria EVIDENCED with 7 unclaimed OPEN
+      // tasks and could never complete"). What the operator actually needs is that a delivery cannot quietly leave them
+      // unseen: a live mesh closed with 41 of them (36 QA TestReports, four research reports, an ApiSpec) and read
+      // "Delivered" beside a list of files still "in review". So the verdict names them, the event carries them, and
+      // the audit line says it in words. A DRAFT is not here at all — nobody owes it a verdict, and the supervisor
+      // archives the goal's drafts as it closes, so they cannot read as unfinished work either.
+      const unansweredReviews = openReviews(state, goalId);
       if (ownedTasks.length === 0 && rejectedPatches.length === 0) {
         const nowMs = input.nowMs ?? Date.now();
         return {
@@ -678,6 +702,7 @@ export class TerminationManager {
           // Omitted entirely when nothing was carried: a mission that finished
           // with a clean table reads exactly as it did before.
           ...(openCards.length > 0 ? { openCards: openCards.map((e) => openCardSummary(e, nowMs)) } : {}),
+          ...(unansweredReviews.length > 0 ? { openReviews: unansweredReviews.map(openReviewSummary) } : {}),
         };
       }
     }

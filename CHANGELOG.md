@@ -7,6 +7,28 @@ sections 1 to 26) are described there, run by run.
 
 ## Unreleased
 
+### Fixed: a mission cannot close over work left in review, or leave its working copies in draft
+
+A live mesh reported itself **delivered** with 41 artifacts awaiting review (36 QA TestReports among them), five
+CodePatches a reviewer had rejected and nobody reworked, and 47 working copies still in draft. Its operator's words:
+*"it's status is delivered but we have a lots of in review and rework files"*. The rejected patches were
+`openRejections`' business, except that guard was keyed on a mandatory criterion *named* `implementation-merged` — so it
+never ran for a mesh whose criteria are written as sentences, and it silently returned nothing. That is fixed: the scope
+of the guard is now a fact about the mission's patches, not about the words someone chose for its criteria.
+
+These two close the rest of what the operator was looking at:
+
+- **An artifact put forward and still waiting on a verdict holds the mission** (`openReviews`) — the mirror of the
+  rejected-patch rule. READY_FOR_REVIEW and UNDER_REVIEW both mean a decision someone owes, and the engine already
+  chases them: each REQUEST_REVIEW is re-addressed to its reviewers and the stall watchdog nudges them. What was missing
+  was the termination verdict asking.
+- **A mission closes its own working copies.** A DRAFT is residue — its owner's own business, not a verdict anyone owes —
+  so it does not hold a mission that has met its contract, the same reading that keeps an unclaimed OPEN task from
+  freezing one. But leaving it "in draft" after the mission closes is precisely what reads as unfinished work, so the
+  supervisor archives the goal's drafts as it completes, with the reason on the record and a count in the
+  `goal.completed` payload (`closedDrafts`). Nothing is lost: an archived artifact is still in the store, and a reopened
+  mission can version it forward.
+
 ### Fixed: the phone's clock was drawn over the app's own header
 
 Tauri's Android activity calls `enableEdgeToEdge()`, which is right — the app's background should reach the screen's

@@ -25,6 +25,8 @@ export {
   mayAcceptCriteria,
   givesPassForApprove,
   openRejections,
+  openReviews,
+  draftArtifacts,
   passOnlyDomains,
   qualifiedForDomain,
   unqualifiedAuthor,
