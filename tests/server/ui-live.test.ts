@@ -32,6 +32,11 @@ const PRODUCT_UI = [
   '    res.writeHead(302, { "set-cookie": `sid=${TOKEN}; HttpOnly; Path=/`, location: "/" });',
   '    return res.end();',
   "  }",
+  // And the page it serves carries the product's own CSP, written for being top-level on its own origin: the live
+  // product's page really does say `frame-ancestors 'none'`. Forwarded verbatim through the proxy it forbids the
+  // console's own frame, which is the bug this fixture is shaped after.
+  `  res.setHeader("content-security-policy", "default-src 'none'; script-src 'self'; connect-src 'self'; frame-ancestors 'none'");`,
+  '  res.setHeader("x-frame-options", "DENY");',
   '  if (!handed) { res.writeHead(403, { "content-type": "text/plain" }); return res.end("no session"); }',
   '  if (u.pathname === "/") {',
   '    res.writeHead(200, { "content-type": "text/html" });',
@@ -83,6 +88,18 @@ test("the product's UI: started on request, port and token learned from what it 
     // the check that the console held it: the redirected request comes back 200 instead of another 403.
     const page = await fetch(`${base}${state.livePath!}`);
     assert.equal(page.status, 200, "the sandboxed page loads through the console after the product's own handshake");
+    // The whole point of the pane is that the page is *seen*, and a browser refuses to display a document that says it
+    // may not be framed. Two headers said so: the console's own API policy (every /api answer is unframeable) and the
+    // product's CSP, forwarded verbatim — and the live product's really does carry `frame-ancestors 'none'`. Neither
+    // survives on a page the console frames on purpose, and what applies instead is the policy the console gives every
+    // agent-written page: an opaque origin this server may frame.
+    assert.equal(page.headers.get("x-frame-options"), "SAMEORIGIN", "the console frames it, and nobody else does");
+    const csp = String(page.headers.get("content-security-policy"));
+    assert.match(csp, /^sandbox /, "in an opaque origin, so it can reach neither the console nor its API");
+    assert.doesNotMatch(csp, /allow-same-origin/);
+    assert.match(csp, /allow-scripts/, "and it still runs");
+    assert.doesNotMatch(csp, /frame-ancestors 'none'/, "the product cannot forbid the frame it is being shown in");
+    assert.doesNotMatch(csp, /script-src 'self'/, "nor impose a policy written for an origin this page does not have");
     assert.equal((await fetch(`${base}${state.livePath!}style.css`)).status, 200, "and the file it links, likewise");
     const html = await page.text();
     assert.match(html, /href="\.\/style\.css"/, "a path written for the product's root is made relative to the page");

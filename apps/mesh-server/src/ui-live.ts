@@ -184,6 +184,17 @@ const HOP_BY_HOP = new Set([
   "transfer-encoding", "upgrade", "content-length", "host", "cookie", "set-cookie", "accept-encoding",
 ]);
 
+/**
+ * The headers that answer "who may put this document in a frame, and what may it load".
+ *
+ * The product's page is served on its own origin, top-level, and its policy is written for that: the live mesh's product
+ * really does send `frame-ancestors 'none'` and `x-frame-options: DENY`. Forwarding either would forbid the console's own
+ * frame — the pane renders blank and nothing anywhere says why — and forwarding the rest is no better: inside the frame
+ * the page has an opaque origin, where `'self'` matches no URL at all, so `script-src 'self'` would block the product's
+ * own script. The console puts every agent-written page under one policy of its own (`PREVIEW_CSP`), and this is that.
+ */
+const PRODUCT_FRAME_POLICY = new Set(["content-security-policy", "content-security-policy-report-only", "x-frame-options"]);
+
 /** What the page asked for, forwarded to the product's port with the printed token, and answered back. */
 export function proxyToUi(
   req: http.IncomingMessage,
@@ -218,7 +229,8 @@ export function proxyToUi(
       const out: http.OutgoingHttpHeaders = {};
       for (const [k, v] of Object.entries(up.headers)) {
         if (v === undefined) continue;
-        if (HOP_BY_HOP.has(k.toLowerCase()) || k.toLowerCase() === "content-encoding") continue;
+        const name = k.toLowerCase();
+        if (HOP_BY_HOP.has(name) || name === "content-encoding" || PRODUCT_FRAME_POLICY.has(name)) continue;
         out[k] = v;
       }
       // The page is an opaque origin, so its own fetches are cross-origin: without these they would be refused, and the

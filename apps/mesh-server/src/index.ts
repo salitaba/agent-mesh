@@ -3227,8 +3227,8 @@ export function createHttpServer(instance: MeshInstance, opts: { dashboardDir?: 
         // Own keys only: `script` comes from the request, and "__proto__" is truthy on every object.
         const def = Object.hasOwn(defs, script) ? defs[script] : undefined;
         if (!def) return json(400, { error: `unknown script (allowed: ${Object.keys(defs).join(", ") || "none — no package.json scripts in the product workspace"})` });
-        const run = startRun(wsRoot, script, def);
-        if (!run) return json(409, { error: "a run is already in progress" });
+        const run = startRun(wsRoot, `npm run ${script}`, def);
+        if (!run) return json(409, runBusyBody());
         return json(201, { runId: run.id });
       }
       if (parts[0] === "workspace" && parts[1] === "run" && parts[2] === "kill" && req.method === "POST") {
@@ -3259,7 +3259,8 @@ export function createHttpServer(instance: MeshInstance, opts: { dashboardDir?: 
       // run comes from seats, so every `MESH_*` variable is withheld from it by `productRunEnv`.
       //
       // A console is not a terminal, so nothing here waits forever: a run is killed on a clock the caller may shorten
-      // but never lengthen past five minutes.
+      // but never lengthen past five minutes — and a run the clock ended says so (`timedOut`), because a signalled run
+      // has no exit code and "Ended by a signal" was the console taking credit for its own minute.
       if (parts[0] === "playground" && parts[1] === "exec" && parts.length === 2 && req.method === "POST") {
         const b = await body();
         const command = typeof b.command === "string" ? b.command.trim() : "";
@@ -3267,14 +3268,18 @@ export function createHttpServer(instance: MeshInstance, opts: { dashboardDir?: 
         if (command.length > 2000) return json(400, { error: "command is too long" });
         const win = process.platform === "win32";
         const run = startRun(wsRoot, command, { cmd: win ? "cmd" : "sh", args: win ? ["/c", command] : ["-c", command] });
-        if (!run) return json(409, { error: "a run is already in progress" });
+        if (!run) return json(409, runBusyBody());
         // The log opens with what the operator typed rather than the shell that carried it: pasted output should say
         // what produced it, and `sh -c` is this server's detail, not theirs.
         run.log = `$ ${command}\n`;
         const timeoutMs = Math.min(Math.max(Number(b.timeoutMs) || 60_000, 1_000), 300_000);
+        run.timeoutMs = timeoutMs;
         setTimeout(() => {
           const active = runs.get(run.id);
-          if (active && !active.done) killRun(run.id);
+          if (active && !active.done) {
+            active.timedOut = true;
+            killRun(run.id);
+          }
         }, timeoutMs).unref();
         return json(201, { runId: run.id, timeoutMs });
       }
@@ -3311,6 +3316,11 @@ export function createHttpServer(instance: MeshInstance, opts: { dashboardDir?: 
         const target = liveUi.target();
         if (!liveUiLinks.verify(parts[1])) return json(403, { error: "this UI link is not valid, or has expired: start it again" });
         if (!target) return json(409, { error: "the product's UI is not running" });
+        // This is a *page the console frames*, not an API answer, so the preview policy replaces the one every /api
+        // response carries. Without this the product's own UI came back `x-frame-options: DENY` — the console telling
+        // the browser not to display the very page it had just built an iframe for — and the pane was blank with no
+        // error anywhere to say why. See `proxyToUi`, which also refuses to pass the product's own framing policy on.
+        applySecurityHeaders(res, "preview");
         // Everything after `<prefix>/<capability>/`, with the page's own query — this proxy mirrors the product's root,
         // so a path the page addressed absolutely means here exactly what it meant there.
         const rest = `${parts.slice(2).join("/")}${u.search}`;
@@ -3556,10 +3566,30 @@ interface ActiveRun {
   startedAt: number;
   done: boolean;
   exitCode: number | null;
+  /** What it is, in the product's own words: the operator's command, or `npm run <script>`. */
+  label: string;
+  /** The console's own clock ended this run. A signalled run has no exit code, so without this nobody can tell the
+   * clock from a crash — and the panel blamed "a signal" for a minute it had spent itself. */
+  timedOut: boolean;
+  /** The clock this run was given, when it had one. The script runner has none. */
+  timeoutMs: number | null;
 }
 
 const runs = new Map<string, ActiveRun>();
 let runSeq = 0;
+
+/** The run in the way, as a page is told about it: enough to name it, and to end it. Null when nothing is running. */
+function runInProgress(): { id: string; command: string; startedAt: number } | null {
+  const active = [...runs.values()].find((r) => !r.done);
+  return active ? { id: active.id, command: active.label, startedAt: active.startedAt } : null;
+}
+
+/** What a refusal says when the one runner is busy. It names the run, so the page can offer to stop it instead of
+ * leaving a person on a phone with a sentence and no button. */
+function runBusyBody(): Record<string, unknown> {
+  const busy = runInProgress();
+  return busy ? { error: "a run is already in progress", run: busy } : { error: "a run is already in progress" };
+}
 
 /**
  * Credentials the mesh itself runs on, by exact name, beyond the `MESH_*`
@@ -3612,12 +3642,18 @@ function productRunEnv(): NodeJS.ProcessEnv {
   return env;
 }
 
-function startRun(root: string, script: string, def: { cmd: string; args: readonly string[] }): ActiveRun | null {
+function startRun(root: string, label: string, def: { cmd: string; args: readonly string[] }): ActiveRun | null {
   if ([...runs.values()].some((r) => !r.done)) return null;
   const id = `run-${++runSeq}-${Date.now().toString(36)}`;
   fs.mkdirSync(path.join(root, ".mesh-state", "run"), { recursive: true });
-  const proc = spawn(def.cmd, [...def.args], { cwd: root, env: productRunEnv(), shell: process.platform === "win32" });
-  const run: ActiveRun = { id, proc, log: `$ ${def.cmd} ${def.args.join(" ")}\n`, startedAt: Date.now(), done: false, exitCode: null };
+  const proc = spawn(def.cmd, [...def.args], {
+    cwd: root,
+    env: productRunEnv(),
+    shell: process.platform === "win32",
+    // Its own process group, so Stop can signal the whole command and not just the shell that carried it (see killRun).
+    detached: process.platform !== "win32",
+  });
+  const run: ActiveRun = { id, proc, log: `$ ${def.cmd} ${def.args.join(" ")}\n`, startedAt: Date.now(), done: false, exitCode: null, label, timedOut: false, timeoutMs: null };
   runs.set(id, run);
   const cap = (chunk: Buffer): void => {
     run.log += chunk.toString("utf8").replace(/\r/g, "");
@@ -3640,17 +3676,32 @@ function startRun(root: string, script: string, def: { cmd: string; args: readon
 function runStatus(id: string): Record<string, unknown> {
   const r = runs.get(id);
   return r
-    ? { id: r.id, done: r.done, exitCode: r.exitCode, log: r.log, startedAt: r.startedAt }
+    ? { id: r.id, done: r.done, exitCode: r.exitCode, log: r.log, startedAt: r.startedAt, timedOut: r.timedOut, timeoutMs: r.timeoutMs }
     : { error: "unknown run" };
 }
 
+/**
+ * End a run.
+ *
+ * `sh -c "<command>"` forks for anything but the simplest command, so signalling the leader alone left the command
+ * itself running: `sleep 40` outlived the shell that started it, kept the output pipe open (and with it the server's
+ * event loop, and the port a dev server had bound) while the console said the run had ended. The run is spawned in its
+ * own process group, so the signal goes to the whole command. Windows has no process groups to signal, and its `cmd /c`
+ * is one process anyway.
+ */
 function killRun(id: string): boolean {
   const r = runs.get(id);
   if (!r || r.done || !r.proc) return false;
+  const pid = r.proc.pid;
   try {
-    r.proc.kill("SIGTERM");
+    if (pid && process.platform !== "win32") process.kill(-pid, "SIGTERM");
+    else r.proc.kill("SIGTERM");
   } catch {
-    /* already gone */
+    try {
+      r.proc.kill("SIGTERM");
+    } catch {
+      /* already gone */
+    }
   }
   return true;
 }
