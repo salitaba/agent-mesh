@@ -126,6 +126,26 @@
 }
 
 /* The product's own UI, running: a command the owner starts, and the log it prints while it does. */
+/* The page the product ships, as one row: what it is, and the button that opens it. */
+.prod-have { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s2) var(--s3); margin: 0 0 var(--s4); }
+.prod-have-ic { display: grid; place-items: center; flex: none; width: 28px; height: 28px; border-radius: var(--r-sm); background: var(--sunken); border: 1px solid var(--line); color: var(--muted); }
+.prod-have-t { flex: 1 1 16rem; min-width: 0; margin: 0; font: var(--tx-value); color: var(--text-dim); }
+.prod-have-t code { font: 12px var(--mono); color: var(--text); }
+.prod-alt { flex: none; }
+
+/* The product's own UI. Its own block, ruled off from the page above, because the two are alternatives. */
+.prod-live { padding-top: var(--s3); border-top: 1px solid var(--line); }
+.prod-live-h { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s2); margin: 0 0 var(--s2); }
+.prod-live-h b { font: 600 14px var(--sans); letter-spacing: var(--k-track-tight); }
+.prod-live-on { display: inline-flex; align-items: center; gap: var(--s1-5); font: 500 12px/1 var(--sans); font-variant-numeric: tabular-nums; color: var(--ok); }
+.prod-live-on::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
+.prod-live-off { font: 500 12px/1 var(--sans); color: var(--muted); }
+.prod-live-wait { display: inline-flex; align-items: center; gap: var(--s1-5); font: 500 12px/1 var(--sans); color: var(--warn); }
+.prod-live-wait .dot { width: 8px; height: 8px; border-radius: 50%; background: currentColor; animation: pulse 2.2s infinite; }
+.prod-live-lede { margin-bottom: var(--s2); }
+/* The sentence for a state that needs one, next to its icon: the same shape wherever it appears. */
+.prod-live-said { display: flex; align-items: flex-start; gap: var(--s2); margin: 0 0 var(--s2); font: var(--tx-value); color: var(--text); }
+.prod-live-said .icon { flex: none; margin-top: 2px; color: var(--muted); }
 .prod-live-start {
   display: flex;
   flex-wrap: wrap;
@@ -133,18 +153,9 @@
   gap: var(--s2);
   margin: 0 0 var(--s3);
 }
-.prod-live-start label { font: var(--tx-meta); color: var(--muted); }
-.prod-live-start input {
-  flex: 1 1 16rem;
-  min-width: 0;
-  background: var(--sunken);
-  border: 1px solid var(--line);
-  border-radius: var(--r-sm);
-  color: var(--text);
-  font: 13px var(--mono);
-  padding: var(--s1-5) var(--s2);
-}
-.prod-live-start input:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+.prod-live-start label { flex: 1 1 100%; font: var(--tx-meta); color: var(--muted); }
+.prod-live-start input { flex: 1 1 14rem; min-width: 0; }
+.prod-live-log { margin: 0 0 var(--s3); }
 .prod-log {
   margin: 0 0 var(--s3);
   max-height: 12rem;
@@ -158,4 +169,12 @@
   white-space: pre-wrap;
   word-break: break-word;
   color: var(--text-dim);
+}
+/* A log inside a disclosure has no card of its own to sit in. */
+.prod-live-log .prod-log { margin: var(--s2) 0 0; }
+@media (max-width: 620px) {
+  /* A framed page taller than the phone is a frame whose top is off screen the moment it loads. */
+  .playframe { height: 62vh; min-height: 320px; }
+  .prod-log { max-height: 9rem; }
+  .prod-have { gap: var(--s2); }
 }

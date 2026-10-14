@@ -1,25 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-
-/** What `GET /<project>/ui` answers with (see apps/mesh-server/src/ui-live.ts). */
-type LiveUiAnswer = {
-  running: boolean;
-  command: string | null;
-  port: number | null;
-  log: string;
-  livePath: string | null;
-  exitCode?: number | null;
-  stopped?: boolean;
-};
 import type { FormEvent } from "react";
 import "./product.css";
 import { dur } from "../format";
-import { projectPath } from "../route";
 import { useMesh } from "../store";
 import { Button, CopyButton, ErrorState, PageHeader, Pill, SearchField, Skeleton, useNow, type PillTone } from "../components";
 import { Icon } from "../icons";
 import { FileView, type DiffPayload, type FileKind } from "../fileview";
 import { fmtSize } from "../files";
 import { useMedia, WIDE } from "../useMedia";
+import { YourProduct } from "./YourProduct";
 import {
   TREE_WINDOW,
   changeKind,
@@ -190,23 +179,6 @@ export default function Product(): React.JSX.Element {
   const [searching, setSearching] = useState(false);
   const [run, setRun] = useState<RunState | null>(null);
   const [builtCheck, setBuiltCheck] = useState(0);
-  const [playground, setPlayground] = useState<"checking" | "ready" | "missing">("checking");
-  // Which page the console will open, and which others the product ships (its own UI), both named by the server.
-  const [pgPage, setPgPage] = useState<string | null>(null);
-  const [pgAlt, setPgAlt] = useState<{ dir?: string; file?: string }[]>([]);
-  // The product's own UI, running (see apps/mesh-server/src/ui-live.ts): the owner starts its command, the console
-  // proxies the loopback port it names, and the sandboxed frame loads it with the data flowing.
-  const [live, setLive] = useState<LiveUiAnswer>({ running: false, command: null, port: null, log: "", livePath: null });
-  const [liveCmd, setLiveCmd] = useState("");
-  const [liveAsked, setLiveAsked] = useState(false);
-  const [liveOpen, setLiveOpen] = useState(false);
-  const [liveSrc, setLiveSrc] = useState<string | null>(null);
-  const [liveErr, setLiveErr] = useState<string | null>(null);
-  const [pg, setPg] = useState(false);
-  const [pgErr, setPgErr] = useState(false);
-  // The playground is agent-written, so it is framed by a signed link and in a sandbox (see apps/mesh-server/src/preview.ts),
-  // never by a path this page could be tricked into sharing its credentials with.
-  const [pgSrc, setPgSrc] = useState<string | null>(null);
   const previewRef = useRef<HTMLDivElement>(null);
   const fileReq = useRef(0);
   const searchReq = useRef(0);
@@ -274,76 +246,6 @@ export default function Product(): React.JSX.Element {
     });
     return () => { dead = true; };
   }, [dir, goalId, attempt, client]);
-
-  // Poll only while it matters: while the product is starting, and while it is up (so its dying is noticed too).
-  const liveWorth = liveAsked && (live.running || live.exitCode == null);
-  useEffect(() => {
-    if (!liveWorth) return;
-    let dead = false;
-    const tick = (): void => {
-      client.api("GET", "/ui").then(({ json }) => {
-        if (dead || !json) return;
-        const s = json as LiveUiAnswer;
-        setLive(s);
-        setLiveCmd((c) => (c ? c : (s.command ?? "")));
-      }).catch(() => { /* the next tick asks again */ });
-    };
-    tick();
-    const id = setInterval(tick, 1500);
-    return () => { dead = true; clearInterval(id); };
-  }, [liveWorth, client]);
-
-  const startLive = (): void => {
-    setLiveErr(null);
-    setLiveAsked(true);
-    client.api("POST", "/ui/start", { command: liveCmd }).then(({ status, json }) => {
-      if (status >= 400) {
-        const why = (json as { error?: unknown } | null)?.error;
-        setLiveErr(typeof why === "string" ? why : "the product's UI would not start");
-        setLiveAsked(false);
-        return;
-      }
-      if (json) {
-        const s = json as LiveUiAnswer;
-        setLive(s);
-        setLiveCmd((c) => (c ? c : (s.command ?? "")));
-      }
-    }).catch(() => { setLiveErr("the console could not reach the host"); setLiveAsked(false); });
-  };
-
-  const stopLive = (): void => {
-    setLiveOpen(false);
-    setLiveSrc(null);
-    client.api("POST", "/ui/stop", {}).then(({ json }) => {
-      const s = (json as { state?: LiveUiAnswer } | null)?.state;
-      if (s) setLive(s);
-    }).catch(() => { /* stopping is best-effort; the clock on the host stops it too */ });
-  };
-
-  const openLive = (): void => {
-    if (liveOpen) { setLiveOpen(false); setLiveSrc(null); return; }
-    if (!live.livePath) return;
-    // Captured once: the link is minted per poll, and re-pointing the frame at a new one would reload it under the owner.
-    setLiveSrc(projectPath(projectId, live.livePath));
-    setLiveOpen(true);
-  };
-
-  // Whether the product ships a page the console can open, asked of the server rather than guessed from a path: it
-  // looks in apps/playground/ first and then where products put their own UI (public/, dist/, build/, a root
-  // index.html), and answers with the file it found and any others there are. A build that has just passed may have
-  // written one, so it is asked again.
-  useEffect(() => {
-    let dead = false;
-    client.api("GET", "/playground/commands").then(({ json }) => {
-      if (dead) return;
-      const answer = (json ?? {}) as { page?: { file?: string } | null; alternates?: { dir?: string; file?: string }[] };
-      const page = answer.page && typeof answer.page.file === "string" ? answer.page.file : null;
-      setPgPage(page);
-      setPgAlt(Array.isArray(answer.alternates) ? answer.alternates.filter((a) => typeof a?.file === "string") : []);
-      setPlayground(page ? "ready" : "missing");
-    }).catch(() => { if (!dead) setPlayground("missing"); });
-    return () => { dead = true; };
-  }, [goalId, attempt, client, builtCheck]);
 
   // A run the person walked away from is still running on the host. Pick it up again, or find out it is gone.
   useEffect(() => {
@@ -470,25 +372,6 @@ export default function Product(): React.JSX.Element {
     requestAnimationFrame(() => document.querySelector<HTMLButtonElement>(".run-btn:not(:disabled)")?.focus());
   };
 
-  const openPg = (dir?: string): void => {
-    if (pg) {
-      setPg(false);
-      return;
-    }
-    setPgSrc(null);
-    client.api("GET", "/playground/").then(async ({ status, timeout }) => {
-      if (timeout || status >= 400) { setPgErr(true); setPg(true); return; }
-      // No `dir` means the page the console frames for this product; naming one opens that page of the product's own.
-      const minted = await client.api("POST", "/playground/session", dir ? { dir } : {});
-      const link = typeof minted.json?.path === "string" ? (minted.json.path as string) : null;
-      if (minted.status >= 400 || !link) { setPgErr(true); setPg(true); return; }
-      // The link is relative to the project, like every other path this view calls.
-      setPgSrc(projectPath(projectId, link));
-      setPgErr(false);
-      setPg(true);
-    }).catch(() => { setPgErr(true); setPg(true); });
-  };
-
   const running = Boolean(run && !run.done && !run.lost);
   const scripts: ScriptInfo[] = useMemo(() => orderScripts(info?.scripts ?? []).map((n) => describeScript(n, pkg.scripts)), [info, pkg.scripts]);
   const crumb = dir ? dir.split("/") : [];
@@ -580,77 +463,9 @@ export default function Product(): React.JSX.Element {
 
           {run ? <RunOutput run={run} onStop={() => void stop()} onClear={clearRun} /> : null}
 
-          <section className="card prod-pg" aria-labelledby="pg-h">
-            <div className="prod-h">
-              <h3 id="pg-h">Playground</h3>
-              <span className="grow" />
-              {playground === "ready" ? <Button variant="small" onClick={() => openPg()}>{pg ? "Close the playground" : "Open the playground"}</Button> : null}
-            </div>
-            <p className="prod-note">
-              {playground === "ready"
-                ? `The page this product ships at ${pgPage ?? "apps/playground/index.html"}, shown in a sandbox: its scripts run, but they cannot reach this console or its API.`
-                : playground === "checking"
-                  ? "Looking for the page this product builds."
-                  : `A playground shows a page out of the product's own tree — apps/playground/index.html, public/index.html, dist/, build/, or a root index.html. This checkout has none.${scripts.some((s) => s.name === "build") ? " If the product's build writes one, run build and the button appears here." : ""}`}
-            </p>
-            {playground === "ready" && !pg && pgAlt.length > 0 ? (
-              <p className="prod-note">
-                The product also ships its own page at {pgAlt.map((a) => a.file).join(" and ")} —{" "}
-                <Button variant="small" onClick={() => openPg(pgAlt[0].dir)}>open that one</Button>. It is written for the
-                product&apos;s own server, so it renders here but cannot fetch its data.
-              </p>
-            ) : null}
-            {pg ? (
-              pgErr ? (
-                <p className="prod-note">The playground could not be opened. The host did not serve {pgPage ?? "the product's page"}; run the product&apos;s build, then open it again.</p>
-              ) : pgSrc ? (
-                // `sandbox` without allow-same-origin gives the page an opaque origin: its scripts run,
-                // but they cannot call this server's API with the operator's session or read what it answers.
-                <iframe title="Playground" src={pgSrc} sandbox="allow-scripts allow-forms allow-popups allow-modals" className="playframe" onError={() => setPgErr(true)} />
-              ) : (
-                <p className="prod-note" role="status">Opening the playground…</p>
-              )
-            ) : null}
-          </section>
-
-          <section className="card prod-pg" aria-labelledby="live-h">
-            <div className="prod-h">
-              <h3 id="live-h">The product&apos;s UI, running</h3>
-              <span className="grow" />
-              {live.running ? <Button variant="small" onClick={openLive}>{liveOpen ? "Close it" : "Open it"}</Button> : null}
-              {live.running ? <Button variant="small" onClick={stopLive}>Stop</Button> : null}
-            </div>
-            <p className="prod-note">
-              {live.running
-                ? `Running on port ${live.port} of the workspace, which only the console can reach: every byte of it loads through here, and the page keeps its opaque origin, so it can read neither this console nor its API.`
-                : "Some products serve their UI rather than shipping a page to frame — a command of their own, on a loopback port. Start it here and use it in this window: the console learns the port from what the product prints, and proxies it."}
-            </p>
-            {!live.running ? (
-              <div className="prod-live-start">
-                <label htmlFor="live-cmd">how this product starts its UI</label>
-                <input
-                  id="live-cmd"
-                  value={liveCmd}
-                  placeholder="node bin/skillctl.js ui"
-                  onChange={(e) => setLiveCmd(e.target.value)}
-                  onKeyDown={(e) => { if (e.key === "Enter") startLive(); }}
-                />
-                <Button variant="small" onClick={startLive}>Start it</Button>
-              </div>
-            ) : null}
-            {liveErr ? <p className="prod-note" role="alert">{liveErr}</p> : null}
-            {live.log ? (
-              <pre className="prod-log" aria-label="what the product printed">{live.log.split("\n").slice(-12).join("\n")}</pre>
-            ) : null}
-            {liveOpen ? (
-              liveSrc ? (
-                // No allow-same-origin: the product's script cannot reach the console's API with the owner's session.
-                <iframe title="The product's UI" src={liveSrc} sandbox="allow-scripts allow-forms allow-popups allow-modals" className="playframe" />
-              ) : (
-                <p className="prod-note" role="status">Opening it…</p>
-              )
-            ) : null}
-          </section>
+          {/* Your product on the console's side: the page it ships and its own UI, running. The same card as the
+              Playground page's — the question "where is my product" is the same question on both. */}
+          <YourProduct client={client} projectId={projectId} refreshKey={builtCheck} />
 
           {changes.length ? (
             <section className="card" aria-labelledby="chg-h">
