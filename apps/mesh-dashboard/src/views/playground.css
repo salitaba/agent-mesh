@@ -10,7 +10,6 @@
 .pg-form .pg-cmd { flex: 1 1 320px; min-width: 0; }
 .pg-note { margin: 0 0 var(--s4); font: var(--tx-value); color: var(--text-dim); max-width: 72ch; }
 .pg-note code { font: 12px var(--mono); color: var(--text); }
-.pg-skel { display: grid; gap: var(--s2); margin: 0 0 var(--s4); }
 
 /* ---------- what the product says it is ---------- */
 .pg-quick { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: var(--s2-5); margin: 0 0 var(--s4); }
@@ -24,7 +23,12 @@
 /* ---------- a command the server would not start ---------- */
 .pg-refusal { display: flex; align-items: flex-start; gap: var(--s2); margin: 0 0 var(--s4); padding: var(--s2-5) var(--s3); background: color-mix(in srgb, var(--bad) 7%, var(--panel)); border: 1px solid color-mix(in srgb, var(--bad) 28%, var(--line)); border-left: 3px solid var(--bad); border-radius: var(--r); font: var(--tx-value); color: var(--text); }
 .pg-refusal .icon { flex: none; margin-top: 2px; color: var(--bad); }
-.pg-refusal-t { min-width: 0; overflow-wrap: anywhere; }
+.pg-refusal-b { min-width: 0; }
+.pg-refusal-t { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+/* The run the host named: what it is, how long it has been going, and the one press that ends it. */
+.pg-refusal-run { margin: var(--s1-5) 0 0; font: var(--tx-value); color: var(--text-dim); overflow-wrap: anywhere; }
+.pg-refusal-run code { font: 12px var(--mono); color: var(--text); }
+.pg-refusal .soft { margin-top: var(--s2); }
 
 /* ---------- what it printed ---------- */
 .pg-out { scroll-margin-top: var(--s6); }
@@ -40,4 +44,8 @@
 @media (max-width: 620px) {
   .pg-quick { grid-template-columns: 1fr; }
   .pg-form .pg-cmd { flex-basis: 100%; }
+  /* Run is the page's whole point: on a phone it is a full-width thumb target, under the command. */
+  .pg-form .primary { flex: 1 1 100%; }
+  .pg-log { max-height: 60vh; }
+  .pg-refusal .soft { flex: 1 1 100%; }
 }

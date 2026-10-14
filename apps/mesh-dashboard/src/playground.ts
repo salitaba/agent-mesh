@@ -35,6 +35,31 @@ export interface PlayRun {
   stopped?: boolean;
   /** The host answered "unknown run": it restarted, and runs live in its memory. */
   lost?: boolean;
+  /**
+   * The console's own clock ended it, not a person and not the command. A run that was signalled has no exit code, and
+   * the panel used to read that as "Ended by a signal" — a true sentence that blamed nobody and explained nothing while
+   * a test suite that needed two minutes was killed every time. See RUN_CEILING_MS.
+   */
+  timedOut?: boolean;
+  /** The clock the host was given for this run, so the sentence can name a duration. */
+  timeoutMs?: number | null;
+}
+
+/**
+ * The host's longest clock for one run (`playground/exec` clamps `timeoutMs` to this; see apps/mesh-server/src/index.ts).
+ *
+ * The page used to ask for a minute. That is not a bug in the host and it was reported as one in the page: a suite that
+ * takes ninety seconds was signalled at sixty and shown as "Ended by a signal", with no mention of a clock anywhere.
+ * Nothing here waits for ever — the host still ends the run, and now the page asks for the whole time it is allowed.
+ */
+export const RUN_CEILING_MS = 300_000;
+
+/** A run the host will not start another beside, as the 409 body names it. */
+export interface BlockedRun {
+  id: string;
+  command: string;
+  /** The host's clock (epoch ms), so the page can say how long it has been going. */
+  startedAt: number;
 }
 
 export interface PlayState {
@@ -47,8 +72,18 @@ export interface PlayState {
    * or too long) or would not stop. Shown beside the last run's output, never in place of it.
    */
   refusal: string | null;
+  /**
+   * The run that is in the way, when the refusal was a 409. The host names it, so the page can offer to end it:
+   * without this the answer to "a run is already in progress" was a sentence with no button under it, from a page that
+   * cannot see the other tab, the other page or the reload that left the run behind.
+   */
+  blocked: BlockedRun | null;
+  /** The command that was refused, kept so ending the blocking run can go straight on to it. */
+  pending: string | null;
   /** A start is in flight. The Run button is locked until the server answers, so a double-click is one run. */
   starting: boolean;
+  /** Ending the blocking run is in flight. */
+  clearing: boolean;
 }
 
 const EMPTY: PlayState = {
@@ -57,7 +92,10 @@ const EMPTY: PlayState = {
   commandsError: null,
   run: null,
   refusal: null,
+  blocked: null,
+  pending: null,
   starting: false,
+  clearing: false,
 };
 
 /**
@@ -85,7 +123,22 @@ export function parseCommands(json: unknown): PlayCommand[] | null {
 export const isLive = (run: PlayRun | null): boolean => !!run && !run.done && !run.lost;
 
 /** Something is running (or being started): the second click of a double-click is not a second run. */
-export const isBusy = (s: PlayState): boolean => s.starting || isLive(s.run);
+export const isBusy = (s: PlayState): boolean => s.starting || s.clearing || isLive(s.run);
+
+/**
+ * The run a refusal names, or null. Only a 409 carries one: the host is the only one that knows what is in the way
+ * (another tab's command, or a script the Product page started), and it says so rather than leaving the page guessing.
+ */
+export function blockedRunOf(status: number, json: unknown): BlockedRun | null {
+  if (status !== 409) return null;
+  const r = (json as { run?: { id?: unknown; command?: unknown; startedAt?: unknown } } | null)?.run;
+  if (!r || typeof r.id !== "string" || !r.id) return null;
+  return {
+    id: r.id,
+    command: typeof r.command === "string" && r.command.trim() ? r.command : "a command",
+    startedAt: typeof r.startedAt === "number" ? r.startedAt : Date.now(),
+  };
+}
 
 /**
  * The sentence for a start the server would not accept. The server's own words are used verbatim, because
@@ -96,6 +149,21 @@ export function startRefusal(status: number, json: unknown, timeout = false): st
   if (typeof said === "string" && said.trim()) return said;
   if (timeout) return "The server did not answer in time. The command was not started.";
   return `The command was not started (the server answered ${status || "nothing"}).`;
+}
+
+/**
+ * How a run that ended without an exit code ended: by the console's clock, by a person, or by a signal nobody here
+ * sent. The three read differently because they are different, and only the first two can be answered on this page.
+ */
+export function stopReason(run: PlayRun): "clock" | "you" | "signal" {
+  if (run.timedOut) return "clock";
+  return run.stopped ? "you" : "signal";
+}
+
+/** The sentence under a run the console's own clock ended, naming the clock it was given. */
+export function clockWords(timeoutMs: number | null | undefined): string {
+  const mins = Math.max(1, Math.round((timeoutMs ?? RUN_CEILING_MS) / 60_000));
+  return `The console stopped it after ${mins} minute${mins === 1 ? "" : "s"}, the longest a command may run here.`;
 }
 
 /** How the controller is tuned. Both are costs the caller owns: a poll interval and a run's ceiling. */
@@ -119,13 +187,23 @@ export interface Playground {
   start(client: ProjectClient, command: string): Promise<void>;
   /** Stop the run in flight. The output so far is kept. */
   stop(client: ProjectClient): Promise<void>;
+  /**
+   * End the run that is in the way and then run the command that was refused.
+   *
+   * One press, because that is the whole point: on a phone the person has one thumb, the sentence told them a run is
+   * going, and the only way out used to be another page or another tab. The killed run is adopted as this page's run
+   * first, so its output and its ending are on screen, and the refused command starts once the host has really let go.
+   */
+  stopBlocking(client: ProjectClient): Promise<void>;
   /** Dismiss the output of a finished run. */
   clear(): void;
 }
 
 export function createPlayground(opts: PlaygroundOptions = {}): Playground {
   const pollMs = opts.pollMs ?? 1200;
-  const timeoutMs = opts.timeoutMs ?? 60_000;
+  // The host's own ceiling, not a minute: a page that asks for less than it is allowed is a page that kills long work
+  // and then reports it as a signal (see RUN_CEILING_MS).
+  const timeoutMs = opts.timeoutMs ?? RUN_CEILING_MS;
   let state: PlayState = EMPTY;
   const listeners = new Set<() => void>();
   // Identifies the live poll loop. A loop whose token no longer matches is a loop for a run that is
@@ -166,6 +244,8 @@ export function createPlayground(opts: PlaygroundOptions = {}): Playground {
               exitCode: done ? json.exitCode ?? null : r.exitCode,
               log: typeof json.log === "string" ? json.log : r.log,
               endedAt: done ? r.endedAt ?? Date.now() : undefined,
+              timedOut: json.timedOut === true,
+              timeoutMs: typeof json.timeoutMs === "number" ? json.timeoutMs : r.timeoutMs,
             },
           });
         }
@@ -198,7 +278,7 @@ export function createPlayground(opts: PlaygroundOptions = {}): Playground {
     // One run at a time is the server's rule too, but a double-click should not spend a request finding out.
     if (isBusy(state)) return;
     const text = command.trim();
-    set({ starting: true, refusal: null });
+    set({ starting: true, refusal: null, blocked: null, pending: text });
     let res;
     try {
       res = await client.api("POST", "/playground/exec", { command: text, timeoutMs });
@@ -210,17 +290,25 @@ export function createPlayground(opts: PlaygroundOptions = {}): Playground {
     if (res.status === 201 && runId) {
       gen += 1;
       const mine = gen;
+      const clock = typeof res.json.timeoutMs === "number" ? res.json.timeoutMs : timeoutMs;
       set({
         starting: false,
         refusal: null,
-        run: { id: runId, command: text, done: false, exitCode: null, log: "", startedAt: Date.now() },
+        blocked: null,
+        pending: null,
+        run: { id: runId, command: text, done: false, exitCode: null, log: "", startedAt: Date.now(), timeoutMs: clock },
       });
       await follow(client, runId, mine);
       return;
     }
     // 409 (another run is in progress) or 400 (an empty or over-long command): the server's own sentence,
     // and the last run's output stays where it is — it is still the answer to the last command that ran.
-    set({ starting: false, refusal: startRefusal(res.status, res.json, res.timeout) });
+    // A 409 also names the run in the way, which is the difference between a sentence and a way out.
+    set({
+      starting: false,
+      refusal: startRefusal(res.status, res.json, res.timeout),
+      blocked: blockedRunOf(res.status, res.json),
+    });
   };
 
   const stop = async (client: ProjectClient): Promise<void> => {
@@ -243,9 +331,45 @@ export function createPlayground(opts: PlaygroundOptions = {}): Playground {
     if (!res.json?.ok) backToStop(startRefusal(res.status, res.json, res.timeout));
   };
 
+  /**
+   * End the run that is in the way, then run what the person asked for. The order matters: the host will not start a
+   * second run until the first is really gone, so the page waits for the run it killed to end rather than pressing
+   * again and being refused by the same run it just stopped.
+   */
+  const stopBlocking = async (client: ProjectClient): Promise<void> => {
+    const b = state.blocked;
+    const want = state.pending;
+    if (!b || state.clearing) return;
+    set({ clearing: true });
+    let res;
+    try {
+      res = await client.api("POST", `/workspace/run/kill/${encodeURIComponent(b.id)}`);
+    } catch (e: unknown) {
+      set({ clearing: false, blocked: null, refusal: e instanceof Error ? e.message : String(e) });
+      return;
+    }
+    if (res.json?.ok !== true) {
+      // The host would not end it (it finished on its own between the refusal and the press, most likely). Say what it
+      // said, and let the person press Run again rather than pretending the way is clear.
+      set({ clearing: false, blocked: null, refusal: startRefusal(res.status, res.json, res.timeout) });
+      return;
+    }
+    // Watch it out: it is a run like any other, and its last lines are worth having on screen.
+    gen += 1;
+    const mine = gen;
+    set({
+      clearing: false,
+      blocked: null,
+      refusal: null,
+      run: { id: b.id, command: b.command, done: false, exitCode: null, log: "", startedAt: b.startedAt, stopped: true },
+    });
+    await follow(client, b.id, mine);
+    if (want && want !== b.command) await start(client, want);
+  };
+
   const clear = (): void => {
     gen += 1;
-    set({ run: null, refusal: null });
+    set({ run: null, refusal: null, blocked: null, pending: null, clearing: false });
   };
 
   return {
@@ -257,6 +381,7 @@ export function createPlayground(opts: PlaygroundOptions = {}): Playground {
     loadCommands,
     start,
     stop,
+    stopBlocking,
     clear,
   };
 }

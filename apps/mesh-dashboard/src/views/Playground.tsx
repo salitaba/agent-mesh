@@ -3,9 +3,10 @@ import type { FormEvent } from "react";
 import "./playground.css";
 import { dur } from "../format";
 import { useMesh } from "../store";
-import { Button, CopyButton, ErrorState, Input, PageHeader, Pill, Skeleton } from "../components";
+import { Button, CopyButton, ErrorState, Input, PageHeader, Pill, useNow } from "../components";
 import { Icon } from "../icons";
-import { createPlayground, isBusy, isLive, outcomeOf, type PlayRun } from "../playground";
+import { YourProduct } from "./YourProduct";
+import { clockWords, createPlayground, isBusy, isLive, outcomeOf, stopReason, RUN_CEILING_MS, type PlayRun } from "../playground";
 
 /* The Playground: the operator's own terminal for the thing they paid for.
  *
@@ -13,18 +14,28 @@ import { createPlayground, isBusy, isLive, outcomeOf, type PlayRun } from "../pl
  * mesh could deliver a CLI whose `--help` worked the first time a human typed it — and had nowhere to type it. This page is
  * that box: a command, Run, and the raw output, kept after the run ends so the answer to the last command is still there.
  *
- * All the state is in `playground.ts`, which has no DOM in it and is driven by the tests. This file is its rendering: a
- * form, the product's declared entry points as shortcuts, the server's refusal when it will not start a command, and the log.
+ * Above it sits the product itself — the page it ships, and its own UI running — because "open the console, use my
+ * product" should not require knowing which other view holds that. All the terminal's state is in `playground.ts`, which
+ * has no DOM in it and is driven by the tests. This file is its rendering.
  */
+
+function Elapsed({ since }: { since: number }): React.JSX.Element {
+  const now = useNow(1000);
+  return <>{dur(Math.max(0, now - since))}</>;
+}
 
 function StatusChip({ run }: { run: PlayRun }): React.JSX.Element {
   const outcome = outcomeOf(run);
   const took = run.endedAt ? ` in about ${dur(run.endedAt - run.startedAt)}` : "";
   switch (outcome) {
-    case "running": return <Pill tone="info" pulse>Running</Pill>;
+    case "running": return <Pill tone="info" pulse>Running <Elapsed since={run.startedAt} /></Pill>;
     case "passed": return <Pill tone="ok">Exit code 0{took}</Pill>;
     case "failed": return <Pill tone="bad">Exit code {run.exitCode}{took}</Pill>;
-    case "stopped": return <Pill tone="warn">{run.stopped ? "Stopped" : "Ended by a signal"}{took}</Pill>;
+    case "stopped":
+      // The console's own clock is not a mystery signal: whoever stopped it is said, and after how long.
+      return stopReason(run) === "clock"
+        ? <Pill tone="warn">Stopped by the clock{took}</Pill>
+        : <Pill tone="warn">{run.stopped ? "Stopped" : "Ended by a signal"}{took}</Pill>;
     default: return <Pill tone="warn">Output lost</Pill>;
   }
 }
@@ -39,6 +50,9 @@ export default function Playground(): React.JSX.Element {
   const logRef = useRef<HTMLPreElement>(null);
   // Follow the end of the output while the person has not scrolled up to read something.
   const stick = useRef(true);
+  // A run that has just started brings its output into view and takes focus: the button that started it disables on the
+  // spot, which drops a keyboard user's place, and on a phone the output is below the quick buttons.
+  const justStarted = useRef(false);
 
   // The product's own entry points, asked of the project rather than guessed. A new project is a new product.
   useEffect(() => {
@@ -53,9 +67,22 @@ export default function Playground(): React.JSX.Element {
     if (el && stick.current) el.scrollTop = el.scrollHeight;
   }, [log]);
 
+  useEffect(() => {
+    if (!run || !justStarted.current) return;
+    justStarted.current = false;
+    const panel = document.getElementById("pg-out");
+    panel?.focus({ preventScroll: true });
+    panel?.scrollIntoView({ block: "nearest" });
+  }, [run]);
+
+  const runIt = (cmd: string): void => {
+    justStarted.current = true;
+    void pg.start(client, cmd);
+  };
+
   const submit = (e: FormEvent): void => {
     e.preventDefault();
-    void pg.start(client, command);
+    runIt(command);
   };
 
   return (
@@ -64,6 +91,10 @@ export default function Playground(): React.JSX.Element {
         title="Playground"
         lede="Run the product's own commands in its checkout and read exactly what they print."
       />
+
+      {/* The product itself, first: the page it ships and its own UI, running. Using the thing is why the terminal
+          below exists, and on a phone it should not live two views away. */}
+      <YourProduct client={client} projectId={projectId} />
 
       <form className="pg-form" onSubmit={submit} aria-label="Run a command in the product's checkout">
         <Input
@@ -80,28 +111,18 @@ export default function Playground(): React.JSX.Element {
         <Button variant="primary" size="lg" type="submit" icon="play" loading={state.starting} disabled={busy}>
           {state.starting ? "Starting…" : "Run"}
         </Button>
-        {/* Stop is only offered while there is a run to stop: one run at a time is the host's rule, so the button that
-            ends it is the way to run something else. */}
-        {isLive(run) ? (
-          <Button variant="soft" icon="stop" disabled={run!.stopped} onClick={() => void pg.stop(client)}>
-            {run!.stopped ? "Stopping…" : "Stop"}
-          </Button>
-        ) : null}
       </form>
       <p className="pg-note">
-        The command runs in the product&apos;s checkout on the host, under the same hygiene as a script run: every
-        <code> MESH_</code> variable and the model keys are withheld. One command runs at a time, and it is stopped on a
-        clock if it does not end on its own.
+        The command runs in the product&apos;s own checkout on the host, and what it prints appears below exactly as it
+        printed it. One command runs at a time; if one does not finish by itself, the console stops it after
+        {" "}{RUN_CEILING_MS / 60_000} minutes — the longest any command may run here. It cannot see this console&apos;s
+        own settings or keys: every <code>MESH_</code> variable and the model keys are withheld from it.
       </p>
 
       {state.commandsError ? (
         <ErrorState what="the product's commands" detail={state.commandsError} onRetry={() => void pg.loadCommands(client)} />
       ) : !state.commandsLoaded ? (
-        <div className="pg-skel" role="status">
-          <span className="sr-only">Reading the commands this product declares</span>
-          <Skeleton w="40%" h={14} />
-          <Skeleton w="60%" h={14} />
-        </div>
+        <p className="pg-note" role="status">Reading the commands this product declares…</p>
       ) : state.commands.length ? (
         <div className="pg-quick" role="group" aria-label="Commands this product declares for itself">
           {state.commands.map((c) => (
@@ -111,7 +132,7 @@ export default function Playground(): React.JSX.Element {
               className="pg-quick-btn"
               disabled={busy}
               title={`Run ${c.command}`}
-              onClick={() => void pg.start(client, c.command)}
+              onClick={() => runIt(c.command)}
             >
               <span className="pg-quick-l">{c.label}</span>
               <span className="pg-quick-c mono">{c.command}</span>
@@ -119,25 +140,50 @@ export default function Playground(): React.JSX.Element {
           ))}
         </div>
       ) : (
-        <p className="pg-note">This product declares no entry points of its own. Type a command above.</p>
+        <p className="pg-note">This product declares no commands of its own. Type one above.</p>
       )}
 
-      {/* The server's own words. It is the one that knows why (a run already in progress names the other run, which this
-          page cannot see), and the last run's output stays below: being refused a command is not losing the answer to the
-          one before it. */}
+      {/* The server's own words, and — when it names the run that is in the way — a way out of them in one press. The
+          last run's output stays below: being refused a command is not losing the answer to the one before it. */}
       {state.refusal ? (
-        <p className="pg-refusal" role="alert">
+        <div className="pg-refusal" role="alert">
           <Icon name="alert" size={14} />
-          <span className="pg-refusal-t">{state.refusal}</span>
-        </p>
+          <div className="pg-refusal-b">
+            <p className="pg-refusal-t">{state.refusal}</p>
+            {state.blocked ? (
+              <>
+                <p className="pg-refusal-run">
+                  It is <code>{state.blocked.command}</code>, going for the last{" "}
+                  <Elapsed since={state.blocked.startedAt} />.
+                  {state.pending && state.pending !== state.blocked.command ? (
+                    <> Yours — <code>{state.pending}</code> — is waiting.</>
+                  ) : null}
+                </p>
+                <Button variant="soft" icon="stop" loading={state.clearing} onClick={() => void pg.stopBlocking(client)}>
+                  {state.clearing
+                    ? "Stopping it…"
+                    : state.pending && state.pending !== state.blocked.command
+                      ? "Stop it and run mine"
+                      : "Stop it"}
+                </Button>
+              </>
+            ) : null}
+          </div>
+        </div>
       ) : null}
 
       {run ? (
-        <section className="card pg-out" aria-labelledby="pg-out-h" tabIndex={-1}>
+        <section className="card pg-out" id="pg-out" aria-labelledby="pg-out-h" tabIndex={-1}>
           <div className="pg-out-h">
             <h3 id="pg-out-h">Output of <code>{run.command}</code></h3>
             <StatusChip run={run} />
             <span className="grow" />
+            {/* Stop lives where the eye is while a run is going: on the output it would end, not back up in the form. */}
+            {isLive(run) ? (
+              <Button variant="soft" icon="stop" disabled={run.stopped} onClick={() => void pg.stop(client)}>
+                {run.stopped ? "Stopping…" : "Stop"}
+              </Button>
+            ) : null}
             {run.log ? <CopyButton text={run.log} label="Copy output" /> : null}
             {isLive(run) ? null : <Button variant="small" icon="x" onClick={pg.clear}>Dismiss</Button>}
           </div>
@@ -147,17 +193,22 @@ export default function Playground(): React.JSX.Element {
               see its output.
             </p>
           ) : (
-            <pre
-              ref={logRef}
-              className="pg-log"
-              role="region"
-              aria-label={`Output of ${run.command}`}
-              tabIndex={0}
-              onScroll={(e) => {
-                const el = e.currentTarget;
-                stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 24;
-              }}
-            >{log || "No output yet."}</pre>
+            <>
+              {run.done && stopReason(run) === "clock" ? (
+                <p className="pg-note" role="status">{clockWords(run.timeoutMs)}</p>
+              ) : null}
+              <pre
+                ref={logRef}
+                className="pg-log"
+                role="region"
+                aria-label={`Output of ${run.command}`}
+                tabIndex={0}
+                onScroll={(e) => {
+                  const el = e.currentTarget;
+                  stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 24;
+                }}
+              >{log || "No output yet."}</pre>
+            </>
           )}
         </section>
       ) : null}

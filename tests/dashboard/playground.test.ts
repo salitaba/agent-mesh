@@ -12,7 +12,17 @@ import assert from "node:assert/strict";
 import * as fs from "fs";
 import * as path from "path";
 import type { ProjectClient } from "../../apps/mesh-dashboard/src/api";
-import { createPlayground, isBusy, outcomeOf, parseCommands } from "../../apps/mesh-dashboard/src/playground";
+import {
+  RUN_CEILING_MS,
+  blockedRunOf,
+  clockWords,
+  createPlayground,
+  isBusy,
+  outcomeOf,
+  parseCommands,
+  stopReason,
+  type PlayRun,
+} from "../../apps/mesh-dashboard/src/playground";
 import { VIEWS } from "../../apps/mesh-dashboard/src/route";
 
 const SRC = path.resolve(__dirname, "..", "..", "..", "apps", "mesh-dashboard", "src");
@@ -22,11 +32,11 @@ interface Call { method: string; path: string; body?: any }
 interface Answer { status?: number; json?: any; timeout?: boolean }
 
 /** A client whose every call is recorded and answered by `respond`, so a test can say what the server said. */
-function rig(respond: (method: string, path: string, body?: any) => Answer): { client: ProjectClient; calls: Call[] } {
+function rig(respond: (method: string, path: string, body?: any) => Answer | Promise<Answer>): { client: ProjectClient; calls: Call[] } {
   const calls: Call[] = [];
   const api = async (method: string, path: string, body?: unknown) => {
     calls.push({ method, path, body });
-    const a = respond(method, path, body);
+    const a = await respond(method, path, body);
     return { status: a.status ?? 200, json: a.json ?? null, ...(a.timeout ? { timeout: true } : {}) };
   };
   const client = {
@@ -115,7 +125,8 @@ test("running a command POSTs it, polls the run, and keeps the log the server re
   });
   const pg = createPlayground({ pollMs: 1 });
   await pg.start(client, "  node bin/skillctl.js list  ");
-  assert.deepEqual(starts(calls), [{ method: "POST", path: "/playground/exec", body: { command: "node bin/skillctl.js list", timeoutMs: 60000 } }]);
+  assert.deepEqual(starts(calls), [{ method: "POST", path: "/playground/exec", body: { command: "node bin/skillctl.js list", timeoutMs: RUN_CEILING_MS } }]);
+  assert.equal(RUN_CEILING_MS, 300_000, "the host's own ceiling (playground/exec clamps to five minutes), not a shorter clock of the page's invention");
 
   const run = pg.getState().run!;
   assert.equal(run.id, "run-1");
@@ -161,6 +172,31 @@ test("the exit status is known once the run is done, and a signal's run has none
   const pg2 = createPlayground({ pollMs: 1 });
   await pg2.start(signalled.client, "sleep 30");
   assert.equal(outcomeOf(pg2.getState().run!), "stopped", "no exit code is a signal, not a failure");
+});
+
+/* ------------------------------------------------------------------ the clock */
+
+test("a run the console's own clock ended is named as such, not as a signal nobody sent", async () => {
+  const { client } = rig((method, path) =>
+    method === "POST"
+      ? { status: 201, json: { runId: "clocked", timeoutMs: 300_000 } }
+      : { json: { id: "clocked", done: true, exitCode: null, timedOut: true, timeoutMs: 300_000, log: "still going\n" } });
+  const pg = createPlayground({ pollMs: 1 });
+  await pg.start(client, "npm run test -- --slow");
+  const run = pg.getState().run!;
+  assert.equal(outcomeOf(run), "stopped", "no exit code, as with any signalled run");
+  assert.equal(run.timedOut, true, "but the host said which signal it was, and the page keeps that");
+  assert.equal(run.timeoutMs, 300_000, "and the clock it was given");
+  assert.equal(stopReason(run), "clock");
+  assert.equal(clockWords(run.timeoutMs), "The console stopped it after 5 minutes, the longest a command may run here.");
+});
+
+test("who ended a signalled run is told: the clock, a person, or a signal nobody here sent", () => {
+  const ended: PlayRun = { id: "r", command: "c", done: true, exitCode: null, log: "", startedAt: 1, endedAt: 2 };
+  assert.equal(stopReason({ ...ended, timedOut: true }), "clock");
+  assert.equal(stopReason({ ...ended, stopped: true }), "you");
+  assert.equal(stopReason(ended), "signal");
+  assert.equal(clockWords(60_000), "The console stopped it after 1 minute, the longest a command may run here.");
 });
 
 /* ------------------------------------------------------------------ refusals */
@@ -212,6 +248,19 @@ test("an unanswered start is reported without claiming the run began", async () 
   assert.match(pg.getState().refusal!, /did not answer in time/);
   assert.equal(pg.getState().run, null);
   assert.equal(pg.getState().starting, false);
+});
+
+test("the run a 409 names is read exactly as the host sent it, and only a 409 carries one", () => {
+  assert.deepEqual(
+    blockedRunOf(409, { error: "a run is already in progress", run: { id: "run-9", command: "sleep 30", startedAt: 123 } }),
+    { id: "run-9", command: "sleep 30", startedAt: 123 },
+  );
+  assert.equal(blockedRunOf(400, { run: { id: "x" } }), null, "a command the page got wrong is not a run in the way");
+  assert.equal(blockedRunOf(409, { error: "a run is already in progress" }), null, "a host that names no run leaves nothing to offer");
+  assert.equal(blockedRunOf(409, { run: { command: "sleep 30" } }), null, "an id is the least a page needs to end it");
+  const vague = blockedRunOf(409, { run: { id: "r" } });
+  assert.equal(vague?.command, "a command", "no blank where a name should be");
+  assert.equal(typeof vague?.startedAt, "number", "a duration can still be said");
 });
 
 /* ------------------------------------------------------------------ one at a time, and stopping */
@@ -276,6 +325,70 @@ test("a kill the host refuses is said, and the run is not marked stopped on a li
   await started;
 });
 
+test("one press ends the run in the way and runs the command that was refused", async () => {
+  let releaseMine: (() => void) | null = null;
+  let posts = 0;
+  const { client, calls } = rig((method, path, body) => {
+    if (method === "POST" && path === "/playground/exec") {
+      if ((body as { command?: string }).command === "mine" && ++posts > 1) {
+        // Hold the refused command's start until the test lets it go, so the adopted run can be seen mid-flight.
+        return new Promise<Answer>((resolve) => { releaseMine = () => resolve({ status: 201, json: { runId: "mine-run" } }); });
+      }
+      return { status: 409, json: { error: "a run is already in progress", run: { id: "other", command: "sleep 30", startedAt: Date.now() - 30_000 } } };
+    }
+    if (path === "/workspace/run/kill/other") return { json: { ok: true } };
+    if (path === "/playground/exec/other") return { json: { id: "other", done: true, exitCode: null, log: "$ sleep 30\n" } };
+    if (path === "/playground/exec/mine-run") return { json: { id: "mine-run", done: true, exitCode: 0, log: "the answer\n" } };
+    return { status: 404, json: { error: "no route" } };
+  });
+  const pg = createPlayground({ pollMs: 1 });
+  await pg.start(client, "mine");
+  assert.equal(pg.getState().refusal, "a run is already in progress");
+  assert.equal(pg.getState().blocked?.command, "sleep 30", "the run in the way is named, not just announced");
+  assert.equal(pg.getState().pending, "mine");
+
+  const pressing = pg.stopBlocking(client);
+  await settle();
+  // While the refused command is being started, the run that was in the way is on screen as this page's own run, ended.
+  assert.equal(pg.getState().run!.command, "sleep 30");
+  assert.equal(pg.getState().run!.stopped, true, "it was stopped, and says so");
+  assert.equal(pg.getState().refusal, null);
+  assert.equal(pg.getState().clearing, false);
+
+  releaseMine!();
+  await pressing;
+  const run = pg.getState().run!;
+  assert.equal(run.command, "mine", "the refused command ran, without a second press");
+  assert.equal(run.exitCode, 0);
+  assert.equal(pg.getState().blocked, null);
+  assert.equal(pg.getState().pending, null);
+  assert.deepEqual(calls.map((c) => c.path), [
+    "/playground/exec",
+    "/workspace/run/kill/other",
+    "/playground/exec/other",
+    "/playground/exec",
+    "/playground/exec/mine-run",
+  ], "kill, watch it out, then start the refused command — never a blind second POST beside the run it just killed");
+});
+
+test("a blocking run the host would not end is said, and nothing is claimed to have run", async () => {
+  const { client, calls } = rig((method, path) => {
+    if (method === "POST" && path === "/playground/exec") {
+      return { status: 409, json: { error: "a run is already in progress", run: { id: "later", command: "npm run serve", startedAt: 1 } } };
+    }
+    if (path === "/workspace/run/kill/later") return { status: 404, json: { error: "run not running" } };
+    return { status: 404, json: { error: "no route" } };
+  });
+  const pg = createPlayground({ pollMs: 1 });
+  await pg.start(client, "mine");
+  await pg.stopBlocking(client);
+  assert.equal(pg.getState().refusal, "run not running", "the host's words, not a hope");
+  assert.equal(pg.getState().blocked, null, "the offer is withdrawn: it did not work");
+  assert.equal(pg.getState().run, null, "and no run was adopted or started on the strength of a kill that failed");
+  assert.equal(pg.getState().clearing, false);
+  assert.equal(starts(calls).length, 1, "the refused command was never sent a second time");
+});
+
 /* ------------------------------------------------------------------ a run the host forgot */
 
 test("a run the host no longer knows is not reported as a failure of the command", async () => {
@@ -312,7 +425,7 @@ test("the view draws the product's commands as one button each, running that com
   assert.match(view, /state\.commands\.map\(/, "a button per command the API offered");
   assert.match(view, /\{c\.label\}/, "the button says the label the server sent");
   assert.match(view, /\{c\.command\}/, "and what it will run");
-  assert.match(view, /onClick=\{\(\) => void pg\.start\(client, c\.command\)\}/, "pressing it runs that command");
+  assert.match(view, /onClick=\{\(\) => runIt\(c\.command\)\}/, "pressing it runs that command — through runIt, so the output panel is brought into view");
   assert.match(view, /disabled=\{busy\}/, "no second run while one is in flight");
 });
 
@@ -324,18 +437,37 @@ test("the view shows the raw log in monospace, follows its end, and says how the
   for (const part of ["Exit code 0", "Exit code {run.exitCode}", "isLive(run) ? null : <Button", "Stopped"]) {
     assert.ok(view.includes(part), `the output panel says ${part}`);
   }
+  assert.match(view, /stopReason\(run\) === "clock"/, "a run the console's clock ended is named as such, not as a signal nobody sent");
+  assert.match(view, /clockWords\(run\.timeoutMs\)/, "in a sentence that names the clock it was given");
+  assert.match(view, /RUN_CEILING_MS \/ 60_000/, "the note under the command box names the ceiling, in minutes");
   assert.match(view, /onClick=\{pg\.clear\}/, "a finished run is dismissed by hand, never cleared on its own");
 });
 
-test("the view shows the server's refusal, offers Stop while a run is in flight, and keeps the output under both", () => {
+test("the view shows the server's refusal with the run that is in the way, and one press ends it", () => {
   assert.match(view, /state\.refusal \? \(/);
   assert.match(view, /\{state\.refusal\}/, "the server's own sentence, as it sent it");
   assert.match(view, /role="alert"/);
-  assert.match(view, /isLive\(run\) \? \(\s*<Button variant="soft" icon="stop"/, "Stop while a run is in progress");
-  assert.match(view, /void pg\.stop\(client\)/);
+  assert.match(view, /state\.blocked \? \(/, "the run the host named is drawn — its command, its duration, its way out — not only announced");
+  assert.match(view, /void pg\.stopBlocking\(client\)/, "one press ends it and goes on to the refused command");
   // The refusal is drawn above the panel and the panel is only replaced when there is a new run: a refusal never
-  // takes the previous output off the screen.
-  assert.ok(view.indexOf("pg-refusal") < view.indexOf("pg-out"), "the refusal comes before the output, it does not replace it");
+  // takes the previous output off the screen. (Compared as rendered, not by first mention: the focus effect
+  // names pg-out long before either is drawn.)
+  assert.ok(
+    view.indexOf('className="pg-refusal"') < view.indexOf('className="card pg-out"'),
+    "the refusal comes before the output, it does not replace it",
+  );
+});
+
+test("the view offers Stop on the output it would end, and brings that output to the eye when a run starts", () => {
+  assert.match(view, /isLive\(run\) \? \(\s*<Button variant="soft" icon="stop"/, "Stop sits on the output panel, where the eye is while a run goes");
+  assert.match(view, /void pg\.stop\(client\)/);
+  assert.match(view, /getElementById\("pg-out"\)/, "a run that has just started brings its output into view and takes focus");
+  assert.match(view, /id="pg-out"/);
+});
+
+test("the view puts the product itself above the terminal", () => {
+  assert.match(view, /<YourProduct client=\{client\} projectId=\{projectId\} \/>/, "the page it ships, and its own UI running");
+  assert.ok(view.indexOf("<YourProduct") < view.indexOf("pg-form"), "the product comes first: it is the reason the terminal is here");
 });
 
 test("the view is registered in the console's routing, its sidebar and its view switch", () => {
