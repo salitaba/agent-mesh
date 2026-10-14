@@ -47,6 +47,9 @@ export interface TestMeshOptions {
   transitions?: Record<string, string[]>;
   rules?: unknown[];
   missionTokens?: number;
+  /** The runtime every fixture agent runs on. `stub` (the default) is a scripted seat that cannot run anything; name a
+   * real one to see the gates that only apply to a mesh which could actually execute its product. */
+  runtime?: string;
   maxEvents?: number;
   wallClockMinutes?: number;
   maxActiveAgents?: number;
@@ -292,7 +295,7 @@ function meshMessagesYaml(msg: TestMeshOptions["messages"]): string {
 export function testConfigYaml(opts: TestMeshOptions): string {
   const agents = opts.agents
     .map((a) => {
-      const lines = [`  ${a.id}:`, `    role: ${a.role}`, `    runtime: stub`];
+      const lines = [`  ${a.id}:`, `    role: ${a.role}`, `    runtime: ${opts.runtime ?? "stub"}`];
       if (a.prompt !== undefined) lines.push(`    prompt: ./roles/${a.id}.md`);
       if (a.mode) lines.push(`    mode: ${a.mode}`);
       if (a.capabilities) lines.push(`    capabilities: [${a.capabilities.join(", ")}]`);
@@ -334,7 +337,7 @@ mesh:
 ${criteriaBlock}${generateBlock}  workspace:
     path: ./workspace
   runtime:
-    default: stub
+    default: ${opts.runtime ?? "stub"}
 ${meshMessagesYaml(opts.messages)}
 startup:
   activate: [${(opts.startup ?? []).join(", ")}]

@@ -650,6 +650,7 @@ export const ARTIFACT_TYPES: ArtifactType[] = [
   "CodePatch",
   "ReleasePlan",
   "TestReport",
+  "ExecutionRecord",
   "SecurityReport",
   "ResearchReport",
   "Decision",
@@ -738,6 +739,7 @@ export const ARTIFACT_MACHINE: Record<ArtifactType, ArtifactStateMachineKind> = 
   ApiSpec: "document",
   DatabaseSchema: "document",
   TestReport: "document",
+  ExecutionRecord: "document",
   SecurityReport: "document",
   ResearchReport: "document",
   Decision: "document",
@@ -810,7 +812,7 @@ export const AUTO_EVIDENCED_CRITERIA: string[] = [
  * gate-facing reader need the same set, and a type added to one and not the other is how a report
  * nobody could have written comes to count.
  */
-export const VERIFICATION_ARTIFACT_TYPES: readonly string[] = ["TestReport", "SecurityReport", "BenchmarkResult"];
+export const VERIFICATION_ARTIFACT_TYPES: readonly string[] = ["TestReport", "ExecutionRecord", "SecurityReport", "BenchmarkResult"];
 
 /**
  * The acceptance criteria a mission gets when its config declares none.

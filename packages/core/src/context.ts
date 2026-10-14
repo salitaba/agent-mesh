@@ -1602,7 +1602,13 @@ export function renderContextInstructions(bundle: AgentContextBundle): string {
         `${unmet.length} of ${mandatory.length} mandatory criteria are UNMET. Your memories of a completed mission refer to a PREVIOUS goal — do not treat them as permission to stop. Drive one unmet criterion forward now (publish, review, accept, or build whatever your role owns for it).`,
       );
     } else {
-      lines.push("All mandatory criteria are evidenced. Close out remaining work or accept completion.");
+      lines.push(
+        "All mandatory criteria are evidenced. Close out remaining work or accept completion. If this mission merged "
+          + "code, its product must be RUN before it can be delivered: start the command a user would actually type, in "
+          + "the product's own directory, and record it as an `ExecutionRecord` — the command, the working directory, its "
+          + "exit status and what it printed — then get that record verified. A test that imports a module is not a run of "
+          + "the thing a user invokes.",
+      );
     }
     lines.push("");
   }

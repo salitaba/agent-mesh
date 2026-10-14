@@ -1,4 +1,4 @@
-﻿import { HARD_OP_CAPABILITY, VERIFICATION_ARTIFACT_TYPES, artifactUri, effectiveHardActions } from "../../protocol/src/index";
+﻿import { HARD_OP_CAPABILITY, VERIFICATION_ARTIFACT_TYPES, artifactUri, effectiveHardActions, isSettledArtifactStatus } from "../../protocol/src/index";
 import type {
   AcceptanceCriterion,
   AgentDefinition,
@@ -425,6 +425,41 @@ export function draftArtifacts(state: Projections, goalId: string): Artifact[] {
 }
 
 /**
+ * The runs of a goal that have been settled: `ExecutionRecord` artifacts recording that the product was actually executed
+ * (its command, its exit status, what it printed), and that somebody verified the record.
+ *
+ * A mission that ships code and never runs it delivers a repository, not a product. Measured 2026-10-14: a live mesh
+ * completed with 47 CodePatches merged — and its product *was* runnable (`bin/skillctl.js`, declared as the package's
+ * `bin`, printed its usage the moment a person typed `node bin/skillctl.js --help`) — and no seat had ever run it. Its
+ * operator's words: "product just have test script and it doesn't have run product". The suite was green throughout,
+ * because a test that imports a module is not a run of the thing a user invokes.
+ *
+ * Settled, not merely submitted: a draft nobody verified is not evidence that the product works. What counts as settled
+ * comes from the protocol (`isSettledArtifactStatus`), the same rule the criteria evidence uses.
+ */
+export function runEvidence(state: Projections, goalId: string): Artifact[] {
+  const out: Artifact[] = [];
+  for (const a of state.artifacts?.values() ?? []) {
+    if (a.goalId !== goalId || a.type !== "ExecutionRecord") continue;
+    // Settled, but not withdrawn: an archived run is a retracted claim, and a retracted claim is not evidence that the
+    // product works. Everything else terminal counts — the same settledness the criteria evidence rule uses.
+    if (isSettledArtifactStatus(a.status) && a.status !== "ARCHIVED") out.push(a);
+  }
+  return out;
+}
+
+/**
+ * Did this mission ship code? A merged CodePatch is the fact that says so — never a criterion id (see `openRejections`).
+ */
+export function shippedCode(state: Projections, goalId: string): Artifact[] {
+  const out: Artifact[] = [];
+  for (const a of state.artifacts?.values() ?? []) {
+    if (a.goalId === goalId && a.type === "CodePatch" && a.status === "MERGED") out.push(a);
+  }
+  return out;
+}
+
+/**
  * Which capability lets an agent review each kind of artifact?
  *
  * The single table. It used to have a twin in the policy engine, also called
@@ -451,6 +486,7 @@ export const REVIEW_CAPABILITIES: Record<Artifact["type"], string> = {
   CodePatch: "code.review",
   ReleasePlan: "code.review",
   TestReport: "test.write",
+  ExecutionRecord: "test.write",
   SecurityReport: "security.review",
   RequirementsDoc: "review.design",
   // The six that were missing, and the reason they had to be filled.
@@ -503,6 +539,7 @@ export function subjectForArtifactType(type: Artifact["type"]): string {
     case "ReleasePlan":
       return "release";
     case "TestReport":
+    case "ExecutionRecord":
     case "BenchmarkResult":
       return "quality";
     case "SecurityReport":

@@ -11,7 +11,7 @@ import {
 import type { ResolvedMeshConfig } from "../../config/src/index";
 import type { Projections } from "./state";
 import { outstandingDebtors } from "./state";
-import { openRejections, openReviews } from "./projections-helpers";
+import { openRejections, openReviews, runEvidence, shippedCode } from "./projections-helpers";
 import { agentKey, autoRaiseExhausted, budgetParkedSeats, liveSeats, missionKey, taskKey, threadKey } from "./budgets";
 import { verdictText, type VerdictText } from "../../protocol/src/catalog";
 
@@ -693,7 +693,23 @@ export class TerminationManager {
       // the audit line says it in words. A DRAFT is not here at all — nobody owes it a verdict, and the supervisor
       // archives the goal's drafts as it closes, so they cannot read as unfinished work either.
       const unansweredReviews = openReviews(state, goalId);
-      if (ownedTasks.length === 0 && rejectedPatches.length === 0) {
+      // A mission that ships code has to have RUN it. A live mesh (2026-10-14) delivered a repository of tests and docs
+      // around a CLI no seat had ever started: 47 CodePatches merged, the product runnable — its own `--help` worked the
+      // moment a person typed it — and the operator's words were "product just have test script and it doesn't have run
+      // product". A test that imports a module is not a run of the thing a user invokes, so a run is evidence of its own
+      // kind (`runEvidence`: a settled ExecutionRecord — the command, its exit status, what it printed) and the mission waits
+      // for one. Scoped from the state, never from config wording: it applies when the mission merged a patch AND has a
+      // seat that can actually run something — a runtime that is not the stub, holding `test.execute`. A scripted mesh
+      // cannot run a product, so demanding one of it would be a deadlock, the same reading that keeps OPEN cards and
+      // unclaimed tasks out of this gate.
+      const canRun = Object.values(config.agents ?? {}).some(
+        (a) => {
+          const rt = a.runtime ?? config.defaultRuntime;
+          return !!rt && rt !== "stub" && (a.capabilities ?? []).includes("test.execute");
+        },
+      );
+      const needsRun = shippedCode(state, goalId).length > 0 && runEvidence(state, goalId).length === 0 && canRun;
+      if (ownedTasks.length === 0 && rejectedPatches.length === 0 && !needsRun) {
         const nowMs = input.nowMs ?? Date.now();
         return {
           kind: "complete",

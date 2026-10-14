@@ -27,6 +27,8 @@ export {
   openRejections,
   openReviews,
   draftArtifacts,
+  runEvidence,
+  shippedCode,
   passOnlyDomains,
   qualifiedForDomain,
   unqualifiedAuthor,

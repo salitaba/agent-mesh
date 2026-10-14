@@ -123,6 +123,7 @@ export type ArtifactType =
   | "CodePatch"
   | "ReleasePlan"
   | "TestReport"
+  | "ExecutionRecord"
   | "SecurityReport"
   | "ResearchReport"
   | "Decision"

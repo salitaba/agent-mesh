@@ -7,6 +7,24 @@ sections 1 to 26) are described there, run by run.
 
 ## Unreleased
 
+### Fixed: a mission that ships code may not call itself delivered until the product has been run
+
+A live mesh delivered a repository of tests and docs around a CLI that **no seat had ever started**. 47 CodePatches
+merged, every acceptance criterion evidenced, "Delivered" on the console — and the product itself worked the moment a
+person typed it: `node bin/skillctl.js --help` printed its usage, `list` answered *no skills found*. Its operator's
+words were *"product just have test script and it doesn't have run product"*. The suite was green throughout, because a
+test that imports a module is not a run of the thing a user invokes.
+
+Running the product is now evidence of its own kind — an **`ExecutionRecord`** artifact (the command, the working
+directory, its exit status, what it printed), settled like any other verification document — and a mission that merged a
+CodePatch does not complete while the goal has none. The seats are told in their own guidance: a mission that ships code
+is not finished until the product has been *run*, not tested.
+
+The scope is read from the state, never from config wording: the gate applies when the mission **merged a patch** *and*
+a seat could actually run something (a runtime that is not the stub, holding `test.execute`). A scripted or stub mesh
+cannot run a product, so demanding a run of it would be a deadlock — that is the same reading that keeps OPEN cards and
+unclaimed tasks out of the completion gate, and it is pinned by a control in the new spec.
+
 ### Fixed: a mission cannot close over work left in review, or leave its working copies in draft
 
 A live mesh reported itself **delivered** with 41 artifacts awaiting review (36 QA TestReports among them), five
