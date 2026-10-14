@@ -130,38 +130,32 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
-  margin: 4px 0 10px;
+  gap: var(--s2);
+  margin: 0 0 var(--s3);
 }
-.prod-live-start label {
-  font-size: 12px;
-  color: var(--ink-3, #8b94a3);
-  letter-spacing: 0.02em;
-}
+.prod-live-start label { font: var(--tx-meta); color: var(--muted); }
 .prod-live-start input {
   flex: 1 1 16rem;
   min-width: 0;
-  background: var(--panel-2, #1b1e24);
-  border: 1px solid var(--line, #2a2f38);
-  border-radius: 6px;
-  color: inherit;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 13px;
-  padding: 7px 9px;
+  background: var(--sunken);
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  color: var(--text);
+  font: 13px var(--mono);
+  padding: var(--s1-5) var(--s2);
 }
-.prod-live-start input:focus { outline: 2px solid var(--accent, #7dd3a0); outline-offset: 1px; }
+.prod-live-start input:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
 .prod-log {
-  margin: 0 0 10px;
+  margin: 0 0 var(--s3);
   max-height: 12rem;
   overflow: auto;
-  background: var(--panel-2, #1b1e24);
-  border: 1px solid var(--line, #2a2f38);
-  border-radius: 6px;
-  padding: 9px 11px;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 12px;
+  background: var(--sunken);
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  padding: var(--s2);
+  font: 12px var(--mono);
   line-height: 1.6;
   white-space: pre-wrap;
   word-break: break-word;
-  color: var(--ink-3, #c3cad6);
+  color: var(--text-dim);
 }
