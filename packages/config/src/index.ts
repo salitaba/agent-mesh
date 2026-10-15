@@ -3017,9 +3017,11 @@ startup:
 # knowing who it is — so 'pm'here, not 'product-manager': one word, and the difference is a seat that
 # knows how to author acceptance criteria against a person rather than a schema.
 #
-# Trim it freely — security is optional for a product with no auth or dependencies, and both designers
-# are optional for one with no user-facing surface. A nine-seat crew costs ten to twenty million tokens
-# for a substantial pass, which is why the mission budget below is declared in that range.
+# Eight seats, because that is what the licence a new host actually has allows (Community: 8 seats per
+# mesh, 1 project, 4 concurrent turns) — a default that cannot boot under the default licence is not a
+# default. examples/full-squad/mesh.yaml ships the ninth seat (security) for anyone on a larger plan,
+# and both designers are optional for a product with no user-facing surface. A crew this size costs ten
+# to twenty million tokens for a substantial pass, which is why the mission budget is declared in that range.
 agents:
   pm:
     role: pm
@@ -3139,21 +3141,6 @@ agents:
       - release.candidate
     session:
       persistent: true
-  security:
-    role: security
-    runtime: ${defaultRuntime}
-    capabilities:
-      - security.scan
-      - security.review
-    authority:
-      - security.block
-      - security.pass
-    interests:
-      - release.candidate
-      - authentication.changed
-      - dependency.changed
-    session:
-      persistent: true
 
 policies:
   communication:
@@ -3168,7 +3155,6 @@ policies:
         - frontend-developer
         - backend-developer
         - qa
-        - security
         - ui-designer
         - ux-designer
     architect:
@@ -3186,7 +3172,6 @@ policies:
         - frontend-developer
         - backend-developer
         - qa
-        - security
     frontend-developer:
       may_contact:
         - architect
@@ -3199,14 +3184,12 @@ policies:
         - architect
         - tech-lead
         - qa
-        - security
     qa:
       may_contact:
         - frontend-developer
         - backend-developer
         - tech-lead
         - architect
-        - security
         - pm
     security:
       may_contact:
