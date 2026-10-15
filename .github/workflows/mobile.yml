@@ -256,7 +256,7 @@ jobs:
       # The APK is the run's output even when nothing is released: no release is cut
       # here at all, so the artifact is how an APK reaches a person.
       - name: Upload the APK
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: curule-android-apk
           path: apps/desktop/src-tauri/gen/android/app/build/outputs/apk/**/*.apk
