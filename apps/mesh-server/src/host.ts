@@ -810,6 +810,18 @@ export function createHostServer(deps: {
         return proxyToProject(req, res, decodeURIComponent(parts[2]), `/${parts.slice(3).join("/")}`, u);
       }
 
+      // The product's own UI, framed: the same door and the same reason. A sandboxed frame gets an opaque origin
+      // and sends no credential at all, so the signed link in its path is the proof — verified by the child, whose
+      // secret it is. Both the page and its preflight come through; the owner's own start and stop do not, and stay
+      // behind operator auth below. This layer is the one that actually bit: with the route correct in the child's
+      // router but this door missing, every frame answered 401 "missing credentials" while "Start it" worked fine.
+      if (
+        parts[0] === "api" && parts[1] === "p" && parts[2] && parts[3] === "_ui" && parts.length >= 5 &&
+        (req.method === "GET" || req.method === "OPTIONS")
+      ) {
+        return proxyToProject(req, res, decodeURIComponent(parts[2]), `/${parts.slice(3).join("/")}`, u);
+      }
+
       // Operator auth on the host's own boundary. The child tokens below are a
       // separate, internal credential and are never accepted from outside.
       const auth = requireAuth(req, u, parts, { sessions, limiter });

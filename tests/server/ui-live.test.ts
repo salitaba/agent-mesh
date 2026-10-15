@@ -149,4 +149,19 @@ test("the product's UI is served ahead of operator auth, and the operator's own 
       `starting and stopping the product's UI stays behind operator auth (${action})`,
     );
   }
+
+  // The child's router is not the whole story: the host's own boundary runs first, and a frame never reaches the child
+  // without its door. Getting the router right and this wrong is exactly what happened — every frame answered 401
+  // "missing credentials" while "Start it" worked. It must let the page *and its preflight* through, and nothing else.
+  const host = fs.readFileSync(path.join(process.cwd(), "apps/mesh-server/src/host.ts"), "utf8");
+  const door = host.indexOf('parts[3] === "_ui"');
+  const hostAuth = host.indexOf("const auth = requireAuth(req, u, parts");
+  assert.ok(door > 0 && hostAuth > 0, "both are present in the host");
+  assert.ok(door < hostAuth, "the host lets the framed UI through before operator auth");
+  assert.match(
+    host.slice(door, door + 260),
+    /GET.*OPTIONS|OPTIONS.*GET/s,
+    "and lets its preflight through too, or the page's own writes would be blocked",
+  );
+  assert.ok(host.indexOf('parts[3] === "_pg"') > 0 && host.indexOf('parts[3] === "_pg"') < hostAuth, "as it already did for the playground page");
 });
