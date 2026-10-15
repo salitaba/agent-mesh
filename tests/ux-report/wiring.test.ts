@@ -55,6 +55,15 @@ test("the image build renders a page that must pass and one that must fail", () 
   for (const file of ["tools/fixtures/ux-good.html", "tools/fixtures/ux-bad.html"]) assert.ok(exists(file), `${file} is the page the build renders`);
 });
 
+test("the build context carries the tool: a shipped renderer is not silently filtered out", () => {
+  // A build can pass every check above and still ship no renderer: .dockerignore had `tools`, so
+  // `COPY tools ./tools` failed at build time while everything else looked correct.
+  const ignore = read(".dockerignore");
+  assert.doesNotMatch(ignore, /^tools$/m, "tools/ ships in the image, so .dockerignore must not exclude it");
+  const dockerfile = read("Dockerfile");
+  assert.match(dockerfile, /^COPY tools \.\/tools$/m, "and the build stage takes it from that context");
+});
+
 test("playwright-core is a production dependency, because the image installs it with the product", () => {
   const pkg = JSON.parse(read("package.json")) as { dependencies: Record<string, string> };
   assert.match(pkg.dependencies["playwright-core"] ?? "", /^\^\d+\.\d+\.\d+$/, "pinned, so the browser the image installs matches the driver that uses it");

@@ -1,3 +1,5 @@
+# The workspace image ships tools/ (ux-render.mjs and the pages its build renders), so it must reach
+# the build context — do not ignore it.
 # Build context: only what the Dockerfile copies. Everything else stays out of the image and the cache key.
 .git
 .github
@@ -12,7 +14,6 @@ workspace
 tests
 docs
 site
-tools
 deploy/helm
 NOTES-*.md
 agent-mesh-runtime.md
