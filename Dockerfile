@@ -32,6 +32,7 @@ COPY schemas ./schemas
 COPY roles ./roles
 COPY examples ./examples
 COPY scripts ./scripts
+COPY tools ./tools
 
 # Compile, then keep only what runs: no tests, no dev dependencies.
 RUN npm run build \
@@ -43,9 +44,13 @@ FROM ${NODE_IMAGE} AS runtime
 
 # git: agents work in worktrees and commit. tini: the host spawns one process per project and an agent's
 # shell spawns more, so PID 1 must reap what its children leave behind. ca-certificates: TLS to the model
-# provider. curl is for the health check only.
+# provider. curl is for the health check only. chromium is the crew's eyes: nothing here could render a
+# page, so every interface decision was made blind and asserted as text (tools/ux-render.mjs drives it and
+# reports measurements the text-only seats can read). fonts-* because a headless render without fonts draws
+# boxes, and a font census of boxes is worse than none.
 RUN apt-get update \
  && apt-get install -y --no-install-recommends git ca-certificates tini curl \
+      fonts-liberation fonts-dejavu-core \
  && rm -rf /var/lib/apt/lists/*
 
 # Nothing here phones home, and the Claude Code binary the agents run does not either: it is told to make no
@@ -78,6 +83,14 @@ COPY --from=build /src/THIRD_PARTY_NOTICES.md ./THIRD_PARTY_NOTICES.md
 COPY --from=build /src/node_modules ./node_modules
 COPY --from=build /src/dist ./dist
 COPY --from=build /src/apps/mesh-dashboard/dist ./apps/mesh-dashboard/dist
+COPY --from=build /src/tools ./tools
+
+# The crew's eyes: a real Chromium the text-only seats drive through tools/ux-render.mjs. Installed from the
+# same pinned playwright-core the driver imports, so the browser and the driver cannot drift, and into /opt —
+# never HOME, which is the customer's volume and may be small or read-only.
+ENV PLAYWRIGHT_BROWSERS_PATH=/opt/ms-playwright
+RUN node "/app/node_modules/playwright-core/cli.js" install --with-deps chromium \
+ && ln -s /app/tools/ux-render.mjs /usr/local/bin/ux-render
 COPY --from=build /src/apps/mesh-cli/bin ./apps/mesh-cli/bin
 COPY --from=build /src/roles ./roles
 COPY --from=build /src/schemas ./schemas
@@ -90,6 +103,11 @@ RUN chmod 0755 /usr/local/bin/mesh-entrypoint /app/apps/mesh-cli/bin/curule.mjs 
  && ln -s /app/apps/mesh-cli/bin/mesh.mjs /usr/local/bin/mesh
 
 USER mesh
+
+# Render two fixture pages as the mesh uid: the good one must pass, and the bad one must fail with 1. A
+# build that cannot render, or that stopped finding a broken page, fails here instead of in a designer's hands.
+RUN ux-render --file /app/tools/fixtures/ux-good.html --width 390 --quiet
+RUN ux-render --file /app/tools/fixtures/ux-bad.html --width 390 --quiet; test $? -eq 1
 VOLUME ["/data"]
 EXPOSE 7420
 

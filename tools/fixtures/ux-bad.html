@@ -1,0 +1,39 @@
+<!doctype html>
+<!--
+  The page `tools/ux-render.mjs` has to reject, rendered at image build time. It is deliberately the page
+  a crew produces when it writes CSS as text and never looks at it: a 30px control, grey-on-grey text, a
+  1000px table that pushes the document sideways at 390px, and a type scale of its own invention. If the
+  smoke test stops failing here, the tool has stopped measuring.
+-->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Report</title>
+    <style>
+      body { margin: 0; font-family: system-ui, sans-serif; font-size: 16px; }
+      main { padding: 12px; }
+      h1 { font-size: 19px; font-weight: 600; }
+      p { color: #b9b9b9; font-size: 15px; }
+      .fine { font-size: 13px; }
+      .fine2 { font-size: 11px; font-weight: 500; }
+      button { padding: 2px 4px; font-size: 12px; }
+      table { width: 1000px; border-collapse: collapse; }
+      td { border: 1px solid #eeeeee; padding: 4px; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Quarterly report</h1>
+      <p>Grey on white, at an eleventh of the needed contrast.</p>
+      <p class="fine">A size nobody chose.</p>
+      <p class="fine2">And another.</p>
+      <button type="button">Go</button>
+      <table>
+        <tbody>
+          <tr><td>Region</td><td>Revenue</td><td>Change</td><td>Notes</td><td>Owner</td><td>Quarter</td><td>Plan</td><td>Actual</td></tr>
+        </tbody>
+      </table>
+    </main>
+  </body>
+</html>
