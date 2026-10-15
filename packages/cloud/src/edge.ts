@@ -136,6 +136,27 @@ export class WorkspaceEdge {
     }
     if (url.pathname === "/__enter") return this.enter(req, res, url, workspace);
 
+    /**
+     * A framed page's own requests, which carry no cookie at all.
+     *
+     * A sandboxed frame gets an opaque origin and sends nothing the browser holds — that is what makes it safe — so it
+     * cannot present this proxy's session. What it can present is the signed, expiring capability in its path, which the
+     * *workspace* verifies before serving a byte; that is the same door the host has, and this one has to exist too. And
+     * the operator's token must NOT be added here: the page is agent-written, and letting it act with the owner's
+     * authority is the exact thing the sandbox is there to prevent. Measured: without this, a frame's request for the
+     * product's page and its stylesheet never reached the workspace at all, and its owner reported "css doesn't load".
+     */
+    const capability = /^\/api\/p\/[^/]+\/(_pg|_ui)\//.exec(url.pathname);
+    if (capability) {
+      const method = req.method ?? "GET";
+      const allowed = method === "GET" || method === "HEAD" || (capability[1] === "_ui" && method === "OPTIONS");
+      if (!allowed) return this.say(req, res, 405, "method_not_allowed", "Use GET.", undefined, { allow: "GET" });
+      if (workspace.status !== "running" || !workspace.upstream) {
+        return this.say(req, res, 503, "workspace_not_running", "This workspace is not running.", this.appLink(), { "retry-after": "30" });
+      }
+      return this.forward(req, res, url, workspace, clientIp, null);
+    }
+
     const cookieValue = parseCookies(req.headers.cookie)[this.cookieName];
     const cookie = this.o.access.read(cookieValue);
     if (!cookie || !this.stillGood(cookie, workspace)) {
@@ -178,7 +199,7 @@ export class WorkspaceEdge {
     res.end();
   }
 
-  private forward(req: http.IncomingMessage, res: http.ServerResponse, url: URL, workspace: Workspace, clientIp: string, cookieValue: string): void {
+  private forward(req: http.IncomingMessage, res: http.ServerResponse, url: URL, workspace: Workspace, clientIp: string, cookieValue: string | null): void {
     const upstream = workspace.upstream!;
     const headers: http.OutgoingHttpHeaders = {};
     for (const [name, value] of Object.entries(req.headers)) {
@@ -186,7 +207,8 @@ export class WorkspaceEdge {
       if (HOP.has(n) || FROM_BROWSER.has(n) || value === undefined) continue;
       headers[n] = value;
     }
-    headers.authorization = `Bearer ${this.o.plane.workspaces.operatorToken(workspace.workspaceId)}`;
+    // A capability request carries no credential of the owner's: the page proves itself with its own signed link.
+    if (cookieValue !== null) headers.authorization = `Bearer ${this.o.plane.workspaces.operatorToken(workspace.workspaceId)}`;
     headers["x-forwarded-for"] = clientIp;
     headers["x-forwarded-proto"] = this.scheme;
     headers["x-forwarded-host"] = String(req.headers.host ?? "");
@@ -235,9 +257,16 @@ export class WorkspaceEdge {
       answer.pipe(res);
       // What was checked when the request began is checked again while the answer goes on.
       const recheck = setInterval(() => {
-        const now = this.o.access.read(cookieValue);
         const current = this.o.plane.workspaces.byHost(String(req.headers.host ?? ""));
-        if (now && current && current.workspaceId === workspace.workspaceId && current.status === "running" && this.stillGood(now, current)) return;
+        const running = !!current && current.workspaceId === workspace.workspaceId && current.status === "running";
+        if (cookieValue === null) {
+          // Nothing of the owner's is behind this one: the workspace verifies the signed link and its clock ends it, so
+          // only a workspace that stops mid-stream ends this.
+          if (running) return;
+        } else {
+          const now = this.o.access.read(cookieValue);
+          if (now && running && this.stillGood(now, current!)) return;
+        }
         this.log("info", "a response was ended because the access behind it ended", { workspaceId: workspace.workspaceId });
         stop();
         res.destroy();

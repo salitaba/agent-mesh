@@ -555,3 +555,42 @@ test("on plain HTTP, for trying it on one machine, the cookie has no Secure and 
     await f.close();
   }
 });
+
+
+// ---- what a framed page may ask for, and what it may not ----
+
+/**
+ * A sandboxed frame carries no cookie, so an edge that demands one never lets the product's own page — or its stylesheet —
+ * reach the workspace. Its owner reported exactly that ("css doesn't load") after the page itself had been fixed twice at
+ * the layers below. The signed, expiring capability in the path is the proof and the *workspace* verifies it, so these two
+ * prefixes pass without a session. The operator's token is deliberately not presented: the page is agent-written, and
+ * letting it act with the owner's authority is the thing the sandbox exists to prevent.
+ */
+test("a framed page's own requests pass without a session and carry no operator token, and only these two prefixes do", async () => {
+  const f = await fixture();
+  try {
+    const token = f.p.plane.workspaces.operatorToken(f.workspaceId);
+
+    // no cookie at all: what a sandboxed frame sends
+    assert.equal((await f.get("/api/p/demo/_pg/cap/index.html")).status, 200, "the playground page reaches the workspace");
+    assert.equal((await f.get("/api/p/demo/_ui/cap/")).status, 200, "and the product's own UI");
+    assert.equal((await f.get("/api/p/demo/_ui/cap/style.css")).status, 200, "and its stylesheet — the thing its owner reported missing");
+    assert.notEqual((await f.get("/api/p/demo/_ui/cap/", { method: "OPTIONS" })).status, 401, "the page's own preflight is not refused");
+
+    assert.ok(f.host.requests.length > 0, "the requests really reached a host");
+    for (const seen of f.host.requests) {
+      assert.ok(
+        !String(seen.headers.authorization ?? "").includes(token),
+        `nothing a framed page asks for carries the owner's token (${seen.url})`,
+      );
+    }
+
+    // and nothing else is opened by it
+    assert.equal((await f.get("/api/p/demo/status")).status, 401, "the console's own API still needs a session");
+    assert.equal((await f.get("/")).status, 401, "and so does the console itself");
+    assert.equal((await f.get("/api/p/demo/_pg/cap/index.html", { method: "POST" })).status, 405, "a capability path takes a read, not a write");
+    assert.equal((await f.get("/api/p/demo/_ui/cap/", { method: "DELETE" })).status, 405, "and the product's UI proxy takes no other method");
+  } finally {
+    await f.close();
+  }
+});
