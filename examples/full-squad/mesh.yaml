@@ -1,0 +1,272 @@
+version: 1
+
+# The full squad: a crew that can take a product from a goal to a delivered, measured interface.
+#
+# Every seat's `role` names a prompt file the platform ships as roles/<role>.md, and copying this
+# example into a project materialises those files into it. That detail matters more than it reads: a
+# seat whose role has no prompt file runs on a one-line synthesized default ("You are the <role> agent
+# in mesh …") and answers competently without knowing who it is — which is how a live crew produced an
+# approved design document and an unusable interface, with nobody in the mesh ever told what design is.
+# `product-manager` has no such file; `pm` does. One word, one seat, and the difference is visible in
+# the product.
+#
+# Trim it freely: the seats marked optional below are the ones a smaller product does not need.
+# A nine-seat crew costs roughly ten to twenty million tokens for a substantial pass, so the mission
+# budget here is declared at 20M with auto_raise anchored to it.
+
+project:
+  id: full-squad
+  name: Full Squad
+
+mesh:
+  id: full-squad
+  name: Full Squad
+  goal: |
+    Describe the mission goal here. Say what the product is for, who uses it, and what a good
+    outcome looks like — the crew turns this into requirements, an architecture and criteria.
+
+  acceptance_criteria:
+    - id: requirements-agreed
+      description: A written requirements document exists, its acceptance criteria are explicit, and
+        anyone reading them can tell what would make each one true.
+      mandatory: true
+    - id: architecture-approved
+      description: The architecture is written down, reviewed, and approved before implementation starts.
+      mandatory: true
+    - id: implementation-merged
+      description: The implementation is merged with its tests passing, and the product can be run.
+      mandatory: true
+    - id: interface-measured
+      description: If the product has a user-facing surface — a page, a screen, a window — the interface
+        is designed before it is built and measured after; the design states its typeface, type scale,
+        spacing rhythm, density and single accent hue, and the shipped surface is rendered at a phone's
+        width with zero failures. The renderer's own rows are the evidence, not a summary of them.
+      mandatory: true
+
+  workspace:
+    path: ./workspace
+    git: true
+
+  runtime:
+    default: claude
+
+startup:
+  activate:
+    - pm
+
+agents:
+  # ---- product and architecture -------------------------------------------------
+  pm:
+    role: pm
+    capabilities:
+      - repository.read
+    authority:
+      - requirements.accept
+    interests:
+      - requirement.blocked
+      - goal.progress
+      - release.candidate
+      - implementation.completed
+    session:
+      persistent: true
+
+  architect:
+    role: architect
+    capabilities:
+      - repository.read
+      - architecture.write
+      - review.design
+    authority:
+      - architecture.approve
+    interests:
+      - architecture.*
+      - design.question
+      - requirements.created
+    session:
+      persistent: true
+
+  tech-lead:
+    role: tech-lead
+    capabilities:
+      - repository.read
+      - code.review
+      - review.design
+      - task.assign
+    authority:
+      - implementation.approve
+    interests:
+      - patch.ready
+      - review.requested
+    session:
+      persistent: true
+
+  # ---- implementation ------------------------------------------------------------
+  frontend-developer:
+    role: developer
+    capabilities:
+      - repository.read
+      - repository.write
+      - test.execute
+      - git.commit
+      - git.merge
+    interests:
+      - architecture.approved
+      - review.rejected
+      - design.question
+    session:
+      persistent: true
+
+  backend-developer:
+    role: developer
+    capabilities:
+      - repository.read
+      - repository.write
+      - test.execute
+      - git.commit
+      - git.merge
+    interests:
+      - architecture.approved
+      - review.rejected
+    session:
+      persistent: true
+
+  # ---- design (required whenever the product has a user-facing surface) -----------
+  ui-designer:
+    role: ui-designer
+    capabilities:
+      - repository.read
+      - architecture.write   # the design is a document this seat authors
+      - review.design        # and this is the capability that lets it reject an implementation
+    authority: []
+    interests:
+      - requirements.created
+      - architecture.approved
+      - design.question
+      - review.rejected
+      - implementation.completed
+    session:
+      persistent: true
+
+  ux-designer:
+    role: ux-designer
+    capabilities:
+      - repository.read
+      - architecture.write
+      - review.design
+    authority: []
+    interests:
+      - requirements.created
+      - design.question
+      - review.rejected
+      - implementation.completed
+    session:
+      persistent: true
+
+  # ---- verification (security is optional for a product with no auth or dependencies) --
+  qa:
+    role: qa
+    capabilities:
+      - test.execute
+      - test.write
+    authority:
+      - quality.block
+      - quality.pass
+    interests:
+      - patch.ready
+      - release.candidate
+    session:
+      persistent: true
+
+  security:
+    role: security
+    capabilities:
+      - security.scan
+      - security.review
+    authority:
+      - security.block
+      - security.pass
+    interests:
+      - release.candidate
+      - authentication.changed
+      - dependency.changed
+    session:
+      persistent: true
+
+policies:
+  communication:
+    # Who may write to whom. A seat absent from this list may still be reached by an ask it owes an
+    # answer to; the matrix bounds the cold approach, which is what keeps nine seats from talking past
+    # each other. The designers sit beside the developers because a developer building a surface must
+    # be able to ask for its design.
+    pm:
+      may_contact: [architect, tech-lead, frontend-developer, backend-developer, qa, security, ui-designer, ux-designer]
+    architect:
+      may_contact: [pm, tech-lead, frontend-developer, backend-developer, ui-designer, ux-designer]
+    tech-lead:
+      may_contact: [pm, architect, frontend-developer, backend-developer, qa, security]
+    frontend-developer:
+      may_contact: [architect, tech-lead, qa, ui-designer, ux-designer]
+    backend-developer:
+      may_contact: [architect, tech-lead, qa, security]
+    qa:
+      may_contact: [frontend-developer, backend-developer, tech-lead, architect, security, pm]
+    security:
+      may_contact: [frontend-developer, backend-developer, tech-lead, qa, pm]
+    ui-designer:
+      may_contact: [pm, frontend-developer]
+    ux-designer:
+      may_contact: [pm, frontend-developer]
+
+  transitions:
+    # The gates that make an approval mean something. Each requirement names an actor and a kind, and
+    # resolves to an approval record by that actor: no record, no transition.
+    patch.merge:
+      requires:
+        - tech-lead.approve
+    implementation.completed:
+      requires:
+        - tech-lead.approve
+        - qa.pass
+    release.accepted:
+      requires:
+        - qa.pass
+        - security.pass
+    design.completed:
+      requires:
+        - tech-lead.approve
+
+  escalation:
+    thread:
+      max_depth: 8
+    repeated_conflict:
+      threshold: 3
+    artifact_review_rounds:
+      max: 5
+
+budgets:
+  mission:
+    # Declared intent, not a spend: auto_raise multiplies this up to max_multiple, and the ceiling is
+    # anchored to what is written here. A nine-seat crew needs room — a substantial pass costs ten to
+    # twenty million tokens — and a ceiling reached is the platform asking a person, which is the point.
+    tokens: 20000000
+    wall_clock_minutes: 1200
+    max_events: 120000
+  thread:
+    # A hundred thousand per thread kills live conversations mid-flight, and exhaustion pushes the
+    # agents into a fresh thread with no context — the biggest destroyer of continuity in the log.
+    tokens: 300000
+  auto_raise:
+    # A routine exhaustion is mechanical and should never cost an escalation.
+    enabled: true
+    factor: 1.5
+    max_multiple: 3
+
+scheduling:
+  mode: event-driven
+  concurrency:
+    # Four at once: enough that design, implementation and review overlap, few enough that the log
+    # stays readable and one bad turn cannot spend the mission's budget before anyone notices.
+    max_active_agents: 4
+  timeouts:
+    turn_timeout_ms: 300000
+    wait_wakeup_ms: 3000

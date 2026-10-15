@@ -1857,9 +1857,26 @@ export function loadRolePrompt(config: ResolvedMeshConfig, agentId: string, fall
     }
     return fs.readFileSync(abs, "utf8");
   }
-  // No prompt configured at all is a different case and stays a default: the
-  // hardcoded seats rely on it.
-  return `You are the ${config.agents[agentId]?.role ?? fallback?.role ?? agentId} agent in mesh '${config.meshId}'.`;
+  // No prompt configured at all. Before falling back to a one-line synthesis, look for the role's own
+  // prompt: project-local roles/<role>.md first (so a mesh can edit its own), then the install's.
+  //
+  // This is not a nicety. A seat that ran on the synthesized line answered competently without knowing
+  // who it was, and nothing in the output distinguished it from a working seat: a live crew produced
+  // four approved design documents and an interface its owner called ugly, with no seat ever told what
+  // design is — because no seat in that mesh named a prompt file, so none was ever materialized.
+  const role = config.agents[agentId]?.role ?? fallback?.role ?? agentId;
+  const candidates = [
+    path.resolve(config.dir, "roles", `${role}.md`),
+    path.resolve(__dirname, "..", "..", "..", "..", "roles", `${role}.md`),
+  ];
+  for (const file of candidates) {
+    try {
+      if (fs.existsSync(file)) return fs.readFileSync(file, "utf8");
+    } catch {
+      /* an unreadable candidate is not a reason to lose the seat */
+    }
+  }
+  return `You are the ${role} agent in mesh '${config.meshId}'.`;
 }
 
 export interface RolePromptRef {
@@ -1899,8 +1916,8 @@ export function materializeRolePrompts(
   const rolesDir = opts.rolesDir ?? path.resolve(__dirname, "..", "..", "..", "..", "roles");
   const created: MaterializedRolePrompt[] = [];
   for (const [id, agent] of Object.entries(source.agents)) {
-    const ref = agent.prompt;
-    if (!ref || path.isAbsolute(ref)) continue;
+    const ref = agent.prompt ?? `./roles/${agent.role}.md`;
+    if (path.isAbsolute(ref)) continue;
     const dest = path.resolve(root, ref);
     const rel = path.relative(root, dest);
     if (rel.startsWith("..") || path.isAbsolute(rel)) continue;
@@ -2947,7 +2964,7 @@ export function writeDefaultMeshYaml(
 }
 
 /** The mission token budget the default scaffold declares, so a screen can state it without writing the file first. */
-export const DEFAULT_SCAFFOLD_MISSION_TOKENS = 2_000_000;
+export const DEFAULT_SCAFFOLD_MISSION_TOKENS = 20_000_000;
 
 /**
  * A name written into the scaffold: plain when that reads back as the same string, quoted when it would not. The names
@@ -2988,13 +3005,39 @@ mesh:
 
 startup:
   activate:
-    - architect
+    - pm
 
+# The full squad, as a default rather than a discovery. A new mesh is born with the crew that can take
+# a goal to a delivered, measured product — including the two seats whose absence produced a live
+# product with four approved design documents behind it and an interface its owner called ugly.
+#
+# Every seat's 'role'names a prompt file the platform ships as roles/<role>.md; copying this mesh
+# into a project materialises those files into it. A seat whose role has no such file runs on a
+# one-line synthesized default ("You are the <role> agent in mesh …") and answers competently without
+# knowing who it is — so 'pm'here, not 'product-manager': one word, and the difference is a seat that
+# knows how to author acceptance criteria against a person rather than a schema.
+#
+# Trim it freely — security is optional for a product with no auth or dependencies, and both designers
+# are optional for one with no user-facing surface. A nine-seat crew costs ten to twenty million tokens
+# for a substantial pass, which is why the mission budget below is declared in that range.
 agents:
+  pm:
+    role: pm
+    runtime: ${defaultRuntime}
+    capabilities:
+      - repository.read
+    authority:
+      - requirements.accept
+    interests:
+      - requirement.blocked
+      - goal.progress
+      - release.candidate
+      - implementation.completed
+    session:
+      persistent: true
   architect:
     role: architect
     runtime: ${defaultRuntime}
-    prompt: ./roles/architect.md
     capabilities:
       - repository.read
       - architecture.write
@@ -3004,12 +3047,155 @@ agents:
     interests:
       - architecture.*
       - design.question
-      - goal.escalated
+      - requirements.created
+    session:
+      persistent: true
+  tech-lead:
+    role: tech-lead
+    runtime: ${defaultRuntime}
+    capabilities:
+      - repository.read
+      - code.review
+      - review.design
+      - task.assign
+    authority:
+      - implementation.approve
+    interests:
+      - patch.ready
+      - review.requested
+    session:
+      persistent: true
+  frontend-developer:
+    role: developer
+    runtime: ${defaultRuntime}
+    capabilities:
+      - repository.read
+      - repository.write
+      - test.execute
+      - git.commit
+      - git.merge
+    interests:
+      - architecture.approved
+      - review.rejected
+      - design.question
+    session:
+      persistent: true
+  backend-developer:
+    role: developer
+    runtime: ${defaultRuntime}
+    capabilities:
+      - repository.read
+      - repository.write
+      - test.execute
+      - git.commit
+      - git.merge
+    interests:
+      - architecture.approved
+      - review.rejected
+    session:
+      persistent: true
+  ui-designer:
+    role: ui-designer
+    runtime: ${defaultRuntime}
+    capabilities:
+      - repository.read
+      - architecture.write
+      - review.design
+    authority: []
+    interests:
+      - requirements.created
+      - architecture.approved
+      - design.question
+      - review.rejected
+      - implementation.completed
+    session:
+      persistent: true
+  ux-designer:
+    role: ux-designer
+    runtime: ${defaultRuntime}
+    capabilities:
+      - repository.read
+      - architecture.write
+      - review.design
+    authority: []
+    interests:
+      - requirements.created
+      - design.question
+      - review.rejected
+      - implementation.completed
+    session:
+      persistent: true
+  qa:
+    role: qa
+    runtime: ${defaultRuntime}
+    capabilities:
+      - test.execute
+      - test.write
+    authority:
+      - quality.block
+      - quality.pass
+    interests:
+      - patch.ready
+      - release.candidate
+    session:
+      persistent: true
+  security:
+    role: security
+    runtime: ${defaultRuntime}
+    capabilities:
+      - security.scan
+      - security.review
+    authority:
+      - security.block
+      - security.pass
+    interests:
+      - release.candidate
+      - authentication.changed
+      - dependency.changed
     session:
       persistent: true
 
 policies:
-  communication: {}
+  communication:
+    # Who may cold-approach whom. A seat absent from this list can still be reached by an ask it owes an
+    # answer to; the matrix bounds the approach, which is what keeps nine seats from talking past each
+    # other. The designers sit beside the developers because a developer building a surface must be able
+    # to ask for its design.
+    pm:
+      may_contact: [architect, tech-lead, frontend-developer, backend-developer, qa, security, ui-designer, ux-designer]
+    architect:
+      may_contact: [pm, tech-lead, frontend-developer, backend-developer, ui-designer, ux-designer]
+    tech-lead:
+      may_contact: [pm, architect, frontend-developer, backend-developer, qa, security]
+    frontend-developer:
+      may_contact: [architect, tech-lead, qa, ui-designer, ux-designer]
+    backend-developer:
+      may_contact: [architect, tech-lead, qa, security]
+    qa:
+      may_contact: [frontend-developer, backend-developer, tech-lead, architect, security, pm]
+    security:
+      may_contact: [frontend-developer, backend-developer, tech-lead, qa, pm]
+    ui-designer:
+      may_contact: [pm, frontend-developer]
+    ux-designer:
+      may_contact: [pm, frontend-developer]
+  transitions:
+    # Each requirement names an actor and a kind and resolves to an approval record by that actor: no
+    # record, no transition. These are the gates that make an approval mean something.
+    patch.merge:
+      requires:
+        - tech-lead.approve
+    implementation.completed:
+      requires:
+        - tech-lead.approve
+        - qa.pass
+    release.accepted:
+      requires:
+        - qa.pass
+        - security.pass
+    design.completed:
+      requires:
+        - tech-lead.approve
   escalation:
     thread:
       max_depth: 8
@@ -3020,9 +3206,21 @@ policies:
 
 budgets:
   mission:
+    # Declared intent, not a spend: auto_raise multiplies this up to max_multiple, and the ceiling is
+    # anchored to what is written here. A nine-seat crew needs room; a ceiling reached is the platform
+    # asking a person, which is the point.
     tokens: ${DEFAULT_SCAFFOLD_MISSION_TOKENS}
-    wall_clock_minutes: 240
-    max_events: 10000
+    wall_clock_minutes: 1200
+    max_events: 120000
+  thread:
+    # A hundred thousand per thread kills live conversations mid-flight, and exhaustion pushes the agents
+    # into a fresh thread with no context — the biggest destroyer of continuity in the log.
+    tokens: 300000
+  auto_raise:
+    # A routine exhaustion is mechanical and should never cost an escalation.
+    enabled: true
+    factor: 1.5
+    max_multiple: 3
 
 bus:
   # Which comms vocabulary this mesh advertises to its agents. With
@@ -3234,7 +3432,12 @@ export function describeTemplates(root: string | undefined): TemplateInfo[] {
   const out: TemplateInfo[] = [];
   // The default team is read from the very text `writeDefaultMeshYaml` writes, with placeholder names.
   const scaffold = parseMeshSource(defaultMeshTemplate("default", "default", "claude"));
-  const prompts = Object.values(scaffold.agents).filter((a) => a.prompt).length;
+  // The prompts it will write, not the seats that named one: materializeRolePrompts writes
+  // roles/<role>.md for every seat whether or not it named a ref, and two seats on the same role share
+  // one file. Counting refs here counted 0 for a scaffold that names none and writes nine seats' worth.
+  const prompts = new Set(
+    Object.values(scaffold.agents).map((a) => (a.prompt ? path.basename(a.prompt) : `${a.role}.md`)),
+  ).size;
   out.push({ ...factsOf(DEFAULT_TEMPLATE_ID, "default", scaffold, prompts), title: "Default team", goal: null, projectId: null });
   if (!root) return out;
   for (const name of listExamples(root)) {
