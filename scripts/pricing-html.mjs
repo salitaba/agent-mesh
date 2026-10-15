@@ -62,6 +62,7 @@ export function renderPlanCards(out) {
 ${p.includes.map((i) => `        <li>${esc(i)}</li>`).join("\n")}
       </ul>
       <div class="plan-meta">
+        <p class="plan-scope">One host, one plan: a licence installs on a single host, and the three figures above are that host&rsquo;s.</p>
         <p class="plan-support">Support: ${esc(p.support)}</p>${p.roadmap.length ? `\n        <p class="plan-planned">Planned, not included: ${p.roadmap.map(esc).join("; ")}</p>` : ""}
       </div>
       <p class="plan-cta">${cta}</p>
@@ -95,14 +96,14 @@ export function renderPlanTable(out) {
   const hasReports = (p) => p.features.includes("usage-export") && p.features.includes("prometheus-metrics");
   return `<div class="table-wrap" role="region" aria-label="The plans compared" tabindex="0">
   <table class="compare">
-    <caption class="sr">The four plans side by side: price, limits, features and support. Prices are in US dollars and exclude taxes.</caption>
+    <caption class="sr">The four plans side by side: price, limits, features and support. A plan is for one host, so a limit that is not per mesh is that host&rsquo;s. Prices are in US dollars and exclude taxes.</caption>
     <thead><tr><th scope="col"><span class="sr">Plan</span></th>${head}</tr></thead>
     <tbody>
 ${row("Per month, billed annually", (p) => price(p, true))}
 ${row("Per month, billed monthly", (p) => price(p, false))}
-${row("Projects open at once", (p) => ({ html: shown(p.limits.maxProjects) }))}
+${row("Projects open at once per host", (p) => ({ html: shown(p.limits.maxProjects) }))}
 ${row("Agents (seats) per mesh", (p) => ({ html: shown(p.limits.maxSeatsPerMesh) }))}
-${row("Concurrent agent turns", (p) => ({ html: shown(p.limits.maxConcurrentTurns) }))}
+${row("Concurrent agent turns per host", (p) => ({ html: shown(p.limits.maxConcurrentTurns) }))}
 ${row("Usage export and Prometheus metrics", (p) => yes(hasReports(p)))}
 ${row("Support", (p) => ({ html: esc(p.support) }))}
     </tbody>

@@ -715,7 +715,7 @@ test("a new account sees what to do first: choose a plan, and nothing to create,
   assert.equal(v.text("who"), "Signed in as ada@example.com");
   assert.equal(v.shows(v.$("stage")), true);
   assert.equal(v.text("stage-title"), "Choose a plan");
-  assert.equal(v.text("stage-text"), "A plan is a flat monthly price for your workspace. Choose one below and pay on the next page.");
+  assert.equal(v.text("stage-text"), "A plan is a flat monthly price for your account, and it says how many workspaces you may run at once. Each workspace runs on a plan of its own. Choose one below and pay on the next page.");
   assert.equal(v.link("stage-actions", "Choose a plan").getAttribute("href"), "#plan-h");
   assert.equal(v.text("stage-steps"), "1 Plan (you are here) 2 Workspace (still to do) 3 Open (still to do)");
   assert.equal(v.shows(v.$("workspaces-panel")), false, "there is no workspace to list");
@@ -1517,7 +1517,7 @@ test("the front page says how it works in four steps, in order, from what the se
   assert.equal(h.$("main").querySelector("ol.how")!.parent!.getAttribute("aria-labelledby"), "how-h", "and it is a region named by its heading");
   assert.deepEqual(steps(h).map((li) => h.text(li)), [
     "Sign up An email and a password. We send a link to confirm your address.",
-    "Pick a plan A flat price for hosting your workspace, paid on the payment provider's page.",
+    "Pick a plan A flat price for hosting, paid on the payment provider's page. The plan says how many workspaces your account may run at once.",
     "Make a workspace One click starts your own Curule host. You give it your model key once it has started.",
     "Describe your team and start Open the workspace in your browser, describe the team you want, and start a mission.",
   ]);

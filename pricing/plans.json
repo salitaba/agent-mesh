@@ -16,6 +16,7 @@
         "maxProjects": 1,
         "maxConcurrentTurns": 4
       },
+      "workspacesPerAccount": 1,
       "features": [],
       "support": "Community (issues and documentation)",
       "includes": [
@@ -40,6 +41,7 @@
         "maxProjects": 5,
         "maxConcurrentTurns": 8
       },
+      "workspacesPerAccount": 1,
       "features": [
         "usage-export",
         "prometheus-metrics"
@@ -57,7 +59,7 @@
     {
       "id": "business",
       "name": "Business",
-      "tagline": "A fleet of projects, with priority support and a deployment you can hand to ops.",
+      "tagline": "A fleet of projects under one host, with priority support and a deployment you can hand to ops.",
       "priceMonthlyUsd": 599,
       "priceMonthlyAnnualUsd": 499,
       "pricing": "listed",
@@ -66,6 +68,7 @@
         "maxProjects": 25,
         "maxConcurrentTurns": 24
       },
+      "workspacesPerAccount": 3,
       "features": [
         "usage-export",
         "prometheus-metrics"
@@ -73,7 +76,7 @@
       "support": "Priority email, 4 business hours first response",
       "includes": [
         "Everything in Team",
-        "Up to 25 projects, 30 seats per mesh, 24 concurrent turns",
+        "Up to 25 projects open under one host, 30 seats per mesh, 24 concurrent turns",
         "Support for the container image and Helm chart deployment, with upgrade and backup runbooks",
         "Security questionnaire support"
       ],
@@ -97,6 +100,7 @@
         "maxProjects": null,
         "maxConcurrentTurns": null
       },
+      "workspacesPerAccount": null,
       "features": [
         "usage-export",
         "prometheus-metrics"

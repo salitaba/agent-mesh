@@ -48,7 +48,7 @@ test("the stand-in answers every call with its one sentence, in words as a model
 
 test("the trial's figures are a valid catalogue and a valid price table that prices every model its tiers name", () => {
   const catalogue = parseCatalogue(TRIAL_PLANS);
-  assert.deepEqual(catalogue.plans().map((p) => [p.id, p.priceMinor, p.workspaces]), [["team", 4_900, 1], ["business", 19_900, 3]]);
+  assert.deepEqual(catalogue.plans().map((p) => [p.id, p.priceMinor, p.workspaces]), [["team", 14_900, 1], ["business", 59_900, 3]]);
   assert.equal(catalogue.currency, "USD");
   const prices: PriceTable = parsePriceTable(TRIAL_PRICES);
   for (const model of ["stand-in/small", "stand-in/medium", "stand-in/large"]) assert.ok(prices.get(model), model);
@@ -68,7 +68,7 @@ const checkout = (over: Partial<CheckoutInput> = {}): CheckoutInput => ({
   accountId: "acct_1",
   email: "ada@example.com",
   purpose: "subscription",
-  plan: { id: "team", title: "Team", priceMinor: 4_900, period: "month" },
+  plan: { id: "team", title: "Team", priceMinor: 14_900, period: "month" },
   currency: "USD",
   successUrl: "http://localhost:7500/account?paid=1",
   cancelUrl: "http://localhost:7500/account?cancelled=1",
@@ -115,7 +115,7 @@ test("the payment page says what is being paid for and who by, says nothing is c
     assert.match(page.body, /<\/style>\n<\/head>\n<body>\n<h1>Pay<\/h1>/);
     assert.match(page.body, /<\/form>\n<\/body>\n<\/html>\n$/);
     assert.match(page.body, /This is the trial's own payment page\. Nothing is charged and no card is asked for\./);
-    assert.match(page.body, /Team, \$49\.00 a month/);
+    assert.match(page.body, /Team, \$149\.00 a month/);
     assert.ok(page.body.includes("Paying as &lt;b&gt;ada&lt;/b&gt;@example.com."), "an address is text");
     assert.ok(!page.body.includes("<b>ada"));
     assert.ok(page.body.includes(`<input type="hidden" name="ref" value="${ref}">`));
@@ -144,7 +144,7 @@ test("pressing the button applies the payment as a provider's message would, und
     assert.equal(done.status, 303);
     assert.equal(done.headers.location, "http://localhost:7500/account?paid=1");
     assert.equal(done.headers["cache-control"], "no-store");
-    assert.deepEqual(p.applied, [{ type: "payment.succeeded", ref: sub.ref, purpose: "subscription", plan: "team", accountId: "acct_1", amountMinor: 4_900, currency: "USD", at: "2026-10-05T12:00:00.000Z" }]);
+    assert.deepEqual(p.applied, [{ type: "payment.succeeded", ref: sub.ref, purpose: "subscription", plan: "team", accountId: "acct_1", amountMinor: 14_900, currency: "USD", at: "2026-10-05T12:00:00.000Z" }]);
 
     const topup = await p.billing.createCheckout(checkout({ purpose: "topup", plan: undefined, amountMinor: 2_500 }));
     await ask(p.port, p.form(topup.ref));

@@ -19,7 +19,10 @@
  * ({@link TRIAL_MODEL_ADDRESS}), and a workspace's host is told (a preload, {@link ./trial-reroute}) to send the calls made to it to a
  * stand-in on this machine. The stand-in answers as the other one does: one sentence, no tool, and any key will do.
  *
- * The figures in the plans and in the stand-in's prices are the trial's own. No figure in the product is an offer.
+ * The figures in the stand-in's prices are the trial's own. The plans are not: what a plan is called, what it
+ * costs, its billing period and how many workspaces it allows are read from the plan table
+ * (`packages/licensing/src/plans.ts`), so the trial and the site cannot quote two prices for one product. No
+ * figure in the product is an offer.
  */
 import { randomBytes } from "node:crypto";
 import * as fs from "node:fs";
@@ -46,6 +49,7 @@ import {
   type WorkspaceSpec,
 } from "../../../packages/cloud/src/index";
 import { estimateTokens, type ChatMessage, type LlmProvider, type ModelEvent, type ModelRequest } from "../../../packages/llm/src/index";
+import { PLANS, type PlanId } from "../../../packages/licensing/src/index";
 
 /** What the stand-in says to every call. */
 export const STAND_IN_SENTENCE = "This is the trial's stand-in model. It answers every call with this sentence, uses no tool, and is not a real model.";
@@ -66,12 +70,28 @@ export class StandInModel implements LlmProvider {
   }
 }
 
-/** The plans of the trial. */
+/** The plans the trial sells: the two the owner sells hosting and usage on. */
+type TrialPlanId = Extract<PlanId, "team" | "business">;
+
+/**
+ * What the plan table owns, read from it: the title, the price, the billing period, how many workspaces an account may run
+ * at once and the licence plan a workspace of it runs with. Every price in the plan table is monthly, which is the period
+ * these plans are sold on. A plan the table does not list a price for is not a plan a trial can sell, and starting with one
+ * says so here rather than quoting a figure of its own.
+ */
+function soldByTheProduct(id: TrialPlanId): { title: string; licence_plan: PlanId; price_minor: number; period: "month"; workspaces: number } {
+  const plan = PLANS[id];
+  if (plan.priceMonthlyUsd === null) throw new Error(`the trial sells the ${id} plan, and the plan table lists no monthly price for it ('${plan.pricing}')`);
+  if (plan.workspacesPerAccount === null) throw new Error(`the trial sells the ${id} plan, whose plan table entry puts no limit on workspaces: the catalogue needs a number`);
+  return { title: plan.name, licence_plan: id, price_minor: plan.priceMonthlyUsd * 100, period: "month", workspaces: plan.workspacesPerAccount };
+}
+
+/** The plans of the trial. What the product owns comes from {@link soldByTheProduct}; what is written here is the trial's own. */
 export const TRIAL_PLANS = {
   currency: "USD",
   plans: {
-    team: { title: "Team", licence_plan: "team", price_minor: 4_900, period: "month", included_usage: 10, workspaces: 1, tiers: ["fast", "balanced"], default_tier: "balanced", summary: "One workspace. The trial's figures are not an offer." },
-    business: { title: "Business", licence_plan: "business", price_minor: 19_900, period: "month", included_usage: 50, workspaces: 3, summary: "Three workspaces, with every tier." },
+    team: { ...soldByTheProduct("team"), included_usage: 10, tiers: ["fast", "balanced"], default_tier: "balanced", summary: "One workspace. The trial's figures are not an offer." },
+    business: { ...soldByTheProduct("business"), included_usage: 50, summary: "Three workspaces, with every tier." },
   },
   topups: { options_minor: [1_000, 2_500, 10_000], minimum_minor: 500, maximum_minor: 100_000, usage_micros_per_minor: 10_000 },
 };
@@ -83,8 +103,8 @@ export const TRIAL_PLANS = {
 export const TRIAL_HOSTING_PLANS = {
   currency: "USD",
   plans: {
-    team: { title: "Team", licence_plan: "team", price_minor: 4_900, period: "month", workspaces: 1, byok: true, summary: "One workspace, and your own model key. The trial's figures are not an offer." },
-    business: { title: "Business", licence_plan: "business", price_minor: 19_900, period: "month", workspaces: 3, byok: true, summary: "Three workspaces, each with a model key of its own." },
+    team: { ...soldByTheProduct("team"), byok: true, summary: "One workspace, and your own model key. The trial's figures are not an offer." },
+    business: { ...soldByTheProduct("business"), byok: true, summary: "Three workspaces, each with a model key of its own." },
   },
 };
 

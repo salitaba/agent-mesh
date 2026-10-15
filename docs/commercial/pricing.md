@@ -40,9 +40,9 @@ rate limits apply, and their code and prompts go to their provider and nowhere e
 |---|---|---|---|---|
 | Per month, billed monthly | Free | $149 | $599 | Contact us |
 | Per month, billed annually | Free | $124 ($1,488 a year) | $499 ($5,988 a year) | Contact us |
-| Projects open at once | 1 | 5 | 25 | Unlimited |
+| Projects open at once per host | 1 | 5 | 25 | Unlimited |
 | Seats (agents) per mesh | 8 | 12 | 30 | Unlimited |
-| Concurrent agent turns | 4 | 8 | 24 | Unlimited |
+| Concurrent agent turns per host | 4 | 8 | 24 | Unlimited |
 | Usage export and Prometheus metrics | No | Yes | Yes | Yes |
 | Support | Community (issues and documentation) | Email, next business day | Priority email, 4 business hours first response | Named contact and a support agreement |
 <!-- generated:plans:end -->
@@ -51,6 +51,17 @@ Prices are in US dollars, exclude taxes, and are for the runtime only. A **seat*
 operator at the console is not a seat). A **project** is one mesh, and the limit is how many are *open* at once;
 registering more is free. **Concurrent turns** is how many agent turns may run at the same moment across the
 whole host.
+
+A plan is for **one host**: the key is installed on a single instance
+([licensing.md](licensing.md#how-an-install-finds-its-licence)), and the projects, seats and turns in the table
+are that instance's. Running a second host is a second plan.
+
+On Curule Cloud a host is a **workspace**. The plan an account pays for is the *account's* plan, and that is what
+says how many workspaces the account may run at once (`workspacesPerAccount` in `plans.ts`, and the `workspaces`
+of a plan in a hosted service's catalogue: [cloud-control-plane.md](../cloud-control-plane.md#plans-and-credit)). Each
+workspace is a host of its own and is on a plan of its own — one workspace can be on Team while another is on
+Business — so what a workspace allows is its own plan's limits, and moving one leaves the account's plan and the
+other workspaces as they are.
 
 What a limit does depends on the instance's enforcement mode ([licensing.md](licensing.md)): by default a
 limit is **reported and never refused**; under `enforce`, what the plan does not allow does not *start*, and

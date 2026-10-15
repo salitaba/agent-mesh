@@ -243,7 +243,8 @@
           return { tone: "warn", title: "Choose a plan to start again", text: `Your subscription has ended and your workspaces are stopped. They are deleted${days} after it ended. Choose a plan again before then and they start again.`, action };
         }
         const pays = "Choose one below and pay on the next page.";
-        return { tone: "", title: "Choose a plan", text: stage.byok ? `A plan is a flat monthly price for hosting your workspace. ${pays} You bring your own model key and pay your model provider yourself.` : `A plan is a flat monthly price for your workspace. ${pays}`, action };
+        const what = "A plan is a flat monthly price for your account, and it says how many workspaces you may run at once. Each workspace runs on a plan of its own.";
+        return { tone: "", title: "Choose a plan", text: stage.byok ? `${what} ${pays} You bring your own model key and pay your model provider yourself.` : `${what} ${pays}`, action };
       }
       case "late": {
         const stopped = view.workspaces.some((x) => x.statusReason === "payment is overdue");

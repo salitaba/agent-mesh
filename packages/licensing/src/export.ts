@@ -129,9 +129,9 @@ export function renderPlansTable(out: PricingExport): string {
     `|---|${out.plans.map(() => "---").join("|")}|`,
     row("Per month, billed monthly", (p) => price(p, "monthly")),
     row("Per month, billed annually", (p) => price(p, "annual")),
-    row("Projects open at once", (p) => limit(p.limits.maxProjects)),
+    row("Projects open at once per host", (p) => limit(p.limits.maxProjects)),
     row("Seats (agents) per mesh", (p) => limit(p.limits.maxSeatsPerMesh)),
-    row("Concurrent agent turns", (p) => limit(p.limits.maxConcurrentTurns)),
+    row("Concurrent agent turns per host", (p) => limit(p.limits.maxConcurrentTurns)),
     row("Usage export and Prometheus metrics", (p) => (p.features.includes("usage-export") && p.features.includes("prometheus-metrics") ? "Yes" : "No")),
     row("Support", (p) => p.support),
   ].join("\n");

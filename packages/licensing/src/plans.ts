@@ -1,11 +1,13 @@
 /**
  * The plan table: what each plan allows, and what it costs.
  *
- * One table, read by three consumers: the entitlement checks in this package, the
+ * One table, read by four consumers: the entitlement checks in this package, the
  * pricing documents and site (through `pricing/plans.json`, which
  * `scripts/export-pricing.mjs` generates from this file and a test keeps in step),
- * and the vendor's licence-signing tool. A number that appears in two places is a
- * number that will differ, so prices live here and nowhere else.
+ * the vendor's licence-signing tool, and the hosted service, whose plan catalogue
+ * (`packages/cloud/src/catalogue.ts`) carries these figures for the plans it offers.
+ * A number that appears in two places is a number that will differ, so prices live
+ * here and nowhere else — and so does what a plan allows, a workspace count included.
  *
  * What is NOT here: model usage. The agents run on the customer's own Anthropic (or
  * Bedrock / Vertex / Foundry) credentials, billed to the customer by that provider;
@@ -53,6 +55,15 @@ export interface PlanDefinition {
   /** `contact` plans are quoted, not listed. */
   pricing: "free" | "listed" | "contact";
   limits: PlanLimits;
+  /**
+   * Workspaces one account may run at once, on the hosted service, where a workspace is one host
+   * running one plan of its own. `null` means no limit.
+   *
+   * This is the one limit a licence does not carry: a licence key is installed on a single host, and
+   * what a licence allows is `limits`. The count here is what an *account* may run — the plan an
+   * account pays for says how many workspaces it may hold, and each of them is on a plan of its own.
+   */
+  workspacesPerAccount: number | null;
   features: readonly FeatureId[];
   support: string;
   /** Included in the plan today. Not a promise about the future. */
@@ -70,6 +81,7 @@ export const PLANS: Readonly<Record<PlanId, PlanDefinition>> = {
     priceMonthlyAnnualUsd: 0,
     pricing: "free",
     limits: { maxSeatsPerMesh: 8, maxProjects: 1, maxConcurrentTurns: 4 },
+    workspacesPerAccount: 1,
     features: [],
     support: "Community (issues and documentation)",
     includes: [
@@ -88,6 +100,7 @@ export const PLANS: Readonly<Record<PlanId, PlanDefinition>> = {
     priceMonthlyAnnualUsd: 124,
     pricing: "listed",
     limits: { maxSeatsPerMesh: 12, maxProjects: 5, maxConcurrentTurns: 8 },
+    workspacesPerAccount: 1,
     features: ["usage-export", "prometheus-metrics"],
     support: "Email, next business day",
     includes: [
@@ -100,16 +113,17 @@ export const PLANS: Readonly<Record<PlanId, PlanDefinition>> = {
   business: {
     id: "business",
     name: "Business",
-    tagline: "A fleet of projects, with priority support and a deployment you can hand to ops.",
+    tagline: "A fleet of projects under one host, with priority support and a deployment you can hand to ops.",
     priceMonthlyUsd: 599,
     priceMonthlyAnnualUsd: 499,
     pricing: "listed",
     limits: { maxSeatsPerMesh: 30, maxProjects: 25, maxConcurrentTurns: 24 },
+    workspacesPerAccount: 3,
     features: ["usage-export", "prometheus-metrics"],
     support: "Priority email, 4 business hours first response",
     includes: [
       "Everything in Team",
-      "Up to 25 projects, 30 seats per mesh, 24 concurrent turns",
+      "Up to 25 projects open under one host, 30 seats per mesh, 24 concurrent turns",
       "Support for the container image and Helm chart deployment, with upgrade and backup runbooks",
       "Security questionnaire support",
     ],
@@ -123,6 +137,7 @@ export const PLANS: Readonly<Record<PlanId, PlanDefinition>> = {
     priceMonthlyAnnualUsd: null,
     pricing: "contact",
     limits: { maxSeatsPerMesh: null, maxProjects: null, maxConcurrentTurns: null },
+    workspacesPerAccount: null,
     features: ["usage-export", "prometheus-metrics"],
     support: "Named contact and a support agreement",
     includes: [

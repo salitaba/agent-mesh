@@ -80,7 +80,7 @@ test("the plan cards, the table and the home page's plans show every price and e
   const t = text(table);
   for (const id of PLAN_IDS) assert.ok(t.includes(PLANS[id].name) && t.includes(PLANS[id].support), `${id} in the table`);
   const rows = [...table.matchAll(/<th scope="row">([\s\S]*?)<\/th>/g)].map((m) => text(m[1]!).trim());
-  assert.deepEqual(rows, ["Per month, billed annually", "Per month, billed monthly", "Projects open at once", "Agents (seats) per mesh", "Concurrent agent turns", "Usage export and Prometheus metrics", "Support"]);
+  assert.deepEqual(rows, ["Per month, billed annually", "Per month, billed monthly", "Projects open at once per host", "Agents (seats) per mesh", "Concurrent agent turns per host", "Usage export and Prometheus metrics", "Support"]);
   const yesNo = [...table.matchAll(/<td class="(yes|no)">/g)].map((m) => m[1]);
   assert.deepEqual(yesNo, PLAN_IDS.map((id) => (PLANS[id].features.includes("usage-export") && PLANS[id].features.includes("prometheus-metrics") ? "yes" : "no")), "which plans have the reports");
   for (const id of PLAN_IDS) {

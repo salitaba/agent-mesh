@@ -124,7 +124,7 @@ test("a customer signs up, pays on the trial's page, makes a workspace, makes a 
     assert.equal((await c.api("GET", "/api/session")).json.account.email, email);
     assert.equal((await c.api("GET", "/api/me")).json.account.subscription, null);
     const page = await c.pay({ purpose: "subscription", plan: "team" });
-    assert.match(page.body, /Team, \$49\.00 a month/);
+    assert.match(page.body, /Team, \$149\.00 a month/);
     let me = (await c.api("GET", "/api/me")).json;
     assert.deepEqual([me.account.subscription.plan, me.account.subscription.status], ["team", "active"]);
     assert.equal(me.balance.balance.included, 10_000_000, "the plan's usage is in the balance");
@@ -230,7 +230,7 @@ test("on a hosting-only trial a customer pays for hosting, makes a workspace tha
     assert.equal(plans.json.topups, null);
     await c.signUpAndConfirm("ada@example.com");
     const page = await c.pay({ purpose: "subscription", plan: "team" });
-    assert.match(page.body, /Team, \$49\.00 a month/);
+    assert.match(page.body, /Team, \$149\.00 a month/);
     const me = (await c.api("GET", "/api/me")).json;
     assert.deepEqual([me.account.subscription.plan, me.account.subscription.status, me.balance], ["team", "active", null]);
     assert.equal((await c.api("GET", "/api/usage")).json.error.code, "no_usage");

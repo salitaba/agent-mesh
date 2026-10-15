@@ -92,8 +92,8 @@ const card = (v: ReturnType<typeof view>) => h.nextStepOf(h.stageOf(v), v);
 
 test("the card says one thing for each stage, in a sentence, with the one action that is next", () => {
   const link = { kind: "link", label: "Choose a plan", href: "#plan-h" };
-  assert.deepEqual(card(view({ subscription: null })), { tone: "", title: "Choose a plan", text: "A plan is a flat monthly price for your workspace. Choose one below and pay on the next page.", action: link });
-  assert.deepEqual(card(hostingView([], { subscription: null })), { tone: "", title: "Choose a plan", text: "A plan is a flat monthly price for hosting your workspace. Choose one below and pay on the next page. You bring your own model key and pay your model provider yourself.", action: link });
+  assert.deepEqual(card(view({ subscription: null })), { tone: "", title: "Choose a plan", text: "A plan is a flat monthly price for your account, and it says how many workspaces you may run at once. Each workspace runs on a plan of its own. Choose one below and pay on the next page.", action: link });
+  assert.deepEqual(card(hostingView([], { subscription: null })), { tone: "", title: "Choose a plan", text: "A plan is a flat monthly price for your account, and it says how many workspaces you may run at once. Each workspace runs on a plan of its own. Choose one below and pay on the next page. You bring your own model key and pay your model provider yourself.", action: link });
   assert.deepEqual(card(view({ subscription: { plan: "team", title: "Team", status: "ended" } })), {
     tone: "warn",
     title: "Choose a plan to start again",
