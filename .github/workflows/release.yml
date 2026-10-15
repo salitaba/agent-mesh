@@ -63,7 +63,7 @@ jobs:
       - id: meta
         run: echo "image=${REGISTRY}/${GITHUB_REPOSITORY_OWNER,,}/curule" >> "$GITHUB_OUTPUT"
       - id: tags
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@v6
         with:
           images: ${{ steps.meta.outputs.image }}
           tags: |
