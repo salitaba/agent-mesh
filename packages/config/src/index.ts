@@ -3162,23 +3162,67 @@ policies:
     # other. The designers sit beside the developers because a developer building a surface must be able
     # to ask for its design.
     pm:
-      may_contact: [architect, tech-lead, frontend-developer, backend-developer, qa, security, ui-designer, ux-designer]
+      may_contact:
+        - architect
+        - tech-lead
+        - frontend-developer
+        - backend-developer
+        - qa
+        - security
+        - ui-designer
+        - ux-designer
     architect:
-      may_contact: [pm, tech-lead, frontend-developer, backend-developer, ui-designer, ux-designer]
+      may_contact:
+        - pm
+        - tech-lead
+        - frontend-developer
+        - backend-developer
+        - ui-designer
+        - ux-designer
     tech-lead:
-      may_contact: [pm, architect, frontend-developer, backend-developer, qa, security]
+      may_contact:
+        - pm
+        - architect
+        - frontend-developer
+        - backend-developer
+        - qa
+        - security
     frontend-developer:
-      may_contact: [architect, tech-lead, qa, ui-designer, ux-designer]
+      may_contact:
+        - architect
+        - tech-lead
+        - qa
+        - ui-designer
+        - ux-designer
     backend-developer:
-      may_contact: [architect, tech-lead, qa, security]
+      may_contact:
+        - architect
+        - tech-lead
+        - qa
+        - security
     qa:
-      may_contact: [frontend-developer, backend-developer, tech-lead, architect, security, pm]
+      may_contact:
+        - frontend-developer
+        - backend-developer
+        - tech-lead
+        - architect
+        - security
+        - pm
     security:
-      may_contact: [frontend-developer, backend-developer, tech-lead, qa, pm]
+      may_contact:
+        - frontend-developer
+        - backend-developer
+        - tech-lead
+        - qa
+        - pm
     ui-designer:
-      may_contact: [pm, frontend-developer]
+      may_contact:
+        - pm
+        - frontend-developer
     ux-designer:
-      may_contact: [pm, frontend-developer]
+      may_contact:
+        - pm
+        - frontend-developer
   transitions:
     # Each requirement names an actor and a kind and resolves to an approval record by that actor: no
     # record, no transition. These are the gates that make an approval mean something.

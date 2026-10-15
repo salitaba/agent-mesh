@@ -60,7 +60,13 @@ test("the default team becomes a team on the gateway: native seats, one provider
     fs.writeFileSync(path.join(dir, "roles", "architect.md"), "# architect\n");
     const config = resolveConfig(path.join(dir, "mesh.yaml"));
     assert.equal(config.defaultRuntime, "native");
-    assert.deepEqual(Object.values(config.agents).map((a) => a.runtime), ["native"]);
+    // Was `deepEqual([...], ["native"])` when the default team was one architect. The intent is that
+    // no seat is left on the Claude runtime, so say that, against however many seats the default has.
+    assert.ok(
+      Object.values(config.agents).every((a) => a.runtime === "native"),
+      "no seat is left on the Claude runtime",
+    );
+    assert.ok(Object.keys(config.agents).length >= 9, "the default team is a crew, not a single seat");
     assert.deepEqual(config.native!.providers.curule, { kind: "openai-compatible", baseUrl: "https://gateway.example/v1", apiKeyEnv: "CURULE_GATEWAY_KEY" });
     assert.equal(config.native!.designer, "native");
   } finally {
