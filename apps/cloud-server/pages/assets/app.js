@@ -29,7 +29,7 @@
     verify: ["status", "title", "again", "resend-form", "resend", "resend-wait", "resend-status", "email"],
     forgot: ["form", "status", "email"],
     reset: ["card", "form", "status", "title", "lede", "password"],
-    account: ["who", "notice", "skeleton", "glance", "glance-list", "subnav", "settings-panel", "stage", "stage-steps", "stage-title", "stage-text", "stage-actions", "stage-live", "workspaces-panel", "workspaces", "create-slot", "create-box", "create", "workspace-name", "create-note", "plan-panel", "plan-h", "plan-status", "plan", "balance-panel", "usage-panel", "figures", "topup", "topup-amount", "topup-unit", "topup-hint", "topup-status", "topup-options", "usage", "password-form", "password-status", "current", "next"],
+    account: ["who", "notice", "skeleton", "glance", "glance-list", "subnav", "settings-panel", "stage", "stage-steps", "stage-title", "stage-text", "stage-actions", "stage-live", "workspaces-panel", "workspaces", "create-slot", "create-box", "create", "workspace-name", "create-plan-field", "workspace-plan", "create-note", "plan-panel", "plan-h", "plan-status", "plan", "balance-panel", "usage-panel", "figures", "topup", "topup-amount", "topup-unit", "topup-hint", "topup-status", "topup-options", "usage", "password-form", "password-status", "current", "next"],
     terms: [],
     privacy: [],
     notfound: [],
@@ -997,6 +997,10 @@
       changing: false,
       /** The workspaces whose less used actions (deleting one) are shown. */
       more: new Set(),
+      /** The workspaces whose plan the person is changing, so that only that card's list of plans is open. */
+      changingPlans: new Set(),
+      /** Whether the plans a new workspace may be given have been put in the form. They are put there once: see renderCreatePlans. */
+      plansDrawn: false,
       /** The workspaces whose person asked for them to be opened as soon as they are ready. */
       autoOpen: new Set(),
       /** What the card at the top said last, so that it is drawn again only when it says something else. */
@@ -1239,6 +1243,7 @@
       ["says", "p", "ws-says"],
       ["auto", "div", "ws-auto"],
       ["actions", "div", "ws-actions"],
+      ["plan", "div", "ws-plan"],
       ["key", "div", "ws-key"],
       ["confirm", "div", "ws-confirm"],
     ];
@@ -1363,11 +1368,12 @@
       part(card, "says", `${w.status}|${says}`, () => [...(isStarting(w) ? [phaseBar(w.status)] : []), ...(says ? [says] : [])]);
       part(card, "auto", String(showAuto), () => (showAuto ? [autoOpenBox(w)] : []));
       part(card, "actions", JSON.stringify([w.name, w.status, resumable(w, view), lacksKey(w), cardOffers(id, "open"), cardOffers(id, "resume"), state.more.has(id), state.confirming === id]), () => actionsOf(w, view));
+      part(card, "plan", planShape(w, view), () => planBlock(w, view));
       part(card, "key", keyShape(w), () => keyBlock(w));
       part(card, "confirm", String(state.confirming === id), () => (state.confirming === id ? [confirmBox(w)] : []));
       // A request that is out holds the buttons without drawing them again: the one that was pressed keeps the cursor.
       const held = state.busy.has(id);
-      for (const b of card.boxes.actions.querySelectorAll("button")) hold(b, held);
+      for (const name of ["actions", "plan"]) for (const b of card.boxes[name].querySelectorAll("button")) hold(b, held);
       const note = state.notes.get(id);
       const noteShape = note ? `${note.kind}|${note.text}` : "";
       if (card.noteShape !== noteShape) {
@@ -1413,10 +1419,27 @@
       }
     }
 
+    /**
+     * The plans a new workspace may be given, put in the form once, when they arrive: a list that is filled in again under a
+     * person's hands is a list that closes on them. What a workspace starts on is the account's own plan unless they pick another.
+     */
+    function renderCreatePlans() {
+      const field = $("create-plan-field");
+      field.hidden = !state.plansKnown || state.plans.length === 0;
+      if (state.plansDrawn || state.plans.length === 0) return;
+      state.plansDrawn = true;
+      const select = $("workspace-plan");
+      const mine = planOf();
+      select.replaceChildren(...state.plans.map((p) => el("option", { value: p.id }, p.title)));
+      // A plan that is no longer offered is not chosen for them: the service says so in its own words when the workspace is asked for.
+      if (mine && state.plans.some((p) => p.id === mine.id)) select.value = mine.id;
+    }
+
     /** Whether a workspace can be made, and why not when it cannot. The form itself is where the page puts it: in the card at the top for a first workspace. */
     function renderCreate(items) {
       const form = $("create");
       const note = $("create-note");
+      renderCreatePlans();
       const plan = planOf();
       const live = items.filter((w) => w.status !== "failed").length;
       const standingNow = standing();
@@ -1681,6 +1704,54 @@
       if (!(await refresh())) renderWorkspaces();
     }
 
+    // -- the plan of one workspace --
+
+    /** What the plan part of a card says, so that it is drawn again only when that changes. */
+    const planShape = (w, view) => JSON.stringify([w.plan, w.status, view.plansKnown, view.plans.map((p) => p.id)]);
+
+    /**
+     * The plan this one workspace is on, and — where it can be changed — the offer to move it to another of the plans the install
+     * offers. The plans here are the workspace's own: what it is made again with is its licence and its models, and the account's
+     * plan, which is what a workspace starts on and what says how many an account may run, is not touched by any of this.
+     */
+    function planBlock(w, view) {
+      const id = w.workspaceId;
+      // Without the plans there is no name for one, and a plan id is not a thing to show a person: the plan panel says what is missing.
+      if (!view.plansKnown) return [];
+      const plan = view.plans.find((p) => p.id === w.plan);
+      const others = view.plans.filter((p) => p.id !== w.plan);
+      const head = el("p", { class: "muted small" }, "Plan ", el("strong", null, plan ? plan.title : w.plan));
+      // Moving a workspace is making its host again, which one that is still starting, and one that could not start, have none of.
+      if (others.length === 0 || (w.status !== "running" && w.status !== "suspended")) return [head];
+      const open = state.changingPlans.has(id);
+      const panel = el(
+        "div",
+        { id: `plan-change-${id}`, class: "disclosed", hidden: !open },
+        el("p", { class: "muted small" }, "Changing it starts this workspace again on the new plan, and its files are kept. It is this workspace's plan alone: your account's plan, and every other workspace of yours, stay as they are."),
+        el("div", { class: "btn-row" }, others.map((p) => button(`Switch to ${p.title}`, { id: `plan-switch-${id}-${p.id}`, small: true, onclick: () => changePlan(w, p) }))),
+      );
+      const toggle = button("Change plan", {
+        id: `plan-toggle-${id}`,
+        small: true,
+        kind: "quiet",
+        attrs: { "aria-expanded": open ? "true" : "false", "aria-controls": panel.id, "aria-label": `Change the plan of ${w.name}` },
+        onclick: () => {
+          const opening = panel.hidden;
+          if (opening) state.changingPlans.add(id);
+          else state.changingPlans.delete(id);
+          panel.hidden = !opening;
+          toggle.setAttribute("aria-expanded", opening ? "true" : "false");
+        },
+      });
+      return [head, el("div", { class: "btn-row" }, toggle), panel];
+    }
+
+    /** Move this workspace, and no other, to another plan: the row says it is under way, and what came of it, like any other ask. */
+    function changePlan(w, plan) {
+      state.changingPlans.delete(w.workspaceId);
+      return act(w, `Moving it to ${plan.title}.`, () => call("POST", path(w, "plan"), { plan: plan.id }), () => flash("ok", `${w.name} is now on ${plan.title}, and was started again with it.`));
+    }
+
     // -- plan --
 
     function renderPlan() {
@@ -1891,7 +1962,9 @@
         return;
       }
       state.focusStage = true;
-      const r = await call("POST", "/api/workspaces", { name });
+      // The plan the person picked for this workspace, if the form offered one; without it the account's plan is what it starts on.
+      const chosen = $("create-plan-field").hidden ? "" : $("workspace-plan").value;
+      const r = await call("POST", "/api/workspaces", chosen ? { name, plan: chosen } : { name });
       if (signInAgain(r)) return;
       if (!r.ok) {
         state.focusStage = false;

@@ -231,6 +231,7 @@ export class ControlWeb {
     { method: "POST", pattern: /^\/api\/workspaces\/([^/]+)\/suspend$/, run: (_req, m, who) => this.changeWorkspace("suspend", pathSegment(m[1]!), this.needSession(who)) },
     { method: "POST", pattern: /^\/api\/workspaces\/([^/]+)\/resume$/, run: (_req, m, who) => this.changeWorkspace("resume", pathSegment(m[1]!), this.needSession(who)) },
     { method: "POST", pattern: /^\/api\/workspaces\/([^/]+)\/delete$/, run: (req, m, who) => this.deleteWorkspace(req, pathSegment(m[1]!), this.needSession(who)) },
+    { method: "POST", pattern: /^\/api\/workspaces\/([^/]+)\/plan$/, run: (req, m, who) => this.changeWorkspacePlan(req, pathSegment(m[1]!), this.needSession(who)) },
     { method: "POST", pattern: /^\/api\/workspaces\/([^/]+)\/model-key$/, run: (req, m, who) => this.setModelKey(req, pathSegment(m[1]!), this.needSession(who)) },
     { method: "POST", pattern: /^\/api\/workspaces\/([^/]+)\/model-key\/delete$/, run: (_req, m, who) => this.deleteModelKey(pathSegment(m[1]!), this.needSession(who)) },
     { method: "POST", pattern: /^\/webhooks\/billing$/, run: (req) => this.webhook(req) },
@@ -413,8 +414,18 @@ export class ControlWeb {
   private async createWorkspace(req: WebRequest, who: Session): Promise<WebResponse> {
     const body = this.readJson(req);
     this.limit("actionSession", who.sessionId);
-    const w = await this.o.plane.workspaces.create(who.account.accountId, body.name);
+    const w = await this.o.plane.workspaces.create(who.account.accountId, body.name, body.plan);
     return this.json(201, { workspace: this.workspaceView(who, w.workspaceId) });
+  }
+
+  /** One workspace's plan, on its own: the account's subscription is what a new workspace starts on, and this changes only the one named here. */
+  private async changeWorkspacePlan(req: WebRequest, workspaceId: string, who: Session): Promise<WebResponse> {
+    const body = this.readJson(req);
+    this.limit("actionSession", who.sessionId);
+    this.workspaceView(who, workspaceId);
+    const w = await this.o.plane.workspaces.changePlan(who.account.accountId, workspaceId, body.plan);
+    this.log("info", "a workspace's plan was changed", { workspaceId, plan: w.plan });
+    return this.json(200, { workspace: this.workspaceView(who, workspaceId) });
   }
 
   private async openWorkspace(workspaceId: string, who: Session): Promise<WebResponse> {

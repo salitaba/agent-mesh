@@ -12,7 +12,7 @@
  * present it after a restart and nothing in the log can be used to reach a workspace.
  */
 import { createHmac, randomBytes } from "node:crypto";
-import { defaultTierOf, type Catalogue } from "./catalogue";
+import { defaultTierOf, type Catalogue, type HostedPlan } from "./catalogue";
 import { ServiceError } from "./errors";
 import type { GatewayAdmin } from "./gateway-client";
 import { checkModelAgainstCatalogue } from "./model-catalogue";
@@ -138,17 +138,31 @@ export class Workspaces {
     return s.status;
   }
 
-  /** Ask for a workspace. Returns at once with it in `provisioning`; `inFlight` has the rest. */
-  async create(accountId: string, rawName: unknown): Promise<Workspace> {
+  /** The plan a caller named, or a refusal that says this install does not offer it. */
+  private planNamed(raw: unknown): HostedPlan {
+    const plan = typeof raw === "string" ? this.o.catalogue.plan(raw) : undefined;
+    if (!plan) throw new ServiceError(400, "unknown_plan", "That plan is not on offer.");
+    return plan;
+  }
+
+  /**
+   * Ask for a workspace. Returns at once with it in `provisioning`; `inFlight` has the rest.
+   *
+   * `rawPlan` names the plan this workspace alone is on; given none it is the account's own plan, which is what the account pays
+   * for and what says how many workspaces it may run at once. The plan is the workspace's: it decides the licence its host runs
+   * under and the model usage it may buy, and nothing that happens to one workspace's plan happens to another's.
+   */
+  async create(accountId: string, rawName: unknown, rawPlan?: unknown): Promise<Workspace> {
     const account = this.state.accounts.get(accountId);
     if (!account || account.disabledAt !== undefined || account.verifiedAt === undefined) throw new ServiceError(403, "not_allowed", "This account cannot create workspaces.");
     const standing = this.standing(account);
     if (standing === "none") throw new ServiceError(402, "no_subscription", "Choose a plan before creating a workspace.");
     if (standing === "past_due") throw new ServiceError(402, "payment_overdue", "The last payment did not go through. Update your payment details to create a workspace.");
-    const plan = this.o.catalogue.plan(account.subscription!.plan);
-    if (!plan) throw new ServiceError(409, "plan_unknown", "Your plan is no longer offered. Contact the operator.");
+    const accountPlan = this.o.catalogue.plan(account.subscription!.plan);
+    if (!accountPlan) throw new ServiceError(409, "plan_unknown", "Your plan is no longer offered. Contact the operator.");
+    const plan = rawPlan === undefined || rawPlan === null || rawPlan === "" ? accountPlan : this.planNamed(rawPlan);
     const live = this.forAccount(accountId).filter((w) => LIVE.has(w.status));
-    if (live.length >= plan.workspaces) throw new ServiceError(403, "workspace_limit", `Your plan allows ${plan.workspaces} workspace${plan.workspaces === 1 ? "" : "s"}.`);
+    if (live.length >= accountPlan.workspaces) throw new ServiceError(403, "workspace_limit", `Your plan allows ${accountPlan.workspaces} workspace${accountPlan.workspaces === 1 ? "" : "s"}.`);
     const name = typeof rawName === "string" ? rawName.trim() : "";
     if (name.length < 1 || name.length > 60 || /[\x00-\x1f\x7f]/.test(name)) throw new ServiceError(400, "invalid_name", "Give the workspace a name of 1 to 60 characters.");
     const workspaceId = `ws_${randomBytes(6).toString("hex")}`;
@@ -245,6 +259,21 @@ export class Workspaces {
     // The customer's own key goes with the workspace: nothing of it is kept once the host that used it is gone.
     if (this.o.modelKeys?.has(workspaceId)) await this.o.modelKeys.remove(workspaceId);
     await this.o.log.append({ type: "workspace.status", workspaceId, status: "destroyed", reason: accountId === undefined ? "removed by the service" : "deleted by its owner" });
+  }
+
+  /**
+   * Move one workspace to another plan: its licence is minted again for that plan and its host is made again with it, and no other
+   * workspace of the account is touched — the account's own subscription is what a workspace follows when nobody says otherwise, not
+   * something one workspace's change may rewrite. A workspace already on that plan is left alone, and one with no host to make again
+   * (starting, or failed) says so rather than pretending.
+   */
+  async changePlan(accountId: string, workspaceId: string, rawPlan: unknown): Promise<Workspace> {
+    const w = this.get(accountId, workspaceId);
+    const plan = this.planNamed(rawPlan);
+    if (w.plan === plan.id) return w;
+    if (w.status !== "running" && w.status !== "suspended") throw new ServiceError(409, "not_ready", "Wait until the workspace has started, and then change its plan.");
+    await this.reprovision(workspaceId, plan.id);
+    return this.get(undefined, workspaceId);
   }
 
   /** Make the host again with the plan it is now on, keeping its data: a new licence and a new model key. */

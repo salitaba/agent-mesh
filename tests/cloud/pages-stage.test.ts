@@ -199,7 +199,7 @@ test("each stage is said on the page: its title and sentence, the steps while a 
   };
   let s = await stage(world(paid));
   assert.deepEqual([s.title, s.steps, s.actions.length, s.tone], ["Make your first workspace", "✓ Plan (done) 2 Workspace (you are here) 3 Open (still to do)", 1, "stage"]);
-  assert.equal(s.v.text("stage-actions"), "Name a new workspace Create workspace");
+  assert.equal(s.v.text("stage-actions"), "Name a new workspace Plan Team Business A workspace runs on its own plan: its own limits and its own models. Your account's plan is what says how many workspaces you may run at once. Create workspace");
 
   s = await stage(world((x) => { paid(x); x.workspaces = [workspace({ status: "provisioning" })]; }));
   assert.deepEqual([s.title, s.steps, s.actions], ["Research is starting", "✓ Plan (done) 2 Workspace (you are here) 3 Open (still to do)", []]);

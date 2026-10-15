@@ -143,9 +143,11 @@ export class BillingService {
         const before = account.subscription;
         await this.o.log.append({ type: "subscription.changed", accountId, plan: plan.id, status: "active", periodStart, periodEnd, ...(event.subscriptionRef ? { subscriptionRef: event.subscriptionRef } : {}), reason: "a payment for the period was received" });
         await this.record(key, accountId, event.type, plan.byok ? [] : [grant], { amountMinor: event.amountMinor, currency: event.currency });
-        // Put right whatever the account's standing was before this payment.
+        // Put right whatever the account's standing was before this payment. A workspace follows the account's plan only while its
+        // plan is the one the account was on: one whose plan was chosen for it by name keeps that plan, and this period's payment
+        // for the account's plan does not rewrite it.
         for (const w of this.o.workspaces.forAccount(accountId)) {
-          if (w.plan !== plan.id && (w.status === "running" || w.status === "suspended")) await this.o.workspaces.reprovision(w.workspaceId, plan.id);
+          if (w.plan === before?.plan && w.plan !== plan.id && (w.status === "running" || w.status === "suspended")) await this.o.workspaces.reprovision(w.workspaceId, plan.id);
           else if (w.status === "suspended" && (before?.status === "past_due" || before?.status === "ended")) await this.o.workspaces.resume(w.workspaceId);
         }
         return { applied: true };

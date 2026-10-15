@@ -73,6 +73,11 @@
             <label for="workspace-name">Name a new workspace</label>
             <input id="workspace-name" name="name" type="text" maxlength="60" autocomplete="off" required>
           </div>
+          <div class="field" id="create-plan-field" hidden>
+            <label for="workspace-plan">Plan</label>
+            <select id="workspace-plan" name="plan"></select>
+            <span class="hint">A workspace runs on its own plan: its own limits and its own models. Your account's plan is what says how many workspaces you may run at once.</span>
+          </div>
           <button class="btn btn-primary" type="submit" data-busy="Creating">Create workspace</button>
         </form>
         <p id="create-note" class="muted small"></p>

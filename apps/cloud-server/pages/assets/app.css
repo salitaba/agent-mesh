@@ -700,6 +700,10 @@ body[data-page="home"] main { background: var(--k-glow) top / 100% 520px no-repe
 .ws-key { display: grid; gap: 10px; padding: 16px 0 0; border-top: 1px solid var(--k-line); }
 .ws-key > p, .ws-key form .field, .ws-key form > p { margin: 0; }
 .ws-key form { display: grid; gap: 14px; max-width: 34rem; }
+/* The plan one workspace is on, and the offer to move it: quiet, and its own line, so the row's own actions stay the row's. */
+.ws-plan { display: grid; gap: 10px; }
+.ws-plan > p { margin: 0; }
+.inline-form .hint { display: block; }
 .key-line { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
 .confirm { display: grid; gap: 10px; padding: 16px; border-radius: var(--k-r-md); }
 .confirm input { max-width: 28rem; }

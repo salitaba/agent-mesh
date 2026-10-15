@@ -642,3 +642,56 @@ test("a workspace that cannot be stopped or deleted is said so and tried again, 
   assert.equal(again.length, 1);
   assert.match(again[0]!, /: deleted, the retention period/);
 });
+
+/**
+ * The owner's ask, in their words: "an account holds several licences, each workspace with its own plan and caps
+ * (so one workspace can be Team while another is Community), instead of one plan covering all of them."
+ * One plan for the account is what it pays for and how many workspaces it may run; a workspace's plan is its own.
+ */
+test("one account runs workspaces on different plans, each licence naming its own, and changing one leaves the others alone", async () => {
+  const p = await plane();
+  const ada = await p.account("ada@example.com");
+  await p.subscribe(ada.accountId, "business"); // what the account pays for, and how many workspaces it may run
+  const one = await p.plane.workspaces.create(ada.accountId, "One", "team");
+  await p.plane.workspaces.idle();
+  const two = await p.plane.workspaces.create(ada.accountId, "Two", "business");
+  await p.plane.workspaces.idle();
+  const three = await p.plane.workspaces.create(ada.accountId, "Three", "business");
+  await p.plane.workspaces.idle();
+
+  const ids = [one.workspaceId, two.workspaceId, three.workspaceId];
+  const licencePlan = (i: number, expect: string): string => {
+    const spec = p.provisioner.ops("create")[i]!.spec!;
+    assert.equal(spec.workspaceId, expect, `the ${i}th host made is the one expected`);
+    const ent = resolveEntitlements({
+      token: spec.licence!,
+      publicKeys: { [p.keys.kid]: p.keys.publicKey },
+      now: new Date(p.clock.now),
+      enforcement: "enforce",
+    });
+    assert.equal(ent.status, "valid");
+    return ent.plan ?? "";
+  };
+  assert.equal(licencePlan(0, ids[0]!), "team", "the first workspace's licence names the plan chosen for it");
+  assert.equal(licencePlan(1, ids[1]!), "business", "and the second's names its own, not the account's");
+  assert.equal(licencePlan(2, ids[2]!), "business");
+
+  // Moving one workspace is moving that workspace: its neighbours keep their plans, and the account's is untouched.
+  await p.plane.workspaces.changePlan(ada.accountId, two.workspaceId, "team");
+  assert.equal(p.log.state.workspaces.get(two.workspaceId)!.plan, "team", "the one named moved");
+  assert.equal(p.log.state.workspaces.get(three.workspaceId)!.plan, "business", "the one beside it did not");
+  assert.equal(p.log.state.workspaces.get(one.workspaceId)!.plan, "team", "nor the one before it");
+  // and its licence is minted again for the plan it is now on
+  assert.equal(licencePlan(3, two.workspaceId), "team", "the host was made again with a licence naming the new plan");
+  assert.equal(
+    p.log.state.accounts.get(ada.accountId)!.subscription!.plan,
+    "business",
+    "and the account's own plan is what it pays for, not something a workspace's change rewrites",
+  );
+
+  // A plan this install does not offer is refused with a sentence rather than a 500.
+  const err = await refusal(p.plane.workspaces.changePlan(ada.accountId, one.workspaceId, "platinum"));
+  assert.equal(err.status, 400);
+  assert.match(String(err.message), /plan/i, "the refusal says which thing was wrong");
+  assert.equal(p.log.state.workspaces.get(one.workspaceId)!.plan, "team", "and nothing moved");
+});

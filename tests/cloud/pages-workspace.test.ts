@@ -52,30 +52,31 @@ test("a person can start a stopped workspace only while the plan is paid up, whi
 test("a workspace that is stopped for a payment that is missing offers no Resume, which the service would refuse, and says what starts it", async () => {
   const late = world((x) => { x.subscription = LATE; x.workspaces = [ws("suspended", { statusReason: "payment is overdue" })]; });
   const l = await visit("account", { routes: late.routes });
-  assert.deepEqual(l.labels("workspaces"), ["More"]);
-  assert.equal(l.text(l.$("workspaces").querySelectorAll("li")[0]!), "Research Stopped Stopped because the last payment did not go through. A payment starts it again. More Address research-1a2b3c.ws.example.com");
+  assert.deepEqual(l.labels("workspaces"), ["More", "Change plan"]);
+  assert.equal(l.text(l.$("workspaces").querySelectorAll("li")[0]!), "Research Stopped Stopped because the last payment did not go through. A payment starts it again. More Plan Team Change plan Address research-1a2b3c.ws.example.com");
   assert.equal(l.text("stage-title"), "Your last payment did not go through");
   assert.deepEqual(l.labels("stage-actions"), ["Update payment details"], "and the one thing to do is said at the top");
 
   const ended = world((x) => { x.subscription = ENDED; x.workspaces = [ws("suspended", { statusReason: "the subscription ended" })]; });
   const e = await visit("account", { routes: ended.routes });
-  assert.deepEqual(e.labels("workspaces"), ["More"]);
+  assert.deepEqual(e.labels("workspaces"), ["More", "Change plan"]);
   assert.match(e.text("workspaces"), /Stopped because the subscription ended\. Choose a plan again and it starts again\./);
   assert.equal(e.text("stage-title"), "Choose a plan to start again");
 
   const paid = world((x) => { x.subscription = ACTIVE; x.workspaces = [ws("suspended", { statusReason: "payment is overdue" })]; });
   const p = await visit("account", { routes: paid.routes });
-  assert.deepEqual(p.labels("workspaces"), ["Resume", "More"], "once the plan is paid up it can be started, whatever stopped it");
+  assert.deepEqual(p.labels("workspaces"), ["Resume", "More", "Change plan"], "once the plan is paid up it can be started, whatever stopped it");
 });
 
 // ---- the card itself ----
 
-test("a card is a name and state, a sentence, what can be done, and the address as a quiet detail at the end", async () => {
+test("a card is a name and state, a sentence, what can be done, the plan it is on, and the address as a quiet detail at the end", async () => {
   const v = await visit("account", { routes: world((x) => { paid(x); x.workspaces = [ws("suspended", { statusReason: "paused by its owner" })]; }).routes });
   const card = v.$("workspaces").querySelectorAll("li")[0]!;
-  assert.deepEqual(card.children.map((n) => n.className), ["row-head", "ws-says", "ws-auto", "ws-actions", "ws-key", "ws-confirm", "ws-note sr", "muted small ws-address"]);
+  assert.deepEqual(card.children.map((n) => n.className), ["row-head", "ws-says", "ws-auto", "ws-actions", "ws-plan", "ws-key", "ws-confirm", "ws-note sr", "muted small ws-address"]);
   assert.equal(v.text(card.querySelector(".row-head")!), "Research Stopped");
   assert.equal(v.text(card.querySelector(".ws-says")!), "Paused by you. Its files are kept. Resume it to open it.");
+  assert.equal(v.text(card.querySelector(".ws-plan")!), "Plan Team Change plan", "which plan this workspace alone is on, and the way to another");
   assert.equal(v.text(card.querySelector(".ws-address")!), "Address research-1a2b3c.ws.example.com");
   assert.equal(card.querySelector(".ws-address code")!.textContent, "research-1a2b3c.ws.example.com");
   const state = card.querySelector(".row-head .badge")!;
@@ -418,11 +419,11 @@ test("a payment that arrives while the page is open puts Resume back on the work
   const v = new Visit("account", { routes: w.routes, search: "?paid=1", storage: { "curule:before-payment": before } });
   const started = v.start();
   await v.until("the page to say it is waiting", () => /confirms a payment/.test(v.text("notice")));
-  assert.deepEqual(v.labels("workspaces"), ["More", "More"]);
+  assert.deepEqual(v.labels("workspaces"), ["More", "Change plan", "More", "Change plan"]);
   w.subscription = { ...ACTIVE!, plan: "business", title: "Business" };
   await started;
   await v.until("the payment to be seen", () => v.text("notice") === "Your payment has arrived.");
-  assert.deepEqual(v.labels("workspaces"), ["Resume", "More", "Resume", "More"], "the plan is paid up, and the workspaces can be started");
+  assert.deepEqual(v.labels("workspaces"), ["Resume", "More", "Change plan", "Resume", "More", "Change plan"], "the plan is paid up, and the workspaces can be started");
   for (const card of v.$("workspaces").querySelectorAll("li")) assert.equal(v.text(card.querySelector(".ws-says")!), "Stopped because the last payment did not go through. Resume it to open it.");
 });
 

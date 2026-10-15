@@ -899,10 +899,10 @@ test("each workspace shows its state in words, with only what can be done to it 
   const v = await visit("account", { routes: w.routes });
   const rows = v.$("workspaces").querySelectorAll("li");
   assert.equal(rows.length, 4);
-  assert.equal(v.text(rows[0]!), "Alpha Running Open Pause More Address alpha.ws.example.com", "a workspace that is ready says its state and offers what can be done");
-  assert.equal(v.text(rows[1]!), "Beta Stopped Stopped because the last payment did not go through. Resume it to open it. Resume More Address beta.ws.example.com", "the plan is paid up, so it can be started");
-  assert.equal(v.text(rows[2]!), "Gamma Starting It starts in the background, and this page updates when it is ready. Open it when it is ready Address gamma.ws.example.com");
-  assert.equal(v.text(rows[3]!), "Delta Could not start The container did not start. Delete it and make a new one. If it fails again, tell the operator. Delete this workspace Address delta.ws.example.com");
+  assert.equal(v.text(rows[0]!), "Alpha Running Open Pause More Plan Team Change plan Address alpha.ws.example.com", "a workspace that is ready says its state and offers what can be done, and the plan it is on");
+  assert.equal(v.text(rows[1]!), "Beta Stopped Stopped because the last payment did not go through. Resume it to open it. Resume More Plan Team Change plan Address beta.ws.example.com", "the plan is paid up, so it can be started");
+  assert.equal(v.text(rows[2]!), "Gamma Starting It starts in the background, and this page updates when it is ready. Open it when it is ready Plan Team Address gamma.ws.example.com", "a workspace that is starting cannot be moved to another plan yet: there is no host to make again");
+  assert.equal(v.text(rows[3]!), "Delta Could not start The container did not start. Delete it and make a new one. If it fails again, tell the operator. Delete this workspace Plan Team Address delta.ws.example.com");
   const boxes = (row: FakeNode) => row.querySelectorAll("input").filter((i) => i.getAttribute("type") === "checkbox");
   assert.deepEqual(rows.map((r) => boxes(r).length), [0, 0, 1, 0], "only a workspace that is starting offers to be opened when it is ready");
   assert.equal(boxes(rows[2]!)[0]!.checked, false, "and it is off until the person asks");
@@ -933,7 +933,7 @@ test("naming a workspace creates it, and a workspace that is starting is watched
 
   v.type("workspace-name", "  Research  ");
   await v.send(v.$("create"));
-  assert.deepEqual(v.to("POST", "/api/workspaces"), [{ method: "POST", path: "/api/workspaces", body: { name: "Research" } }]);
+  assert.deepEqual(v.to("POST", "/api/workspaces"), [{ method: "POST", path: "/api/workspaces", body: { name: "Research", plan: "team" } }], "the plan the form offers: the account's own, unless the person picks another");
   assert.equal(v.$("workspace-name").value, "");
   assert.match(v.text("workspaces"), /^Research Starting /);
   assert.equal(v.text("stage-title"), "Research is starting", "the card at the top says what became of it");
@@ -944,7 +944,7 @@ test("naming a workspace creates it, and a workspace that is starting is watched
   w.workspaces = [workspace({ name: "Research", status: "running" })];
   await v.until("the workspace to show as running", () => /^Research Running /.test(v.text("workspaces")));
   assert.ok(v.to("GET", "/api/me").length > before);
-  assert.deepEqual(v.labels("workspaces"), ["Open", "Pause", "More"]);
+  assert.deepEqual(v.labels("workspaces"), ["Open", "Pause", "More", "Change plan"]);
 });
 
 test("a workspace the service refuses to make is said in the service's words and the name stays", async () => {
@@ -979,7 +979,7 @@ test("opening a workspace asks for a one-time address and goes there; an answer 
   o.click(o.button("workspaces", "Open"));
   await o.idle();
   assert.deepEqual(o.navigations, []);
-  assert.equal(o.text("workspaces"), "Research Running Open Pause More The address of this workspace is not one this page will open. Tell the operator. Address research-1a2b3c.ws.example.com");
+  assert.equal(o.text("workspaces"), "Research Running Open Pause More Plan Team Change plan The address of this workspace is not one this page will open. Tell the operator. Address research-1a2b3c.ws.example.com");
 
   const still = world((x) => {
     paid(x);
@@ -1010,10 +1010,10 @@ test("pausing and resuming are one request each, with the row saying what is und
   assert.ok(v.buttons("workspaces").every((b) => b.held), "and its buttons are held");
   assert.ok(v.$("pause-ws_1") === pause && v.doc.activeElement === pause, "the button that was pressed is the one with the cursor, and was not drawn again");
   await v.idle();
-  assert.equal(v.text("workspaces"), "Research Stopped Paused by you. Its files are kept. Resume it to open it. Resume More Address research-1a2b3c.ws.example.com");
+  assert.equal(v.text("workspaces"), "Research Stopped Paused by you. Its files are kept. Resume it to open it. Resume More Plan Team Change plan Address research-1a2b3c.ws.example.com");
   v.click(v.button("workspaces", "Resume"));
   await v.idle();
-  assert.match(v.text("workspaces"), /^Research Running Open Pause More Address /);
+  assert.match(v.text("workspaces"), /^Research Running Open Pause More Plan Team Change plan Address /);
   assert.equal(v.to("POST", "/api/workspaces/ws_1/suspend").length, 1);
   assert.equal(v.to("POST", "/api/workspaces/ws_1/resume").length, 1);
 
