@@ -1851,15 +1851,46 @@ export function createHttpServer(instance: MeshInstance, opts: { dashboardDir?: 
         if (!previews.verify(parts[1])) return send(403, { error: "this playground link is not valid, or has expired: reopen the playground from the dashboard" });
         return servePreviewCapability(res, parts.slice(2));
       }
+      // ------------------------------------------------- the product's own UI, framed
+      // The same proof, a different port: the product's own UI, running, into a sandboxed frame. That frame carries
+      // neither cookie nor bearer, so it belongs ahead of operator auth — registered behind it, "Start it" worked and
+      // the frame then got 401, which is its owner's report exactly ("i can click it and it work but i can not open the
+      // page"). Measured on the live console: no-auth 401 before, 200 here.
+if (parts[0] === LIVE_UI_PREFIX && parts.length >= 2 && req.method === "OPTIONS") {
+        // The page is an opaque origin, so its own writes preflight. The product's server does not answer these.
+        res.writeHead(204, {
+          "access-control-allow-origin": "*",
+          "access-control-allow-headers": "content-type",
+          "access-control-allow-methods": "GET,POST,OPTIONS",
+          "access-control-max-age": "600",
+        });
+        res.end();
+        return;
+      }
+      if (parts[0] === LIVE_UI_PREFIX && parts.length >= 2 && req.method === "GET") {
+        const target = liveUi.target();
+        if (!liveUiLinks.verify(parts[1])) return json(403, { error: "this UI link is not valid, or has expired: start it again" });
+        if (!target) return json(409, { error: "the product's UI is not running" });
+        // This is a *page the console frames*, not an API answer, so the preview policy replaces the one every /api
+        // response carries. Without this the product's own UI came back `x-frame-options: DENY` — the console telling
+        // the browser not to display the very page it had just built an iframe for — and the pane was blank with no
+        // error anywhere to say why. See `proxyToUi`, which also refuses to pass the product's own framing policy on.
+        applySecurityHeaders(res, "preview");
+        // Everything after `<prefix>/<capability>/`, with the page's own query — this proxy mirrors the product's root,
+        // so a path the page addressed absolutely means here exactly what it meant there.
+        const rest = `${parts.slice(2).join("/")}${u.search}`;
+        return proxyToUi(req, res, target, rest, {
+          cookies: () => liveUi.cookies(),
+          absorb: (v) => liveUi.absorb(v),
+        });
+      }
 
-      // --------------------------------------------------------- MCP bridge
-      // Deliberately ahead of `requireAuth`: seats carry no operator token (in
-      // strict mode requireAuth would refuse them all). That is sound only
-      // because every toolset below refuses a request whose token fails
-      // `McpToolset.verifyToken` — a seat HMAC under a per-process secret, or
-      // for `human` the minted bridge secret / operator token, all compared in
-      // constant time. None of them is derivable from public ids.
-      if (parts[0] === "internal" && parts[1] === "mcp") {
+      // ------------------------------------------------- the product's own UI, framed
+      // The same proof, a different port: the product's own UI, running, into a sandboxed frame. That frame carries
+      // neither cookie nor bearer, so it belongs here rather than behind operator auth — with the proxy in the authed
+      // router, "Start it" worked and the frame then got 401, which is its owner's report exactly ("i can click it and it
+      // work but i can not open the page"). Measured on the live console: no-auth 401 before, 200 here.
+            if (parts[0] === "internal" && parts[1] === "mcp") {
         const agentId = decodeURIComponent(parts[2] ?? "");
         const rawToken = req.headers["x-mesh-token"] ?? u.searchParams.get("token");
         const token = Array.isArray(rawToken) ? (rawToken[0] ?? "") : (rawToken ?? "");
@@ -3301,35 +3332,7 @@ export function createHttpServer(instance: MeshInstance, opts: { dashboardDir?: 
         return json(200, { stopped, state: describeLiveUi() });
       }
       if (parts[0] === "ui" && parts.length === 1 && req.method === "GET") return json(200, describeLiveUi());
-      if (parts[0] === LIVE_UI_PREFIX && parts.length >= 2 && req.method === "OPTIONS") {
-        // The page is an opaque origin, so its own writes preflight. The product's server does not answer these.
-        res.writeHead(204, {
-          "access-control-allow-origin": "*",
-          "access-control-allow-headers": "content-type",
-          "access-control-allow-methods": "GET,POST,OPTIONS",
-          "access-control-max-age": "600",
-        });
-        res.end();
-        return;
-      }
-      if (parts[0] === LIVE_UI_PREFIX && parts.length >= 2 && req.method === "GET") {
-        const target = liveUi.target();
-        if (!liveUiLinks.verify(parts[1])) return json(403, { error: "this UI link is not valid, or has expired: start it again" });
-        if (!target) return json(409, { error: "the product's UI is not running" });
-        // This is a *page the console frames*, not an API answer, so the preview policy replaces the one every /api
-        // response carries. Without this the product's own UI came back `x-frame-options: DENY` — the console telling
-        // the browser not to display the very page it had just built an iframe for — and the pane was blank with no
-        // error anywhere to say why. See `proxyToUi`, which also refuses to pass the product's own framing policy on.
-        applySecurityHeaders(res, "preview");
-        // Everything after `<prefix>/<capability>/`, with the page's own query — this proxy mirrors the product's root,
-        // so a path the page addressed absolutely means here exactly what it meant there.
-        const rest = `${parts.slice(2).join("/")}${u.search}`;
-        return proxyToUi(req, res, target, rest, {
-          cookies: () => liveUi.cookies(),
-          absorb: (v) => liveUi.absorb(v),
-        });
-      }
-      if (parts[0] === "playground" && parts[1] === "commands" && parts.length === 2 && req.method === "GET") {
+            if (parts[0] === "playground" && parts[1] === "commands" && parts.length === 2 && req.method === "GET") {
         // The checkout is named in the answer as well: the panel can say where a command will run, and a reader of the
         // route does not have to know this server's layout to use it.
         const roots = pageRoots();

@@ -138,9 +138,7 @@ export function YourProduct({ client, projectId, refreshKey = 0 }: {
       <div className="prod-h">
         <h3 id="yp-h">Your product</h3>
         <span className="grow" />
-        {state.open ? <Button variant="small" onClick={toggleUi}>Close it</Button> : null}
-        {state.phase === "live" ? <Button variant="small" icon="play" onClick={toggleUi}>Use it here</Button> : null}
-        {state.phase === "starting" || state.phase === "live" ? (
+        {state.phase === "starting" ? (
           <Button variant="small" icon="stop" disabled={state.busy} onClick={() => void live.stop(client)}>
             {state.busy ? "Stopping…" : "Stop it"}
           </Button>
@@ -182,12 +180,21 @@ export function YourProduct({ client, projectId, refreshKey = 0 }: {
           </p>
         ) : (
           <p className="prod-note prod-live-lede">
-            Every byte of it loads through the console, and the page keeps its own sandbox: it can read neither this
-            console nor its API.
+            Running on port {state.port}, which only this machine can reach: that address in the log is not one your
+            phone can open. Every byte loads through the console instead — press <b>Use it here</b>. The page keeps its
+            own sandbox, so it can read neither this console nor its API.
           </p>
         )}
         <Waiting state={state} />
         {state.phase === "live" ? <Lifetime expiresAt={state.expiresAt} /> : null}
+        {state.phase === "live" ? (
+          <div className="prod-live-start">
+            <Button variant="primary" size="lg" icon="play" onClick={toggleUi}>{state.open ? "Close it" : "Use it here"}</Button>
+            <Button variant="small" icon="stop" disabled={state.busy} onClick={() => void live.stop(client)}>
+              {state.busy ? "Stopping…" : "Stop it"}
+            </Button>
+          </div>
+        ) : null}
         {startable ? (
           <div className="prod-live-start">
             <label htmlFor="yp-cmd">How this product starts its own UI</label>

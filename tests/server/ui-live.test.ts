@@ -121,3 +121,32 @@ test("the product's UI: started on request, port and token learned from what it 
     server.close();
   }
 });
+
+
+/**
+ * The framed UI is served *ahead of operator auth*, and that is not a detail.
+ *
+ * A sandboxed frame carries neither cookie nor bearer — that is what makes it safe — so the only proof it can present is
+ * the capability in its path. With the proxy registered in the session-protected part of the router, "Start it" worked
+ * and the page then answered 401 to the frame: its owner reported exactly that ("i can click it and it work but i can not
+ * open the page"). No behavioural test can catch this, because the test server requires no session at all — so the
+ * ordering in the source is what is pinned here, alongside the playground page's, which had it right from the start.
+ */
+test("the product's UI is served ahead of operator auth, and the operator's own actions stay behind it", () => {
+  const src = fs.readFileSync(path.join(process.cwd(), "apps/mesh-server/src/index.ts"), "utf8");
+  const capability = src.indexOf("liveUiLinks.verify(parts[1])");
+  const playground = src.indexOf("previews.verify(parts[1])");
+  const authGate = src.indexOf("missing mesh token");
+  assert.ok(capability > 0 && playground > 0 && authGate > 0, "all three are present");
+  assert.ok(
+    capability < authGate,
+    "the framed UI is registered before the first auth gate: the frame cannot present a session",
+  );
+  assert.ok(playground < authGate, "and so is the playground page (this was already true)");
+  for (const action of ['parts[0] === "ui" && parts[1] === "start"', 'parts[0] === "ui" && parts[1] === "stop"']) {
+    assert.ok(
+      src.indexOf(action) > authGate,
+      `starting and stopping the product's UI stays behind operator auth (${action})`,
+    );
+  }
+});
