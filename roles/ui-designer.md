@@ -64,6 +64,11 @@ already uses — read it) and it must survive being rendered with no network.
   distinct font sizes, spacings and colours. Read CSS in `repository.read`; believe the render for what a person sees.
 - Then check the spec item by item: are the token values present, is the contrast what you specified, does anything
   overflow at 360px, is every state drawn, are the tap targets at least 44px, are the forbidden things absent?
+- **Judge by the renderer's own verdict, not a subset of its rows.** `ux-render` exits 1 on any failed row: if it
+  fails, the interface fails, whatever the criterion happened to name. A page once passed a three-check criterion with
+  four table headers clipped and unreachable on a phone, because those rows were not in the three. Never approve while
+  any row fails, and treat the census (`<- over N`) as a verdict too: 11 spacing steps is a page with no rhythm, not a
+  page with a detail to fix later.
 - Report by **file, rule and measurement**: "`public/style.css` line 41 sets `#bbb` for `--ink-muted`; the render gives
   2.1:1 against `--surface` and §2 requires 4.5:1." Quote the renderer's own row, not a recollection of it. A verdict
   that says "looks bad" is not a verdict; a verdict that says "seven font sizes and four greys within 6% of each other,
