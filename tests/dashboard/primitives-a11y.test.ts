@@ -130,3 +130,17 @@ test("forced colours: what is drawn with a background says so, so it survives Wi
   assert.doesNotMatch(block![1]!, /#[0-9a-fA-F]{3,8}\b/, "system colours only, no literal");
 });
 
+
+test("two menus on one page do not answer to one name", () => {
+  const menu = bodyOf(components, "Menu");
+  assert.match(menu, /aria-label=\{title\}/, "a menu's name is its title");
+  // The console's top bar and the Designer both put a menu in the same viewport; on a phone they are both on screen at once.
+  const shell = read("shell.tsx");
+  const designer = read("designer/Designer.tsx");
+  // One line each: the label holds an icon, so the tag cannot be cut at the first ">".
+  const titlesOf = (src: string): string[] => [...src.matchAll(/<Menu\b[^\n]*?title="([^"]+)"/g)].map((m) => m[1]!);
+  const shellTitles = titlesOf(shell);
+  const designerTitles = titlesOf(designer);
+  assert.ok(shellTitles.length && designerTitles.length, "both pages have a menu");
+  for (const t of designerTitles) assert.ok(!shellTitles.includes(t), `"${t}" names two different menus`);
+});

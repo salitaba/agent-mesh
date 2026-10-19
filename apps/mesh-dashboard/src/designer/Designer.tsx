@@ -768,7 +768,8 @@ export default function Designer(): React.JSX.Element {
               ) : null}
             </div>
             {compact ? <ToolButton icon="sliders" label="Inspector" text pressed={ctxOpen} controls="ms-inspector" id="ms-insp-toggle" onClick={() => (ctxOpen ? setCtxOpen(false) : openInspector())} /> : null}
-            <Menu id="ms-more" label={<Icon name="more" size={18} />} title="More actions" items={moreItems} />
+            {/* The console's top bar has a "More actions" menu of its own, and on a phone both are in one viewport. */}
+            <Menu id="ms-more" label={<Icon name="more" size={18} />} title="More actions on the Designer" items={moreItems} />
           </>
         )}
       />
