@@ -86,17 +86,14 @@
 .ms-scrollbox { max-height: 176px; overflow: auto; padding: var(--s2); border: 1px solid var(--line); border-radius: var(--r); background: var(--sunken); }
 
 /* ---------- authority: a grid of switches ---------- */
+/* Authority: one row per domain of the protocol's catalogue, and the kit's switches for its verbs. It was a seven-column table of
+   18px checkboxes; its narrowest form was 393px and the panel inside the inspector is 366px at its widest, so the whole form scrolled
+   sideways and the last verb was cut off. A row of switches wraps: the domain name sets one column, the verbs flow in the rest. */
 .ms-auth { display: flex; flex-direction: column; gap: var(--s2); }
-.ms-auth table { width: 100%; border-collapse: collapse; font: 13px var(--sans); }
-.ms-auth th { padding: var(--s1) var(--s1); font-weight: 600; color: var(--muted); text-align: center; }
-.ms-auth thead th { padding-bottom: var(--s2); font-size: 12px; }
-.ms-auth tbody th { padding-left: 0; text-align: left; font-weight: 500; color: var(--text); white-space: nowrap; }
-.ms-auth td { text-align: center; padding: 0; }
-.ms-auth tbody tr { transition: background-color var(--k-dur-1) var(--k-ease); }
-.ms-auth tbody tr:hover { background: var(--wash); }
-.ms-auth tbody tr + tr > * { border-top: 1px solid var(--line); }
-/* The box is the kit's; the cell around it is the target, so a press a little off still lands. */
-.ms-auth td > input[type="checkbox"] { margin: var(--s1-5) 0; vertical-align: middle; cursor: pointer; }
+.ms-auth-rows { display: flex; flex-direction: column; gap: var(--s1-5); }
+.ms-auth-row { display: grid; grid-template-columns: minmax(0, 100px) minmax(0, 1fr); gap: var(--s2); align-items: center; }
+.ms-auth-domain { font: 600 12px/1.3 var(--sans); color: var(--text); overflow-wrap: anywhere; }
+.ms-auth-row .chips { gap: var(--s1); }
 .ms-auth-extra { display: flex; flex-direction: column; gap: var(--s1); }
 
 /* ---------- done-when checks, triage rules, gates: a row you can add and remove ---------- */
@@ -113,4 +110,7 @@
 @media (max-width: 760px) {
   /* The inspector is a drawer here and the fields are on a thumb's reach. */
   .ms-insp .tabpanel { padding-inline: var(--s3-5); }
+  /* A domain's switches go under its name, three to a row and a thumb tall, rather than beside it in a 200px column. */
+  .ms-auth-row { grid-template-columns: minmax(0, 1fr); gap: var(--s1); }
+  .ms-auth-row .chip-toggle { flex: 1 1 30%; min-height: 44px; justify-content: center; }
 }

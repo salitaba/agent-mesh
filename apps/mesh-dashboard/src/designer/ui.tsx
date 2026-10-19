@@ -143,9 +143,13 @@ export function Section({ id, title, meta, defaultOpen = true, reveal, children 
 const PLAIN_VERB: Record<string, string> = { approve: "approve", reject: "reject", accept: "accept", block: "block", veto: "veto", pass: "pass" };
 
 /**
- * Authority as a grid of switches over the protocol's own catalogue (six domains by six verbs), instead of a text box.
+ * Authority as switches over the protocol's own catalogue (six domains by six verbs), instead of a text box.
  * A token typed by hand that is not in the catalogue parses, validates and then grants nothing, with no symptom but a mission that
  * will not converge; here it cannot be typed, and a token already in the file that is not in the catalogue is shown as one, with a way out.
+ *
+ * It was a seven-column table of checkboxes. Its narrowest form was 393px and the inspector is never wider than 400px (366 of it inside
+ * the panel at 1440px), so the panel scrolled sideways and the last verb sat off the edge at every width, and its 18px box in a 31px row
+ * was under a thumb's target. A row per domain of the kit's switches wraps instead, and the verb names no longer set the row's width.
  */
 export function AuthorityGrid({ values, known, domains, verbs, onToggle, onRemove }: {
   values: string[]; known: string[]; domains: readonly string[]; verbs: readonly string[]; onToggle: (token: string) => void; onRemove: (token: string) => void;
@@ -158,31 +162,24 @@ export function AuthorityGrid({ values, known, domains, verbs, onToggle, onRemov
   const wildcards = extras.filter((v) => known.includes(v));
   return (
     <div className="ms-auth">
-      <table>
-        <caption className="sr-only">Authority: what this seat may decide alone. A gate that requires an approval waits for a seat that holds it.</caption>
-        <thead>
-          <tr>
-            <th scope="col"><span className="sr-only">Domain</span></th>
-            {shown.map((v) => <th scope="col" key={v}>{PLAIN_VERB[v] ?? v}</th>)}
-          </tr>
-        </thead>
-        <tbody>
-          {domains.map((d) => (
-            <tr key={d}>
-              <th scope="row">{d}</th>
+      <div className="ms-auth-rows">
+        {domains.map((d) => (
+          <div className="ms-auth-row" key={d}>
+            <span className="ms-auth-domain">{d}</span>
+            <div className="chips">
               {shown.map((v) => {
                 const token = `${d}.${v}`;
                 const on = values.includes(token);
                 return (
-                  <td key={v}>
-                    <input type="checkbox" checked={on} aria-label={`${d} ${v}`} title={token} onChange={() => onToggle(token)} />
-                  </td>
+                  <button key={v} type="button" className={`chip-toggle${on ? " on" : ""}`} aria-pressed={on} aria-label={`${d} ${v}`} title={token} onClick={() => onToggle(token)}>
+                    {PLAIN_VERB[v] ?? v}
+                  </button>
                 );
               })}
-            </tr>
-          ))}
-        </tbody>
-      </table>
+            </div>
+          </div>
+        ))}
+      </div>
       {wildcards.length ? (
         <div className="ms-auth-extra">
           <span className="ms-hint">Also holds, as a wildcard:</span>
