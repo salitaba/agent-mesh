@@ -1,7 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import * as fs from "fs";
+import * as path from "path";
 
-import { draftNeedsModels, guideProgress, seatsText } from "../../apps/mesh-dashboard/src/designer/guidemodel";
+import { draftNeedsModels, guideProgress, seatsText, wiresText } from "../../apps/mesh-dashboard/src/designer/guidemodel";
 import { GOAL_PLACEHOLDER } from "../../apps/mesh-dashboard/src/goal";
 
 /**
@@ -52,6 +54,24 @@ test("the line for the seats leads a lone seat to the designer or to adding one,
   assert.match(seatsText(0), /^There are no seats yet\. Describe the team to the designer/);
   assert.equal(seatsText(3), "There are 3 seats. Give each a role, the tools it may use and what it may decide alone.");
   assert.doesNotMatch(seatsText(1), /\b(will|automatically)\b/i, "the designer proposes, the person reviews: nothing is promised or done for them");
+});
+
+test("the wiring step names controls the page has: the canvas on a wide screen, the seat's own inspector in the phone's list", () => {
+  assert.equal(wiresText(1, false), "Wires connect seats, so they start once there are two.", "one seat: nothing to wire yet");
+  assert.equal(wiresText(1, true), "Wires connect seats, so they start once there are two.", "and the phone says the same about one seat");
+  assert.match(wiresText(4, false), /drag from its arrow to another seat, or press Wire seats\./);
+  const listed = wiresText(4, true);
+  assert.match(listed, /under Communication/, "the list has no canvas: the seat's inspector is the way to wire");
+  // At 360px the page holds no button named "Wire seats" and no `.ms-stage` at all (measured in the running console), so the phone's
+  // sentence must not send anyone looking for them.
+  assert.doesNotMatch(listed, /drag|Wire seats/);
+});
+
+test("the guide is told which layout it is in, and the page decides it by the same breakpoint as the seats", () => {
+  const src = (rel: string): string => fs.readFileSync(path.resolve(__dirname, "..", "..", "..", "apps", "mesh-dashboard", "src", "designer", rel), "utf8");
+  assert.match(src("Guide.tsx"), /wiresText\(seats, list\)/, "the step is worded for the layout it is shown in");
+  assert.match(src("Designer.tsx"), /list=\{listMode\}/, "and the Designers tells it which that is");
+  assert.match(src("Designer.tsx"), /useMedia\(PHONE\)/, "the list is what the phone breakpoint already chooses");
 });
 
 test("a draft needs a model if any seat is not on the scripted runtime, whether it names its runtime or takes the mesh's, and the file's silence means Claude", () => {

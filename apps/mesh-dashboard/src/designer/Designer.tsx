@@ -802,7 +802,7 @@ export default function Designer(): React.JSX.Element {
         <SetupGuide
           goal={String(m.mesh?.goal || "")}
           onGoal={(g) => { m.mesh.goal = g; touch(); }}
-          seats={ids.length} wires={wires.length}
+          seats={ids.length} wires={wires.length} list={listMode}
           onAddSeat={doAddSeat} onAsk={askDesigner} onHide={() => { setGuideHidden(true); setGuideOff(true); }}
         />
       ) : null}

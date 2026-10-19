@@ -44,6 +44,18 @@ export function seatsText(seats: number): string {
 }
 
 /**
+ * The line under "Decide who may message whom". Below the phone breakpoint the canvas is replaced by the seat list, so the two controls
+ * this used to name — dragging from a seat's arrow, and the canvas's "Wire seats" button — are not on the page, and the list has no
+ * wiring of its own: the seat's inspector is the way there. Measured at 360px with the guide open, the page held no button named
+ * "Wire seats" and no `.ms-stage` at all, while the same sentence was shown; the seat's Communication section exists at both widths.
+ */
+export function wiresText(seats: number, list: boolean): string {
+  if (seats < 2) return "Wires connect seats, so they start once there are two.";
+  if (list) return "A seat can start a thread only with seats it is wired to. Open a seat, and under Communication say who it may message.";
+  return "A seat can start a thread only with seats it is wired to. Select a seat and drag from its arrow to another seat, or press Wire seats.";
+}
+
+/**
  * Whether a team as drafted would call a model: any seat that is not on the scripted (stub) runtime. A seat names its own runtime or takes
  * the mesh's default, which is the Claude runtime when the file says nothing. A draft with no seat has nothing that could.
  */

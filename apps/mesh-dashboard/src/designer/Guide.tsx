@@ -9,7 +9,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Button, EmptyState, TextArea, useDismissable } from "../components";
 import { Icon } from "../icons";
-import { guideProgress, seatsText } from "./guidemodel";
+import { guideProgress, seatsText, wiresText } from "./guidemodel";
 import { GOAL_MAX, goalIsPlaceholder, TEMPLATES, type Template } from "./model";
 import { CloseButton, ToolButton } from "./ui";
 
@@ -97,12 +97,14 @@ export interface SetupGuideProps {
   onGoal: (goal: string) => void;
   seats: number;
   wires: number;
+  /** The phone layout: the seats are a list and there is no canvas, so the step that wires them says so (guidemodel.wiresText). */
+  list: boolean;
   onAddSeat: () => void;
   onAsk: () => void;
   onHide: () => void;
 }
 
-export function SetupGuide({ goal, onGoal, seats, wires, onAddSeat, onAsk, onHide }: SetupGuideProps): React.JSX.Element {
+export function SetupGuide({ goal, onGoal, seats, wires, list, onAddSeat, onAsk, onHide }: SetupGuideProps): React.JSX.Element {
   const progress = guideProgress({ goal, seats, wires });
   const stateOf = (key: string) => progress.steps.find((s) => s.key === key)?.state ?? "next";
   const steps: Array<{ key: string; title: string; body: React.ReactNode }> = [
@@ -135,13 +137,7 @@ export function SetupGuide({ goal, onGoal, seats, wires, onAddSeat, onAsk, onHid
     },
     {
       key: "wires", title: "Decide who may message whom",
-      body: (
-        <span className="ms-step-text">
-          {seats < 2
-            ? "Wires connect seats, so they start once there are two."
-            : "A seat can start a thread only with seats it is wired to. Select a seat and drag from its arrow to another seat, or press Wire seats."}
-        </span>
-      ),
+      body: <span className="ms-step-text">{wiresText(seats, list)}</span>,
     },
     {
       key: "save", title: "Save, then start the mission",
