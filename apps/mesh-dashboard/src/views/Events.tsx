@@ -112,13 +112,16 @@ export default function Events(): React.JSX.Element {
     setLoading(true);
     setLoadErr(null);
     client.api("GET", "/events?limit=400", undefined, { timeoutMs: 30000 })
-      .then(({ json, timeout }) => {
+      .then(({ json, timeout, status }) => {
         if (dead) return;
         if (timeout) setLoadErr("The request timed out. The server may be busy.");
-        else primeEvents(json || []);
+        // A 502 from a gateway is a JSON object, not a log. Handing it to primeEvents made it throw
+        // "not iterable" and the failure state printed that at the reader, in place of an answer.
+        else if (!Array.isArray(json)) setLoadErr(status >= 400 ? `The server answered ${status} instead of the log.` : "The server sent something that is not a list of events.");
+        else primeEvents(json);
       })
-      .catch((e: unknown) => {
-        if (!dead) setLoadErr(e instanceof Error ? e.message : String(e));
+      .catch(() => {
+        if (!dead) setLoadErr("The request to the server failed. It may be restarting.");
       })
       .finally(() => {
         if (!dead) setLoading(false);

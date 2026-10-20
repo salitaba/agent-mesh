@@ -37,7 +37,7 @@ const FIX_VIEW: Record<FixTarget, View> = { inbox: "escalations", tools: "gates"
  * with its checks, and what just happened.
  */
 export default function Overview(): React.JSX.Element {
-  const { status, events, primeEvents, steps, stepsLoaded, setSteps, setView, openDrawer, openDetail, goalId, serverDown, refreshStatus, client, sseState } = useMesh();
+  const { status, statusError, events, primeEvents, steps, stepsLoaded, setSteps, setView, openDrawer, openDetail, goalId, serverDown, refreshStatus, client, sseState } = useMesh();
   const { facts, state } = useMission();
   const actions = useMissionActions();
   // Optional by design: `curule console` serves one mesh and has no project registry, so a null context means no host that
@@ -191,8 +191,8 @@ export default function Overview(): React.JSX.Element {
     return (
       <div className="ov">
         <PageHeader title="Overview" />
-        {serverDown ? (
-          <ErrorState what="the overview" detail="The server stopped answering. It may be restarting." onRetry={() => void refreshStatus()} />
+        {serverDown || (!status && statusError) ? (
+          <ErrorState what="the overview" detail={serverDown ? "The server stopped answering. It may be restarting." : statusError ?? undefined} onRetry={() => void refreshStatus()} />
         ) : (
           <section className={`ov-hero ${state.tone} ${state.phase}`} aria-busy={busy || undefined} aria-label="Mission status">
             <div className="ov-hero-top">

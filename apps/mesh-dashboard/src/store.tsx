@@ -158,6 +158,10 @@ interface MeshState {
   view: View;
   setView: (v: View) => void;
   status: any;
+  /** Why the last `/status` poll got no usable answer. Cleared by the next good one. A view whose whole
+   *  body comes from `status` reads this when `status` is null, so a failed poll is a failed state, not
+   *  an empty project. */
+  statusError: string | null;
   events: TimelineEvent[];
   lastSeq: number;
   serverDown: boolean;
@@ -240,6 +244,7 @@ export function MeshProvider({ children, projectId = null, background = false }:
   const [view, setViewState] = useState<View>(viewFromHash);
   const [detail, setDetail] = useState<HashRoute["detail"] | null>(() => currentRoute().detail ?? null);
   const [status, setStatus] = useState<any>(null);
+  const [statusError, setStatusError] = useState<string | null>(null);
   const [events, setEvents] = useState<TimelineEvent[]>([]);
   const [lastSeq, setLastSeq] = useState(0);
   const [serverDown, setServerDown] = useState(false);
@@ -438,8 +443,19 @@ export function MeshProvider({ children, projectId = null, background = false }:
   const refreshStatus = useCallback(async () => {
     if (statusInflight.current) return statusInflight.current;
     statusInflight.current = (async () => {
-      const { json } = await clientRef.current.api("GET", "/status");
-      if (!json) return;
+      const { json, status: code, timeout } = await clientRef.current.api("GET", "/status");
+      // A gateway's 502 body is `{error}` — truthy, so the old check stored it as the status. Every
+      // `status?.agents` then read an empty roster and Agents announced a project it had never seen.
+      // Keep the last good status; when there is none, statusError is what the view renders instead.
+      if (!json || code >= 400) {
+        setStatusError(timeout
+          ? "The status request timed out. The server may be busy."
+          : code >= 400
+            ? `The server answered ${code} instead of the status.`
+            : "The server did not answer.");
+        return;
+      }
+      setStatusError(null);
       const gid: string | null = json.goal?.id ?? null;
       if (followedGoalRef.current && gid && gid !== followedGoalRef.current) restartEventsRef.current();
       if (gid) followedGoalRef.current = gid;
@@ -448,7 +464,7 @@ export function MeshProvider({ children, projectId = null, background = false }:
     })()
       // A status poll must never reject: it is fired from keyboard handlers,
       // the interval and livePatch, none of which can present a failure.
-      .catch(() => undefined)
+      .catch(() => setStatusError("The status request failed. Try again."))
       .finally(() => {
         statusInflight.current = null;
       });
@@ -770,12 +786,12 @@ export function MeshProvider({ children, projectId = null, background = false }:
   const value = useMemo<MeshState>(
     () => ({
       projectId, client,
-      view, setView, status, events, lastSeq, serverDown, sseState, livePaused, setLivePaused,
+      view, setView, status, statusError, events, lastSeq, serverDown, sseState, livePaused, setLivePaused,
       steps, stepsLoaded, stepFilter, setStepFilter, stepSearch, setStepSearch, vocab, goalId,
       toasts, toast, confirm, drawer, drawerDepth, openDrawer, closeDrawer, refreshStatus, refreshSteps, setSteps, setStepLimit, stepLimit, primeEvents, evSearch, setEvSearch, evFilter, setEvFilter,
       detail, openDetail, closeDetail,
     }),
-    [projectId, client, view, setView, status, events, lastSeq, serverDown, sseState, livePaused, steps, stepsLoaded, setSteps, stepFilter, stepSearch, vocab, goalId, toasts, toast, confirm, drawer, drawerDepth, openDrawer, closeDrawer, refreshStatus, refreshSteps, setStepLimit, stepLimit, primeEvents, evSearch, evFilter, detail, openDetail, closeDetail],
+    [projectId, client, view, setView, status, statusError, events, lastSeq, serverDown, sseState, livePaused, steps, stepsLoaded, setSteps, stepFilter, stepSearch, vocab, goalId, toasts, toast, confirm, drawer, drawerDepth, openDrawer, closeDrawer, refreshStatus, refreshSteps, setStepLimit, stepLimit, primeEvents, evSearch, evFilter, detail, openDetail, closeDetail],
   );
   // Token deltas replace this object up to dozens of times a second; in its own
   // context only the live-stream consumers re-render per token.

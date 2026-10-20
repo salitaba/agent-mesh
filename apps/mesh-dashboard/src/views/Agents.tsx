@@ -243,7 +243,7 @@ const readMode = (): Mode | null => {
 };
 
 export default function Agents(): React.JSX.Element {
-  const { status, toast, openDetail, refreshStatus, steps, stepsLoaded, refreshSteps, serverDown, client, confirm } = useMesh();
+  const { status, statusError, toast, openDetail, refreshStatus, steps, stepsLoaded, refreshSteps, serverDown, client, confirm } = useMesh();
   const { facts } = useMission();
   const now = useNow(1000);
   // Live turns are what make a card say anything useful, and they arrive with /steps: the roster alone has no turn timing.
@@ -300,14 +300,16 @@ export default function Agents(): React.JSX.Element {
     />
   );
 
-  // Three states, never conflated: the status poll has not answered yet, it answered and the mesh has no agents, or the server stopped
-  // answering. The old page said "Everyone is idle" for all three, an all-clear the console had not verified.
+  // Three states, never conflated: the status poll has not answered yet, it answered and the mesh has no agents, or it failed.
+  // The old page said "Everyone is idle" for all three, an all-clear the console had not verified. A failed poll is now a failed
+  // state too: statusError is set when the status request itself failed, so "No agents" is only ever said about a roster read.
   if (!status) {
+    const failed = serverDown ? "The mesh server stopped answering. It may be restarting." : statusError;
     return (
       <>
         {header}
-        {serverDown
-          ? <ErrorState what="the agent list" detail="The mesh server stopped answering. It may be restarting." onRetry={() => void refreshStatus()} />
+        {failed
+          ? <ErrorState what="the agent list" detail={failed} onRetry={() => void refreshStatus()} />
           : <Loading />}
       </>
     );
