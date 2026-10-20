@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import {
-  DRAWING_MAX, KINDS, around, capEdges, drawingWidth, edgeKey, edgeText, edgeWidth, flowingKeys, isFlowing, kindOf, kindsPresent, labelPlacement, nodeTone, pairFilter, ringLayout, toggleKind, visibleEdges,
+  DRAWING_MAX, KINDS, around, capEdges, drawingWidth, edgeKey, edgeText, edgeWidth, flowingKeys, isFlowing, kindOf, kindsPresent, labelPlacement, nodeTone, pairFilter, ringLayout, seatTies, toggleKind, visibleEdges,
   type EdgeLike,
 } from "../../apps/mesh-dashboard/src/graph";
 import { eventHaystack, facetOne, facetValues, filterBase, parseFacets, type EventLike } from "../../apps/mesh-dashboard/src/eventmodel";
@@ -285,4 +285,18 @@ test("those filters find the messages from one seat to another and not the other
   const hay = events.map((e) => eventHaystack(e));
   const found = filterBase(events, hay, { search: f.search.toLowerCase(), groups: new Set(facetValues(facets, "grp")), actor: facetOne(facets, "actor"), thread: null });
   assert.deepEqual(found.map((e) => e.seq).sort(), [1, 4], "pm's messages that name architect, including one sent to several; not pm to qa, not architect to pm, not a file");
+});
+
+/* The phone has no ring: it gets one row per seat, so each seat's traffic has to be sayable in a sentence. */
+
+test("one seat's traffic counts both directions, adds a pair's kinds, and ignores a line to itself", () => {
+  const edges = [edge("pm", "architect", "REQUEST", 3), edge("architect", "pm", "INFORM", 2), edge("pm", "qa", "OTHER", 4), edge("qa", "developer", "BLOCK", 9), edge("pm", "pm", "INFORM", 50)];
+  const ties = seatTies(edges, "pm");
+  assert.deepEqual([ties.sent, ties.received, ties.count], [7, 2, 9], "a self line is not a conversation");
+  assert.deepEqual(ties.partners, [{ id: "qa", count: 4 }, { id: "architect", count: 5 }].sort((a, b) => b.count - a.count));
+  assert.deepEqual(seatTies(edges, "qa"), { sent: 9, received: 4, count: 13, partners: [{ id: "developer", count: 9 }, { id: "pm", count: 4 }] });
+});
+
+test("a seat nobody talks to has no partners, and the list says so rather than showing a zero as a number", () => {
+  assert.deepEqual(seatTies([edge("pm", "qa")], "explorer"), { sent: 0, received: 0, count: 0, partners: [] });
 });

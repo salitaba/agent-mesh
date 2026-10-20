@@ -2,11 +2,12 @@ import { useEffect, useLayoutEffect, useMemo, useState } from "react";
 import { plainLifecycle } from "../format";
 import { useMesh } from "../store";
 import { useMission } from "../useMission";
-import { Button, Card, EmptyState, ErrorState, PageHeader, Skeleton, agentColor, rowKey, useNow } from "../components";
+import { AgentAvatar, Button, Card, EmptyState, ErrorState, PageHeader, Skeleton, agentColor, rowKey, useNow } from "../components";
 import { AgentDrawer } from "../drawers";
 import { sinceText } from "../feed";
 import { middleClip } from "../text";
-import { around, drawingWidth, edgeKey, edgeText, edgeWidth, flowingKeys, isFlowing, kindOf, kindsPresent, labelPlacement, nodeTone, pairFilter, ringLayout, toggleKind, visibleEdges, type LabelSpot, type NodeTone } from "../graph";
+import { around, drawingWidth, edgeKey, edgeText, edgeWidth, flowingKeys, isFlowing, kindOf, kindsPresent, labelPlacement, nodeTone, pairFilter, ringLayout, seatTies, toggleKind, visibleEdges, type LabelSpot, type NodeTone } from "../graph";
+import { useMedia } from "../useMedia";
 import "./graph.css";
 
 /* Who talks to whom. Where the seats sit, which way their names point and which lines are drawn is decided in graph.ts, which
@@ -23,6 +24,8 @@ const GROW = SEAT + 6 - 18;
 const MAX_LINES = 12;
 /** A message among the newest events makes its line flow. */
 const RECENT_EVENTS = 40;
+/** The drawing needs a pointer and room; below this a phone gets one row per seat instead (graph.css's phone break). */
+const PHONE = "(max-width: 620px)";
 
 /** A label's place pushed out by the room the larger seat takes, in the direction it already points. */
 function grown(spot: LabelSpot): LabelSpot {
@@ -39,6 +42,7 @@ const RING_WORD: Record<NodeTone, string> = {
 
 export default function Graph(): React.JSX.Element {
   const { events, openDrawer, client, setView, setEvSearch, setEvFilter } = useMesh();
+  const phone = useMedia(PHONE);
   // A seat that has never run is "ready" on a parked team, as its card says, not "starting".
   const { facts } = useMission();
   const where = { parked: facts.parked, over: facts.goalStatus === "COMPLETED" || facts.goalStatus === "FAILED" };
@@ -104,7 +108,7 @@ export default function Graph(): React.JSX.Element {
     ),
     [events],
   );
-  const nodes: { id: string; lifecycle: string }[] = useMemo(() => (graph?.nodes || []).filter((n: { id: string }) => n.id !== "human"), [graph]);
+  const nodes: { id: string; lifecycle: string; role?: string }[] = useMemo(() => (graph?.nodes || []).filter((n: { id: string }) => n.id !== "human"), [graph]);
   const W = useMemo(() => drawingWidth(shown, nodes.length), [shown, nodes.length]);
   const seats = useMemo(() => ringLayout(nodes.length, W, H), [nodes.length, W]);
   const pos = useMemo(() => new Map(nodes.map((n, i) => [n.id, seats[i]!])), [nodes, seats]);
@@ -120,7 +124,9 @@ export default function Graph(): React.JSX.Element {
     <PageHeader
       title="Graph"
       status={status}
-      lede={`Who talks to whom. A thicker line is more messages. A dashed, moving line carried a message in the last ${RECENT_EVENTS} events. Point at a seat to see only its lines; press it to open it.`}
+      lede={phone
+        ? "Who talks to whom. One row per seat, with the messages it exchanged and the seats it exchanged them with. The links under the seats rank every pair."
+        : `Who talks to whom. A thicker line is more messages. A dashed, moving line carried a message in the last ${RECENT_EVENTS} events. Point at a seat to see only its lines; press it to open it.`}
     />
   );
 
@@ -139,6 +145,31 @@ export default function Graph(): React.JSX.Element {
   const tones = new Set(nodes.map((n) => nodeTone(n.lifecycle)));
   // The key lists every kind that is on the graph, hidden or not: a kind that disappeared from the key when it was hidden could not be shown again.
   const kinds = kindsPresent(lines.drawable);
+  // The key says what a colour, a dash and a ring mean, and lists only what is on the page. It is the same under the drawing
+  // and under a phone's seat rows: each kind is a button, pressed to show it and pressed again to hide it and the list below.
+  const legend = (
+    <div className="gr-foot">
+      <ul className="gr-legend" aria-label="Legend. Each kind of line is a button that shows or hides it.">
+        {kinds.map((k) => (
+          <li key={k.id}>
+            <button
+              type="button" className="gr-key" aria-pressed={!off.has(k.id)} aria-label={`Show lines: ${k.label}`}
+              title={off.has(k.id) ? `Show the lines that ${k.label}` : `Hide the lines that ${k.label}`}
+              onClick={() => setOff((o) => toggleKind(o, k.id))}
+            >
+              <i className={`gr-line ${k.id}`} aria-hidden="true" />{k.label}
+            </button>
+          </li>
+        ))}
+        <li className="gr-plain"><i className="gr-line dash" aria-hidden="true" />carried a message in the last {RECENT_EVENTS} events</li>
+      </ul>
+      <ul className="gr-legend gr-seats">
+        {(["working", "waiting", "stopped", "paused", "idle"] as NodeTone[]).filter((t) => tones.has(t)).map((t) => (
+          <li key={t} className="gr-plain"><i className={`gr-ring ${t}`} aria-hidden="true" />{t === "idle" && where.parked && !where.over ? "ready, idle or finished" : RING_WORD[t]}</li>
+        ))}
+      </ul>
+    </div>
+  );
   // The messages of one line, in the Events console's own filters, which the person can see and clear there.
   const openMessages = (e: { from: string; to: string }): void => {
     const f = pairFilter(e.from, e.to);
@@ -153,10 +184,39 @@ export default function Graph(): React.JSX.Element {
   return (
     <>
       {header(<span className="feed-meta">{err ? "Refresh failed. Showing the last drawing." : at ? `Drawn ${sinceText(now - Date.parse(at))}` : ""}</span>)}
+      {phone ? (
+        /* A phone has no room for a ring that keeps its labels legible: the drawing used to be 900 px wide and scroll sideways, which
+           hid half the seats and asked a thumb to drag a chart. One row per seat says the same thing in a column, and each row opens
+           the seat. The ranked links below are unchanged; the key is the same key. */
+        <Card title="Seats" meta={nodes.length === 1 ? "1 seat" : `${nodes.length} seats`}>
+          <ul className="gr-seat-list">
+            {nodes.map((nd) => {
+              const state = plainLifecycle(nd.lifecycle, where);
+              const ties = seatTies(lines.drawable, nd.id);
+              const first = ties.partners.slice(0, 2).map((t) => t.id).join(", ");
+              const more = ties.partners.length > 2 ? ` and ${ties.partners.length - 2} more` : "";
+              const words = ties.count === 0
+                ? "No messages yet."
+                : `${ties.count.toLocaleString("en-US")} ${ties.count === 1 ? "message" : "messages"} with ${first}${more}.`;
+              return (
+                <li key={nd.id}>
+                  <button type="button" className="gr-seat-row" onClick={() => open(nd.id)} aria-label={`${nd.id}, ${state}. ${words} Open details.`}>
+                    <AgentAvatar id={nd.id} color={agentColor(nd.role ?? nd.id)} />
+                    <span className="gr-seat-main">
+                      <b>{nd.id}</b>
+                      <span className="gr-seat-meta">{[nd.role, state].filter(Boolean).join(" · ")}</span>
+                      <span className="gr-seat-ties">{words}</span>
+                    </span>
+                    {ties.count ? <span className="gr-seat-n" aria-hidden="true">{ties.count.toLocaleString("en-US")}<small>{ties.count === 1 ? "message" : "messages"}</small></span> : null}
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+          {legend}
+        </Card>
+      ) : (
       <Card variant="graph-wrap">
-        {/* Only on a phone, where the drawing is wider than the screen: it scrolls inside its own frame, so the key below stays put,
-            and a drawing that stops at the edge of the screen would otherwise read as a drawing with seats missing. */}
-        <p className="gr-swipe">Scroll sideways to see every seat.</p>
         <div className="gr-scroll">
         {/* A group, not an image: an img has presentational children, and the seats inside are buttons. */}
         <svg ref={setSvgEl} className={`gr-svg${hot || near ? " focus" : ""}`} role="group" aria-label="Mesh graph: one button per agent, with lines for the messages between them" viewBox={`0 0 ${W} ${H}`}>
@@ -223,31 +283,9 @@ export default function Graph(): React.JSX.Element {
           })}
         </svg>
         </div>
-
-        {/* The legend says what the colours, the dashes and the rings mean, and lists only what is on the drawing. Each kind of line is
-            a key: pressed, it is shown; pressed again, it is hidden, and the list below follows. */}
-        <div className="gr-foot">
-          <ul className="gr-legend" aria-label="Legend. Each kind of line is a button that shows or hides it.">
-            {kinds.map((k) => (
-              <li key={k.id}>
-                <button
-                  type="button" className="gr-key" aria-pressed={!off.has(k.id)} aria-label={`Show lines: ${k.label}`}
-                  title={off.has(k.id) ? `Show the lines that ${k.label}` : `Hide the lines that ${k.label}`}
-                  onClick={() => setOff((o) => toggleKind(o, k.id))}
-                >
-                  <i className={`gr-line ${k.id}`} aria-hidden="true" />{k.label}
-                </button>
-              </li>
-            ))}
-            <li className="gr-plain"><i className="gr-line dash" aria-hidden="true" />carried a message in the last {RECENT_EVENTS} events</li>
-          </ul>
-          <ul className="gr-legend gr-seats">
-            {(["working", "waiting", "stopped", "paused", "idle"] as NodeTone[]).filter((t) => tones.has(t)).map((t) => (
-              <li key={t} className="gr-plain"><i className={`gr-ring ${t}`} aria-hidden="true" />{t === "idle" && where.parked && !where.over ? "ready, idle or finished" : RING_WORD[t]}</li>
-            ))}
-          </ul>
-        </div>
+        {legend}
       </Card>
+      )}
 
       <Card title="Most active links" meta={lines.shown.length ? `${lines.shown.length} of ${lines.drawable.length}` : undefined}>
         {lines.shown.length ? (

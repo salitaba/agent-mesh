@@ -110,6 +110,43 @@ export function pairFilter(from: string, to: string): { filter: string; search: 
   return { filter: setFacet(toggleFacet("", "grp:message"), "actor", from), search: to };
 }
 
+export interface SeatTie { id: string; count: number }
+export interface SeatTies {
+  /** Messages this seat sent to someone else. */
+  sent: number;
+  /** Messages someone else sent to this seat. */
+  received: number;
+  /** All messages between it and every other seat. */
+  count: number;
+  /** The other seats, busiest first; one entry per seat, with both directions added. */
+  partners: SeatTie[];
+}
+
+/**
+ * One seat's traffic, for the phone's seat list: the drawing can show a ring, a list needs a sentence. A line to or from itself is
+ * not a conversation, so it is not counted, and a pair with messages both ways is one partner with both directions added.
+ */
+export function seatTies<T extends EdgeLike>(edges: readonly T[], id: string): SeatTies {
+  const partners = new Map<string, number>();
+  let sent = 0;
+  let received = 0;
+  for (const e of edges) {
+    if (e.from === id && e.to !== id) {
+      sent += e.count;
+      partners.set(e.to, (partners.get(e.to) ?? 0) + e.count);
+    } else if (e.to === id && e.from !== id) {
+      received += e.count;
+      partners.set(e.from, (partners.get(e.from) ?? 0) + e.count);
+    }
+  }
+  return {
+    sent,
+    received,
+    count: sent + received,
+    partners: [...partners].map(([pid, count]) => ({ id: pid, count })).sort((a, b) => b.count - a.count || a.id.localeCompare(b.id)),
+  };
+}
+
 /**
  * The lines a recent message has travelled, by exact id: from the sender to each recipient. This used to compare
  * `"dev|qa".startsWith("dev|")` and `.includes("qa")`, so a message from "dev" lit up the line from "dev" to "qa-lead", and one
