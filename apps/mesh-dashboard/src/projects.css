@@ -80,6 +80,11 @@
 .pj-acts { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--s2) var(--s3); margin-top: auto; padding-top: var(--s3); border-top: 1px solid var(--line); }
 .pj-acts-main { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s2); }
 .pj-acts .pj-remove { color: var(--bad); }
+/* A project card's captions were 11 px, measured 9 of them at 360 px. 12 is the ramp's caption step, still above no body text. */
+@media (pointer: coarse), (max-width: 760px) {
+  .pj-facts dt { font-size: 12px; }
+}
+
 @media (max-width: 560px) {
   .pj-kpis { margin-bottom: var(--s3); }
   /* Starting, opening, closing or removing a project is pressed with a thumb. */

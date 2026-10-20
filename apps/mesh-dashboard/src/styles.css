@@ -1345,4 +1345,8 @@ ul.errs { margin: var(--s1-5) 0; padding-left: 18px; font-size: 14px; color: var
   .agent-open { display: flex; }
   /* The second line of a project tab is information, not a caption: 11 px is the floor for a capital label. */
   .ptab-meta { font-size: 12px; }
+  /* A capital caption was 11 px on a desk and is the smallest thing a phone reads: Overview measured 5 of them and Projects 9.
+     12 is the ramp's next step, still a caption, and no longer the smallest type in the console. (Projects' own dt caption is
+     lifted in projects.css, where its rule is.) */
+  :is(.stat-k, .kpi small, .caps) { font-size: 12px; }
 }
