@@ -54,10 +54,12 @@ page name is a signpost, the hero is the news.
 ## Type and space in force
 
 Type ramp: **11 12 13 14 15 16 18 20 24 30** (pinned by
-`tests/dashboard/type-ramp.test.ts`). Body is 14–15; metadata 12; 11 is reserved
-for uppercase micro-labels such as `Stat` captions and `dt`, never prose. Page
-titles are 24 (`--tx-page`); the mission headline is 30 and steps to 24 when it
-runs long.
+`tests/dashboard/type-ramp.test.ts`). Body is 14–15; metadata 12. 11 is reserved
+for uppercase micro-labels on a wide screen (`Stat` captions, `dt`, `.caps`);
+on a coarse pointer or at 760 px and below those captions move to 12, the ramp's
+next step, and 11 remains only for glyphs such as avatar initials. Pinned by
+`tests/dashboard/phone-type.test.ts`. Page titles are 24 (`--tx-page`); the
+mission headline is 30 and steps to 24 when it runs long.
 
 Space: `--s0 2 · --s1 4 · --s1-5 6 · --s2 8 · --s2-5 10 · --s3 12 · --s3-5 14 ·
 --s4 16 · --s5 20 · --s6 28`. Radii: `--r-sm`, `--r`, `--r-lg`, `--r-xl`, pill.
@@ -72,7 +74,7 @@ Breakpoints: **1280 1100 900 800 760 620 560**. 800 is the sidebar drawer (JS
 |---|---|---|
 | Loading | The shape of the content and a `role="status"` sentence. | `Skeleton` / the view's skeleton, invisible for the first 150 ms. |
 | Empty | What is missing and the next move. | `EmptyState` with an action. No zeros. |
-| Failed | What failed, that it may be temporary, and a retry. | `ErrorState`. Never an empty list. |
+| Failed | What failed, that it may be temporary, and a retry. | `ErrorState`. Never an empty list, and never a claim about the data. A failed status poll is a failed page, not an empty project: `statusError` says so when no status has landed. |
 | Partial / stale | The figures stay and say when they were read. | `Banner tone="warn"` with a read-again action; `Updated …` in the header. |
 | Refused | What was asked, why it was refused, what to change. | A sentence in the form or dialog, not a toast alone. |
 | Dense | Long names, paths, logs and lists stay readable. | Truncation with the full value reachable; a stated cap; scrollable output. |
@@ -105,9 +107,13 @@ Breakpoints: **1280 1100 900 800 760 620 560**. 800 is the sidebar drawer (JS
   phone; the pattern should be one row that says it can be opened.
 - The Designer is out of this pass's surface, but its phone inspector is the next
   place where desktop controls are still being stacked.
-- `Stat` captions and Projects' `dt` labels are 11 px by design. If the owner
-  reports strain, raise the micro-label step to 12 on phones; do not raise body
-  text, which is already 14–15.
+- `YourProduct`'s live-UI poll (`productlive.ts` `refresh`) keeps the screen on a
+  thrown request but does not check an HTTP error body: a 5xx `{error}` would be
+  handed to `absorb` as an answer. Not observed against a running UI, so this pass
+  did not change it; the next pass should prove it against a failed poll before
+  touching it.
+- Overview's avatar initials are 11 px glyphs in a 22 px disc. They are marks, not
+  words, and stay at 11 on a phone.
 - The public site (`apps/cloud-server/pages`) has its own memory; this pass did
   not change it.
 
@@ -115,17 +121,26 @@ Breakpoints: **1280 1100 900 800 760 620 560**. 800 is the sidebar drawer (JS
 
 1. A phone project switcher (one row, one sheet) to remove the last horizontal
    scroller from the shell.
-2. Files' filter disclosure on a phone, then the same pattern on any page whose
-   filter row grows past one line.
-3. Read the console with a real thumb on a real phone: the measurements here are
+2. The Events fold bar (above), then the same disclosure pattern on any page whose
+   filter row grows past one line. Files' filter fold is done.
+3. Prove or disprove the `YourProduct` live-UI poll behaviour above against a
+   failed `/ui` response, then fix it if it is real.
+4. Read the console with a real thumb on a real phone: the measurements here are
    Chromium at 360 px with touch emulation only in CSS, not a hardware device.
 
 ## Pass log
 
 ### 2026-10-20 — pocket brief
 
-Changed: the page brief and its phone action row; thumb-sized controls on every
-console page; Files' filter/summary head; Agents' tap-to-open name; the phone
-Graph replaced by a seat list; standalone host-page states headed; every view's
-lede made one sentence of the same shape. See the commit history for the
-measurements behind each step.
+Changed: the page brief and its phone action row; ledes cut to one sentence of
+one shape and handed the detail to the controls; thumb-sized controls on every
+console page with a coarse-pointer/narrow-window floor; Files' filters folded
+behind a counted button on a phone (202 px of bar became 96 px); the phone Graph
+replaced by a seat list with per-seat message counts (no sideways drawing); the
+one-mesh server's Projects/Host settings fallback given a heading and a way
+back; captions raised from 11 to 12 px on phones; and the failed states made
+honest: a 502 status no longer becomes an empty roster, the event log says the
+server answered with an error instead of printing "not iterable", Overview stops
+saying "starting" when the status never arrived, and Playground no longer calls
+a failed page probe "it ships no page". Measurements and the failing evidence
+behind each are in the commit history.
