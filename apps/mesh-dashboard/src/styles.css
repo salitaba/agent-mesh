@@ -1320,3 +1320,29 @@ ul.errs { margin: var(--s1-5) 0; padding-left: 18px; font-size: 14px; color: var
 .fv-versions { display: flex; align-items: center; gap: var(--s1-5); flex-wrap: wrap; margin: var(--s2) 0 var(--s0); }
 
 
+
+/* ---------- a thumb, not a pointer ----------
+   The console is read one-handed. The compact heights above are for a mouse at a desk; on a touch screen or a narrow
+   window every control gets a 44 px target, whatever table or toolbar it sits in, and a glyph-only control gets a full
+   44 px square. The rule is last so it outranks the compact heights declared above and in the view sheets (which load
+   before this one). `:is` takes the specificity of its strongest argument (`.seg button`), which is why one block can
+   lift `.tab`, `details.disc > summary` and `.seg button` without `!important`.
+   Measured before this rule at 360 px: project strip 38x36, 121x34, 24x24, 32x32; agent name 71x21; Cards/List 57x40;
+   Files type select 190x36; a summary 294x28; the Events fold bar 334x38. `tests/dashboard/phone-targets.test.ts`
+   reads this block. */
+@media (pointer: coarse), (max-width: 760px) {
+  :is(.tab, .side-search, .pj-home, .ptab, .ptab-main, .ptab-x, .ptab-add,
+      .seg button, .agent-open, .chip-toggle, .fchip, button.chip, .row-actions button,
+      .evd-tr, .evd-title .icon-btn, .evc-row, .evc-foldbar, .ptree-row, .chg-row, .crumb-btn,
+      .menu-item, .tab-btn, .toast-act, .st-now, .st-tl-cap, .sv-jump-b, .gr-key, .gr-plain, .gr-link,
+      .icon-btn, button.linklike, summary,
+      input.search, input.txt, select.sel, textarea.txt) {
+    min-height: 44px;
+  }
+  :is(.pj-home, .ptab-x, .ptab-add, .agent-open, .gr-open, .icon-btn) { min-width: 44px; }
+  /* A link or a name that was `inline` or `block` ignores a height until it is a flex box. */
+  button.linklike, .agent-open { display: inline-flex; align-items: center; }
+  .agent-open { display: flex; }
+  /* The second line of a project tab is information, not a caption: 11 px is the floor for a capital label. */
+  .ptab-meta { font-size: 12px; }
+}
