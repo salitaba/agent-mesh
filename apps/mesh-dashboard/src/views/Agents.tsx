@@ -295,7 +295,7 @@ export default function Agents(): React.JSX.Element {
     <PageHeader
       title="Agents"
       status={<FeedStatus />}
-      lede="Who is working, who is stuck, who is waiting. Run one step wakes an agent for a single turn and it goes back to waiting. Pause stops its turn and keeps it asleep until you unpause it."
+      lede="Who is working, who is stuck, who is waiting."
       actions={dense ? <Segmented label="Show agents as" value={mode} onChange={pick} options={[{ id: "cards", label: "Cards" }, { id: "list", label: "List" }]} /> : undefined}
     />
   );

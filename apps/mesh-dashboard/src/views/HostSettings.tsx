@@ -234,7 +234,7 @@ export default function HostSettings(): React.JSX.Element {
     <>
       <PageHeader
         title="Host settings"
-        lede={<>Limits that apply to every project on this host, not only this one. They live in <code>{data.path}</code>.</>}
+        lede={<>Limits for every project on this host. They live in <code>{data.path}</code>.</>}
         actions={<CopyButton text={data.path} label="Copy path" title="Copy the path of host.yaml" />}
       />
 

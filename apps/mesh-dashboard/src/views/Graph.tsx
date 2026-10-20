@@ -125,7 +125,7 @@ export default function Graph(): React.JSX.Element {
       title="Graph"
       status={status}
       lede={phone
-        ? "Who talks to whom. One row per seat, with the messages it exchanged and the seats it exchanged them with. The links under the seats rank every pair."
+        ? "Who talks to whom, one row per seat, with the seats it exchanged messages with and how many."
         : `Who talks to whom. A thicker line is more messages. A dashed, moving line carried a message in the last ${RECENT_EVENTS} events. Point at a seat to see only its lines; press it to open it.`}
     />
   );

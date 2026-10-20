@@ -177,7 +177,7 @@ export default function Cost(): React.JSX.Element {
       <PageHeader
         title="Cost"
         status={readAt ? <Updated at={readAt} /> : null}
-        lede="What this mission has spent against what it may spend. Figures are tokens (fresh input plus output) unless marked with a dollar sign."
+        lede="What this mission has spent against what it may spend, in tokens unless marked with a dollar sign."
       />
 
       {err && !payload ? (
