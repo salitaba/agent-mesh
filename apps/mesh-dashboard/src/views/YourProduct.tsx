@@ -24,7 +24,7 @@ import {
  * this console nor its API with the owner's session.
  */
 
-type PageState = { got: boolean; file: string | null; alts: { dir: string; file: string }[] };
+type PageState = { got: boolean; failed: boolean; file: string | null; alts: { dir: string; file: string }[] };
 interface PageFrame { open: boolean; src: string | null; failed: boolean }
 
 const CLOSED_PAGE: PageFrame = { open: false, src: null, failed: false };
@@ -61,7 +61,8 @@ export function YourProduct({ client, projectId, refreshKey = 0 }: {
   );
   const state = useSyncExternalStore(live.subscribe, live.getState);
   const [text, setText] = useState(state.command);
-  const [page, setPage] = useState<PageState>({ got: false, file: null, alts: [] });
+  const [page, setPage] = useState<PageState>({ got: false, failed: false, file: null, alts: [] });
+  const [probeAttempt, setProbeAttempt] = useState(0);
   const [pg, setPg] = useState<PageFrame>(CLOSED_PAGE);
   const wasOpen = useRef(false);
 
@@ -86,19 +87,26 @@ export function YourProduct({ client, projectId, refreshKey = 0 }: {
   // first and then where products put their own UI (public/, dist/, build/, a root index.html), and names what it found.
   useEffect(() => {
     let dead = false;
-    client.api("GET", "/playground/commands").then(({ json }) => {
+    client.api("GET", "/playground/commands").then(({ json, status, timeout }) => {
       if (dead) return;
+      // A 502 body is `{error}`, and it used to be read as an answer: `page` became "it ships no page", a claim about the
+      // product made by a server that never looked at it. A failed probe says it failed.
+      if (timeout || status >= 400) {
+        setPage({ got: false, failed: true, file: null, alts: [] });
+        return;
+      }
       const answer = (json ?? {}) as { page?: { file?: unknown } | null; alternates?: { dir?: unknown; file?: unknown }[] };
       setPage({
         got: true,
+        failed: false,
         file: typeof answer.page?.file === "string" ? answer.page.file : null,
         alts: Array.isArray(answer.alternates)
           ? answer.alternates.filter((a): a is { dir: string; file: string } => typeof a?.file === "string" && typeof a?.dir === "string")
           : [],
       });
-    }).catch(() => { if (!dead) setPage({ got: true, file: null, alts: [] }); });
+    }).catch(() => { if (!dead) setPage({ got: false, failed: true, file: null, alts: [] }); });
     return () => { dead = true; };
-  }, [client, projectId, refreshKey]);
+  }, [client, projectId, refreshKey, probeAttempt]);
 
   /** The product's page is opened the way it always was: a probe, then a signed link from the server, then the frame. */
   const openPage = (dir?: string): void => {
@@ -156,6 +164,11 @@ export function YourProduct({ client, projectId, refreshKey = 0 }: {
           {page.alts.map((a) => (
             <Button key={a.file} variant="small" extra="prod-alt" onClick={() => openPage(a.dir)}>Open {a.file}</Button>
           ))}
+        </div>
+      ) : page.failed ? (
+        <div className="prod-note prod-page-failed" role="alert">
+          <p>The console could not ask the server which page this product ships. It may be restarting.</p>
+          <Button variant="small" icon="refresh" onClick={() => setProbeAttempt((n) => n + 1)}>Try again</Button>
         </div>
       ) : page.got ? (
         <p className="prod-note">

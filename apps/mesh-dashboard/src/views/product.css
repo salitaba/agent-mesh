@@ -14,6 +14,9 @@
 .prod-count { margin-left: var(--s1-5); font: 500 12px var(--sans); letter-spacing: 0; font-variant-numeric: tabular-nums; color: var(--muted); }
 .prod-note { margin: 0 0 var(--s3); font: var(--tx-value); color: var(--text-dim); max-width: 72ch; }
 .prod-note:last-child { margin-bottom: 0; }
+/* A failed probe is not an answer about the product: the note keeps its place, says the question failed, and offers it again. */
+.prod-page-failed { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s2) var(--s3); }
+.prod-page-failed p { margin: 0; }
 .prod-none { display: flex; align-items: flex-start; gap: var(--s3); }
 .prod-none-ic { display: grid; place-items: center; flex: none; width: 32px; height: 32px; border-radius: var(--r-sm); background: var(--sunken); border: 1px solid var(--line); color: var(--muted); }
 .prod-none b { font: 600 14px var(--sans); }

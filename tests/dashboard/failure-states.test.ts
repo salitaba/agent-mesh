@@ -6,7 +6,8 @@
  *   - Events printed the JavaScript failure itself as the detail: "(e || []) is not iterable". The error object had been handed
  *     to the event loader, which tried to walk it.
  *   - Overview said "The project is starting" for as long as the failure lasted, because no status ever landed.
- * These tests read the source as text so the three answers cannot go back to being guesses, a stack trace, or a wait.
+ *   - Playground's Your product card said "It ships no page" — a claim about the product — from the same failed answer.
+ * These tests read the source as text so the answers cannot go back to being guesses, a stack trace, or a wait.
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -18,6 +19,7 @@ const store = fs.readFileSync(path.join(SRC, "store.tsx"), "utf8");
 const agents = fs.readFileSync(path.join(SRC, "views", "Agents.tsx"), "utf8");
 const events = fs.readFileSync(path.join(SRC, "views", "Events.tsx"), "utf8");
 const overview = fs.readFileSync(path.join(SRC, "views", "Overview.tsx"), "utf8");
+const yourProduct = fs.readFileSync(path.join(SRC, "views", "YourProduct.tsx"), "utf8");
 
 test("a failed status poll is not stored as a status", () => {
   assert.match(store, /const \{ json, status: code, timeout \} = await clientRef\.current\.api\("GET", "\/status"\)/, "the poll reads the HTTP status as well as the body");
@@ -45,4 +47,11 @@ test("Events refuses an error body instead of throwing on it", () => {
 test("Overview says the status failed rather than staying in 'starting'", () => {
   assert.match(overview, /const \{ status, statusError,/, "the page reads statusError");
   assert.match(overview, /serverDown \|\| \(!status && statusError\)/, "a failed first poll gets the error state");
+});
+
+test("a failed page probe is not reported as 'it ships no page'", () => {
+  assert.match(yourProduct, /if \(timeout \|\| status >= 400\) \{[\s\S]*?failed: true/, "the probe records a failed answer");
+  assert.match(yourProduct, /page\.failed \? \(/, "the card has a failed branch");
+  assert.match(yourProduct, /could not ask the server which page this product ships/, "the failure says what happened");
+  assert.match(yourProduct, /setProbeAttempt\(\(n\) => n \+ 1\)/, "Try again asks the question again");
 });
