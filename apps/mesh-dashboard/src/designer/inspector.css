@@ -113,4 +113,11 @@
   /* A domain's switches go under its name, three to a row and a thumb tall, rather than beside it in a 200px column. */
   .ms-auth-row { grid-template-columns: minmax(0, 1fr); gap: var(--s1); }
   .ms-auth-row .chip-toggle { flex: 1 1 30%; min-height: 44px; justify-content: center; }
+  /* Everything else a thumb presses: the tabs, every tool and custom chip (the shortest, "qa", is 38px wide), the fields
+     themselves and a link that edits. The kit's 36px fields and 28px chips are a pointer's density, and in a full-screen drawer a miss
+     toggles the wrong tool. */
+  .ms-insp .tab-btn { min-height: 44px; }
+  .ms-insp .chip-toggle { min-width: 44px; min-height: 44px; justify-content: center; }
+  .ms-insp input.search, .ms-insp input.txt, .ms-insp select.sel, .ms-insp textarea.txt { min-height: 44px; }
+  .ms-insp .linklike { display: inline-flex; align-items: center; min-height: 44px; }
 }

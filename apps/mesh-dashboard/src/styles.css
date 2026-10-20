@@ -710,6 +710,11 @@ input.search, input.txt, select.sel, textarea.txt {
 }
 textarea.txt { padding: var(--s2) var(--s3); min-height: 72px; line-height: 1.5; resize: vertical; }
 input.txt.mono, textarea.txt.mono { font-family: var(--mono); font-size: 13px; }
+/* A phone gets 16px in every field (docs/design-spec.md §3). Below 16px iOS Safari zooms the page when a field takes focus, and the
+   page the person was aiming at is suddenly wider than the screen. The mono fields are named because their 13px rule is more specific. */
+@media (pointer: coarse), (max-width: 760px) {
+  input.search, input.txt, input.txt.mono, select.sel, textarea.txt, textarea.txt.mono { font-size: 16px; }
+}
 input.search:is(:hover, .is-hover), input.txt:is(:hover, .is-hover), select.sel:is(:hover, .is-hover), textarea.txt:is(:hover, .is-hover) { border-color: color-mix(in srgb, var(--line-control) 62%, var(--text)); }
 input.search:is(:focus-visible, .is-focus), input.txt:is(:focus-visible, .is-focus), select.sel:is(:focus-visible, .is-focus), textarea.txt:is(:focus-visible, .is-focus) { outline: none; border-color: var(--k-accent); box-shadow: var(--k-ring); }
 :is(input.search, input.txt, select.sel, textarea.txt)[aria-invalid="true"] { border-color: var(--bad); }
