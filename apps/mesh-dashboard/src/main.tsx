@@ -5,7 +5,7 @@ import { MeshProvider, useMesh } from "./store";
 import { ProjectsProvider, useProjects, useProjectsOptional } from "./projects";
 import { Shell } from "./shell";
 import { AuthGate } from "./auth";
-import { Button, EmptyState } from "./components";
+import { Button, EmptyState, PageHeader } from "./components";
 import { isHostView } from "./navmodel";
 import { ViewBoundary, ViewLoading } from "./viewboundary";
 import Overview from "./views/Overview";
@@ -71,15 +71,20 @@ function ViewSwitch(): React.JSX.Element {
   // A server that runs one mesh has no registry and none of the host's routes. Its sidebar does not offer these two pages, but an
   // address or a bookmark can still name one, and what it reaches would be a page of failed requests.
   if (registry === false && isHostView(view)) {
+    // The state is the whole page, but the page still says which page it is: measured at 360 px, this branch had no heading at
+    // all, so a bookmark to Projects on a single-mesh server opened on a message with no signpost above it.
     return (
-      <EmptyState
-        icon="folder"
-        title="This server runs one mesh"
-        action={<Button variant="primary" onClick={() => setView("overview")}>Back to the overview</Button>}
-      >
-        Projects and host settings belong to a host, which runs several meshes. This one was started with run, console or serve, so
-        it has the one mesh and nothing to add to it.
-      </EmptyState>
+      <>
+        <PageHeader title={view === "projects" ? "Projects" : "Host settings"} />
+        <EmptyState
+          icon="folder"
+          title="This server runs one mesh"
+          action={<Button variant="primary" onClick={() => setView("overview")}>Back to the overview</Button>}
+        >
+          Projects and host settings belong to a host, which runs several meshes. This one was started with run, console or serve, so
+          it has the one mesh and nothing to add to it.
+        </EmptyState>
+      </>
     );
   }
   return (
