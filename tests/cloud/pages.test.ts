@@ -47,7 +47,8 @@ async function serve() {
 // ---- what is in the folder, and what serves it ----
 
 test("the folder holds the pages and their assets and nothing else, and the server serves each page at its path and each asset by its name", async () => {
-  assert.deepEqual(fs.readdirSync(PAGES_DIR).sort(), ["404.html", "account.html", "assets", "forgot.html", "index.html", "login.html", "privacy.html", "reset.html", "signup.html", "terms.html", "verify.html"]);
+  // DESIGN.md is the design record for this surface, not a page: it is kept beside them and is not served.
+  assert.deepEqual(fs.readdirSync(PAGES_DIR).sort(), ["404.html", "DESIGN.md", "account.html", "assets", "forgot.html", "index.html", "login.html", "privacy.html", "reset.html", "signup.html", "terms.html", "verify.html"]);
   assert.deepEqual(fs.readdirSync(ASSETS).sort(), ["app.css", "app.js", "favicon.svg"]);
 
   const srv = await serve();
@@ -76,7 +77,7 @@ test("a browser that follows a wrong address is shown a page that says so and wh
   const srv = await serve();
   try {
     const html = { accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8" };
-    for (const wrong of ["/pricing", "/docs", "/dashboard", "/accounts", "/index.html", "/assets/missing.js"]) {
+    for (const wrong of ["/pricing", "/docs", "/dashboard", "/accounts", "/index.html", "/DESIGN.md", "/assets/missing.js"]) {
       const r = await ask(srv.port, { host: "app.example.com", path: wrong, headers: html });
       assert.equal(r.status, 404, wrong);
       assert.equal(r.headers["content-type"], "text/html; charset=utf-8", wrong);
@@ -185,7 +186,7 @@ test("a page can be read and used by anyone: a language, a title, one heading, a
     const where = (what: string): string => `${name}: ${what}`;
     assert.match(html, /^<!doctype html>\n<html lang="en">/, where("the language is said"));
     const title = all.find((n) => n.tag === "title")!.textContent;
-    assert.ok(name === "index" ? title === "Curule Cloud: run a mesh without running a server" : /^[^–]+ – Curule Cloud$/.test(title), where(`title "${title}"`));
+    assert.ok(name === "index" ? title === "Curule Cloud: a team of AI agents, hosted" : /^[^–]+ – Curule Cloud$/.test(title), where(`title "${title}"`));
     assert.ok(all.some((n) => n.tag === "meta" && attr(n, "name") === "viewport" && attr(n, "content") === "width=device-width, initial-scale=1"));
     assert.equal(all.some((n) => n.tag === "meta" && attr(n, "name") === "robots" && attr(n, "content") === "noindex"), name !== "index", where("only the front page is for search engines"));
     assert.equal(all.filter((n) => n.tag === "h1").length, 1, where("one h1"));

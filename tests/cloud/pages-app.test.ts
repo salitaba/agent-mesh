@@ -40,6 +40,15 @@ test("money is said in the currency's own places, a call's cost keeps four, and 
   assert.equal(h.balanceMoney(1_999_999, "JPY"), "¥1");
 });
 
+test("the front page's 'from' price is the cheapest plan, compared by the month and said with the period it is charged in", () => {
+  const h = helpers();
+  assert.equal(h.fromLine(PLANS.plans, "USD"), "From $149.00 a month");
+  assert.equal(h.fromLine(HOSTING_PLANS.plans, "USD"), "From $49.00 a month");
+  assert.equal(h.fromLine([{ priceMinor: 120_000, period: "year" }, { priceMinor: 12_000, period: "month" }], "USD"), "From $1,200.00 a year", "a year at $100 a month beats a month at $120, and is shown as the year that is charged");
+  assert.equal(h.fromLine([{ priceMinor: 5_000, period: "month" }], "JPY"), "From ¥5,000 a month");
+  assert.equal(h.fromLine([{ priceMinor: 0, period: "month" }], "USD"), "From $0.00 a month");
+});
+
 test("what a person types for an amount is an amount in the currency's places or it is not one", () => {
   const h = helpers();
   const good: Array<[string, number, number]> = [
@@ -169,24 +178,42 @@ test("the policy numbers a page states are changed with the service's settings, 
   assert.deepEqual(kept.doc.querySelectorAll("[data-policy]").map((n) => n.textContent), ["3 days", "30 days"], "the page's own wording stands when the service cannot be asked");
 });
 
-test("a front page that cannot get the plans says so and does not break", async () => {
+test("a front page that cannot get the plans says so, claims nothing about model usage, and offers a retry", async () => {
   const w = world((x) => {
     x.signedIn = false;
     x.plans = failure(503, "unavailable", "Down.");
   });
   const v = await visit("home", { routes: w.routes });
-  assert.equal(v.text("plans"), "The plans could not be loaded just now. Reload the page to try again.");
+  assert.equal(v.text(v.$("plans").querySelector("p")!), "The plans could not be loaded just now, so no price is shown.");
+  assert.equal(v.text("from-price"), "Plans and prices below", "no price is claimed when none was read");
+  for (const claim of [/bring your own model key/i, /Your own model key/, /Hosting, not tokens/, /does not resell/i, /not part of the payment/i, /model usage each month/i, /included usage/i]) assert.doesNotMatch(v.text("main"), claim, `a page that could not read the plans must not say ${claim}`);
+  assert.match(v.text("main"), /Model usage, stated/, "it says only what is true of either arrangement: the plan states which it is");
+  const retry = v.$("plans").querySelector("button")!;
+  assert.equal(v.text(retry), "Try again", "the page offers the action, not just the instruction to reload");
+
+  // The retry asks again, and the page takes the answer.
+  w.answers.set("GET /api/plans", { json: PLANS });
+  v.click(retry);
+  await v.idle();
+  assert.equal(v.$("plans").querySelectorAll("article").length, 2);
+  assert.equal(v.text("from-price"), "From $149.00 a month");
+  assert.match(v.text("main"), /\$20\.00 of model usage each month/);
+
   assert.deepEqual(v.consoleErrors, []);
   const none = world((x) => {
     x.signedIn = false;
     x.plans = { json: { ...PLANS, plans: [] } };
   });
-  assert.equal((await visit("home", { routes: none.routes })).text("plans"), "No plan is on offer just now.");
-  const offline = await visit("home", { routes: (c) => (c.path === "/api/plans" ? { fail: true } : { json: { account: null } }) });
-  assert.equal(offline.text("plans"), "The plans could not be loaded just now. Reload the page to try again.");
-  const cut = await visit("home", { routes: (c) => (c.path === "/api/plans" ? { status: 200, raw: "<html>a proxy's page</html>" } : { json: { account: null } }) });
-  assert.equal(cut.text("plans"), "The plans could not be loaded just now. Reload the page to try again.", "an answer that is not what the service sends is not a list of plans");
-  assert.deepEqual(cut.consoleErrors, []);
+  const empty = await visit("home", { routes: none.routes });
+  assert.equal(empty.text(empty.$("plans").querySelector("p")!), "No plan is on offer just now, so no price is shown.");
+  for (const routes of [
+    (c: any) => (c.path === "/api/plans" ? { fail: true } : { json: { account: null } }),
+    (c: any) => (c.path === "/api/plans" ? { status: 200, raw: "<html>a proxy's page</html>" } : { json: { account: null } }),
+  ]) {
+    const down = await visit("home", { routes });
+    assert.equal(down.text(down.$("plans").querySelector("p")!), "The plans could not be loaded just now, so no price is shown.");
+    assert.deepEqual(down.consoleErrors, []);
+  }
 });
 
 test("the header marks the page a person is on, and only that one", async () => {
@@ -1460,26 +1487,28 @@ test("what the front page says about model usage is shown for a service that sel
     x.plans = { json: HOSTING_PLANS };
   });
   const hosting = await visit("home", { routes: hostingOnly.routes });
-  for (const claim of [/You bring your own model key, and you pay your model provider directly\./, /Your own model key/, /Hosting, not tokens/, /It is not part of the payment/]) assert.match(hosting.text("main"), claim, String(claim));
+  for (const claim of [/You bring your own model key and pay your provider directly\./, /Your own model key/, /Hosting, not tokens/, /It is not part of the payment/]) assert.match(hosting.text("main"), claim, String(claim));
+  for (const claim of [/Models included/, /included usage/i, /model usage each month/i, /add credit/i]) assert.doesNotMatch(hosting.text("main"), claim, `a service that sells none does not say ${claim}`);
 
   const credit = world((x) => (x.signedIn = false));
   const sells = await visit("home", { routes: credit.routes });
   for (const claim of [/bring your own model key/i, /Your own model key/, /Hosting, not tokens/, /does not resell/, /not part of the payment/, /pay your (model )?provider/i]) assert.doesNotMatch(sells.text("main"), claim, `a service that sells usage does not say ${claim}`);
   assert.match(sells.text("main"), /\$20\.00 of model usage each month/, "it says what its plans include");
+  assert.match(sells.text("main"), /Models included/, "and says it in a fact of its own");
   assert.match(sells.text("topups"), /Add credit at any time/);
-  assert.match(sells.text("main"), /You install nothing and rent nothing\./, "and the rest of the sentence it was part of is still there");
+  assert.match(sells.text("main"), /We run the server; you open the workspace in a browser\./, "the hero's promise is true of either arrangement");
 
   const unknown = world((x) => {
     x.signedIn = false;
     x.plans = failure(503, "unavailable", "The plans are not available just now.");
   });
   const down = await visit("home", { routes: unknown.routes });
-  assert.match(down.text("main"), /Hosting, not tokens/, "when the plans cannot be read the page says what it was written to say");
-  for (const html of ["index.html"]) {
-    const page = fs.readFileSync(`${PAGES_DIR}/${html}`, "utf8");
-    assert.equal((page.match(/data-hosting-only/g) ?? []).length, 5, "the five places that speak of model usage are marked: the line under the heading, two of the facts, the third step of how it works, and one of the billing facts");
-    assert.equal((page.match(/data-usage-sold/g) ?? []).length, 1, "and the one place that says what a service that sells credit does in its place");
-  }
+  assert.doesNotMatch(down.text("main"), /Hosting, not tokens|Models included|does not resell|included usage/i, "when the plans cannot be read the page says only what is true of both arrangements, and never asserts one");
+  assert.match(down.text("main"), /Model usage, stated/, "it says the plan is what states which arrangement applies");
+  const page = fs.readFileSync(`${PAGES_DIR}/index.html`, "utf8");
+  assert.equal((page.match(/data-hosting-only/g) ?? []).length, 4, "the four places that speak of a hosting-only service are marked: two of the facts, the third step of how it works, and one of the billing facts");
+  assert.equal((page.match(/data-usage-sold/g) ?? []).length, 4, "and the four places that say what a service that sells credit does in their place");
+  assert.equal((page.match(/data-model-note/g) ?? []).length, 3, "and the three neutral places, which a page with no plans keeps: a fact, the third step, and one billing fact");
 });
 
 test("the plans have a shape while they are read, from the moment the page starts, and a reader who cannot see it is told they are loading", async () => {
@@ -1516,19 +1545,19 @@ test("the front page says how it works in four steps, in order, from what the se
   assert.equal(h.$("main").querySelector("ol.how")!.getAttribute("role"), "list", "a list that is drawn with no bullets is still a list, to every screen reader");
   assert.equal(h.$("main").querySelector("ol.how")!.parent!.getAttribute("aria-labelledby"), "how-h", "and it is a region named by its heading");
   assert.deepEqual(steps(h).map((li) => h.text(li)), [
-    "Sign up An email and a password. We send a link to confirm your address.",
-    "Pick a plan A flat price for hosting, paid on the payment provider's page. The plan says how many workspaces your account may run at once.",
-    "Make a workspace One click starts your own Curule host. You give it your model key once it has started.",
-    "Describe your team and start Open the workspace in your browser, describe the team you want, and start a mission.",
+    "Sign up An email and a password. We send a link to confirm your address. Nothing is charged yet.",
+    "Pick a plan One flat price for each period, paid on the payment provider's page. The card says what it includes and how many workspaces your account may run at once.",
+    "Make a workspace One click starts your own Curule host on our servers. You give it your model key once it has started.",
+    "Describe your team and start Open the workspace in your browser, describe the team you want, and start a mission. Every action is recorded.",
   ]);
 
   const sells = await visit("home", { routes: world((x) => (x.signedIn = false)).routes });
-  assert.equal(sells.text(steps(sells)[2]!), "Make a workspace One click starts your own Curule host, with the service's models ready to use. Each plan lists the usage it includes.");
+  assert.equal(sells.text(steps(sells)[2]!), "Make a workspace One click starts your own Curule host on our servers. Its plan's model usage is ready to use.");
   assert.deepEqual(steps(sells).map((li) => sells.text(li.querySelector("strong")!)), ["Sign up", "Pick a plan", "Make a workspace", "Describe your team and start"]);
 
   const unknown = await visit("home", { routes: world((x) => { x.signedIn = false; x.plans = failure(503, "unavailable", "The plans are not available just now."); }).routes });
-  assert.match(unknown.text(steps(unknown)[2]!), /You give it your model key once it has started\./, "when the plans cannot be read the page says what it was written to say, which is what a page with no script says too");
-  assert.doesNotMatch(unknown.text(steps(unknown)[2]!), /service's models/);
+  assert.equal(unknown.text(steps(unknown)[2]!), "Make a workspace One click starts your own Curule host on our servers. The plan says what it includes.", "when the plans cannot be read the step is true of either arrangement");
+  assert.doesNotMatch(unknown.text(steps(unknown)[2]!), /model key|service's models/);
 });
 
 test("each plan card has one action and it names the plan, and what a plan has is a list a person reads at a glance", async () => {

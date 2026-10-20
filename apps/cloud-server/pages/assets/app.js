@@ -23,7 +23,7 @@
   const CONTACT = "mailto:ali79taba@gmail.com";
 
   const NEEDS = {
-    home: ["plans", "topups"],
+    home: ["plans", "topups", "from-price"],
     signup: ["card", "form", "status", "title", "lede", "email", "password", "agree"],
     login: ["form", "status", "email", "password", "resend-form", "resend", "resend-wait", "resend-status"],
     verify: ["status", "title", "again", "resend-form", "resend", "resend-wait", "resend-status", "email"],
@@ -380,7 +380,7 @@
     return JSON.stringify([sub && [sub.plan, sub.status, sub.periodEnd], b && [b.balance.included, b.balance.purchased]]);
   }
 
-  const exported = { NEEDS, lengthProgress, planState, glanceOf, allowanceLeft, pickSection, phaseOf, plural, digitsOf, bareAmount, money, usageMoney, balanceMoney, count, when, dayLabel, parseAmount, nextPath, outsideUrl, reasonText, planFacts, fingerprint, isStarting, holdsPlan, canKey, lacksKey, isByok, stepsOf, stageOf, nextStepOf, sectionsOf, resumable, workspaceSays, STATES, POLICY_UNITS };
+  const exported = { NEEDS, lengthProgress, planState, glanceOf, allowanceLeft, pickSection, phaseOf, plural, digitsOf, bareAmount, money, usageMoney, balanceMoney, count, when, dayLabel, parseAmount, nextPath, outsideUrl, reasonText, planFacts, fromLine, fingerprint, isStarting, holdsPlan, canKey, lacksKey, isByok, stepsOf, stageOf, nextStepOf, sectionsOf, resumable, workspaceSays, STATES, POLICY_UNITS };
   if (typeof module === "object" && module !== null && typeof module.exports === "object") module.exports = exported;
   if (typeof document === "undefined") return;
 
@@ -667,6 +667,24 @@
   /** What the front page says where there is no credit to add: this service sells hosting, and the customer's own key pays for models. */
   const NO_USAGE_SOLD = "Curule does not resell model usage. You bring your own model key and pay your provider directly.";
 
+  /** The cheapest way in, said with its own period: a year is compared at a month's worth, but shown as the price that is charged. */
+  function fromLine(plans, currency) {
+    const monthly = (plan) => (plan.period === "year" ? plan.priceMinor / 12 : plan.priceMinor);
+    const cheapest = plans.reduce((a, b) => (monthly(b) < monthly(a) ? b : a));
+    return `From ${money(cheapest.priceMinor, currency)} a ${cheapest.period}`;
+  }
+
+  /**
+   * What the page says about model usage, which is the one thing that differs between a service that sells hosting only and one that
+   * sells usage with a plan. Before the plans are known, and if they cannot be read, the page says only what is true of both: that the
+   * plan states which it is. A page that cannot see the plans must never assert either arrangement.
+   */
+  function paintModel(mode) {
+    for (const node of doc.querySelectorAll("[data-model-note]")) node.hidden = mode !== "neutral";
+    for (const node of doc.querySelectorAll("[data-hosting-only]")) node.hidden = mode !== "byok";
+    for (const node of doc.querySelectorAll("[data-usage-sold]")) node.hidden = mode !== "sold";
+  }
+
   function topupLine(topups, currency) {
     const d = digitsOf(currency);
     const rate = (topups.usageMicrosPerMinor * 10 ** d) / 1e6;
@@ -683,15 +701,20 @@
     if (!box.querySelector(".sk")) planShape();
     const r = await plans();
     if (!r.ok || r.data.plans.length === 0) {
-      box.replaceChildren(el("p", { class: "note note-warn" }, r.ok ? "No plan is on offer just now." : "The plans could not be loaded just now. Reload the page to try again."));
+      // Nothing about model usage is known here, so the page falls back to the neutral sentence rather than to one arrangement.
+      paintModel("neutral");
+      $("topups").textContent = "";
+      box.replaceChildren(
+        el("div", { class: "note note-warn" },
+          el("p", null, r.ok ? "No plan is on offer just now, so no price is shown." : "The plans could not be loaded just now, so no price is shown."),
+          button("Try again", { onclick: () => { plansReply = null; homePage(me); } }),
+        ),
+      );
       return;
     }
     const { currency, topups } = r.data;
-    // What the page says about model usage is true of a service that sells none. One that sells credit says what its plans include,
-    // and says nothing that its own plans contradict.
-    for (const node of doc.querySelectorAll("[data-hosting-only]")) node.hidden = topups !== null;
-    // What a service that sells credit says in its place is hidden until the plans say that it does, so that a page that cannot read them says what it was written to say.
-    for (const node of doc.querySelectorAll("[data-usage-sold]")) node.hidden = topups === null;
+    paintModel(topups === null ? "byok" : "sold");
+    $("from-price").textContent = fromLine(r.data.plans, currency);
     const subscription = me ? me.subscription : null;
     // One action to a card, and it says which plan it is for: a row of buttons that all say "Get started" is a row of the same button. A customer with no plan is
     // taken to choose one; one who has a plan is shown the others as a way to change, which is not the main thing.
