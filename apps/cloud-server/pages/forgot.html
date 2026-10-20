@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Reset your password – Curule Cloud</title>
+<title>Forgot your password? – Curule Cloud</title>
 <meta name="robots" content="noindex">
 <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml">
 <meta name="theme-color" content="#fbfaf8" media="(prefers-color-scheme: light)">
@@ -28,8 +28,9 @@
 
 <div class="wrap auth">
   <div class="auth-main">
-    <h1>Reset your password</h1>
-    <p class="lede">Enter your email and we send a link to choose a new password, if there is an account for it. Either way, the answer is the same.</p>
+    <p class="eyebrow">Curule Cloud · password</p>
+    <h1>Forgot your password?</h1>
+    <p class="lede">Enter the email you signed up with. If there is an account for it, we send a link to choose a new password. Either way, the answer is the same.</p>
     <noscript><p class="note note-warn">This page needs JavaScript to ask for the link, and it loads nothing from another site.</p></noscript>
     <div class="card">
       <form id="form" novalidate>
@@ -42,14 +43,18 @@
       </form>
     </div>
     <p class="aside"><a href="/login">Back to sign in</a></p>
+    <p class="auth-next">Next: open the link in the email and choose a new password.</p>
   </div>
   <div class="auth-side">
     <svg class="auth-mark" viewBox="0 0 64 64" aria-hidden="true" focusable="false"><path class="ink" d="M48.72 15.65A22 22 0 1 0 48.72 48.35" fill="none" stroke-width="9.2" stroke-linecap="round"/><circle class="seat" cx="48.72" cy="15.65" r="8"/></svg>
-    <ul class="auth-points" role="list">
-      <li><strong>A workspace of your own</strong><span>One isolated host with its own projects, event log and files.</span></li>
-      <li><strong>Your record is yours</strong><span>The same append-only event log a self-hosted install writes, so a mission can be replayed.</span></li>
-      <li><strong>Pause or delete</strong><span>A paused workspace keeps its files. Deleting one deletes its data.</span></li>
-    </ul>
+    <div class="side-copy">
+      <p class="eyebrow">The way back in</p>
+      <ol class="auth-points" role="list">
+        <li aria-current="step"><strong>Enter your email</strong><span>The address you signed up with. We answer the same whether or not there is an account.</span></li>
+        <li><strong>Open the link</strong><span>It goes to a page where you choose a new password.</span></li>
+        <li><strong>Then sign in</strong><span>The new password signs you out everywhere, so use it on every device.</span></li>
+      </ol>
+    </div>
   </div>
 </div>
 </main>

@@ -189,7 +189,7 @@ test("a bar for each day is the day against the busiest of the days shown, for t
 test("nothing used yet is an empty state: what is missing, and when it will not be", async () => {
   const v = await visit("account", { routes: world((x) => { paid(x); x.workspaces = [workspace()]; x.usage = NO_USAGE; }).routes });
   const empty = v.$("usage").querySelector(".empty")!;
-  assert.equal(v.text(empty), "Nothing has been used yet. Calls appear here when a mesh in one of your workspaces asks a model for something.");
+  assert.equal(v.text(empty), "Nothing has been used yet. Calls appear here when a team in one of your workspaces asks a model for something.");
   assert.equal(v.text(empty.querySelector(".empty-t")!), "Nothing has been used yet.");
   assert.equal(empty.querySelector(".tile")!.getAttribute("aria-hidden"), "true");
   assert.equal(v.$("usage").querySelectorAll("table").length, 0);

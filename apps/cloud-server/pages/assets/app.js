@@ -1077,7 +1077,7 @@
       }
       const b = state.me.balance;
       if (sectionsOf(viewOf()).balance && b && b.balance.available <= 0) {
-        say(node, "warn", "Your balance is used up. Calls to models are refused until you add credit or your plan renews, and a mesh that needs them pauses with a notice that says why.");
+        say(node, "warn", "Your balance is used up. Calls to models are refused until you add credit or your plan renews, and a workspace that needs them pauses with a notice that says why.");
       } else {
         say(node, "", "");
       }
@@ -1936,7 +1936,7 @@
       $("usage-panel").hidden = !sectionsOf(viewOf()).usage;
       renderSubnav();
       if (u.total.calls === 0) {
-        box.replaceChildren(el("div", { class: "empty" }, el("div", { class: "tile tile-bars", "aria-hidden": "true" }), el("p", { class: "empty-t" }, "Nothing has been used yet."), el("p", { class: "muted" }, "Calls appear here when a mesh in one of your workspaces asks a model for something.")));
+        box.replaceChildren(el("div", { class: "empty" }, el("div", { class: "tile tile-bars", "aria-hidden": "true" }), el("p", { class: "empty-t" }, "Nothing has been used yet."), el("p", { class: "muted" }, "Calls appear here when a team in one of your workspaces asks a model for something.")));
         return;
       }
       const days = u.byDay

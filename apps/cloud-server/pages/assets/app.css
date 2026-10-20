@@ -156,7 +156,7 @@ code {
 td, th, dd, .price, .num, .badge, .auth-points li::before { font-variant-numeric: tabular-nums; }
 .stat dt, .figures dt, thead th, .toc-h {
   color: var(--k-muted);
-  font-size: .6875rem;
+  font-size: .75rem;
   font-weight: 650;
   letter-spacing: var(--k-track-caps);
   text-transform: uppercase;
@@ -173,12 +173,12 @@ td, th, dd, .price, .num, .badge, .auth-points li::before { font-variant-numeric
   mask: var(--sprite) calc(var(--n, 0) * var(--s, 20px) * -1) 0 / calc(9 * var(--s, 20px)) var(--s, 20px) no-repeat;
 }
 /* Cards: a hairline, a lit top edge, the first rung of shadow. */
-.card, .row, .plan, .stat, .how-card, .table-wrap, .panel-quiet details, .empty {
+.card, .row, .plan, .stat, .table-wrap, .panel-quiet details, .empty {
   border: 1px solid var(--k-line);
   border-radius: var(--k-r-lg);
   background: var(--k-surface);
 }
-.card, .row, .plan, .how-card { box-shadow: var(--k-hl), var(--k-shadow-1); }
+.card, .row, .plan { box-shadow: var(--k-hl), var(--k-shadow-1); }
 .stage, .row, .confirm { overflow-wrap: anywhere; }
 
 /* ---- header and footer */
@@ -447,10 +447,12 @@ meter::-moz-meter-bar { border-radius: var(--k-r-pill); background: currentColor
 .auth-main .btn-row { flex-direction: column; gap: 8px; }
 .auth-main .btn-row .btn, .auth-main form > .btn { width: 100%; min-height: 44px; }
 .auth-main .card { margin-top: 20px; }
+.auth-next { margin: 8px 0 0; color: var(--k-muted); font-size: .9375rem; }
 .auth-side { display: none; }
 @media (min-width: 900px) {
   .auth { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 56px; min-height: calc(100svh - var(--hdr) - 66px); padding-block: 40px; }
   .auth-main { align-self: start; margin-inline: 0; padding-top: clamp(0px, 3vh, 32px); }
+  .auth-next { display: none; }
   .auth-side {
     position: relative;
     isolation: isolate;
@@ -502,6 +504,8 @@ meter::-moz-meter-bar { border-radius: var(--k-r-pill); background: currentColor
   }
   .auth-points strong { color: var(--k-ink); letter-spacing: var(--k-track-tight); }
   .auth-points span { color: var(--k-muted); font-size: .9375rem; }
+  .auth-points li[aria-current="step"] { border-top-color: var(--k-accent); }
+  .auth-points li[aria-current="step"] strong, .auth-points li[aria-current="step"]::before { color: var(--k-accent-ink); }
 }
 .card { padding: clamp(20px, 4vw, 32px); box-shadow: var(--k-hl), var(--k-shadow-2); }
 .aside { margin-top: 20px; color: var(--k-muted); font-size: .9375rem; }
@@ -626,7 +630,7 @@ body[data-page="home"] main { background: var(--k-glow) top / 100% 520px no-repe
   height: 22px;
   border: 1px solid var(--k-line-strong);
   border-radius: 50%;
-  font-size: .6875rem;
+  font-size: .75rem;
 }
 .steps .done .num { border-color: transparent; background: var(--k-accent-soft); color: var(--k-accent-ink); }
 .steps .now { color: var(--k-ink); }
@@ -645,13 +649,12 @@ body[data-page="home"] main { background: var(--k-glow) top / 100% 520px no-repe
   top: 61px;
   z-index: 30;
   display: flex;
+  flex-wrap: wrap;
   gap: 4px;
   margin-top: 20px;
   padding: 8px 0;
-  overflow-x: auto;
   border-bottom: 1px solid var(--k-line);
   background: var(--k-bg);
-  scrollbar-width: none;
 }
 .subnav a {
   display: inline-flex;
@@ -831,6 +834,14 @@ tfoot > tr > * { background: var(--k-surface-2); font-weight: 650; }
 /* ---- documents, and the page that is not there */
 .doc { display: grid; gap: 32px; padding-top: clamp(32px, 6vh, 64px); }
 .toc { display: none; }
+.toc-phone { display: none; }
+@media (max-width: 999px) {
+  .toc-phone { display: block; margin: 20px 0 28px; border: 1px solid var(--k-line); border-radius: var(--k-r-md); background: var(--k-surface); }
+  .toc-phone summary { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 44px; padding: 0 14px; cursor: pointer; list-style: none; }
+  .toc-phone summary::-webkit-details-marker { display: none; }
+  .toc-phone ol { display: grid; gap: 2px; padding: 0 14px 8px; list-style: none; }
+  .toc-phone a { display: block; min-height: 44px; padding: 11px 0; }
+}
 @media (min-width: 1000px) {
   .doc { grid-template-columns: 13rem minmax(0, 42rem); justify-content: center; gap: 56px; }
   .toc { position: sticky; top: 92px; display: block; align-self: start; }
@@ -848,11 +859,10 @@ tfoot > tr > * { background: var(--k-surface-2); font-weight: 650; }
 }
 .toc a:hover { border-left-color: var(--k-accent); color: var(--k-ink); }
 .prose h1 { margin-bottom: 12px; font-size: clamp(2rem, 1.5rem + 2vw, 2.75rem); }
-.prose h1 + p:not(.todo) { color: var(--k-ink-2); font-size: 1.125rem; }
+.prose h1 + p { color: var(--k-ink-2); font-size: 1.125rem; }
 .prose h2 { margin: 48px 0 12px; padding-top: 24px; border-top: 1px solid var(--k-line); scroll-margin-top: 84px; }
 .prose p, .prose li { line-height: 1.7; }
 .prose ul { display: grid; gap: 8px; margin: 0 0 1em; padding-left: 1.25rem; }
-.todo { padding: 10px 14px; border: 1px dashed var(--k-warn); border-radius: var(--k-r-md); color: var(--k-warn); font-size: .9375rem; }
 .lost { display: grid; justify-items: center; padding-top: clamp(48px, 12vh, 112px); text-align: center; }
 .lost-mark { width: 72px; height: 72px; margin-bottom: 24px; }
 .lost-mark .ink { stroke: var(--k-ink); }
@@ -872,6 +882,8 @@ tfoot > tr > * { background: var(--k-surface-2); font-weight: 650; }
   .figures > div:first-child { grid-column: 1 / -1; }
   .subnav { position: static; }
   .subnav a { min-height: 44px; }
+  .check label { line-height: 44px; }
+  .check label a { display: inline-block; min-height: 44px; }
 }
 @media (max-width: 720px), (pointer: coarse) {
   .btn, .btn-small, .bar nav a, .bar nav button, input:not([type="checkbox"]), select { min-height: 44px; }

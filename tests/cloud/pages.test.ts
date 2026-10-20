@@ -265,22 +265,28 @@ test("every call the script makes is to a route the API has, with the method it 
 
 // ---- the sign-in pages ----
 
-/** What the panel beside the form says, in the words of the pages that already say it (the front page's facts, the terms, the account's workspace card). */
-const PANEL: Array<[string, string]> = [
-  ["A workspace of your own", "One isolated host with its own projects, event log and files."],
-  ["Your record is yours", "The same append-only event log a self-hosted install writes, so a mission can be replayed."],
-  ["Pause or delete", "A paused workspace keeps its files. Deleting one deletes its data."],
-];
+/** Each page's rail: the job it is for, the steps through it, and the one the reader is on. The claims the rail repeats are proven against the pages that first say them below. */
+const PANEL: Record<string, { at: string; steps: string[] }> = {
+  signup: { at: "Create your account", steps: ["Create your account", "Choose a plan", "Open your workspace", "Describe your team"] },
+  login: { at: "Sign in", steps: ["Sign in", "Your workspaces", "Plan and balance", "Settings"] },
+  forgot: { at: "Enter your email", steps: ["Enter your email", "Open the link", "Then sign in"] },
+  reset: { at: "Choose a new password", steps: ["The link", "Choose a new password", "Sign in again"] },
+  verify: { at: "The link", steps: ["The link", "Once only", "Before it expires"] },
+};
 
-test("the sign-in pages are one shell: the form first, and beside it the same three things the product says of itself, each of them said elsewhere already", () => {
-  for (const name of ["signup", "login", "forgot", "reset", "verify"]) {
+test("the sign-in pages are one shell: the form first, and beside it the way through this page's job, with the step in hand marked", () => {
+  for (const [name, rail] of Object.entries(PANEL)) {
     const { all } = pages().find((p) => p.name === name)!;
     const shell = all.find((n) => n.className === "wrap auth")!;
     assert.ok(shell, `${name} has the shell`);
     const [main, side] = shell.children.filter((n) => !n.isText);
     assert.deepEqual([main!.className, side!.className], ["auth-main", "auth-side"], `${name}: the form's column comes first, so it is first to a keyboard and to a reader of the page`);
     assert.ok(main!.querySelector("h1") && main!.descendants().some((n) => n.tag === "form"), `${name}: the heading and the form are in it`);
-    assert.deepEqual(side!.querySelectorAll("li").map((li) => [li.querySelector("strong")!.textContent, li.querySelector("span")!.textContent]), PANEL, `${name}: the panel says the same three things`);
+    assert.ok(main!.querySelector("p.eyebrow"), `${name}: the form says which part of the service it is`);
+    const items = side!.querySelectorAll("li");
+    assert.deepEqual(items.map((li) => li.querySelector("strong")!.textContent), rail.steps, `${name}: the rail is this page's job, not the marketing panel every page used to repeat`);
+    assert.ok(items.every((li) => li.querySelector("span")!.textContent.trim().length > 0), `${name}: each step says what happens in it`);
+    assert.deepEqual(items.filter((li) => attr(li, "aria-current") === "step").map((li) => li.querySelector("strong")!.textContent), [rail.at], `${name}: exactly one step is where the reader is, and it is the right one`);
     assert.equal(attr(side!.querySelector("svg")!, "aria-hidden"), "true", `${name}: the mark is for the eye`);
   }
   // Nothing in the panel is new: each is a sentence, or the two halves of one, that a page already has.
@@ -289,6 +295,17 @@ test("the sign-in pages are one shell: the form first, and beside it the same th
   assert.match(textOf("index.html"), /same append-only event log a self-hosted install writes, so a mission can be replayed/);
   assert.match(textOf("terms.html"), /Deleting a workspace deletes its data\./);
   assert.match(read(SCRIPT), /Its files are kept\./, "what the account says of a paused workspace");
+});
+
+test("the words are the product's: a stranger is never given the internal name for a running team, the password advice is grammar, and the page for a forgotten password is named after the link that brings people there", () => {
+  for (const name of FILES) assert.doesNotMatch(read(path.join(PAGES_DIR, `${name}.html`)), /\bmesh\b/i, `${name} says "mesh"`);
+  assert.doesNotMatch(read(SCRIPT), /\bmesh\b/i, "the script says mesh");
+  for (const name of ["signup", "reset"]) {
+    const html = read(path.join(PAGES_DIR, `${name}.html`));
+    assert.match(html, /A few words in a row make a good password\./, `${name}: the subject is plural, so the verb is`);
+    assert.doesNotMatch(html, /is a good password/);
+  }
+  assert.match(read(path.join(PAGES_DIR, "forgot.html")), /<h1>Forgot your password\?<\/h1>/, "the heading is the question the sign-in page linked with");
 });
 
 // ---- the documents, and the page that is not there ----
@@ -306,6 +323,14 @@ test("a document has a table of contents that names its headings and goes to the
       `${name}: one link for each heading, in its order, to the heading`,
     );
     assert.ok(toc.querySelector("p.toc-h") && toc.querySelectorAll("h1, h2, h3").length === 0, `${name}: its title is not a heading, or the document would have a heading that is not a part of it`);
+    const phoneToc = all.find((n) => n.tag === "details" && n.className === "toc-phone")!;
+    assert.ok(phoneToc, `${name}: the contents are reachable on a phone, where the side column is not drawn`);
+    assert.equal(phoneToc.querySelector("summary")!.textContent.trim(), "On this page");
+    assert.deepEqual(
+      phoneToc.querySelectorAll("a").map((a) => [a.textContent, attr(a, "href")]),
+      toc.querySelectorAll("a").map((a) => [a.textContent, attr(a, "href")]),
+      `${name}: the phone's list is the same list, so the two cannot drift`,
+    );
     assert.equal(all.filter((n) => n.tag === "article").length, 1, `${name}: the text is one article`);
   }
 });
@@ -371,9 +396,15 @@ test("what a finger has to hit is as tall as a button on a phone: the buttons, t
   assert.equal(value(".site-footer a", "min-height"), "44px", "the footer's links are words with the reach of a button");
   assert.equal(value(".site-footer a", "min-width"), "44px");
   assert.equal(value(".check label", "min-height"), "44px", "a tick box is ticked by hitting its sentence");
+  assert.equal(value(".check label a", "min-height", phone), "44px", "and the terms inside that sentence are as tall as a button, on a line of their own");
   assert.equal(value(".aside a", "padding"), "12px 2px", "a link in a line of its own has a hit area taller than its text");
   assert.equal(value(".aside a", "margin"), "-12px 0", "without moving the lines around it");
   assert.equal(value(".ws .ws-auto .check", "min-height"), "44px", "and so is the offer to open a workspace when it is ready");
+  assert.equal(value(".toc-phone a", "min-height", "max-width: 999px"), "44px", "a contents link on a phone, where the side contents are not drawn");
+  assert.equal(value(".toc-phone summary", "min-height", "max-width: 999px"), "44px", "and the control that opens it");
+  assert.equal(value(".subnav a", "min-height", "max-width: 720px"), "44px", "a section of the account, on a phone");
+  assert.equal(value(".subnav", "flex-wrap"), "wrap", "the account's sections wrap rather than hide the last one past the edge");
+  assert.notEqual(value(".subnav", "overflow-x"), "auto", "and there is no sideways strip to discover");
 });
 
 test("a name a person typed cannot widen the page: the cards that show one break a word that has nowhere to break, and the header fits a small phone", () => {

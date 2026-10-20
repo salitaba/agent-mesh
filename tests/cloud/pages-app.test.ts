@@ -879,7 +879,7 @@ test("a payment that has failed is said at the top with the day the workspaces s
     x.balance = balance({ included: 0, available: 0 });
   });
   const s = await visit("account", { routes: spent.routes });
-  assert.equal(s.text("notice"), "Your balance is used up. Calls to models are refused until you add credit or your plan renews, and a mesh that needs them pauses with a notice that says why.");
+  assert.equal(s.text("notice"), "Your balance is used up. Calls to models are refused until you add credit or your plan renews, and a workspace that needs them pauses with a notice that says why.");
 });
 
 test("the balance is what the gateway says, rounded down; when it cannot be read the page says so, and everything else still works", async () => {

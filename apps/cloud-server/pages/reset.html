@@ -28,6 +28,7 @@
 
 <div class="wrap auth">
   <div class="auth-main">
+    <p class="eyebrow">Curule Cloud · password</p>
     <h1 id="title">Choose a new password</h1>
     <p class="lede" id="lede">The link works once. Choosing a password signs you out everywhere, so you sign in again on every device with the new one.</p>
     <noscript><p class="note note-warn">This page needs JavaScript to send your new password, and it loads nothing from another site.</p></noscript>
@@ -41,19 +42,23 @@
             <button class="reveal" type="button" data-reveal="password" aria-controls="password" aria-label="Show password" hidden>Show</button>
           </div>
           <meter class="len" data-len="password" min="0" max="10" value="0" aria-hidden="true"></meter>
-          <span id="password-hint" class="hint">At least 10 characters. A few words in a row is a good password.</span>
+          <span id="password-hint" class="hint">At least 10 characters. A few words in a row make a good password.</span>
         </div>
         <button class="btn btn-primary" type="submit" data-busy="Saving">Save password</button>
       </form>
     </div>
+    <p class="auth-next">After this: sign in with the new password.</p>
   </div>
   <div class="auth-side">
     <svg class="auth-mark" viewBox="0 0 64 64" aria-hidden="true" focusable="false"><path class="ink" d="M48.72 15.65A22 22 0 1 0 48.72 48.35" fill="none" stroke-width="9.2" stroke-linecap="round"/><circle class="seat" cx="48.72" cy="15.65" r="8"/></svg>
-    <ul class="auth-points" role="list">
-      <li><strong>A workspace of your own</strong><span>One isolated host with its own projects, event log and files.</span></li>
-      <li><strong>Your record is yours</strong><span>The same append-only event log a self-hosted install writes, so a mission can be replayed.</span></li>
-      <li><strong>Pause or delete</strong><span>A paused workspace keeps its files. Deleting one deletes its data.</span></li>
-    </ul>
+    <div class="side-copy">
+      <p class="eyebrow">The way back in</p>
+      <ol class="auth-points" role="list">
+        <li><strong>The link</strong><span>It works once and brings you to this page.</span></li>
+        <li aria-current="step"><strong>Choose a new password</strong><span>At least 10 characters. A few words in a row make a good password.</span></li>
+        <li><strong>Sign in again</strong><span>Choosing a password signs you out everywhere; the new one works on every device.</span></li>
+      </ol>
+    </div>
   </div>
 </div>
 </main>

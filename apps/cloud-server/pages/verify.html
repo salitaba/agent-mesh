@@ -28,6 +28,7 @@
 
 <div class="wrap auth">
   <div class="auth-main">
+    <p class="eyebrow">Curule Cloud · confirmation</p>
     <h1 id="title">Confirming your address</h1>
     <noscript><p class="note note-warn">This page needs JavaScript to confirm your address, and it loads nothing from another site.</p></noscript>
     <div class="card">
@@ -46,14 +47,18 @@
         <p class="aside">Already confirmed? <a href="/login">Sign in</a>. New here? <a href="/signup">Create an account</a>.</p>
       </div>
     </div>
+    <p class="auth-next">After this: your account, then a plan.</p>
   </div>
   <div class="auth-side">
     <svg class="auth-mark" viewBox="0 0 64 64" aria-hidden="true" focusable="false"><path class="ink" d="M48.72 15.65A22 22 0 1 0 48.72 48.35" fill="none" stroke-width="9.2" stroke-linecap="round"/><circle class="seat" cx="48.72" cy="15.65" r="8"/></svg>
-    <ul class="auth-points" role="list">
-      <li><strong>A workspace of your own</strong><span>One isolated host with its own projects, event log and files.</span></li>
-      <li><strong>Your record is yours</strong><span>The same append-only event log a self-hosted install writes, so a mission can be replayed.</span></li>
-      <li><strong>Pause or delete</strong><span>A paused workspace keeps its files. Deleting one deletes its data.</span></li>
-    </ul>
+    <div class="side-copy">
+      <p class="eyebrow">The way in</p>
+      <ol class="auth-points" role="list">
+        <li aria-current="step"><strong>The link</strong><span>It confirms the address on your account.</span></li>
+        <li><strong>Once only</strong><span>A link works once. This page can send another if it is spent.</span></li>
+        <li><strong>Before it expires</strong><span>A link that is too old cannot be used. Ask for a new one.</span></li>
+      </ol>
+    </div>
   </div>
 </div>
 </main>

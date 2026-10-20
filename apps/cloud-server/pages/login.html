@@ -28,6 +28,7 @@
 
 <div class="wrap auth">
   <div class="auth-main">
+    <p class="eyebrow">Curule Cloud · sign in</p>
     <h1>Back to your account.</h1>
     <p class="lede">Your workspaces, your plan and your settings.</p>
     <noscript><p class="note note-warn">This page needs JavaScript to sign you in, and it loads nothing from another site.</p></noscript>
@@ -58,14 +59,19 @@
       </form>
     </div>
     <p class="aside">New here? <a href="/signup">Create an account</a>.</p>
+    <p class="auth-next">After you sign in: your workspaces, plan and balance.</p>
   </div>
   <div class="auth-side">
     <svg class="auth-mark" viewBox="0 0 64 64" aria-hidden="true" focusable="false"><path class="ink" d="M48.72 15.65A22 22 0 1 0 48.72 48.35" fill="none" stroke-width="9.2" stroke-linecap="round"/><circle class="seat" cx="48.72" cy="15.65" r="8"/></svg>
-    <ul class="auth-points" role="list">
-      <li><strong>A workspace of your own</strong><span>One isolated host with its own projects, event log and files.</span></li>
-      <li><strong>Your record is yours</strong><span>The same append-only event log a self-hosted install writes, so a mission can be replayed.</span></li>
-      <li><strong>Pause or delete</strong><span>A paused workspace keeps its files. Deleting one deletes its data.</span></li>
-    </ul>
+    <div class="side-copy">
+      <p class="eyebrow">The way back in</p>
+      <ol class="auth-points" role="list">
+        <li aria-current="step"><strong>Sign in</strong><span>Your email and password. Your address is already confirmed.</span></li>
+        <li><strong>Your workspaces</strong><span>Start, pause, resume or delete one. A paused workspace keeps its files.</span></li>
+        <li><strong>Plan and balance</strong><span>See what you pay, when it renews, and the model usage that is left.</span></li>
+        <li><strong>Settings</strong><span>Change your password. A change signs out every other device.</span></li>
+      </ol>
+    </div>
   </div>
 </div>
 </main>
