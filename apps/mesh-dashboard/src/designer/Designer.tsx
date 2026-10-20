@@ -22,6 +22,7 @@ import { useFocusMode, useMedia } from "../shell";
 import { ChecksButton, ChecksPanel, DraftChip, ImportDialog, TemplateDialog, YamlSlide } from "./chrome";
 import { takeArrival } from "./arrival";
 import { SetupGuide, needsGuide } from "./Guide";
+import { drawerTakesEscape } from "./escape";
 import { draftNeedsModels, guideProgress } from "./guidemodel";
 import Inspector from "./Inspector";
 import SeatList from "./SeatList";
@@ -818,7 +819,17 @@ export default function Designer(): React.JSX.Element {
             onArrange={arrange} onAddSeat={doAddSeat} onTemplate={(t) => void startFromTemplate(t)} onAsk={askDesigner}
           />
         )}
-        <div id="ms-inspector" className={`ms-side${ctxOpen ? " open" : ""}`} ref={inspRef}>
+        <div
+          id="ms-inspector" className={`ms-side${ctxOpen ? " open" : ""}`} ref={inspRef}
+          onKeyDown={(e) => {
+            // The shell's window handler blurs a focused field on Escape before view handlers run, which left this full-screen
+            // drawer open with focus on <body>. Here the field's own handler has already run; a key it did not use closes the drawer.
+            if (drawerTakesEscape(e, compact, ctxOpen)) {
+              e.preventDefault();
+              setCtxOpen(false);
+            }
+          }}
+        >
           {compact ? (
             <div className="ms-side-head">
               <b>Inspector</b>
