@@ -2916,7 +2916,12 @@ if (parts[0] === LIVE_UI_PREFIX && parts.length >= 2 && req.method === "OPTIONS"
             const configRoot = path.resolve(config.dir);
             const contained = resolveInside(configRoot, String(b.path));
             if (!contained) {
-              return json(400, { valid: false, errors: [`save path escapes the project directory (${configRoot})`] });
+              return json(400, {
+                valid: false,
+                // Name what was asked for as well as the directory it had to be in: a stale absolute path from another
+                // project is the shape this refusal sees most, and without it the message reads like a server fault.
+                errors: [`save path escapes the project directory (${configRoot}): ${String(b.path)}`],
+              });
             }
             target = contained;
             if (fs.existsSync(target) && fs.statSync(target).isDirectory()) target = path.join(target, "mesh.yaml");

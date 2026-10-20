@@ -36,7 +36,7 @@ import { readConfigAnswer, type ConfigAnswer } from "./load";
 import { locateIssue, type Where } from "./locate";
 import { deepCopy, densure, goalIsPlaceholder, TEMPLATES, type Template } from "./model";
 import { draftStatus, lagOf, type FollowUp } from "./save";
-import { clearStored, commitDraft, getDraftSnapshot, guideHidden, loadLayout, readStored, ringLayout, saveLayout, setGuideHidden, storeDraft, useDraft, type DraftState } from "./storage";
+import { clearStored, commitDraft, getDraftSnapshot, guideHidden, loadLayout, readStored, resetDraft, ringLayout, saveLayout, setGuideHidden, storeDraft, useDraft, type DraftState } from "./storage";
 import { cardFor, freeSpot, stageHeight } from "./topology";
 import type { Advice, DCtx, Pos, Reveal, Tab } from "./types";
 import "./designer.css";
@@ -254,17 +254,23 @@ export default function Designer(): React.JSX.Element {
   useEffect(() => {
     let dead = false;
     void (async () => {
-      if (getDraftSnapshot().loaded && getDraftSnapshot().model) {
+      const current = getDraftSnapshot();
+      if (current.loaded && current.model && current.projectId === projectKey) {
         // A draft that outlived a visit to another view: this mount has not checked it, and without a check the page stays on "Checking" and cannot save.
         void validate();
         return;
       }
+      // A draft belongs to the project whose file it was read from. Carrying it into another project used to keep that
+      // project's mesh.yaml path with it, so Save posted a path outside this project and was refused — and the restored
+      // browser draft could offer the other project's model to save here.
+      if (current.loaded && current.projectId !== projectKey) resetDraft(projectKey);
       const applyModel = (raw: any, filePath: string | null) => {
         const model = deepCopy(raw);
         densure(model);
         const prev = getDraftSnapshot();
         const patch: Partial<DraftState> = {
           model,
+          projectId: projectKey,
           cur: prev.cur && model.agents[prev.cur] ? prev.cur : Object.keys(model.agents)[0] || null,
           layout: loadLayout(model.mesh?.id || "", Object.keys(model.agents)),
           history: emptyHistory(),
@@ -285,7 +291,7 @@ export default function Designer(): React.JSX.Element {
       setLoadError(null);
       const file: any = answer.kind === "file" ? answer.raw : null;
       const filePath = answer.kind === "file" ? answer.filePath : "";
-      const stored = readStored();
+      const stored = readStored(projectKey);
       // A browser draft beats the file only when it differs from it.
       if (stored && file && diffMesh(stored.model, file).length > 0) {
         applyModel(stored.model, filePath || null);
@@ -294,7 +300,7 @@ export default function Designer(): React.JSX.Element {
       } else if (file) {
         applyModel(file, filePath);
         commitDraft({ runningRaw: deepCopy(file) });
-        clearStored();
+        clearStored(projectKey);
       } else if (stored) {
         // No file to compare with (a new mesh): the browser draft is all there is.
         applyModel(stored.model, null);
@@ -317,7 +323,7 @@ export default function Designer(): React.JSX.Element {
       // A stale closure must not run commands against an unmounted workbench.
       cmdRef.current = NO_COMMANDS;
     };
-  }, [client, validate, loadTick]);
+  }, [client, validate, loadTick, projectKey]);
 
   // A project that is not running has no file to give yet. Ask again every few seconds, so the page opens on the file as soon as the
   // project is up, without anyone pressing Try again. Only for that answer: a server fault is not retried behind the person's back.
@@ -551,7 +557,7 @@ export default function Designer(): React.JSX.Element {
       if (answer.kind === "none") { toast("Nothing to reload", "The server has no mesh.yaml for this project.", "bad"); return; }
       if (!(await okToReplace("mesh.yaml as it is on disk"))) return;
       replaceDraft(answer.raw, "Reloaded mesh.yaml", { file: { raw: answer.raw, path: answer.filePath } });
-      clearStored();
+      clearStored(projectKey);
       toast("Draft discarded", "The draft is mesh.yaml as it is on disk.", "ok", { label: "Undo", run: () => cmdRef.current.undo() });
     } catch (err) {
       toast("Could not reload", err instanceof Error ? err.message : "The server did not answer.", "bad");
@@ -856,7 +862,7 @@ export default function Designer(): React.JSX.Element {
             onSaved={({ path, running, payload }) => {
               if (running) {
                 commitDraft({ runningRaw: payload, runningPath: path });
-                clearStored();
+                clearStored(projectKey);
                 setRestoredAt(null);
                 setStarter(null);
               } else commitDraft({ copyPath: path });

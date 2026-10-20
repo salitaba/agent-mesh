@@ -16,6 +16,8 @@ export interface DraftState {
   model: any | null;
   cur: string | null;
   layout: Record<string, Pos>;
+  /** The project this draft belongs to. A model, a baseline and a file path all describe one project's mesh.yaml, so none of them may be handed to another. */
+  projectId: string;
   /** Absolute path of the project's mesh.yaml, "" when no file is known. */
   runningPath: string;
   /** The file as the server last returned it: what the draft is compared with and saved over. */
@@ -27,7 +29,7 @@ export interface DraftState {
 }
 
 const INITIAL: DraftState = {
-  model: null, cur: null, layout: {},
+  model: null, cur: null, layout: {}, projectId: "",
   runningPath: "", runningRaw: null,
   copyPath: "", loaded: false,
   history: emptyHistory(),
@@ -59,32 +61,69 @@ export function useDraft(): DraftState {
   return useSyncExternalStore(subscribeDraft, getDraftSnapshot);
 }
 
-/* ---------------- browser-local draft ---------------- */
-
-const DRAFT_KEY = "mesh-designer-draft-v2";
-
-export function storeDraft(): void {
-  try {
-    const { model, copyPath } = snapshot;
-    if (!model) return;
-    localStorage.setItem(DRAFT_KEY, JSON.stringify({ ts: Date.now(), model, copyPath }));
-  } catch {
-    /* storage may be unavailable */
-  }
+/** Forget a draft that belongs to another project. */
+export function resetDraft(projectId: string): void {
+  snapshot = { ...INITIAL, projectId };
+  for (const l of listeners) l();
 }
 
-export function readStored(): { ts: number; model: any; copyPath?: string } | null {
+/* ---------------- browser-local draft ---------------- */
+
+const DRAFT_KEY = "mesh-designer-draft-v3";
+const LEGACY_DRAFT_KEY = "mesh-designer-draft-v2";
+
+/** The project a model names, read from the document itself: mesh.yaml carries `project.id` (and older copies the mesh id). */
+function projectOf(model: any): string {
+  return String(model?.project?.id ?? model?.mesh?.id ?? "");
+}
+
+function draftKey(projectId: string): string {
+  return `${DRAFT_KEY}:${projectId || "-"}`;
+}
+
+type StoredDraft = { ts: number; model: any; copyPath?: string };
+
+function parseStored(raw: string | null): StoredDraft | null {
   try {
-    const s = JSON.parse(String(localStorage.getItem(DRAFT_KEY) || "null"));
+    const s = JSON.parse(String(raw || "null"));
     return s && s.model ? s : null;
   } catch {
     return null;
   }
 }
 
-export function clearStored(): void {
+export function storeDraft(): void {
   try {
-    localStorage.removeItem(DRAFT_KEY);
+    const { model, copyPath, projectId } = snapshot;
+    if (!model) return;
+    localStorage.setItem(draftKey(projectId || projectOf(model)), JSON.stringify({ ts: Date.now(), model, copyPath }));
+  } catch {
+    /* storage may be unavailable */
+  }
+}
+
+/**
+ * The draft stored for THIS project, or nothing. A draft written for another project is never returned: restoring it
+ * put one project's model — and its mesh.yaml path with it — in front of another, and saving then wrote (or tried to
+ * write) one project's config over the other's file.
+ */
+export function readStored(projectId: string): StoredDraft | null {
+  try {
+    const mine = parseStored(localStorage.getItem(draftKey(projectId)));
+    if (mine) return mine;
+    // Drafts written before the key was per-project: keep one only for the project its own document names.
+    const legacy = parseStored(localStorage.getItem(LEGACY_DRAFT_KEY));
+    return legacy && projectOf(legacy.model) === projectId ? legacy : null;
+  } catch {
+    return null;
+  }
+}
+
+export function clearStored(projectId: string): void {
+  try {
+    localStorage.removeItem(draftKey(projectId));
+    const legacy = parseStored(localStorage.getItem(LEGACY_DRAFT_KEY));
+    if (!legacy || !projectId || projectOf(legacy.model) === projectId) localStorage.removeItem(LEGACY_DRAFT_KEY);
   } catch {
     /* noop */
   }
