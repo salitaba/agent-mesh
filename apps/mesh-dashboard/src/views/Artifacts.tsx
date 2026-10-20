@@ -25,6 +25,9 @@ import {
   type FileFilter,
 } from "../files";
 
+/** The console's phone break (styles.css collapses the page at 620px). */
+const PHONE = "(max-width: 620px)";
+
 /* What the team made. A list grouped by where each file stands (approved and merged first, then what is in review, then what
  * went back, then drafts), and beside it, on a wide screen, the reader: the file, its versions, what changed, its path.
  * On a narrow screen the list is the page and a file opens in the details panel, because two columns do not fit.
@@ -92,6 +95,7 @@ export default function Artifacts(): React.JSX.Element {
   const { facts, state } = useMission();
   const actions = useMissionActions();
   const split = useMedia(WIDE);
+  const phone = useMedia(PHONE);
 
   const [arts, setArts] = useState<Art[]>([]);
   const [loaded, setLoaded] = useState(false);
@@ -100,6 +104,9 @@ export default function Artifacts(): React.JSX.Element {
   const [stale, setStale] = useState<{ at: string; why: string } | null>(null);
   const [attempt, setAttempt] = useState(0);
   const [filter, setFilter] = useState<FileFilter>(NO_FILTER);
+  // On a phone the type, status and "latest" filters fold behind one button (Events does the same with its chips): three rows of
+  // controls before the first file is a third of the screen. Search stays out, because finding a file is the common move.
+  const [filtersOpen, setFiltersOpen] = useState(false);
   const [selected, setSelected] = useState<string | null>(null);
   const loadedOnce = useRef(false);
   const rows = useRef(new Map<string, HTMLButtonElement>());
@@ -165,6 +172,28 @@ export default function Artifacts(): React.JSX.Element {
   };
 
   const filtering = filter.query.trim() !== "" || filter.type !== "" || filter.group !== "";
+  // What the folded button counts: the filters that are not their default. The search is in plain sight and is not counted.
+  const filterCount = Number(filter.type !== "") + Number(filter.group !== "") + Number(filter.latestOnly);
+  const filterControls = (
+    <>
+      <Select aria-label="Type" value={filter.type} onChange={(e) => setFilter({ ...filter, type: e.target.value })}>
+        <option value="">All types</option>
+        {types.map((t) => <option key={t.type} value={t.type}>{t.type} ({t.n})</option>)}
+      </Select>
+      <Segmented
+        label="Status"
+        value={filter.group}
+        onChange={(id) => setFilter({ ...filter, group: id })}
+        options={[
+          { id: "" as FileFilter["group"], label: <>All<span className="seg-n">{total}</span></> },
+          ...FILE_GROUPS.filter((g) => counts[g.id] > 0 || filter.group === g.id).map((g) => ({ id: g.id as FileFilter["group"], label: <>{g.short}<span className="seg-n">{counts[g.id]}</span></>, hint: g.label })),
+        ]}
+      />
+      <span className="files-latest" title="When two files share a name and type, show only the newest. Older ones stay in the manifest.">
+        <Switch label="Latest of each name" checked={filter.latestOnly} onChange={() => setFilter({ ...filter, latestOnly: !filter.latestOnly })} />
+      </span>
+    </>
+  );
   const copy = emptyCopy(state.phase, facts.hasHistory);
   const startable = copy.start && state.primary && (state.primary.action === "start" || state.primary.action === "resume");
 
@@ -175,8 +204,8 @@ export default function Artifacts(): React.JSX.Element {
         title="Files"
         status={loaded ? <span className="count-note" role="status">{countLabel(visible.length, arts.length)}</span> : null}
         lede="What the team made. Read a file, compare its versions, copy its path."
-        actions={loaded && arts.length > 0 ? (
-          <span title="When two files share a name and type, show only the newest. Older ones stay in the manifest.">
+        actions={!phone && loaded && arts.length > 0 ? (
+          <span className="files-latest" title="When two files share a name and type, show only the newest. Older ones stay in the manifest.">
             <Switch label="Latest of each name" checked={filter.latestOnly} onChange={() => setFilter({ ...filter, latestOnly: !filter.latestOnly })} />
           </span>
         ) : null}
@@ -210,19 +239,19 @@ export default function Artifacts(): React.JSX.Element {
               onChange={(e) => setFilter({ ...filter, query: e.target.value })}
               onClear={() => setFilter({ ...filter, query: "" })}
             />
-            <Select aria-label="Type" value={filter.type} onChange={(e) => setFilter({ ...filter, type: e.target.value })}>
-              <option value="">All types</option>
-              {types.map((t) => <option key={t.type} value={t.type}>{t.type} ({t.n})</option>)}
-            </Select>
-            <Segmented
-              label="Status"
-              value={filter.group}
-              onChange={(id) => setFilter({ ...filter, group: id })}
-              options={[
-                { id: "" as FileFilter["group"], label: <>All<span className="seg-n">{total}</span></> },
-                ...FILE_GROUPS.filter((g) => counts[g.id] > 0 || filter.group === g.id).map((g) => ({ id: g.id as FileFilter["group"], label: <>{g.short}<span className="seg-n">{counts[g.id]}</span></>, hint: g.label })),
-              ]}
-            />
+            {phone ? (
+              <>
+                <Button
+                  variant="soft" icon="sliders" extra="files-filters-toggle"
+                  aria-expanded={filtersOpen} aria-controls="files-filters"
+                  onClick={() => setFiltersOpen((o) => !o)}
+                >
+                  Filters{filterCount ? ` (${filterCount})` : ""}
+                </Button>
+                {filtering || filter.latestOnly ? <Button variant="ghost" icon="x" onClick={() => setFilter({ ...NO_FILTER })}>Clear</Button> : null}
+                {filtersOpen ? <div className="files-filters" id="files-filters">{filterControls}</div> : null}
+              </>
+            ) : filterControls}
           </div>
 
           <div className={`files-layout${split ? " split" : ""}`}>

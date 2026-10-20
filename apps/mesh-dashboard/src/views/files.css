@@ -21,6 +21,18 @@
 .files-bar select.sel { flex: 0 1 190px; min-width: 0; }
 .files-bar .seg { flex-wrap: wrap; max-width: 100%; }
 .files-bar .seg button { white-space: nowrap; }
+.files-latest { display: inline-flex; align-items: center; }
+
+/* On a phone the search keeps its own row and the three filters sit behind one button that counts the ones that are on. Without
+   it the filter block was 202 px tall at 360 px: search, type and two rows of status chips before the first file. */
+@media (max-width: 620px) {
+  .files-bar .srch { flex: 1 0 100%; max-width: none; }
+  .files-bar .files-filters-toggle { flex: none; }
+  .files-filters { display: grid; flex: 1 1 100%; gap: var(--s2); }
+  .files-bar .files-filters select.sel { flex: none; width: 100%; max-width: 100%; }
+  .files-bar .files-filters .seg { flex-wrap: wrap; max-width: 100%; }
+  .files-bar .files-filters .files-latest { min-height: 44px; }
+}
 .seg-n { margin-left: var(--s1-5); font-weight: 500; font-variant-numeric: tabular-nums; color: var(--muted); }
 .seg button[aria-pressed="true"] .seg-n { color: inherit; }
 
