@@ -100,6 +100,32 @@ test("arriving at the console finds a UI that is already up, instead of offering
   assert.equal(live.getState().src, "/api/p/my-mesh/_ui/abc/", "through the project's own path, like every other call this console makes");
 });
 
+test("a failed poll is not an answer: the UI on screen stays on screen", async () => {
+  // Measured against a stand-in host: while the UI was live, `GET /ui` answered 502 `{error}`. The old refresh absorbed
+  // the error body as if the host had said "nothing has ever been started"; `phaseOf` read it as idle, which closed the
+  // open frame and drew the start box again for a command that was still running. A second Start would be refused with
+  // "already running" — the same dead end this controller was written to remove.
+  let failing = false;
+  const { client } = rig(() => (failing
+    ? { status: 502, json: { error: "the project process did not answer" } }
+    : { json: answer({ command: "node bin/skillctl.js ui", port: 41839, running: true, livePath: "/_ui/abc/" }) }));
+  const live = createLiveUi();
+  await live.refresh(client);
+  live.open("my-mesh");
+  assert.equal(live.getState().phase, "live");
+  assert.equal(live.getState().open, true);
+  failing = true;
+  await live.refresh(client);
+  assert.equal(live.getState().phase, "live", "a failed poll changes nothing");
+  assert.equal(live.getState().port, 41839);
+  assert.equal(live.getState().open, true, "and it does not close the frame the person is using");
+  assert.equal(live.getState().src, "/api/p/my-mesh/_ui/abc/");
+  // The next good answer is still taken, so the recovery is a beat later and not a reload.
+  failing = false;
+  await live.refresh(client);
+  assert.equal(live.getState().phase, "live");
+});
+
 test("a UI that is up but has not named its port says so in words, and keeps its Stop", async () => {
   const { client } = rig(() => ({ json: answer({ command: "node bin/skillctl.js ui", log: "building…\n" }) }));
   const live = createLiveUi({ now: () => 1_000 });

@@ -189,7 +189,11 @@ export function createLiveUi(opts: LiveUiOptions = {}): LiveUi {
   const refresh = async (client: ProjectClient): Promise<void> => {
     const mine = ++seq;
     try {
-      const { json } = await client.api("GET", "/ui");
+      const { json, status } = await client.api("GET", "/ui");
+      // A failed poll is not an answer. A 5xx body is `{error}`, and absorbing it read as "nothing has ever been started":
+      // it closed a frame that was showing a UI, and put back the start box for a command the host was still running. Keep
+      // what is on the screen and ask again on the next beat.
+      if (status >= 400) return;
       if (json && typeof json === "object") absorb(json as LiveUiAnswer, mine);
     } catch {
       /* the host may be restarting: keep what is on screen, and ask again on the next beat */
