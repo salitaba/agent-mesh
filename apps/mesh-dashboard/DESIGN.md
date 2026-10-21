@@ -96,12 +96,30 @@ Breakpoints: **1280 1100 900 800 760 620 560**. 800 is the sidebar drawer (JS
   a count, as Events already does; the search stays out.
 - The Graph phone view is a list of seats (who they talk to, how many messages)
   and the ranked links, not a 900 px drawing that scrolls inside its frame.
+- The frame is two rows at 360, not three: the menu, the state chip and the
+  actions share row one, and the project switcher is row two. The goal and the
+  telemetry leave the bar below 800 px (the Overview opens with both; the chip
+  keeps the state); the bar's primary action moves to the first row of `⋯`
+  rather than wrapping. Pinned by `tests/dashboard/frame-phone.test.ts`.
+- A panel or sheet is a **layer**, not a floating copy of the page: a scrim, a
+  heading that stays put, a 44 px close control, `role="dialog"` and
+  `aria-modal`, the page behind `inert` and not scrolling, Tab cycling inside it,
+  and focus returning to its opener. On a phone it takes the whole screen
+  (`100dvh`) and its own safe-area insets. The same rules for the navigation
+  drawer as for the Help panel, the command palette and the confirmation dialog.
+- A notice can be dismissed by hand; an action that resolves it dismisses it
+  too. Nothing waits out a timer to get out of the way.
 
 ## Open problems (carried forward)
 
-- The project strip at 360 px carries four controls; even at 44 px, several
-  projects make it a horizontal scroller. A phone could show the current project
-  and open a full-height Projects sheet instead of a scrolling tab trough.
+- At 621–800 px the project strip is still a row of tabs that scrolls inside
+  itself when projects overflow. The phone's switcher and sheet prove the
+  pattern; whether a tablet needs the same trade has not been measured with
+  enough projects, so this pass did not change it.
+- The top bar no longer shows the mission's goal below 800 px. That is the
+  deliberate trade that made it one row; the goal leads Overview and is one tap
+  away, but a reader on Events cannot see it without leaving the page. Watch
+  whether that absence costs a visit in real use.
 - The Events ledger's fold bar still hides a group of routine rows behind a
   control whose wording ("4 routine events") is longer than its utility on a
   phone; the pattern should be one row that says it can be opened.
@@ -119,16 +137,78 @@ Breakpoints: **1280 1100 900 800 760 620 560**. 800 is the sidebar drawer (JS
 
 ## What the next pass should take
 
-1. A phone project switcher (one row, one sheet) to remove the last horizontal
-   scroller from the shell.
-2. The Events fold bar (above), then the same disclosure pattern on any page whose
-   filter row grows past one line. Files' filter fold is done.
+1. The Events fold bar (above), then the same disclosure pattern on any page whose
+   filter row grows past one line. Files' filter fold and the frame's layers are
+   done.
+2. Prove whether 768 px needs the project sheet: seed enough projects that the
+   strip overflows at 768 and judge it as a tablet's one-row alternative to the
+   phone's switcher.
 3. Prove or disprove the `YourProduct` live-UI poll behaviour above against a
    failed `/ui` response, then fix it if it is real.
 4. Read the console with a real thumb on a real phone: the measurements here are
    Chromium at 360 px with touch emulation only in CSS, not a hardware device.
+5. Check the frame's safe-area claims on a notched device in both orientations;
+   the insets are in the CSS but the stand-in browser reports them as zero.
 
 ## Pass log
+
+### 2026-10-21 — the frame is a layer
+
+Changed (surface: `shell.tsx`, `tabs.tsx`, `commandpalette.tsx`, `components.tsx`,
+`store.tsx`, `styles.css`, `live.css`, `index.html`; process measured in Chromium against a
+copy of a live project, never the project's own workspace):
+
+- **The phone bar lost two rows.** At 360×844 the top bar measured 154 px and the
+  project strip 57 px: 211 px of 844 before the page. The 220 px goal basis forced
+  the actions to wrap and the goal onto a third row. Now the goal and telemetry
+  leave the bar below 800 px (Overview opens with both; the chip keeps the
+  state), the actions' labels become accessible names, and the bar's primary
+  action moves to the first row of `⋯`. Measured after: 64 + 53 = **117 px**.
+  At 768 the same change took the bar from 116 px to 64 px (total chrome 173 →
+  121).
+- **The project strip is one row and a sheet on a phone.** The old row held 437 px
+  of tabs in a 233 px window; the third project was off screen and the chrome
+  itself scrolled. At ≤620 it is a 52 px switcher naming the project in front;
+  its sheet lists every project as a 52 px row (measured 70–86 px tall rendered,
+  current one checked), and choosing one switches the hash and project in one
+  press. Scroll width 0. The sheet first measured 331 px flush left at 360: the
+  `wide` dialog's 92vw desk width outranked the phone's docked `auto`. Now
+  360×442 docked at the foot, with no slice of page beside it.
+- **The navigation drawer became a modal layer.** It had no scrim, no close
+  control, no `aria-modal`, eight focusable controls behind it in the tab order,
+  and a tap outside did nothing. Now: a 360×844 scrim that closes on tap,
+  `role="dialog"`/`aria-modal`, a 44×44 close in a sticky head, `inert` top bar,
+  view, skip link, project strip and toasts, a Tab cycle that stays inside, and
+  focus returned to `#btn-menu`. Verified: 0 tabbable elements behind it; 20
+  Tabs never left the sheet.
+- **Panels keep their way out in reach.** Help's floating close had scrolled to
+  y = −136 after 400 px; it now uses the sticky `DrawerHead` (close 44×44 at
+  x = 300, y = 12 after the same scroll). On a phone the drawer is the full
+  360×100dvh with safe-area padding instead of 92vw. Its close X went from 32×32
+  to 44×44.
+- **The palette can be closed and its rows are thumbs.** It had no close control
+  and 40 px rows; now a 44×44 `.palette-x` (Tab cycles input ↔ close), 44 px
+  rows, 12 px captions, 344 px wide at 360, 80dvh tall.
+- **The page behind a layer does not scroll.** `:has()` locks the view for the
+  drawer, palette, confirmation and (below 800) the navigation; `overscroll-
+  behavior: contain` inside each scroller.
+- **Notices dismiss.** `dismissToast` in the store and a 44×44 `.toast-x` on the
+  card; an action still dismisses its own notice.
+- **Hover-only tab close is visible to a thumb** (`.ptab-x { opacity: 1 }` under
+  coarse/760).
+- **Off-ramp type fixed:** the skip link had no base font (13.333 px browser
+  default) → 600 14; `.count` was 14 px/900 from `<b>` → 600 13; the sidebar's
+  and palette's 11 px capital captions → 12 under coarse/760.
+- **Phone edges:** `viewport-fit=cover`; safe-area insets on the bar, drawer,
+  toasts and view foot.
+
+Verified across every view at 360, 768 and 1440: no document horizontal scroll,
+no off-ramp font sizes, and the 360 dark palette audit returned no contrast
+failures. `tests/dashboard/frame-phone.test.ts` pins each structural promise;
+`phone-targets` and `phone-type` extend their floor to the new controls.
+
+Left alone deliberately: the desktop rail and 1440 bar (no measured defect);
+view bodies; the project strip at 621–800 (above); `packages/core`.
 
 ### 2026-10-20 — pocket brief
 
