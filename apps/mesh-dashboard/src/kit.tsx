@@ -13,7 +13,7 @@ import "./styles.css";
 import "./kit.css";
 import {
   AgentAvatar, Banner, Button, Card, Checkbox, Chip, ConfirmDialog, CopyButton, Dialog, DialogPanel, DrawerHead, EmptyState, ErrorState, EventRow,
-  Field, IconButton, IconTile, IdChip, Input, Kbd, LifecyclePill, Menu, OutcomePill, PageHeader, Pill, Progress, Radio, Ring, Segmented, Select, Skeleton,
+  Field, IconButton, IconTile, IdChip, Input, Kbd, LifecyclePill, Menu, NextLinks, OutcomePill, PageHeader, Pill, Progress, Radio, Ring, Segmented, Select, Skeleton,
   SearchField, SkeletonText, Sparkline, Stat, StatusPill, StepMini, Switch, TabPanel, Tabs, TextArea, ToastCard, Tooltip, Wordmark, ZoneNote, agentColor,
   type ConfirmRequest, type MenuItem, type PillTone,
 } from "./components";
@@ -562,6 +562,12 @@ function Gallery(): React.JSX.Element {
                 <Tooltip content="Search views, agents and actions" keys="mod+k"><Button variant="soft" icon="search">Search</Button></Tooltip>
                 <Tooltip content="Something longer: what a control does when its name is not enough, in a sentence." side="bottom"><Button variant="ghost" icon="info">More</Button></Tooltip>
               </div>
+            </Spec>
+            <Spec name="NextLinks" wide note="the end of a page: quiet links on a rule, 44 px tall on a phone">
+              <NextLinks links={[
+                { label: "Open the product", hint: "Use what the team built, running from this workspace", icon: "product", onGo: () => undefined },
+                { label: "Read the files", hint: "Each file the team made, its versions and what changed", icon: "files", onGo: () => undefined },
+              ]} />
             </Spec>
           </div>
         </Section>
