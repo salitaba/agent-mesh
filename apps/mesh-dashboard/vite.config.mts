@@ -16,6 +16,9 @@ const API_ROOTS = [
   "playground", "presets",
   "status", "metrics", "steps", "turns", "scheduler", "activity", "events",
   "graph", "timeline", "agents", "threads", "messages", "artifacts", "budgets",
+  // The delivered checkout and the product's own live page. Both are root routes on the server; without them the
+  // dev server answers its SPA fallback and Product says "the mesh server did not answer" about a server that did.
+  "workspace", "ui",
   "approvals", "tool-approvals", "escalations", "mission", "goals", "config", "internal", "health",
   // Sign-in and the playground's signed links (see apps/mesh-server/src/{auth,preview}.ts).
   "auth", "_pg",
