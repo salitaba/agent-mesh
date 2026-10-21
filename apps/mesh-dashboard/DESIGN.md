@@ -52,9 +52,10 @@ ring), not only how wide it is.
 
 Overview is the one deliberate variation: its brief is short because the mission
 hero directly under it is the page's real headline. The two are not peers: the
-page name is a signpost, the hero is the news. Directly under the hero it carries
-`JumpRow`, its own four-door index, because the page runs past 8,500 px on a
-phone; each button scrolls to the section **and focuses it**, and every `Panel`
+page name is a signpost, the hero is the news. Below the mission's first cards
+and before the sections it indexes, it carries `JumpRow`, its own four-door
+index, because the page runs past 8,500 px on a phone; each button scrolls to
+the section **and focuses it**, and every `Panel`
 section is the anchor (`id` + `tabIndex={-1}`), so a keyboard user continues
 inside the section rather than back at the top.
 
