@@ -7,7 +7,7 @@ import { useMesh } from "../store";
 import { useMission } from "../useMission";
 import { useMissionActions } from "../useMissionActions";
 import { useProjectsOptional } from "../projects";
-import { AgentAvatar, Banner, Button, EmptyState, ErrorState, PageHeader, Progress, Skeleton, agentColor, useNow } from "../components";
+import { AgentAvatar, Banner, Button, EmptyState, ErrorState, NextLinks, PageHeader, Progress, Skeleton, agentColor, useNow } from "../components";
 import { Icon } from "../icons";
 import {
   GROUP_LABEL,
@@ -337,6 +337,10 @@ export default function Cost(): React.JSX.Element {
           </details>
         </div>
       )}
+      <NextLinks links={[
+        { label: "Open the product", hint: "Use what the team built, running from this workspace", icon: "product", onGo: () => setView("product") },
+        { label: "Read the files", hint: "Each file the team made, its versions and what changed", icon: "files", onGo: () => setView("artifacts") },
+      ]} />
     </>
   );
 }

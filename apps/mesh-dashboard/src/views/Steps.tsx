@@ -2,7 +2,7 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties } from "react";
 import { ago, dur, fmt, localTime, plainBlocker, plainReason, plural, refusalSummary, outcomeOf, zoneLabel, OUTCOME_META, type Outcome } from "../format";
 import { useMesh, type TurnStep } from "../store";
-import { AgentAvatar, Button, EmptyState, ErrorState, OutcomePill, PageHeader, Ring, SearchField, Segmented, Skeleton, Stat, Switch, Tooltip, agentColor, useNow } from "../components";
+import { AgentAvatar, Button, EmptyState, ErrorState, NextLinks, OutcomePill, PageHeader, Ring, SearchField, Segmented, Skeleton, Stat, Switch, Tooltip, agentColor, useNow } from "../components";
 import { Icon } from "../icons";
 import { compactNow, nowLine, timeLeftText, type CurrentTool } from "../livework";
 import { BUCKETS, heldList, newestKey } from "../feed";
@@ -353,7 +353,7 @@ function Rows(): React.JSX.Element {
 /* ---------------------------------- page ----------------------------------- */
 
 export default function Steps(): React.JSX.Element {
-  const { steps, stepsLoaded, stepFilter, setStepFilter, stepSearch, setStepSearch, openDetail, refreshSteps, stepLimit, setStepLimit, status, serverDown } = useMesh();
+  const { steps, stepsLoaded, stepFilter, setStepFilter, stepSearch, setStepSearch, openDetail, refreshSteps, stepLimit, setStepLimit, status, serverDown, setView } = useMesh();
   const { state } = useMission();
   const missionActions = useMissionActions();
   const [fold, setFold] = useState(true);
@@ -530,6 +530,10 @@ export default function Steps(): React.JSX.Element {
           </EmptyState>
         )}
       </div>
+      <NextLinks links={[
+        { label: "Open the product", hint: "Use what the team built, running from this workspace", icon: "product", onGo: () => setView("product") },
+        { label: "Read the files", hint: "Each file the team made, its versions and what changed", icon: "files", onGo: () => setView("artifacts") },
+      ]} />
     </div>
   );
 }

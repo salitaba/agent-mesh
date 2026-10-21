@@ -7,7 +7,7 @@
  */
 import React, { useState } from "react";
 import "../projects.css";
-import { Button, CopyButton, ErrorState, IconTile, PageHeader, Pill, Progress, Skeleton, Stat, useNow } from "../components";
+import { Button, CopyButton, ErrorState, IconTile, NextLinks, PageHeader, Pill, Progress, Skeleton, Stat, useNow } from "../components";
 import { fmt, localDateTime } from "../format";
 import { Icon } from "../icons";
 import { NewProjectDialog, Welcome } from "../newproject";
@@ -133,7 +133,7 @@ function Loading(): React.JSX.Element {
 
 export default function Projects(): React.JSX.Element {
   const { projects, loaded, hostDown, hostSpend, lastSyncAt, refreshProjects, openProject, closeProject, restartProject, removeProject, setActive } = useProjects();
-  const { confirm } = useMesh();
+  const { confirm, setView } = useMesh();
   const now = useNow(30_000);
   const [adding, setAdding] = useState(false);
   const [doing, setDoing] = useState<Record<string, Doing>>({});
@@ -243,6 +243,9 @@ export default function Projects(): React.JSX.Element {
         </>
       )}
       {adding ? <NewProjectDialog onClose={() => setAdding(false)} /> : null}
+      <NextLinks links={[
+        { label: "Host settings", hint: "The ceiling, the port, the model and the other host-wide choices", icon: "host", onGo: () => setView("hostsettings") },
+      ]} />
     </div>
   );
 }

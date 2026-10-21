@@ -6,7 +6,7 @@ import { useMesh } from "../store";
 import { useMedia, WIDE } from "../useMedia";
 import { useMission } from "../useMission";
 import { useMissionActions } from "../useMissionActions";
-import { Banner, Button, EmptyState, ErrorState, PageHeader, SearchField, Segmented, Select, Skeleton, Switch } from "../components";
+import { Banner, Button, EmptyState, ErrorState, NextLinks, PageHeader, SearchField, Segmented, Select, Skeleton, Switch } from "../components";
 import { ArtifactReader } from "../artifactreader";
 import { FileTile } from "../fileview";
 import {
@@ -91,7 +91,7 @@ function ListSkeleton(): React.JSX.Element {
 }
 
 export default function Artifacts(): React.JSX.Element {
-  const { client, events, openDrawer } = useMesh();
+  const { client, events, openDrawer, setView } = useMesh();
   const { facts, state } = useMission();
   const actions = useMissionActions();
   const split = useMedia(WIDE);
@@ -292,6 +292,10 @@ export default function Artifacts(): React.JSX.Element {
           </div>
         </>
       )}
+      <NextLinks links={[
+        { label: "Open the product", hint: "Use what the team built, running from this workspace", icon: "product", onGo: () => setView("product") },
+        { label: "What it cost", hint: "Spend by agent and by budget, in tokens and dollars", icon: "cost", onGo: () => setView("cost") },
+      ]} />
     </>
   );
 }

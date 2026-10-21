@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useMemo, useState } from "react";
 import { plainLifecycle } from "../format";
 import { useMesh } from "../store";
 import { useMission } from "../useMission";
-import { AgentAvatar, Button, Card, EmptyState, ErrorState, PageHeader, Skeleton, agentColor, rowKey, useNow } from "../components";
+import { AgentAvatar, Button, Card, EmptyState, ErrorState, NextLinks, PageHeader, Skeleton, agentColor, rowKey, useNow } from "../components";
 import { AgentDrawer } from "../drawers";
 import { sinceText } from "../feed";
 import { middleClip } from "../text";
@@ -330,6 +330,10 @@ export default function Graph(): React.JSX.Element {
         ) : null}
         {lines.withYou ? <p className="gr-note muted">{lines.withYou} {lines.withYou === 1 ? "link" : "links"} to or from you {lines.withYou === 1 ? "is" : "are"} not drawn.</p> : null}
       </Card>
+      <NextLinks links={[
+        { label: "Open the product", hint: "Use what the team built, running from this workspace", icon: "product", onGo: () => setView("product") },
+        { label: "Read the events", hint: "Every message, every turn and every file, newest first", icon: "events", onGo: () => setView("events") },
+      ]} />
     </>
   );
 }

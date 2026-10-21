@@ -18,6 +18,7 @@ export { Skeleton, SkeletonText, Progress } from "./ui/feedback";
 export { Sparkline, Ring } from "./ui/charts";
 export { Stat } from "./ui/stat";
 export { SearchField } from "./ui/search";
+export { NextLinks, type NextLink } from "./ui/next";
 
 /**
  * The Curule logo: the name drawn as strokes, its first letter the mark (a ring held open, with one seat filled at the end of the arc). The letters take the

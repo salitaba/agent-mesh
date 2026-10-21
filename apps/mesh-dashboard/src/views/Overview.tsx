@@ -31,6 +31,29 @@ const EVENT_TAIL = 150;
 const FIX_VIEW: Record<FixTarget, View> = { inbox: "escalations", tools: "gates", designer: "designer", hostsettings: "hostsettings" };
 
 /**
+ * The page's own table of contents. On a phone the Overview measured 8,395 px tall — a delivered mission with a dozen checks
+ * and files — and the three sections after the hero sat several screens down with nothing at the top saying so. One row, one
+ * press each, and the target takes focus as well as the scroll so a keyboard user continues inside the section.
+ */
+function JumpRow({ delivered }: { delivered: boolean }): React.JSX.Element {
+  const jump = (id: string): void => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.focus({ preventScroll: true });
+    el.scrollIntoView({ block: "start", behavior: "smooth" });
+  };
+  return (
+    <nav className="ov-jump" aria-label="Sections of this page">
+      <span className="ov-jump-h caps">On this page</span>
+      {delivered ? <Button variant="ghost" icon="files" onClick={() => jump("ov-shipped")}>What shipped</Button> : null}
+      <Button variant="ghost" icon="steps" onClick={() => jump("ov-work")}>Latest work</Button>
+      <Button variant="ghost" icon="check" onClick={() => jump("ov-goal")}>Goal checks</Button>
+      <Button variant="ghost" icon="events" onClick={() => jump("ov-events")}>Just happened</Button>
+    </nav>
+  );
+}
+
+/**
  * Mission control. Two questions, in order: is it OK, and does it need me. The hero answers the first in one status, one
  * headline and one button, all read from the same mission state the top bar reads; the attention list answers the second for
  * everything the headline does not already say; a finished mission shows what it made. Under them: the latest work, the goal
@@ -296,6 +319,7 @@ export default function Overview(): React.JSX.Element {
         run={run}
       />
       <AttentionList items={attention} onFix={fix} />
+      <JumpRow delivered={delivered} />
       {delivered ? <Shipped arts={goalArts} state={artsState} onRetry={() => setAttempt((n) => n + 1)} openArt={openArt} onOpenFiles={() => setView("artifacts")} /> : null}
       {/* Renders nothing unless a collaboration is actually open, and owns its own hooks so this component's hook count does not move. */}
       <CollabCard />

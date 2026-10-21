@@ -8,8 +8,10 @@ import "./overview.css";
 export function Panel({ id, title, meta, actions, className, children }: {
   id: string; title: ReactNode; meta?: ReactNode; actions?: ReactNode; className?: string; children?: ReactNode;
 }): React.JSX.Element {
+  // The id is the anchor the Overview's jump row lands on; tabIndex makes the landing take focus, so a keyboard user
+  // continues inside the section rather than back at the top of the page. It is not a tab stop.
   return (
-    <section className={`card${className ? ` ${className}` : ""}`} aria-labelledby={`${id}-h`}>
+    <section id={id} tabIndex={-1} className={`card${className ? ` ${className}` : ""}`} aria-labelledby={`${id}-h`}>
       <div className="card-head ruled">
         <h3 id={`${id}-h`}>{title}</h3>
         {meta ? <span className="card-meta">{meta}</span> : null}

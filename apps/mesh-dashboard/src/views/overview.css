@@ -209,3 +209,11 @@ details.ov-note { display: block; }
   .ov-seat.on { outline: 2px solid Highlight; outline-offset: 1px; }
   .ck.done { forced-color-adjust: none; background: Highlight; color: HighlightText; }
 }
+
+/* The Overview's own index, under the attention list and above the long tail. A row of quiet doors, not a toolbar. */
+.ov-jump { display: flex; flex-wrap: wrap; align-items: center; gap: 0 var(--s2); margin-top: var(--s4); }
+.ov-jump-h { margin-right: var(--s1); }
+@media (max-width: 620px) {
+  .ov-jump { gap: 0 var(--s1); }
+  .ov-jump-h { flex: 1 0 100%; margin: 0 0 var(--s1); }
+}

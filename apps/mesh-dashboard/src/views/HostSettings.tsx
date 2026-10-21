@@ -21,7 +21,7 @@ import "./settings.css";
 import { api } from "../api";
 import { localTime } from "../format";
 import { useMesh } from "../store";
-import { Banner, Button, CopyButton, ErrorState, IconTile, Input, PageHeader, Pill, Skeleton } from "../components";
+import { Banner, Button, CopyButton, ErrorState, IconTile, Input, NextLinks, PageHeader, Pill, Skeleton } from "../components";
 import type { IconName } from "../icons";
 import { Icon } from "../icons";
 import { LicenseCard } from "../license";
@@ -62,7 +62,7 @@ interface FieldProblems { byField: Partial<Record<Field, string>>; form: string[
 const NO_PROBLEMS: FieldProblems = { byField: {}, form: [] };
 
 export default function HostSettings(): React.JSX.Element {
-  const { confirm } = useMesh();
+  const { confirm, setView } = useMesh();
   const [data, setData] = useState<HostConfigView | null>(null);
   const [loadErr, setLoadErr] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
@@ -338,6 +338,9 @@ export default function HostSettings(): React.JSX.Element {
       ) : null}
 
       <LicenseCard />
+      <NextLinks links={[
+        { label: "Projects", hint: "Every project on this host: open one, close it, or add another", icon: "folder", onGo: () => setView("projects") },
+      ]} />
       </div>
     </>
   );

@@ -3,7 +3,7 @@ import type { FormEvent } from "react";
 import "./product.css";
 import { dur } from "../format";
 import { useMesh } from "../store";
-import { Button, CopyButton, ErrorState, PageHeader, Pill, SearchField, Skeleton, useNow, type PillTone } from "../components";
+import { Button, CopyButton, ErrorState, NextLinks, PageHeader, Pill, SearchField, Skeleton, useNow, type PillTone } from "../components";
 import { Icon } from "../icons";
 import { FileView, type DiffPayload, type FileKind } from "../fileview";
 import { fmtSize } from "../files";
@@ -160,7 +160,7 @@ function RunOutput({ run, onStop, onClear }: { run: RunState; onStop: () => void
 }
 
 export default function Product(): React.JSX.Element {
-  const { toast, goalId, client, projectId } = useMesh();
+  const { toast, goalId, client, projectId, setView } = useMesh();
   const wide = useMedia(WIDE);
   const [info, setInfo] = useState<WorkspaceInfo | null>(null);
   const [wsErr, setWsErr] = useState<string | null>(null);
@@ -592,6 +592,10 @@ export default function Product(): React.JSX.Element {
           </div>
         </div>
       )}
+      <NextLinks links={[
+        { label: "Read the files", hint: "Each file the team made, its versions and what changed", icon: "files", onGo: () => setView("artifacts") },
+        { label: "What it cost", hint: "Spend by agent and by budget, in tokens and dollars", icon: "cost", onGo: () => setView("cost") },
+      ]} />
     </>
   );
 }

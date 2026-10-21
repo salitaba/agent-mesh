@@ -3,7 +3,7 @@ import type { FormEvent } from "react";
 import "./playground.css";
 import { dur } from "../format";
 import { useMesh } from "../store";
-import { Button, CopyButton, ErrorState, Input, PageHeader, Pill, useNow } from "../components";
+import { Button, CopyButton, ErrorState, Input, NextLinks, PageHeader, Pill, useNow } from "../components";
 import { Icon } from "../icons";
 import { YourProduct } from "./YourProduct";
 import { clockWords, createPlayground, isBusy, isLive, outcomeOf, stopReason, RUN_CEILING_MS, type PlayRun } from "../playground";
@@ -41,7 +41,7 @@ function StatusChip({ run }: { run: PlayRun }): React.JSX.Element {
 }
 
 export default function Playground(): React.JSX.Element {
-  const { client, projectId } = useMesh();
+  const { client, projectId, setView } = useMesh();
   // One controller per mounted view. It is not a module singleton: a background project's provider renders no Playground,
   // but two of them must never share one run's state if that changes.
   const [pg] = useState(() => createPlayground());
@@ -212,6 +212,10 @@ export default function Playground(): React.JSX.Element {
           )}
         </section>
       ) : null}
+      <NextLinks links={[
+        { label: "Open the product", hint: "Use what the team built, running from this workspace", icon: "product", onGo: () => setView("product") },
+        { label: "Read the files", hint: "Each file the team made, its versions and what changed", icon: "files", onGo: () => setView("artifacts") },
+      ]} />
     </>
   );
 }

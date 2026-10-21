@@ -1,0 +1,18 @@
+/* The end of a page: a rule, the word "Next", and the doors out. Quiet on purpose — it follows content, and a card here would
+   read as one more thing to read. Type and space are the shared ramp and scale. */
+
+.next-links { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--s2) var(--s4); margin-top: var(--s5); padding-top: var(--s3); border-top: 1px solid var(--line); }
+.next-links-h { flex: none; }
+.next-links-row { display: flex; flex-wrap: wrap; gap: var(--s1) var(--s4); min-width: 0; }
+
+/* A destination, drawn as a link rather than a button: the bar of an underline on hover is the only chrome it takes. */
+.next-link { display: inline-flex; align-items: center; gap: var(--s1-5); min-height: 32px; padding: 0; background: none; border: 0; color: var(--accent-2); font: 500 13px/1.4 var(--sans); text-align: left; cursor: pointer; }
+.next-link .icon { flex: none; }
+.next-link:hover { color: var(--text); text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 3px; }
+
+@media (max-width: 620px) {
+  /* The owner's thumb: every destination is a full-height target, and the row breaks between them rather than mid-word. */
+  .next-link { min-height: 44px; }
+  .next-links { gap: var(--s1) var(--s3); }
+  .next-links-row { gap: 0 var(--s4); }
+}

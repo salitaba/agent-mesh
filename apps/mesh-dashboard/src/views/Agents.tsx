@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { fmt, localTime, plainLifecycle, pillCls, zoneLabel, RUNNING } from "../format";
 import { useMesh, type TurnStep } from "../store";
-import { AgentAvatar, Button, EmptyState, ErrorState, PageHeader, Pill, Progress, Segmented, Skeleton, Sparkline, agentColor, useNow } from "../components";
+import { AgentAvatar, Button, EmptyState, ErrorState, NextLinks, PageHeader, Pill, Progress, Segmented, Skeleton, Sparkline, agentColor, useNow } from "../components";
 import { Icon } from "../icons";
 import { agentAction, confirmPause } from "../drawers";
 import { vitalsOf, type Vitals } from "../vitals";
@@ -243,7 +243,7 @@ const readMode = (): Mode | null => {
 };
 
 export default function Agents(): React.JSX.Element {
-  const { status, statusError, toast, openDetail, refreshStatus, steps, stepsLoaded, refreshSteps, serverDown, client, confirm } = useMesh();
+  const { status, statusError, toast, openDetail, refreshStatus, steps, stepsLoaded, refreshSteps, serverDown, client, confirm, setView } = useMesh();
   const { facts } = useMission();
   const now = useNow(1000);
   // Live turns are what make a card say anything useful, and they arrive with /steps: the roster alone has no turn timing.
@@ -357,6 +357,10 @@ export default function Agents(): React.JSX.Element {
           The mesh answered, and this project has no agents configured. Add seats in the Designer.
         </EmptyState>
       ) : null}
+      <NextLinks links={[
+        { label: "Open the product", hint: "Use what the team built, running from this workspace", icon: "product", onGo: () => setView("product") },
+        { label: "Read the files", hint: "Each file the team made, its versions and what changed", icon: "files", onGo: () => setView("artifacts") },
+      ]} />
     </>
   );
 }
