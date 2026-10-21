@@ -45,11 +45,24 @@ ring), not only how wide it is.
 3. **The content** — sections with an `h3`; rows ruled by `--line`; cards only
    for a thing that can be pressed or a group that genuinely belongs together.
 4. **The end** — long lists say how many they left off; long output is scrollable
-   and its controls stay outside the scrolling text.
+   and its controls stay outside the scrolling text; and a page that can be read
+   to its end closes on a row of ways on (`NextLinks`), naming real destinations
+   in a sentence each. The product is the first door wherever it applies, then
+   the files, the cost, and the pages that continue the same question.
 
 Overview is the one deliberate variation: its brief is short because the mission
 hero directly under it is the page's real headline. The two are not peers: the
-page name is a signpost, the hero is the news.
+page name is a signpost, the hero is the news. Directly under the hero it carries
+`JumpRow`, its own four-door index, because the page runs past 8,500 px on a
+phone; each button scrolls to the section **and focuses it**, and every `Panel`
+section is the anchor (`id` + `tabIndex={-1}`), so a keyboard user continues
+inside the section rather than back at the top.
+
+The **path** the surface is organised around is "open the console" → "I am using
+my product": a delivered mission's loudest action is **Open the product**, Product
+opens on the **Your product** card, and reading the files is what you do about a
+result, not the first thing you are offered. Pinned by
+`tests/dashboard/product-path.test.ts` and `tests/dashboard/page-exits.test.ts`.
 
 ## Type and space in force
 
@@ -94,6 +107,9 @@ Breakpoints: **1280 1100 900 800 760 620 560**. 800 is the sidebar drawer (JS
   reachable by one press; a tooltip repeats a name, it does not supply one.
 - Filters that are not needed to read the page fold behind one 44 px button with
   a count, as Events already does; the search stays out.
+- A page's last row is a way on, not a full stop: `NextLinks` is 13 px link text
+  on a rule, 44 px tall at 620 px and below, and wraps rather than scrolls. It is
+  a signpost, not a second band of primary buttons.
 - The Graph phone view is a list of seats (who they talk to, how many messages)
   and the ranked links, not a 900 px drawing that scrolls inside its frame.
 - The frame is two rows at 360, not three: the menu, the state chip and the
@@ -112,6 +128,14 @@ Breakpoints: **1280 1100 900 800 760 620 560**. 800 is the sidebar drawer (JS
 
 ## Open problems (carried forward)
 
+- The Overview is 8,582 px tall at 360 px with a delivered mission. `JumpRow`
+  makes its four sections one press away, but the sections themselves (a dozen
+  goal checks, a long shipped list) are still long. Measure whether one line per
+  section at 620 px and below, opening in place, is worth what it hides.
+- Events and the approvals inbox are the only console pages without an end-cap.
+  That is deliberate for now: Events is a live viewport that filters and grows,
+  and the inbox owns its own navigation. The next pass should decide whether
+  either gets a row, and where it sits relative to the live content.
 - At 621–800 px the project strip is still a row of tabs that scrolls inside
   itself when projects overflow. The phone's switcher and sheet prove the
   pattern; whether a tablet needs the same trade has not been measured with
@@ -120,16 +144,8 @@ Breakpoints: **1280 1100 900 800 760 620 560**. 800 is the sidebar drawer (JS
   deliberate trade that made it one row; the goal leads Overview and is one tap
   away, but a reader on Events cannot see it without leaving the page. Watch
   whether that absence costs a visit in real use.
-- The Events ledger's fold bar still hides a group of routine rows behind a
-  control whose wording ("4 routine events") is longer than its utility on a
-  phone; the pattern should be one row that says it can be opened.
 - The Designer is out of this pass's surface, but its phone inspector is the next
   place where desktop controls are still being stacked.
-- `YourProduct`'s live-UI poll (`productlive.ts` `refresh`) keeps the screen on a
-  thrown request but does not check an HTTP error body: a 5xx `{error}` would be
-  handed to `absorb` as an answer. Not observed against a running UI, so this pass
-  did not change it; the next pass should prove it against a failed poll before
-  touching it.
 - Overview's avatar initials are 11 px glyphs in a 22 px disc. They are marks, not
   words, and stay at 11 on a phone.
 - The public site (`apps/cloud-server/pages`) has its own memory; this pass did
@@ -137,20 +153,99 @@ Breakpoints: **1280 1100 900 800 760 620 560**. 800 is the sidebar drawer (JS
 
 ## What the next pass should take
 
-1. The Events fold bar (above), then the same disclosure pattern on any page whose
-   filter row grows past one line. Files' filter fold and the frame's layers are
-   done.
-2. Prove whether 768 px needs the project sheet: seed enough projects that the
+1. The Overview's length (above): the index is a signpost, not a fold. Measure a
+   one-line-per-section phone shape against the current 8,582 px page.
+2. Decide the Events and inbox end-caps (above), and whether the Events fold row
+   should also offer the actor filter it now counts.
+3. Prove whether 768 px needs the project sheet: seed enough projects that the
    strip overflows at 768 and judge it as a tablet's one-row alternative to the
    phone's switcher.
-3. Prove or disprove the `YourProduct` live-UI poll behaviour above against a
-   failed `/ui` response, then fix it if it is real.
 4. Read the console with a real thumb on a real phone: the measurements here are
    Chromium at 360 px with touch emulation only in CSS, not a hardware device.
 5. Check the frame's safe-area claims on a notched device in both orientations;
    the insets are in the CSS but the stand-in browser reports them as zero.
 
 ## Pass log
+
+### 2026-10-22 — the path is the product
+
+Direction unchanged — dense, plain, one-thumbed — but this pass judged the
+surface by one question: **from opening the console, how short is the way to
+using the product?** Measured in a driven Chromium (Playwright in a container,
+signed-in storage state, a rich copy of a live project at
+`/tmp/full-squad`, never the project's own workspace) at 360, 768 and 1440.
+
+**Bugs found, proved, fixed** (each commit carries its evidence):
+
+- **The dev server hid the product's routes.** `/workspace/info` and `/ui` are
+  root routes on the mesh server; Vite's `API_ROOTS` did not name them, so the
+  proxy answered its SPA fallback with `index.html` and a 200. Product read that
+  as "The mesh server did not answer" and showed "No workspace" beside a live
+  workspace. Fixed in `vite.config.mts`; the page reads its product again.
+- **A failed poll was taken as an idle product.** `productlive.ts refresh`
+  guarded thrown requests but handed any JSON body to `absorb`. A 502
+  `{error}` became "nothing has ever run", the live frame closed, the Start box
+  returned for a command that was still running, and Start then said "already
+  running" — the dead end the card exists to remove. A non-2xx answer now keeps
+  the screen and asks again; `tests/dashboard/productlive.test.ts` drives live
+  → 502 → recovery.
+- **Steps scrolled sideways at 360.** The three-figure strip's `scrollWidth`
+  was 378 in a 302 px card, and the view was 407 against 360. It is a
+  two-column grid with the no-output share on its own full-width line: 302/302
+  and 360/360 after.
+- **Agents lost the name a thumb was aiming at.** A control row gave the name
+  77 px ("dev…"). Rows are four lines on a phone (name; state and tokens; what
+  it is doing; controls) and the name measures 302. At a desk the action cell
+  was 190 px (166 content) for 213 px of controls; it is 240.
+- **Files drew the same switch twice** at 768 and 1440: "Latest of each name"
+  in the header and again among the filters. One copy, with the filters, and
+  the test now pins that the header carries no actions.
+- **Events' fold row never said what it does.** It spent its width on
+  "16:50:47 to 16:51:03"; it now says the count, the range at desk widths and
+  **Show/Hide**, a 44 px bar on a phone that drops the range (the bucket
+  heading already gives it). The agent chooser moved into the phone's filter
+  fold and a chosen agent is counted by the button.
+
+**The path itself:**
+
+- A **delivered mission's loudest action is the product**. The hero reads
+  "Open the product" (primary), "Reopen with feedback" (soft), "Open the
+  files", "What it cost", "Replay" (quiet). Measured at 360 in that order.
+- **Product opens on the product**: `YourProduct` (the shipped page and its own
+  UI, live) is the first card, before the checkout facts, the script runner,
+  the changes list and the file list.
+- The **Overview is indexed**. At 360 px a delivered mission made the page
+  8,582 px tall with nothing at the top saying what followed. `JumpRow` under
+  the hero offers What shipped / Latest work / Goal checks / Just happened;
+  each scrolls and **focuses** the section. Driven: pressing Goal checks put
+  `#view` at scrollTop 2,742 and focus on `#ov-goal`, its top at 64 px, below
+  the sticky bar.
+- **Every page that can be read to its end now ends on a way on.** Nine views
+  close with `NextLinks`: quiet 13 px links on a rule, the product first where
+  it applies. At 360 each link is 44 px tall; at 1440, 32. Files' "Open the
+  product" driven to `#/product`, first card "Your product".
+
+**Verified after the change:** every surface view (plus Steps) and both host
+pages have **no horizontal overflow at 360, 768 and 1440**; no element with its
+own text sits off the type ramp; no real control is under 44 px at 360. (The
+only two raw `input`s that measure under 44 are the bare switch/checkbox inside
+a 44–56 px `label.chk` on Steps and Gates — the label is the target.) Host
+pages: NextLinks "Host settings" 106×44 and "Projects" 71×44 at 360.
+
+**Suite:** `npm run typecheck` and `npm run build` clean; `node --test
+"dist/tests/**/*.test.js"` 6,271 tests, 6,269 pass, 0 fail, 2 skipped (the
+provider-key environment variables had to be unset for the pre-existing
+cloud-trial assertion, not for anything this pass touched); lint 0 errors, 211
+warnings, all pre-existing cross-package import warnings.
+
+**Deliberately left alone:** Events and the approvals inbox have no end-cap
+(live viewport / own navigation — see open problems); Gates changed nothing
+because nothing on it failed a measurement; the Designer and the public site
+are outside this surface; `packages/core` delivery gates untouched.
+
+**Stopped at:** commits `fefb0df`, `ecbb5ed` and `ef7c0f9` on
+`ux/auto-20261022-0139`. The next pass starts with the Overview's remaining
+length and the two end-cap decisions below.
 
 ### 2026-10-21 — the frame is a layer
 
