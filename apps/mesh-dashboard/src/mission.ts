@@ -43,7 +43,7 @@ export interface MissionControl {
  * Where a person looks at what a finished mission made and spent. Not things done to the mission, so they are not
  * `MissionAction`s: the bar and `useMissionActions` never see them, and the Overview, which is where they are offered, runs them.
  */
-export type ResultAction = "files" | "cost" | "replay";
+export type ResultAction = "product" | "files" | "cost" | "replay";
 export type HeroAction = MissionAction | ResultAction;
 
 /**
@@ -180,10 +180,16 @@ const REOPEN: MissionControl = {
   hint: "Say what was wrong: the agents go back to work with your feedback as their brief. Nothing is deleted.",
 };
 
-/** What a person does with a delivered mission. The first is how they find out whether it is right; the second is what they do when it is not. */
+/**
+ * What a person does with a delivered mission. The product leads: a finished mission is something to use, and the console
+ * used to send the person who just delivered it to the file list, which is where the team's work is audited, not where it is
+ * used. Reading the files, its cost and a replay are what you do about a result, so they follow quietly; reopening is what you
+ * do when it is wrong.
+ */
 const DELIVERED_NEXT: NextStep[] = [
-  { action: "files", label: "Open the files", hint: "Read what the team made: each file, its versions and what changed", look: "primary" },
+  { action: "product", label: "Open the product", hint: "Use what the team built: its own page and its own UI, running from this workspace", look: "primary" },
   { ...REOPEN, look: "soft" },
+  { action: "files", label: "Open the files", hint: "Read what the team made: each file, its versions and what changed", look: "quiet" },
   { action: "cost", label: "What it cost", hint: "Spend by agent and by budget, in tokens and dollars", look: "quiet" },
   { action: "replay", label: "Replay", hint: "Rebuild the mission from its event log, with no model calls", look: "quiet" },
 ];

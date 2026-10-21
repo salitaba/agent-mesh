@@ -46,10 +46,10 @@ test("a finished mission that is parked is delivered, not parked: no Continue, a
   assert.equal(s.parked, true, "the fact is still reported, for a quiet note");
 });
 
-test("a delivered mission offers what people do with a result: read it, send it back with feedback, then see what it cost and replay it", () => {
+test("a delivered mission leads to the product: use it, send it back with feedback, then read the files, the cost and a replay", () => {
   const s = describeMission(facts({ goalStatus: "COMPLETED", parked: true, working: 0 }));
-  assert.deepEqual(s.next.map((n) => [n.action, n.look]), [["files", "primary"], ["reopen", "soft"], ["cost", "quiet"], ["replay", "quiet"]]);
-  assert.deepEqual(s.next.map((n) => n.label), ["Open the files", "Reopen with feedback", "What it cost", "Replay"]);
+  assert.deepEqual(s.next.map((n) => [n.action, n.look]), [["product", "primary"], ["reopen", "soft"], ["files", "quiet"], ["cost", "quiet"], ["replay", "quiet"]]);
+  assert.deepEqual(s.next.map((n) => n.label), ["Open the product", "Reopen with feedback", "Open the files", "What it cost", "Replay"]);
   assert.equal(s.next.filter((n) => n.look !== "quiet").length, 2, "the hero keeps its calm: two that look like buttons, the rest quiet");
   for (const n of s.next) assert.ok(n.hint.length > 20, `${n.action} says what it does`);
 });
@@ -94,7 +94,7 @@ test("the result's actions are not mission actions: the bar and its handler neve
   const bar = new Set(["start", "pause", "resume", "reopen", "review", "settings", "agents", "designer"]);
   const s = describeMission(facts({ goalStatus: "COMPLETED", working: 0 }));
   for (const c of [s.primary, ...s.secondary]) if (c) assert.ok(bar.has(c.action), `${c.action} is something done to the mission`);
-  assert.deepEqual(s.next.filter((n) => !bar.has(n.action)).map((n) => n.action), ["files", "cost", "replay"]);
+  assert.deepEqual(s.next.filter((n) => !bar.has(n.action)).map((n) => n.action), ["product", "files", "cost", "replay"]);
 });
 
 test("parked with unfinished work offers Continue when there is history and Start when there is none", () => {

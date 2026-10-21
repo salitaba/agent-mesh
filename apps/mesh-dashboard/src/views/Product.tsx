@@ -395,6 +395,10 @@ export default function Product(): React.JSX.Element {
         <ErrorState what="the workspace" detail={wsErr} onRetry={() => { setWsErr(null); setAttempt((n) => n + 1); }} />
       ) : (
         <div className="prod-stack">
+          {/* First, because it is the page's question: where is the thing the team built, and can I use it? The checkout's
+              branch and the script runner are how you check or repair it, and they follow. */}
+          <YourProduct client={client} projectId={projectId} refreshKey={builtCheck} />
+
           <section className="card prod-facts-card" aria-label="The checkout">
             {!info ? (
               <div className="prod-skel" role="status"><span className="sr-only">Reading the checkout</span><Skeleton w="40%" h={14} /><Skeleton w="70%" h={14} /></div>
@@ -462,10 +466,6 @@ export default function Product(): React.JSX.Element {
           </section>
 
           {run ? <RunOutput run={run} onStop={() => void stop()} onClear={clearRun} /> : null}
-
-          {/* Your product on the console's side: the page it ships and its own UI, running. The same card as the
-              Playground page's — the question "where is my product" is the same question on both. */}
-          <YourProduct client={client} projectId={projectId} refreshKey={builtCheck} />
 
           {changes.length ? (
             <section className="card" aria-labelledby="chg-h">

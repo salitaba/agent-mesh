@@ -218,9 +218,10 @@ export default function Overview(): React.JSX.Element {
   const ledger = (status.budgets || []).find((b: any) => String(b.key).startsWith("mission:") && b.limitKind === "tokens");
   const spend = hostSpend ? { usd: hostSpend.usd, ceilingUsd: hostSpend.ceilingUsd, parked: hostSpend.parked } : null;
   const delivered = goal.status === "COMPLETED";
-  // The mission's own actions go where the bar sends them; the three that read a result are this page's.
+  // The mission's own actions go where the bar sends them; the ones that lead to a finished result are this page's.
   const run = (a: HeroAction): void => {
     switch (a) {
+      case "product": return setView("product");
       case "files": return setView("artifacts");
       case "cost": return setView("cost");
       case "replay": return openDrawer(<ReplayDrawer goalId={goalId ?? ""} />);

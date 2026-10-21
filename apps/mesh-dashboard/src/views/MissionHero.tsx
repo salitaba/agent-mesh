@@ -13,7 +13,7 @@ export const MISSION_ICON: Record<MissionAction, IconName> = {
 };
 
 /** The icon of each thing the hero offers: the mission's actions, and where a finished mission's result is read. */
-const HERO_ICON: Record<HeroAction, IconName> = { ...MISSION_ICON, files: "files", cost: "cost", replay: "refresh" };
+const HERO_ICON: Record<HeroAction, IconName> = { ...MISSION_ICON, product: "product", files: "files", cost: "cost", replay: "refresh" };
 
 /**
  * One thing to do next, as the mission state (mission.ts) offers it: the same label, hint and handler as the top bar's button when it
