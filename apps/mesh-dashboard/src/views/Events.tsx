@@ -164,8 +164,9 @@ export default function Events(): React.JSX.Element {
   const actorOn = facetOne(facets, "actor");
   const threadOn = facetOne(facets, "thread");
 
-  // What the folded button counts: the chips that are on (the agent is in plain sight, the thread has its own bar).
-  const chipCount = sevOn.size + grpOn.size;
+  // What the folded button counts: the chips that are on, and the agent when one is chosen (the thread has its own bar). The
+  // agent sits inside the fold with the chips on a phone, so a filter set there has to be counted here or the page looks unfiltered.
+  const filterCount = sevOn.size + grpOn.size + Number(actorOn !== null);
   const toggle = useCallback((token: string) => setEvFilter(toggleFacet(evFilter, token)), [evFilter, setEvFilter]);
   /** Single-valued facets replace rather than accumulate. */
   const setOne = useCallback((ns: string, value: string | null) => setEvFilter(setFacet(evFilter, ns, value)), [evFilter, setEvFilter]);
@@ -269,18 +270,18 @@ export default function Events(): React.JSX.Element {
 
       <div className="ev-tools" role="search">
         <SearchField id="ev-search" label="Search events" placeholder="Messages, agents, files" hint="/" value={evSearch} onChange={(e) => setEvSearch(e.target.value)} onClear={() => setEvSearch("")} />
-        <label className="sr-only" htmlFor="ev-actor">Filter by agent</label>
-        <Select id="ev-actor" value={actorOn ?? ""} onChange={(e) => setOne("actor", e.target.value || null)}>
-          <option value="">Every agent</option>
-          {actors.map((a) => <option key={a} value={a}>{a}</option>)}
-        </Select>
         <Button variant="soft" icon="sliders" extra="ev-filters-toggle" aria-expanded={filtersOpen} aria-controls="ev-facets" onClick={() => setFiltersOpen((o) => !o)}>
-          Filters{chipCount ? ` (${chipCount})` : ""}
+          Filters{filterCount ? ` (${filterCount})` : ""}
         </Button>
         {filtered ? <Button variant="ghost" icon="x" onClick={clearAll}>Clear filters</Button> : null}
       </div>
 
       <div className={`ev-facets${filtersOpen ? " open" : ""}`} id="ev-facets">
+        <label className="sr-only" htmlFor="ev-actor">Filter by agent</label>
+        <Select id="ev-actor" value={actorOn ?? ""} onChange={(e) => setOne("actor", e.target.value || null)}>
+          <option value="">Every agent</option>
+          {actors.map((a) => <option key={a} value={a}>{a}</option>)}
+        </Select>
         <div className="seg ev-facet-group" role="group" aria-label="Filter by importance">
           {SEVERITY_ORDER.map((s: Severity) => (
             <button
@@ -372,8 +373,10 @@ export default function Events(): React.JSX.Element {
                         })}
                       >
                         <Icon name="chevron-right" size={12} className={isOpen ? "caret turned" : "caret"} />
-                        <span><b>{r.items.length}</b> routine events</span>
+                        <span className="evc-fold-what"><b>{r.items.length}</b> routine {r.items.length === 1 ? "event" : "events"}</span>
                         <span className="evc-fold-range">{localTime(oldestItem.timestamp)} to {localTime(newestItem.timestamp)}</span>
+                        {/* The caret turns, but a caret is a shape: the row says in words what pressing it does. */}
+                        <span className="evc-fold-do">{isOpen ? "Hide" : "Show"}</span>
                       </button>
                       {isOpen ? r.items.map((e) => (
                         <EvLine key={e.seq || e.id} e={e} selected={e.seq === selectedSeq} tab={roving.stop === String(e.seq)} roster={roster} onOpen={open} onTab={roving.setLast} nameOf={nameOf} />

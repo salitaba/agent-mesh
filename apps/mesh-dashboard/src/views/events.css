@@ -11,7 +11,8 @@
 /* ---- the tools above the list ---- */
 
 .ev-tools { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s2); margin-bottom: var(--s2-5); }
-.ev-tools .sel { flex: none; max-width: 100%; }
+/* The agent is a filter like the chips, so it sits with them: on a phone that means inside the fold, not beside the search. */
+.ev-facets .sel { flex: none; max-width: 100%; }
 /* Only a phone folds the facets away; everywhere else they are in plain sight and there is nothing to open. */
 .ev-tools .ev-filters-toggle { display: none; }
 
@@ -86,7 +87,9 @@
 .evc-foldbar:focus-visible { outline-offset: -2px; }
 .evc-foldbar .icon { color: var(--muted); }
 .evc-foldbar b { font-weight: 650; color: var(--text); }
+.evc-fold-what { min-width: 0; }
 .evc-fold-range { margin-left: auto; font-size: 12px; color: var(--muted); }
+.evc-fold-do { flex: none; margin-left: var(--s3); font-weight: 600; color: var(--text); }
 /* Opened, the rows sit inside the fold, so a hairline on its left says where they came from. */
 .evc-fold.open > .evc-row { background: color-mix(in srgb, var(--sunken) 30%, var(--panel)); }
 
@@ -191,9 +194,10 @@
   /* Seven controls in three rows is a third of a phone screen before the first event. They fold behind one button, which says how
      many are on. */
   .ev-tools .ev-filters-toggle { display: inline-flex; flex: none; }
-  .ev-tools .sel { flex: 1 1 140px; }
   .ev-facets { display: none; }
   .ev-facets.open { display: flex; }
+  /* The agent chooser is the first thing in the fold, at the width of the panel: a 140 px select is a two-line option. */
+  .ev-facets .sel { flex: 1 1 100%; }
   .evc-row { grid-template-columns: 26px auto minmax(0, 1fr); grid-template-areas: "tile time type" ". sum sum"; row-gap: var(--s0); padding: var(--s1-5) var(--s3-5); }
   .evc-tile { grid-area: tile; }
   .evc-row time { grid-area: time; }
@@ -201,6 +205,9 @@
   .evc-sum { grid-area: sum; white-space: normal; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; }
   .evc.split .evc-row { grid-template-columns: 26px auto minmax(0, 1fr); }
   .evc-bucket, .evc-foldbar { padding-left: var(--s3-5); padding-right: var(--s3-5); }
+  /* The bucket heading above already says when this run happened; the exact range is the third thing in a 300 px row. */
+  .evc-fold-range { display: none; }
+  .evc-fold-do { margin-left: auto; }
   .evd { padding: var(--s3-5); }
   .evd-id .k { min-width: 92px; }
 }

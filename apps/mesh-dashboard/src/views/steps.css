@@ -226,8 +226,11 @@
 
 @media (max-width: 620px) {
   .st-pulse-top { padding: var(--s3-5) var(--s4); }
-  .st-kpis { width: 100%; justify-content: space-between; gap: var(--s3); margin-left: 0; }
-  .st-kpis > * + * { padding-left: var(--s3); }
+  /* Three figures could not share 302 px: the third ran 76 px past the card and scrolled the whole view sideways at 360.
+     A 2 x 2 ledger gives the two counts the first line and the share that went nowhere the second, at full width. */
+  .st-kpis { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); width: 100%; gap: var(--s3) var(--s4); margin-left: 0; }
+  .st-kpis > * + * { min-width: 0; padding-left: 0; border-left: 0; }
+  .st-kpis .st-noout { grid-column: 1 / -1; padding-top: var(--s2-5); border-top: 1px solid var(--line); }
   .st-mix { margin: 0 var(--s4) var(--s3-5); }
   .st-tl { padding-left: var(--s4); padding-right: var(--s4); }
   .st-tl-head .seg { margin-left: 0; max-width: 100%; overflow-x: auto; }

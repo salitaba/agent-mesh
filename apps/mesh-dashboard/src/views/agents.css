@@ -79,7 +79,9 @@
 .ag-t-who { width: 25%; }
 .ag-t-state { width: 120px; }
 .ag-t-tok { width: 140px; }
-.ag-t-act { width: 190px; }
+/* 240 px, not 190: "Run one step" + "Pause" measure 212 px of text and padding, so a 166 px content box let them run
+   under the token column at a desk width. The extra column comes out of "Now", which still has 150 px at 1101. */
+.ag-t-act { width: 240px; }
 .ag-table.tbl.dense td { vertical-align: middle; }
 .ag-table tr[data-group="working"] td:first-child { box-shadow: inset 3px 0 0 var(--ok); }
 .ag-table tr[data-group="help"] td:first-child { box-shadow: inset 3px 0 0 var(--bad); }
@@ -105,17 +107,24 @@
 @media (max-width: 900px) {
   .ag-table.tbl.dense, .ag-table.tbl.dense tbody { display: block; }
   .ag-table.tbl.dense thead { display: none; }
-  .ag-table.tbl.dense tr { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: var(--s1-5) var(--s3); padding: var(--s3) var(--s4); border-top: 1px solid var(--line); }
+  /* Two columns, four lines: the name gets the whole width (it measured 77 px and read "dev…" when the 213 px control
+     cell shared its line), then the state and its tokens, then what it is doing, then its controls full width. */
+  .ag-table.tbl.dense tr {
+    display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "who who" "state tok" "now now" "act act";
+    align-items: center; gap: var(--s1-5) var(--s3); padding: var(--s3) var(--s4); border-top: 1px solid var(--line);
+  }
   .ag-table.tbl.dense tr:first-child { border-top: 0; }
   .ag-table.tbl.dense td { display: block; width: auto; padding: 0; border: 0; background: none; }
   .ag-table.tbl.dense tr.clickable:hover td { background: none; }
   .ag-table.tbl.dense tr[data-group="working"] td:first-child, .ag-table.tbl.dense tr[data-group="help"] td:first-child { box-shadow: none; }
   .ag-table.tbl.dense tr[data-group="working"] { box-shadow: inset 3px 0 0 var(--ok); }
   .ag-table.tbl.dense tr[data-group="help"] { box-shadow: inset 3px 0 0 var(--bad); }
-  .ag-table.tbl.dense .ag-t-now { display: block; grid-column: 1 / -1; order: 2; }
-  .ag-table.tbl.dense .ag-t-tok { order: 3; display: flex; align-items: baseline; gap: var(--s2); text-align: left; }
+  .ag-table.tbl.dense .ag-t-who { grid-area: who; }
+  .ag-table.tbl.dense .ag-t-state { grid-area: state; }
+  .ag-table.tbl.dense .ag-t-now { display: block; grid-area: now; }
+  .ag-table.tbl.dense .ag-t-tok { grid-area: tok; display: flex; align-items: baseline; justify-content: flex-end; gap: var(--s2); text-align: right; }
   .ag-table.tbl.dense .ag-t-tok b { display: inline; }
-  .ag-table.tbl.dense .ag-t-tok .prog { flex: 1 1 auto; margin-top: 0; }
-  .ag-table.tbl.dense .ag-t-act { order: 4; }
-  .ag-table .agent-controls { flex-wrap: wrap; justify-content: flex-end; }
+  .ag-table.tbl.dense .ag-t-tok .prog { flex: 1 1 auto; min-width: 72px; margin-top: 0; }
+  .ag-table.tbl.dense .ag-t-act { grid-area: act; }
+  .ag-table .agent-controls { flex-wrap: wrap; justify-content: flex-start; }
 }

@@ -20,8 +20,14 @@ test("a phone keeps search out and folds the other file filters behind one count
   assert.match(tsx, /filterCount = Number\(filter\.type !== ""\) \+ Number\(filter\.group !== ""\) \+ Number\(filter\.latestOnly\)/, "the count covers every folded filter");
 });
 
-test("the header switch is a wide-screen action; a phone reaches it in the filter panel", () => {
-  assert.match(tsx, /actions=\{!phone && loaded && arts\.length > 0 \?/, "the header switch is not shown on a phone");
+test("one \"Latest of each name\" switch, with the other filters, at every width", () => {
+  // It used to be drawn twice on a desk: a copy in the page header and the real one among the filters (two `.files-latest`
+  // measured at 768 and 1440). Two controls for one filter is a puzzle, not an option, so the header copy is gone: the filter
+  // panel already holds it in plain sight at a desk width and behind the counted button on a phone.
+  const header = tsx.match(/<PageHeader[\s\S]*?\/>/)?.[0] ?? "";
+  assert.ok(header, "the page has a header");
+  assert.ok(!header.includes("actions"), "the header draws no second copy of the filter");
+  assert.equal(tsx.split('className="files-latest"').length - 1, 1, "the switch appears once in the page");
   assert.match(tsx, /filtersOpen \? <div className="files-filters" id="files-filters">\{filterControls\}<\/div> : null/, "opening the button renders the same controls");
 });
 

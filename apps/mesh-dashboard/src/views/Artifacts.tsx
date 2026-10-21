@@ -204,11 +204,6 @@ export default function Artifacts(): React.JSX.Element {
         title="Files"
         status={loaded ? <span className="count-note" role="status">{countLabel(visible.length, arts.length)}</span> : null}
         lede="What the team made. Read a file, compare its versions, copy its path."
-        actions={!phone && loaded && arts.length > 0 ? (
-          <span className="files-latest" title="When two files share a name and type, show only the newest. Older ones stay in the manifest.">
-            <Switch label="Latest of each name" checked={filter.latestOnly} onChange={() => setFilter({ ...filter, latestOnly: !filter.latestOnly })} />
-          </span>
-        ) : null}
       />
 
       {stale ? (
