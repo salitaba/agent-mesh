@@ -2,10 +2,10 @@ import { useEffect } from "react";
 import { createContext, useCallback, useContext, useMemo, useRef, useState } from "react";
 import { fmt, mandatoryProgress, plural } from "./format";
 import { useMesh, type View } from "./store";
-import { CloseX, MessageDrawer, ApprovalDrawer, StepDrawer, AgentDrawer } from "./drawers";
+import { MessageDrawer, ApprovalDrawer, StepDrawer, AgentDrawer } from "./drawers";
 // The shell keeps its own stack-aware trap (drawer over drawer), but it must
 // agree with every other dialog about what "focusable" means.
-import { Banner, Button, EmptyState, IconButton, Kbd, Menu, ToastCard, Wordmark, focusables, isTopTrap, pushTrap, type MenuItem } from "./components";
+import { Banner, Button, DrawerHead, EmptyState, IconButton, Kbd, Menu, ToastCard, Wordmark, focusables, isTopTrap, pushTrap, type MenuItem } from "./components";
 import { Icon, type IconName } from "./icons";
 import { barActionIsHere, documentTitle, type MissionAction } from "./mission";
 import { useMission } from "./useMission";
@@ -179,7 +179,7 @@ const PALETTE_GROUPS = ["Go to", "Agents", "Actions"] as const;
 
 export function Shell({ viewNode }: { viewNode: React.ReactNode }): React.JSX.Element {
   const mesh = useMesh();
-  const { view, setView, status, goalId, toasts, drawer, drawerDepth, openDrawer, closeDrawer, toast, refreshStatus, serverDown, sseState, detail, closeDetail, steps, client, confirm } = mesh;
+  const { view, setView, status, goalId, toasts, dismissToast, drawer, drawerDepth, openDrawer, closeDrawer, toast, refreshStatus, serverDown, sseState, detail, closeDetail, steps, client, confirm } = mesh;
   // Single-process `curule serve` / `curule console` has one mesh and no registry,
   // and must not gain an empty tab strip. "Is the provider mounted" did not
   // answer that — the provider mounts in both modes — so ask the server, and
@@ -239,6 +239,10 @@ export function Shell({ viewNode }: { viewNode: React.ReactNode }): React.JSX.El
   const phone = useMedia(PHONE);
   // Hidden off-canvas, so it must leave the tab order and the a11y tree too.
   const sidebarHidden = narrow && !menuOpen;
+  // On a narrow screen the sidebar is not a second column, it is a layer over the page: it owns a scrim, the keyboard and
+  // the page behind it goes inert. Before this it was 288px of navigation floating over a page that still tabbed (8 controls
+  // behind it at 360), with no scrim, no close button, no aria-modal, and a tap outside did nothing.
+  const navModal = narrow && menuOpen;
   const [focusMode, setFocusMode] = useState(false);
   // Derived: the frame that paints the next view must not show a collapsed
   // sidebar. The effect below still clears the flag so returning to Designer
@@ -297,9 +301,11 @@ export function Shell({ viewNode }: { viewNode: React.ReactNode }): React.JSX.El
     document.querySelector('meta[name="theme-color"]')?.setAttribute("content", getComputedStyle(document.documentElement).getPropertyValue("--bg-2").trim());
     setIsLight(cur === "light");
   }, []);
+  // The help panel scrolled its own close control off the top (measured at 360: y = -136 after scrolling 400). A real title
+  // row, the one every other panel uses, stays at the top of the panel while the text under it moves.
   const openHelp = useCallback(() => openDrawer(
-    <><Help /><CloseX extra="close-x-float" /></>,
-  ), [openDrawer]);
+    <><DrawerHead onClose={closeDrawer}>Help</DrawerHead><Help /></>,
+  ), [openDrawer, closeDrawer]);
 
   // The mission's controls (useMissionActions.ts): the bar, the Overview and the keyboard all go through the same functions.
   const missionActions = useMissionActions();
@@ -451,12 +457,47 @@ export function Shell({ viewNode }: { viewNode: React.ReactNode }): React.JSX.El
     if (!narrow) return;
     if (menuOpen) {
       menuWasOpen.current = true;
-      document.querySelector<HTMLElement>("#sidebar .tab")?.focus();
-    } else if (menuWasOpen.current && document.activeElement === document.body) {
+      // Land on where you are rather than the top of the list; the close control is one Shift+Tab away.
+      const root = document.getElementById("sidebar");
+      (root?.querySelector<HTMLElement>(".tab.active") ?? root?.querySelector<HTMLElement>(".tab"))?.focus();
+    } else if (menuWasOpen.current) {
       menuWasOpen.current = false;
-      document.getElementById("btn-menu")?.focus();
+      const active = document.activeElement;
+      if (active === document.body || (active instanceof HTMLElement && active.closest("#sidebar"))) {
+        document.getElementById("btn-menu")?.focus();
+      }
     }
   }, [menuOpen, narrow]);
+
+  // Tab stays inside the navigation sheet. Everything else is inert, so the only way out was the browser's chrome and a
+  // focus landing on <body>; a modal layer should cycle its own controls.
+  useEffect(() => {
+    if (!navModal) return;
+    const root = document.getElementById("sidebar");
+    if (!root) return;
+    const onTab = (ev: KeyboardEvent) => {
+      if (ev.key !== "Tab") return;
+      const items = focusables(root);
+      if (!items.length) return;
+      const first = items[0] as HTMLElement;
+      const last = items[items.length - 1] as HTMLElement;
+      const act = document.activeElement;
+      if (!(act instanceof HTMLElement) || act === document.body || !root.contains(act)) {
+        ev.preventDefault();
+        (ev.shiftKey ? last : first).focus();
+        return;
+      }
+      if (ev.shiftKey && act === first) {
+        ev.preventDefault();
+        last.focus();
+      } else if (!ev.shiftKey && act === last) {
+        ev.preventDefault();
+        first.focus();
+      }
+    };
+    document.addEventListener("keydown", onTab, true);
+    return () => document.removeEventListener("keydown", onTab, true);
+  }, [navModal]);
 
   // The deep-linked detail is the bottom panel layer; anything the user drills
   // into from there stacks on top of it.
@@ -572,7 +613,14 @@ export function Shell({ viewNode }: { viewNode: React.ReactNode }): React.JSX.El
    * screen gets the rare and the dangerous ones, with the destructive one set apart at the end. */
   const openMessage = (): void => openDrawer(<MessageDrawer />);
   const notify = useNotify();
+  const primary = state.primary;
+  // The bar's one primary action (Continue, Pause, Answer) does not fit a phone's single row beside the menu, the state and
+  // what is waiting on you. It moves to the top of this menu rather than out of reach at the foot of the page.
+  const barPrimary = !!primary && view !== "overview" && !barActionIsHere(primary.action, view, inboxView);
   const moreItems: MenuItem[] = [];
+  if (phone && barPrimary && primary) {
+    moreItems.push({ id: `mi-${primary.action}`, icon: ACTION_ICON[primary.action], label: primary.label, title: primary.hint, onClick: () => runAction(primary.action) });
+  }
   if (phone) moreItems.push({ id: "mi-message", icon: "message", label: "Message an agent", title: "Send a message as the human: highest priority", onClick: openMessage });
   moreItems.push({ id: "btn-approval", icon: "approve", label: "Approve or reject…", title: "Approve or reject something (release, design, quality…)", onClick: () => openDrawer(<ApprovalDrawer />) });
   for (const c of state.secondary) {
@@ -584,7 +632,6 @@ export function Shell({ viewNode }: { viewNode: React.ReactNode }): React.JSX.El
   if (goalId) {
     moreItems.push({ id: "btn-reset", icon: "trash", label: "Reset mission to zero…", title: "Wipe all mission data and restart the goal from zero", danger: true, separated: true, onClick: () => void missionActions.reset() });
   }
-  const primary = state.primary;
   const spentRatio = ratioOf(mission?.consumed ?? 0, mission?.limit ?? 0);
   const spentTone = budgetTone(spentRatio);
   // A mesh must declare a goal, so a status that has none is a project that answered before it finished reading its log:
@@ -606,14 +653,31 @@ export function Shell({ viewNode }: { viewNode: React.ReactNode }): React.JSX.El
           focus directly and leave the hash alone. #view is already
           tabIndex={-1} and already has a :focus-visible ring, so it can
           receive focus and says so when it does. */}
-      <button type="button" className="skip-link" onClick={() => document.getElementById("view")?.focus()}>
+      <button type="button" className="skip-link" inert={navModal || undefined} onClick={() => document.getElementById("view")?.focus()}>
         Skip to content
       </button>
       {/* Host-level, so it sits above the per-project chrome and survives every
           project switch. Rendered only under a ProjectsProvider: `curule serve`
           runs one mesh with no registry and has no tabs to show. */}
-      {hasProjects ? <ProjectTabs parked={parked} parkedId={mesh.projectId} /> : null}
-      <aside id="sidebar" className={menuOpen ? "open" : ""} inert={sidebarHidden} aria-hidden={sidebarHidden || undefined}>
+      {hasProjects ? <ProjectTabs parked={parked} parkedId={mesh.projectId} inert={navModal} /> : null}
+      {navModal ? <div id="nav-scrim" aria-hidden="true" onClick={closeMenu} /> : null}
+      <aside
+        id="sidebar"
+        className={menuOpen ? "open" : ""}
+        inert={sidebarHidden}
+        aria-hidden={sidebarHidden || undefined}
+        role={narrow ? "dialog" : undefined}
+        aria-modal={navModal || undefined}
+        aria-label={narrow ? "Navigation" : undefined}
+      >
+        {narrow ? (
+          <div className="side-head">
+            <span className="side-head-title">Menu</span>
+            <button type="button" className="close-x" aria-label="Close navigation" title="Close (Esc)" onClick={closeMenu}>
+              <Icon name="x" size={16} />
+            </button>
+          </div>
+        ) : null}
         <div className="brand">
           <Wordmark height={22} />
           <span id="mesh-id" className="sub" title={goal.id ? `Goal ${goal.id}` : undefined}>{goal.id ? goal.id.slice(0, 14) : ""}</span>
@@ -650,7 +714,7 @@ export function Shell({ viewNode }: { viewNode: React.ReactNode }): React.JSX.El
         </div>
       </aside>
 
-      <header id="topbar" className={hostLevel ? "bare" : undefined}>
+      <header id="topbar" className={hostLevel ? "bare" : undefined} inert={navModal || undefined}>
         <Button id="btn-menu" variant="ghost" aria-expanded={menuOpen} aria-label={menuOpen ? "Close navigation" : "Open navigation"} onClick={() => setMenuOpen(!menuOpen)}><Icon name="menu" size={18} /></Button>
         {hostLevel ? null : (
           <>
@@ -679,7 +743,7 @@ export function Shell({ viewNode }: { viewNode: React.ReactNode }): React.JSX.El
           </div>
           <div className="top-actions">
             {/* The Overview's hero carries this same action, so the bar does not repeat it there. */}
-            {primary && view !== "overview" && !barActionIsHere(primary.action, view, inboxView) ? (
+            {primary && view !== "overview" && !barActionIsHere(primary.action, view, inboxView) && !phone ? (
               <Button id={`btn-${primary.action}`} variant={primary.action === "pause" ? "soft" : "primary"} icon={ACTION_ICON[primary.action]} title={primary.hint} onClick={() => runAction(primary.action)}>
                 {primary.label}
               </Button>
@@ -687,7 +751,7 @@ export function Shell({ viewNode }: { viewNode: React.ReactNode }): React.JSX.El
             {/* Anything waiting on the operator stays one click away from every page, whatever the mission is doing. When the
                 primary action is already "review" it is that button, so this one stands down. */}
             {inbox > 0 && primary?.action !== "review" && view !== inboxView ? (
-              <Button id="btn-inbox" variant="soft" icon="inbox" title={`${inbox} waiting on you`} onClick={() => setView(inboxView)}>
+              <Button id="btn-inbox" variant="soft" icon="inbox" title={`${inbox} waiting on you`} aria-label={`Needs you: ${inbox} waiting on you`} onClick={() => setView(inboxView)}>
                 <span className="act-lbl">Needs you</span><b className="count">{inbox}</b>
               </Button>
             ) : null}
@@ -705,7 +769,7 @@ export function Shell({ viewNode }: { viewNode: React.ReactNode }): React.JSX.El
 
       {/* Focus mode is shell-owned state; the view tree reads it through this seam. */}
       <FocusCtx.Provider value={focusValue}>
-        <main id="view" tabIndex={-1}>
+        <main id="view" tabIndex={-1} inert={navModal || undefined}>
           {/* Every view renders its own <h2> title, so without this the document
               outline started at h2 and had no root. There is no brand element in
               the topbar to promote -- the bar is already at its width budget --
@@ -745,9 +809,9 @@ export function Shell({ viewNode }: { viewNode: React.ReactNode }): React.JSX.El
       )}
       <ChatDock open={chatOpen} onClose={() => setChatOpen(false)} />
       <AttentionEffects projectId={mesh.projectId} projectName={projectName} />
-      <div id="toasts" aria-live="polite">
+      <div id="toasts" aria-live="polite" inert={navModal || undefined}>
         {toasts.map((t) => (
-          <ToastCard key={t.id} kind={t.kind} title={t.title} msg={t.msg} count={t.count} action={t.action} />
+          <ToastCard key={t.id} kind={t.kind} title={t.title} msg={t.msg} count={t.count} action={t.action} onDismiss={() => dismissToast(t.id)} />
         ))}
       </div>
     </div>

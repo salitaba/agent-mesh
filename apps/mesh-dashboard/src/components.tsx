@@ -852,7 +852,7 @@ export function ConfirmDialog({ req, onResolve }: { req: ConfirmRequest; onResol
  * One notice, in the corner: a tone icon, a title, a line of detail, and the one action that answers it. It arrives in 180ms from
  * below and goes by itself (the store times it). `count` is how many times it fired while it was up. States: info, ok, warn, bad.
  */
-export function ToastCard({ kind, title, msg, count, action }: { kind?: "ok" | "warn" | "bad" | string; title: ReactNode; msg: ReactNode; count?: number; action?: { label: string; run: () => void } }): React.JSX.Element {
+export function ToastCard({ kind, title, msg, count, action, onDismiss }: { kind?: "ok" | "warn" | "bad" | string; title: ReactNode; msg: ReactNode; count?: number; action?: { label: string; run: () => void }; onDismiss?: () => void }): React.JSX.Element {
   return (
     <div className={`toast ${kind ?? ""}`}>
       <Icon className="toast-ico" name={kind === "ok" ? "check" : kind === "bad" || kind === "warn" ? "alert" : "info"} size={18} />
@@ -861,6 +861,11 @@ export function ToastCard({ kind, title, msg, count, action }: { kind?: "ok" | "
         <span className="toast-msg">{msg}</span>
         {action ? <button type="button" className="toast-act" onClick={action.run}>{action.label}</button> : null}
       </div>
+      {onDismiss ? (
+        <button type="button" className="toast-x" aria-label="Dismiss this notice" title="Dismiss" onClick={onDismiss}>
+          <Icon name="x" size={14} />
+        </button>
+      ) : null}
     </div>
   );
 }

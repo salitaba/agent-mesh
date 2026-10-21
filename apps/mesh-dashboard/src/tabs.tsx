@@ -14,7 +14,7 @@
 
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import "./projects.css";
-import { Banner, Button, Tooltip } from "./components";
+import { Banner, Button, Dialog, Tooltip } from "./components";
 import { Icon } from "./icons";
 import { useProjects, type ProjectSummary } from "./projects";
 import { useMesh } from "./store";
@@ -208,11 +208,13 @@ export function HostEmptyState(): React.JSX.Element {
   return <Welcome />;
 }
 
-export function ProjectTabs({ parked, parkedId }: { parked?: boolean; parkedId?: string | null }): React.JSX.Element | null {
+export function ProjectTabs({ parked, parkedId, inert }: { parked?: boolean; parkedId?: string | null; inert?: boolean }): React.JSX.Element | null {
   const { projects, activeId, setActive, openProject, closeProject, loaded, hostDown, notice, dismissNotice } = useProjects();
   const { view } = useMesh();
   const [order, setOrder] = useState<string[]>(readOrder);
   const [adding, setAdding] = useState(false);
+  // A phone cannot carry a sideways row of tabs: one row names the project in front and opens the full list as a sheet.
+  const [switcher, setSwitcher] = useState(false);
   const dragRef = useRef<string | null>(null);
   const scrollRef = useRef<HTMLUListElement | null>(null);
   const fadeRef = useRef<HTMLDivElement | null>(null);
@@ -315,11 +317,70 @@ export function ProjectTabs({ parked, parkedId }: { parked?: boolean; parkedId?:
   }, [activeId, closeProject, ordered, setActive]);
 
   const crashed = activeId ? ordered.find((p) => p.id === activeId && tabStatus(p).restartable) : undefined;
+  // The project in front, described by the same model as its tab and its card, so the phone's one row cannot disagree with them.
+  const front = ordered.find((p) => p.id === activeId) ?? null;
+  const frontParked = front ? (front.id === parkedId ? Boolean(parked) : front.lastMode === "parked") : false;
+  const frontCard = front ? cardState(front, { missionParked: frontParked }) : null;
+  const frontLook = frontCard ? tabLook(frontCard) : null;
+  const frontName = front ? names.get(front.id) ?? front.name : null;
 
   if (!loaded && !hostDown) return null;
 
   return (
-    <div id="ptabs-bar">
+    <div id="ptabs-bar" inert={inert || undefined}>
+      {/* On a phone the strip is one row: the project in front and the way to the others. It used to be a sideways scroller
+          (437px of tabs in a 233px window at 360), which hid every project but the first two and scrolled the chrome itself. */}
+      <button
+        type="button"
+        className="pj-switch"
+        aria-haspopup="dialog"
+        aria-expanded={switcher}
+        aria-label={frontName ? `Project in front: ${frontName}. Switch project` : "Choose a project"}
+        onClick={() => setSwitcher(true)}
+      >
+        <span className="pj-switch-ico" data-tone={frontLook?.tone}><Icon name={frontLook?.icon ?? "folder"} size={16} /></span>
+        <span className="pj-switch-text">
+          <b>{frontName ?? "No project"}</b>
+          <small>{frontLook?.word ?? "Choose"}</small>
+        </span>
+        <Icon name="chevron-right" size={16} />
+      </button>
+      {switcher ? (
+        <Dialog onClose={() => setSwitcher(false)} title="Projects" wide>
+          <div className="pj-sheet">
+            <p className="pj-sheet-note">Switch the project this console is showing. The one in front is checked.</p>
+            {ordered.length ? (
+              <div className="pj-sheet-list">
+                {ordered.map((p) => {
+                  const isParked = p.id === parkedId ? Boolean(parked) : p.lastMode === "parked";
+                  const card = cardState(p, { missionParked: isParked });
+                  const look = tabLook(card);
+                  return (
+                    <button
+                      key={p.id}
+                      type="button"
+                      className={`pj-opt${p.id === activeId ? " on" : ""}`}
+                      aria-current={p.id === activeId ? "true" : undefined}
+                      onClick={() => { setSwitcher(false); pick(p.id); }}
+                    >
+                      <span className="pj-opt-ico" data-tone={look.tone}><Icon name={look.icon} size={16} /></span>
+                      <span className="pj-opt-text">
+                        <b>{names.get(p.id) ?? p.name}</b>
+                        <small>{card.sentence}</small>
+                      </span>
+                      {p.id === activeId ? <Icon name="check" size={16} /> : null}
+                    </button>
+                  );
+                })}
+              </div>
+            ) : <p className="muted">No projects yet.</p>}
+            <div className="pj-sheet-foot">
+              <Button variant="soft" icon="folder" onClick={() => { setSwitcher(false); window.location.hash = hashFor(activeId, "projects"); }}>All projects</Button>
+              <Button variant="soft" icon="plus" onClick={() => { setSwitcher(false); setAdding(true); }}>New project</Button>
+            </div>
+          </div>
+        </Dialog>
+      ) : null}
       {/* A nav landmark: "a list of places you can go", the same semantic as the sidebar. Not a tablist: role="tablist"
           promises the APG tabs contract (bare Left/Right moves selection, one tab stop for the strip, an owned tabpanel),
           and none of that exists here. The only arrow handler needs Ctrl/Meta and REORDERS, each project has two tab stops,

@@ -47,6 +47,9 @@ i.sev-mark.routine { box-sizing: border-box; border: 1.5px solid var(--muted); }
 
 /* A dialog that holds a text area or a grid of choices (the Designer's import and templates) is wider than a question. */
 .confirm.wide { width: min(640px, 92vw); }
+/* On a phone a dialog is docked to the foot and spans it (styles.css "dialogs"), but the wide variant's desk width outranks the
+   phone's `auto`: measured at 360 the Projects sheet was 331px flush left, with a 29px slice of page beside it. */
+@media (max-width: 560px) { .confirm.wide { width: auto; } }
 
 /* An icon button that opens something has the ground a pressed one has while what it opened is open. */
 .icon-btn[aria-expanded="true"] { color: var(--k-accent-ink); background: var(--k-accent-soft); }

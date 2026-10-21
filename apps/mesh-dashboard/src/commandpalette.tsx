@@ -23,6 +23,7 @@ export function CommandPalette({ onClose, look, groups, autoFocus = true }: { on
   const [q, setQ] = useState("");
   const [sel, setSel] = useState(0);
   const inputRef = useRef<HTMLInputElement | null>(null);
+  const closeRef = useRef<HTMLButtonElement | null>(null);
   // Re-list when a scope registers/unregisters: a view can unmount while the
   // palette is open (browser Back), and its commands must vanish with it.
   // Re-render on every registry change; `list()` is a cheap pure read of the
@@ -56,7 +57,10 @@ export function CommandPalette({ onClose, look, groups, autoFocus = true }: { on
       e.preventDefault();
       setSel((s) => Math.max(s - 1, 0));
     } else if (e.key === "Tab") {
+      // The dialog has two stops, the field and its close button; Tab moves between them and never into the page behind the
+      // scrim. The field used to pin the focus, which left a visible close button no keyboard could reach.
       e.preventDefault();
+      closeRef.current?.focus();
     } else if (e.key === "Enter") {
       e.preventDefault();
       choose(matches[active]);
@@ -91,6 +95,10 @@ export function CommandPalette({ onClose, look, groups, autoFocus = true }: { on
           aria-activedescendant={activeId ? `palette-opt-${activeId}` : undefined}
           placeholder="Type a command or agent…" value={q}
           onChange={(e) => { setQ(e.target.value); setSel(0); }} onKeyDown={onKey} />
+        <button ref={closeRef} type="button" className="palette-x" aria-label="Close the command palette" title="Close (Esc)"
+          onClick={onClose} onKeyDown={(e) => { if (e.key === "Tab") { e.preventDefault(); inputRef.current?.focus(); } }}>
+          <Icon name="x" size={16} />
+        </button>
       </div>
       <ul id="palette-list" className="palette-list" role="listbox" aria-label="commands">
         {grouped

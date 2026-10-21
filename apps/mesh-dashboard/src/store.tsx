@@ -184,6 +184,8 @@ interface MeshState {
   goalId: string | null;
   toasts: Toast[];
   toast: (title: string, msg: string, kind?: string, action?: Toast["action"]) => void;
+  /** Take one notice down before its timer does. A notice can cover the thing it is about, and waiting is not a choice. */
+  dismissToast: (id: number) => void;
   /**
    * Ask before something irreversible. Resolves to the typed text on confirm
    * (`""` when the dialog asked for none) and `null` on cancel — awaited, so
@@ -332,6 +334,14 @@ export function MeshProvider({ children, projectId = null, background = false }:
   holdMeshRef.current = !meshReady;
   const subscribe = projectsCtx?.subscribe;
 
+  const dismissToast = useCallback((id: number) => {
+    clearTimeout(toastTimers.current.get(id));
+    toastTimers.current.delete(id);
+    const next = toastsRef.current.filter((x) => x.id !== id);
+    toastsRef.current = next;
+    setToasts(next);
+  }, []);
+
   const toast = useCallback((title: string, msg: string, kind = "", action?: Toast["action"], page?: View) => {
     // A ref mirrors the list so a repeat can be found and its timer re-armed
     // synchronously; a state updater runs too late to know which toast it hit.
@@ -339,15 +349,10 @@ export function MeshProvider({ children, projectId = null, background = false }:
       toastsRef.current = next;
       setToasts(next);
     };
-    const dismiss = (id: number): void => {
-      clearTimeout(toastTimers.current.get(id));
-      toastTimers.current.delete(id);
-      put(toastsRef.current.filter((x) => x.id !== id));
-    };
     const life = toastLife(kind, !!action);
     const arm = (id: number): void => {
       clearTimeout(toastTimers.current.get(id));
-      toastTimers.current.set(id, setTimeout(() => dismiss(id), life));
+      toastTimers.current.set(id, setTimeout(() => dismissToast(id), life));
     };
     // The same notice twice becomes one toast with a count: four identical
     // "budget exceeded" cards stacked over the step view said nothing the
@@ -359,10 +364,10 @@ export function MeshProvider({ children, projectId = null, background = false }:
       return;
     }
     const id = toastId++;
-    const wrapped = action ? { ...action, run: () => { dismiss(id); action.run(); } } : undefined;
+    const wrapped = action ? { ...action, run: () => { dismissToast(id); action.run(); } } : undefined;
     put([...toastsRef.current.slice(-3), { id, title, msg, kind, action: wrapped, page }]);
     arm(id);
-  }, []);
+  }, [dismissToast]);
 
   // A notice about what a page shows has done its job once the person is on that page, and there it only covers what it repeats.
   useEffect(() => {
@@ -788,10 +793,10 @@ export function MeshProvider({ children, projectId = null, background = false }:
       projectId, client,
       view, setView, status, statusError, events, lastSeq, serverDown, sseState, livePaused, setLivePaused,
       steps, stepsLoaded, stepFilter, setStepFilter, stepSearch, setStepSearch, vocab, goalId,
-      toasts, toast, confirm, drawer, drawerDepth, openDrawer, closeDrawer, refreshStatus, refreshSteps, setSteps, setStepLimit, stepLimit, primeEvents, evSearch, setEvSearch, evFilter, setEvFilter,
+      toasts, toast, dismissToast, confirm, drawer, drawerDepth, openDrawer, closeDrawer, refreshStatus, refreshSteps, setSteps, setStepLimit, stepLimit, primeEvents, evSearch, setEvSearch, evFilter, setEvFilter,
       detail, openDetail, closeDetail,
     }),
-    [projectId, client, view, setView, status, statusError, events, lastSeq, serverDown, sseState, livePaused, steps, stepsLoaded, setSteps, stepFilter, stepSearch, vocab, goalId, toasts, toast, confirm, drawer, drawerDepth, openDrawer, closeDrawer, refreshStatus, refreshSteps, setStepLimit, stepLimit, primeEvents, evSearch, evFilter, detail, openDetail, closeDetail],
+    [projectId, client, view, setView, status, statusError, events, lastSeq, serverDown, sseState, livePaused, steps, stepsLoaded, setSteps, stepFilter, stepSearch, vocab, goalId, toasts, toast, dismissToast, confirm, drawer, drawerDepth, openDrawer, closeDrawer, refreshStatus, refreshSteps, setStepLimit, stepLimit, primeEvents, evSearch, evFilter, detail, openDetail, closeDetail],
   );
   // Token deltas replace this object up to dozens of times a second; in its own
   // context only the live-stream consumers re-render per token.

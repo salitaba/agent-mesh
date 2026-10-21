@@ -255,7 +255,7 @@ html { -webkit-text-size-adjust: 100%; }
    implicit row and displaces the whole shell. --z-overlay (40) clears the
    sticky chrome and the narrow-width fixed sidebar while staying under the
    palette (55/56) and the confirm dialog (69/70). */
-.skip-link { position: fixed; top: 0; left: 0; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+.skip-link { position: fixed; top: 0; left: 0; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; font: 600 14px var(--sans); }
 .skip-link:focus {
   width: auto; height: auto; margin: 0; overflow: visible; clip: auto;
   top: var(--s2); left: var(--s2); z-index: var(--z-overlay);
@@ -334,12 +334,17 @@ kbd { display: inline-flex; align-items: center; justify-content: center; min-wi
    buttons on top of headings at every width the wrap block was meant to serve.
    `auto` lets the track follow the header; #topbar keeps its identity as a
    min-height, and #view starts wherever the header actually ends. */
-#app { display: grid; grid-template-columns: 232px 1fr; grid-template-rows: auto 1fr; grid-template-areas: "side top" "side main"; height: 100vh; }
+#app { display: grid; grid-template-columns: 232px 1fr; grid-template-rows: auto 1fr; grid-template-areas: "side top" "side main"; height: 100vh; height: 100dvh; }
 
 /* ---------- sidebar ---------- */
 /* A search field, then four groups under small-caps labels, each row an icon and a name. The ground is --bg-2 so the sidebar
    reads as the frame and the page as the thing inside it. */
-#sidebar { grid-area: side; display: flex; flex-direction: column; gap: var(--s1); background: var(--bg-2); border-right: 1px solid var(--line); padding: var(--s4) var(--s3) var(--s3); overflow-y: auto; }
+#sidebar { grid-area: side; display: flex; flex-direction: column; gap: var(--s1); background: var(--bg-2); border-right: 1px solid var(--line); padding: var(--s4) var(--s3) var(--s3); overflow-y: auto; overscroll-behavior: contain; }
+/* The off-canvas sidebar is a layer, so it has a scrim and a close control. It floats over the page at 288px; without these a
+   tap outside did nothing, nothing said the page behind was inert, and the only ways out were a nav item or Esc. */
+#nav-scrim { position: fixed; inset: 0; z-index: calc(var(--z-sidebar) - 1); background: var(--scrim); -webkit-backdrop-filter: blur(4px); backdrop-filter: blur(4px); animation: fade-in var(--k-dur-2) var(--k-ease); }
+.side-head { display: flex; align-items: center; gap: var(--s2); margin: 0 0 var(--s1); padding: 0 0 var(--s2); border-bottom: 1px solid var(--line); }
+.side-head-title { flex: 1; font: 600 12px/1 var(--sans); letter-spacing: var(--k-track-caps); text-transform: uppercase; color: var(--muted); }
 /* WS9 focus mode: the shell hides its own sidebar and reclaims the grid column
    (a display:none item still leaves its track, and its menu opener behind). */
 #app.focus-mode { grid-template-columns: 0 1fr; }
@@ -457,6 +462,26 @@ kbd { display: inline-flex; align-items: center; justify-content: center; min-wi
    down rather than lying over its top bar. */
 .ptabs-notice { margin: 0; border-radius: 0; border-width: 1px 0 0; }
 .ptabs-notice .banner-body { flex-basis: 320px; }
+/* The phone's substitute for the strip: one row naming the project in front and its state, opening the full list as a sheet
+   (the Dialog primitive, so focus, Escape and the sheet-at-the-foot shape are the ones every other dialog has). The row is
+   hidden above 620, where the strip has the room to show the projects side by side. */
+.pj-switch { display: none; }
+.pj-sheet { display: flex; flex-direction: column; gap: var(--s3); }
+.pj-sheet-note { margin: 0; font-size: 13px; line-height: 1.45; color: var(--muted); }
+.pj-sheet-list { display: flex; flex-direction: column; gap: var(--s1); max-height: 52vh; overflow: auto; overscroll-behavior: contain; }
+.pj-opt { display: flex; align-items: center; gap: var(--s2-5); width: 100%; min-height: 52px; padding: var(--s2) var(--s2-5); background: var(--panel-2); border: 1px solid var(--line); border-radius: var(--r); color: var(--text); text-align: left; font: 14px var(--sans); cursor: pointer; }
+.pj-opt:hover { background: var(--wash); }
+.pj-opt.on { border-color: var(--line-control); background: var(--k-accent-soft); }
+.pj-opt-ico { flex: none; display: inline-grid; place-items: center; width: 28px; height: 28px; border-radius: var(--r-sm); background: var(--sunken); border: 1px solid var(--line); color: var(--muted); }
+.pj-opt-ico[data-tone="ok"] { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 32%, var(--line)); }
+.pj-opt-ico[data-tone="warn"] { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 32%, var(--line)); }
+.pj-opt-ico[data-tone="bad"] { color: var(--bad); border-color: color-mix(in srgb, var(--bad) 32%, var(--line)); }
+.pj-opt-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.pj-opt-text b { font: 600 14px/1.3 var(--sans); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pj-opt-text small { font-size: 12px; line-height: 1.35; color: var(--muted); }
+.pj-opt > .icon { flex: none; color: var(--accent-2); }
+.pj-sheet-foot { display: flex; gap: var(--s2); flex-wrap: wrap; }
+.pj-sheet-foot button { flex: 1 1 140px; min-height: 44px; }
 /* The host's words behind a disclosure. The text is shown whole once opened: a box that scrolls inside a card is a second
    place to get lost in, and it would need a tab stop of its own. */
 .pj-why { font-size: 13px; }
@@ -505,6 +530,9 @@ kbd { display: inline-flex; align-items: center; justify-content: center; min-wi
 .bar-strip-stat .meter.warn::after { background: var(--warn); }
 .bar-strip-stat .meter.bad::after { background: var(--bad); }
 .top-actions { display: flex; align-items: center; gap: var(--s2); flex: none; margin-left: auto; }
+/* The count inside "Needs you": a figure in the button, not an unset <b>. With no rule it inherited the browser's bold at 14px
+   and the family's heaviest weight (measured 900), the only text in the console off the type ramp's weights. */
+.count { margin-left: var(--s1); font: 600 13px/1 var(--sans); letter-spacing: 0; }
 /* 801-1280: the topbar stays one row. The goal truncates first, the spend stat yields, and the secondary actions keep
    their accessible name through aria-label while showing only their icon. The upper bound is 1280, not 1200: the sidebar
    takes 232px off the top of every one of these widths. */
@@ -536,7 +564,15 @@ kbd { display: inline-flex; align-items: center; justify-content: center; min-wi
    this scroller, so without clearance the last card in every view stays pinned
    under it and can never be scrolled free. (The Designer overrides this to 0 —
    its sticky save bar resolves against the scrollport padding box.) */
-#view { grid-area: main; overflow: auto; padding: var(--s5) var(--s6) var(--dock-clear); scroll-behavior: smooth; }
+#view { grid-area: main; overflow: auto; padding: var(--s5) var(--s6) calc(var(--dock-clear) + env(safe-area-inset-bottom)); scroll-behavior: smooth; overscroll-behavior: contain; }
+/* A layer over the page owns the page: the view behind a drawer, the palette or a dialog does not scroll under it. The phone's
+   off-canvas navigation is a layer too. */
+#app:has(#drawer) #view, #app:has(#palette-scrim) #view, #app:has(.confirm-scrim) #view { overflow: hidden; }
+body:has(#drawer), body:has(#palette-scrim), body:has(.confirm-scrim) { overflow: hidden; }
+@media (max-width: 800px) {
+  #app:has(#sidebar.open) #view { overflow: hidden; }
+  body:has(#sidebar.open) { overflow: hidden; }
+}
 #view:focus { outline: none; }
 #view:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 /* A route change is a 120ms fade of the page that arrives, nothing that moves: the person's target stays where it was. */
@@ -1071,7 +1107,7 @@ ul.errs { margin: var(--s1-5) 0; padding-left: 18px; font-size: 14px; color: var
 .drawer {
   position: fixed; top: 0; right: 0; width: min(560px, 92vw); height: 100vh; z-index: var(--z-overlay);
   background: var(--drawer); border-left: 1px solid var(--line-strong); box-shadow: var(--k-hl), var(--k-shadow-4);
-  overflow: auto; padding: var(--s5) 22px 40px; animation: drawer-in var(--k-dur-3) var(--k-ease);
+  overflow: auto; overscroll-behavior: contain; padding: var(--s5) 22px calc(40px + env(safe-area-inset-bottom)); animation: drawer-in var(--k-dur-3) var(--k-ease);
 }
 @keyframes drawer-in { from { opacity: 0; transform: translateX(24px); } }
 .drawer.hidden { display: block; transform: translateX(105%); pointer-events: none; }
@@ -1086,14 +1122,18 @@ ul.errs { margin: var(--s1-5) 0; padding-left: 18px; font-size: 14px; color: var
 .close-x { margin-left: auto; flex: none; display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; padding: 0; background: none; border: 0; border-radius: var(--r); color: var(--muted); cursor: pointer; transition: background-color var(--k-dur-1) var(--k-ease), color var(--k-dur-1) var(--k-ease); }
 .close-x:hover { color: var(--text); background: var(--wash); }
 .close-x:active { background: var(--wash-2); }
-/* The help panel floats its close control instead of sitting it in a heading row. */
-.close-x.close-x-float { position: absolute; top: var(--s4); right: 18px; margin-left: 0; }
+/* A phone gets the whole screen for a panel: 92vw left a 29px sliver of a page that could not be read anyway, and the header
+   keeps the close control at the top under the notch. */
+@media (max-width: 620px) {
+  .drawer { width: 100vw; max-width: 100vw; height: 100dvh; border-left: 0; padding: calc(var(--s5) + env(safe-area-inset-top)) var(--s4) calc(32px + env(safe-area-inset-bottom)); }
+  .drawer-head { top: calc(-1 * (var(--s5) + env(safe-area-inset-top))); margin: calc(-1 * (var(--s5) + env(safe-area-inset-top))) calc(-1 * var(--s4)) var(--s4); padding: var(--s3) var(--s4); padding-top: calc(var(--s3) + env(safe-area-inset-top)); }
+}
 
 /* ============ toasts ============
    A notice that is not about where the person is: rung 3, a tone icon, a title and a line of detail, in 180ms from below. Toasts used
    to sit at the FAB's exact coordinates with a higher z-index, so every "mission paused" / "wake failed" notice landed squarely on
    top of the assistant button and its unread dot. They stack above the corner they own instead. */
-#toasts { position: fixed; right: 18px; bottom: var(--dock-clear); display: flex; flex-direction: column; gap: var(--s2); z-index: var(--z-toasts); max-width: 420px; }
+#toasts { position: fixed; right: 18px; bottom: calc(var(--dock-clear) + env(safe-area-inset-bottom)); display: flex; flex-direction: column; gap: var(--s2); z-index: var(--z-toasts); max-width: 420px; }
 .toast { --tone: var(--accent-2); display: flex; align-items: flex-start; gap: var(--s2-5); background: var(--panel); border: 1px solid var(--line); border-radius: var(--r); padding: var(--s3) var(--s3-5); box-shadow: var(--k-hl), var(--k-shadow-3); font-size: 14px; animation: rise-in var(--k-dur-2) var(--k-ease); }
 .toast.ok { --tone: var(--ok); }
 .toast.bad { --tone: var(--bad); }
@@ -1105,6 +1145,10 @@ ul.errs { margin: var(--s1-5) 0; padding-left: 18px; font-size: 14px; color: var
 /* Repeat count on a toast that fired again while still up: one card saying
    "×3" instead of three identical cards stacked over the page. */
 .toast-n { margin-left: var(--s1-5); font: 600 12px var(--sans); letter-spacing: 0; color: var(--muted); }
+/* A notice can be taken down without waiting out its timer: on a phone it sits under the bar, over the page, and a bad one
+   stays 7.6s. */
+.toast-x { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; margin: calc(var(--s1) * -1) calc(var(--s1) * -1) 0 var(--s0); padding: 0; background: none; border: 0; border-radius: var(--r-sm); color: var(--muted); cursor: pointer; }
+.toast-x:hover { color: var(--text); background: var(--wash); }
 /* With a drawer open the right-hand corner is the step view's side column —
    the inspector and the permission strip — and toasts sat on top of it. The
    left corner is under the scrim, where nothing is being read. Phones keep the
@@ -1144,13 +1188,18 @@ ul.errs { margin: var(--s1-5) 0; padding-left: 18px; font-size: 14px; color: var
    colour, and the keys that drive it in the foot. */
 #palette-scrim { position: fixed; inset: 0; background: var(--scrim); -webkit-backdrop-filter: blur(4px); backdrop-filter: blur(4px); z-index: var(--z-palette-scrim); animation: fade-in var(--k-dur-2) var(--k-ease); }
 .palette { position: fixed; top: 12vh; left: 50%; transform: translateX(-50%); z-index: var(--z-palette);
-  width: min(620px, 92vw); max-height: 72vh; display: flex; flex-direction: column;
+  width: min(620px, 92vw); max-height: 72vh; max-height: 72dvh; display: flex; flex-direction: column;
   background: var(--panel); border: 1px solid var(--line); border-radius: var(--r-xl); box-shadow: var(--k-hl), var(--k-shadow-4); overflow: hidden; animation: dialog-in var(--k-dur-2) var(--k-ease); }
 .palette-search { flex: none; display: flex; align-items: center; gap: var(--s2-5); padding: 0 var(--s4); color: var(--muted); border-bottom: 1px solid var(--line); transition: border-color var(--k-dur-1), box-shadow var(--k-dur-1); }
 .palette-search:focus-within { color: var(--text-dim); border-bottom-color: var(--k-accent); box-shadow: 0 1px 0 var(--k-accent); }
 .palette-input { flex: 1; min-width: 0; height: 54px; border: 0; background: transparent; color: var(--text); font: 16px var(--sans); outline: none; }
 .palette-input::placeholder { color: var(--muted); }
-.palette-list { list-style: none; margin: 0; padding: var(--s2); overflow: auto; }
+/* The palette is a modal dialog; without a close control the only ways out were Esc and a tap on the scrim. At 360 the sheet
+   is 344px wide, which leaves 8px of scrim on each side — not a target a thumb can be asked to find. */
+.palette-x { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; margin-right: calc(var(--s2) - var(--s4)); padding: 0; background: none; border: 0; border-radius: var(--r); color: var(--muted); cursor: pointer; transition: background-color var(--k-dur-1) var(--k-ease), color var(--k-dur-1) var(--k-ease); }
+.palette-x:hover { color: var(--text); background: var(--wash); }
+.palette-x:active { background: var(--wash-2); }
+.palette-list { list-style: none; margin: 0; padding: var(--s2); overflow: auto; overscroll-behavior: contain; }
 .palette-group { padding: var(--s2-5) var(--s2-5) var(--s1); font: 600 11px/1.3 var(--sans); letter-spacing: var(--k-track-caps); text-transform: uppercase; color: var(--muted); }
 .palette-item { display: flex; align-items: center; gap: var(--s2-5); min-height: 40px; padding: 0 var(--s2-5); border-radius: var(--r);
   cursor: pointer; font-size: 14px; color: var(--text-dim); }
@@ -1165,7 +1214,13 @@ ul.errs { margin: var(--s1-5) 0; padding-left: 18px; font-size: 14px; color: var
 .palette-foot { flex: none; display: flex; align-items: center; gap: var(--s2-5); padding: var(--s2) var(--s4); background: var(--panel-2);
   border-top: 1px solid var(--line); color: var(--muted); font-size: 12px; }
 .palette-foot span { display: inline-flex; align-items: center; gap: var(--s1); }
-@media (max-width: 560px) { .palette { top: 6vh; } .palette-foot { display: none; } }
+@media (max-width: 560px) { .palette { top: max(6vh, env(safe-area-inset-top)); width: calc(100vw - 16px); max-height: 80dvh; } .palette-foot { display: none; } }
+/* A thumb's rows: 40px is a pointer's target, not a phone's. The close control is the same 44 square as the drawer's. */
+@media (pointer: coarse), (max-width: 760px) {
+  .palette-item { min-height: 44px; }
+  .palette-x { width: 44px; height: 44px; }
+  .palette-group, .palette-scope { font-size: 12px; }
+}
 
 
 /* ============ forced colours ============
@@ -1236,11 +1291,11 @@ ul.errs { margin: var(--s1-5) 0; padding-left: 18px; font-size: 14px; color: var
   #btn-menu { display: inline-flex; align-items: center; }
   #topbar { gap: var(--s2); padding: var(--s2) var(--s3); }
   #topbar.bare { min-height: 52px; padding: var(--s2) var(--s3); }
-  /* The menu opener, the status chip and the actions own row one; the goal wraps to row two as a unit. The 220px basis is
-     what buys that split: wide enough that the goal cannot fit beside them on a phone, small enough that a tablet still
-     resolves to a single row. */
-  #goal-strip { flex: 1 1 220px; min-width: 0; }
-  .bar-strip { gap: var(--s2-5); flex: 0 1 auto; }
+  /* Below 800 the goal and the telemetry leave the bar: with them the 768px bar was two rows and 116px, and the only way to
+     keep the actions on row one was to wrap the goal onto its own. Overview opens with the goal and the same figures, and the
+     chip keeps the mission's state on every page. The menu opener, the chip and the actions are the row. */
+  #goal-strip { display: none; }
+  .bar-strip { display: none; }
   .top-actions { flex-wrap: wrap; margin-left: auto; }
   .top-actions .soft, .top-actions .primary, .menu-btn, #btn-menu { min-height: 44px; min-width: 44px; }
   /* The rows of the "..." menu hold Reopen, Notify me and Reset: on a phone they are as tall as the buttons that open the menu. */
@@ -1265,13 +1320,30 @@ ul.errs { margin: var(--s1-5) 0; padding-left: 18px; font-size: 14px; color: var
    carries the same numbers one tap away. Nothing is lost: what leaves the bar is the overflow menu's contents. */
 @media (max-width: 620px) {
   #topbar { gap: var(--s1-5) var(--s2); padding: var(--s2) var(--s2-5); }
-  #btn-menu { order: 1; }
-  .mission-chip { order: 1; }
+  #btn-menu { order: 1; padding: 0; }
+  .mission-chip { order: 1; height: 24px; padding: 0 var(--s2); font-size: 12px; }
   .bar-strip { display: none; }
   .top-actions { order: 1; margin-left: auto; flex-wrap: nowrap; }
-  /* Full basis plus a later order: the goal wraps to its own row as a unit
-     rather than being squeezed between the controls. */
-  #goal-strip { order: 2; flex: 1 1 100%; }
+  /* The inbox button keeps its icon and its number; the two words are its accessible name. Measured at 360 with them the
+     row was 399px wide and wrapped, which is what made the header 111px tall. */
+  .top-actions .act-lbl { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+  /* The bar is one row. The goal used to take a second row here (a 220px basis forced the actions to wrap too): measured at
+     360 the header was three rows and 154px, before the 57px project strip. The goal is the first thing Overview says, and
+     the chip carries the state on every page; the mission's primary action is the first row of ⋯. */
+  #goal-strip { display: none; }
+  /* The strip becomes one row instead of a sideways scroller: 437px of tabs in a 233px window at 360 hid every project but
+     the first two and scrolled the chrome itself. */
+  .ptabs-nav { display: none; }
+  .pj-switch { display: flex; align-items: center; gap: var(--s2-5); width: 100%; min-height: 52px; padding: var(--s1) var(--s3); background: none; border: 0; color: var(--text); text-align: left; cursor: pointer; }
+  .pj-switch:active { background: var(--wash); }
+  .pj-switch-ico { flex: none; display: inline-grid; place-items: center; width: 28px; height: 28px; border-radius: var(--r-sm); background: var(--sunken); border: 1px solid var(--line); color: var(--muted); }
+  .pj-switch-ico[data-tone="ok"] { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 32%, var(--line)); }
+  .pj-switch-ico[data-tone="warn"] { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 32%, var(--line)); }
+  .pj-switch-ico[data-tone="bad"] { color: var(--bad); border-color: color-mix(in srgb, var(--bad) 32%, var(--line)); }
+  .pj-switch-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+  .pj-switch-text b { font: 600 14px/1.25 var(--sans); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .pj-switch-text small { font: 12px/1.25 var(--sans); color: var(--muted); }
+  .pj-switch > .icon { flex: none; color: var(--muted); transform: rotate(90deg); }
   .pj-home .pj-home-label { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
   .pj-home { padding: 0 var(--s2-5); }
 }
@@ -1335,11 +1407,14 @@ ul.errs { margin: var(--s1-5) 0; padding-left: 18px; font-size: 14px; color: var
       .seg button, .agent-open, .chip-toggle, .fchip, button.chip, .row-actions button,
       .evd-tr, .evd-title .icon-btn, .evc-row, .evc-foldbar, .ptree-row, .chg-row, .crumb-btn,
       .menu-item, .tab-btn, .toast-act, .st-now, .st-tl-cap, .sv-jump-b, .gr-key, .gr-plain, .gr-link,
-      .icon-btn, button.linklike, summary,
+      .icon-btn, button.linklike, summary, .close-x, .palette-x, .palette-item, .pj-opt, .toast-x,
       input.search, input.txt, select.sel, textarea.txt) {
     min-height: 44px;
   }
-  :is(.pj-home, .ptab-x, .ptab-add, .agent-open, .gr-open, .icon-btn) { min-width: 44px; }
+  :is(.pj-home, .ptab-x, .ptab-add, .agent-open, .gr-open, .icon-btn, .close-x, .palette-x, .toast-x) { min-width: 44px; }
+  /* A tab's close control used to appear only under a pointer resting on the tab. A touch screen has no resting pointer, so a
+     background project could not be closed without first selecting it. */
+  .ptab-x { opacity: 1; }
   /* A link or a name that was `inline` or `block` ignores a height until it is a flex box. */
   button.linklike, .agent-open { display: inline-flex; align-items: center; }
   .agent-open { display: flex; }
@@ -1349,4 +1424,7 @@ ul.errs { margin: var(--s1-5) 0; padding-left: 18px; font-size: 14px; color: var
      12 is the ramp's next step, still a caption, and no longer the smallest type in the console. (Projects' own dt caption is
      lifted in projects.css, where its rule is.) */
   :is(.stat-k, .kpi small, .caps) { font-size: 12px; }
+  /* The two capital captions that were missed: the sidebar's group names and the palette's. Both are words on a phone, not
+     glyph marks, so they take the same 12px floor as the Stat labels. */
+  :is(.nav-label, .palette-group, .palette-scope) { font-size: 12px; }
 }
