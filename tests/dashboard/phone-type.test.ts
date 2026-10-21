@@ -34,6 +34,12 @@ test("Stat and other capital captions are 12 px on a phone, not 11", () => {
   assert.match(phoneBlocks(styles), /:is\(\.stat-k, \.kpi small, \.caps\) \{ font-size: 12px; \}/, "the shared caption step is 12");
 });
 
+test("the sidebar's and the palette's capital captions are 12 px on a phone", () => {
+  // The shared caption rule above missed these two: the sidebar's group names and the palette's group and scope labels stayed
+  // 11 px. They are words a phone reads, not the glyph marks the avatar initials are.
+  assert.match(phoneBlocks(styles), /:is\(\.nav-label, \.palette-group, \.palette-scope\) \{ font-size: 12px; \}/, "the frame's captions take the same step");
+});
+
 test("a project card's dt captions are 12 px on a phone", () => {
   assert.match(phoneBlocks(projects), /\.pj-facts dt \{ font-size: 12px; \}/, "the project caption step is 12");
 });
