@@ -274,7 +274,7 @@ const PANEL: Record<string, { at: string; steps: string[] }> = {
   verify: { at: "The link", steps: ["The link", "Once only", "Before it expires"] },
 };
 
-test("the sign-in pages are one shell: the form first, and beside it the way through this page's job, with the step in hand marked", () => {
+test("the sign-in pages are one shell: the form first, and under it the way through this page's job, with the step in hand marked", () => {
   for (const [name, rail] of Object.entries(PANEL)) {
     const { all } = pages().find((p) => p.name === name)!;
     const shell = all.find((n) => n.className === "wrap auth")!;
@@ -296,6 +296,15 @@ test("the sign-in pages are one shell: the form first, and beside it the way thr
   assert.match(textOf("index.html"), /same append-only event log a self-hosted install writes, so a mission can be replayed/);
   assert.match(textOf("terms.html"), /Deleting a workspace deletes its data\./);
   assert.match(read(SCRIPT), /Its files are kept\./, "what the account says of a paused workspace");
+});
+
+test("the way through a sign-in page's job is on the page at every width, not only on a wide screen", () => {
+  const css = read(path.join(ASSETS, "app.css"));
+  const rail = [...css.matchAll(/\.auth-side\b[^{]*\{([^}]*)\}/g)].map((m) => m[1]!);
+  assert.ok(rail.length > 0 && rail.every((rule) => !/display:\s*none/.test(rule)), "no rule takes the rail off the page");
+  const base = css.slice(css.indexOf(".auth-side { margin-top"), css.indexOf("\n.card {", css.indexOf(".auth-side { margin-top")));
+  assert.ok(base.includes(".auth-points li[aria-current=\"step\"]"), "its steps are styled where the rail is, unconditionally");
+  assert.ok(!base.includes("@media"), "and not only inside a width that a phone never reaches");
 });
 
 test("the words are the product's: a stranger is never given the internal name for a running team, the password advice is grammar, and the page for a forgotten password is named after the link that brings people there", () => {
@@ -333,6 +342,21 @@ test("a document has a table of contents that names its headings and goes to the
       `${name}: the phone's list is the same list, so the two cannot drift`,
     );
     assert.equal(all.filter((n) => n.tag === "article").length, 1, `${name}: the text is one article`);
+  }
+});
+
+test("a document ends on the way back to the product, marked for whoever is reading it", () => {
+  for (const name of ["terms", "privacy"]) {
+    const { all } = pages().find((p) => p.name === name)!;
+    const article = all.find((n) => n.tag === "article")!;
+    const end = article.children.filter((n) => !n.isText).at(-1)!;
+    assert.equal(end.className, "doc-end", `${name}: after the last clause comes a way out, inside the text`);
+    assert.equal(attr(end, "aria-label"), "After this document");
+    assert.deepEqual(
+      end.querySelectorAll("a").map((a) => [a.textContent, attr(a, "href"), attr(a, "data-when")]),
+      [["Create an account", "/signup", "out"], ["Sign in", "/login", "out"], ["Go to your account", "/account", "in"], ["See the plans", "/", ""]],
+      `${name}: the same doors the header offers for each state, and the plans`,
+    );
   }
 });
 

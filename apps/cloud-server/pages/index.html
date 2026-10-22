@@ -39,7 +39,7 @@
         <a class="btn" href="/login" data-when="out">Sign in</a>
         <a class="btn btn-primary" href="/account" data-when="in" hidden>Go to your account</a>
       </div>
-      <p class="price-line"><span id="from-price"></span></p>
+      <p class="price-line"><span data-from-price></span></p>
     </div>
     <figure class="record" aria-label="An example of the record a workspace keeps">
       <p class="record-h">A workspace's record</p>
@@ -92,6 +92,17 @@
       <li><strong>If a payment fails</strong><span>Your workspaces keep running for <span data-policy="graceDays">3 days</span> and are then stopped, not deleted. A payment that arrives before then puts everything back.</span></li>
       <li><strong>If you cancel</strong><span>Your workspaces stop, and they are deleted <span data-policy="retentionDays">30 days</span> later.</span></li>
     </ul>
+  </section>
+
+  <section class="section" id="start" aria-labelledby="start-h">
+    <div class="section-head"><span class="entry-no" aria-hidden="true">05</span><h2 id="start-h">Start</h2></div>
+    <p class="section-note">An email and a password, then a plan. Nothing is charged until you have chosen the plan and paid for it.</p>
+    <div class="btn-row">
+      <a class="btn btn-primary" href="/signup" data-when="out">Create an account</a>
+      <a class="btn" href="/login" data-when="out">Sign in</a>
+      <a class="btn btn-primary" href="/account" data-when="in" hidden>Go to your account</a>
+    </div>
+    <p class="price-line"><span data-from-price></span></p>
   </section>
 </div>
 </main>

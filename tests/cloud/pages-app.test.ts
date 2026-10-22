@@ -138,6 +138,13 @@ test("the header and the front page: a visitor is offered the way in, a customer
   assert.equal(v.text("topups"), "Add credit at any time, from $5.00 to $1,000.00 at once. Each $1.00 adds $1.00 of usage, and credit does not expire.");
   const policy = v.doc.querySelectorAll("[data-policy]").map((n) => `${n.dataset.policy}=${n.textContent}`);
   assert.deepEqual(policy, ["graceDays=3 days", "retentionDays=30 days"], "the periods on the page are the service's settings");
+
+  // The page ends where the decision is: a person who read to the foot of a 3,700 px phone page is not left without an action.
+  const start = v.$("start");
+  assert.equal(v.text(start.querySelector(".section-note")!), "An email and a password, then a plan. Nothing is charged until you have chosen the plan and paid for it.");
+  assert.equal(v.link(start, "Create an account").getAttribute("href"), "/signup");
+  assert.equal(v.link(start, "Sign in").getAttribute("href"), "/login");
+  assert.deepEqual(v.doc.querySelectorAll("[data-from-price]").map((n) => n.textContent), ["From $149.00 a month", "From $149.00 a month"], "the price is said at the top and again at the foot");
 });
 
 test("a front page for someone who is signed in marks their plan and points the others at their account", async () => {
@@ -156,6 +163,7 @@ test("a front page for someone who is signed in marks their plan and points the 
   const none = await visit("home", { routes: world().routes });
   const open = none.$("plans").querySelectorAll("article");
   assert.deepEqual(open.map((c) => none.link(c, `Choose ${c.querySelector("h3")!.textContent}`).className), ["btn btn-primary", "btn btn-primary"], "and one who has none is taken to choose, which is");
+  assert.equal(v.text(v.$("start").querySelector(".btn-row")!), "Go to your account", "and the page's last entry is their account too");
 });
 
 test("the policy numbers a page states are changed with the service's settings, with the unit in the singular when it is one", async () => {
@@ -185,9 +193,10 @@ test("a front page that cannot get the plans says so, claims nothing about model
   });
   const v = await visit("home", { routes: w.routes });
   assert.equal(v.text(v.$("plans").querySelector("p")!), "The plans could not be loaded just now, so no price is shown.");
-  assert.equal(v.text("from-price"), "", "no price is claimed when none was read");
+  assert.equal(v.text(v.doc.querySelector("main .price-line")!), "", "no price is claimed when none was read");
   // Before this, the hero said "Plans and prices below" in the same view as "no price is shown": the page contradicted itself.
   assert.doesNotMatch(v.text("main"), /Plans and prices below/, "and it does not promise prices below while saying below that there are none");
+  assert.deepEqual(v.doc.querySelectorAll("[data-from-price]").map((n) => n.textContent), ["", ""], "the foot of the page claims no price either");
   for (const claim of [/bring your own model key/i, /Your own model key/, /Hosting, not tokens/, /does not resell/i, /not part of the payment/i, /model usage each month/i, /included usage/i]) assert.doesNotMatch(v.text("main"), claim, `a page that could not read the plans must not say ${claim}`);
   assert.match(v.text("main"), /Model usage, stated/, "it says only what is true of either arrangement: the plan states which it is");
   const retry = v.$("plans").querySelector("button")!;
@@ -198,7 +207,7 @@ test("a front page that cannot get the plans says so, claims nothing about model
   v.click(retry);
   await v.idle();
   assert.equal(v.$("plans").querySelectorAll("article").length, 2);
-  assert.equal(v.text("from-price"), "From $149.00 a month");
+  assert.deepEqual(v.doc.querySelectorAll("[data-from-price]").map((n) => n.textContent), ["From $149.00 a month", "From $149.00 a month"], "and both lines take the price once it is read");
   assert.match(v.text("main"), /\$20\.00 of model usage each month/);
 
   assert.deepEqual(v.consoleErrors, []);

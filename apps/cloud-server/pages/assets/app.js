@@ -23,7 +23,7 @@
   const CONTACT = "mailto:ali79taba@gmail.com";
 
   const NEEDS = {
-    home: ["plans", "topups", "from-price"],
+    home: ["plans", "topups"],
     signup: ["card", "form", "status", "title", "lede", "email", "password", "agree"],
     login: ["form", "status", "email", "password", "resend-form", "resend", "resend-wait", "resend-status"],
     verify: ["status", "title", "again", "resend-form", "resend", "resend-wait", "resend-status", "email"],
@@ -713,7 +713,7 @@
       // Nothing about model usage is known here, so the page falls back to the neutral sentence rather than to one arrangement.
       paintModel("neutral");
       $("topups").textContent = "";
-      $("from-price").textContent = "";
+      for (const node of doc.querySelectorAll("[data-from-price]")) node.textContent = "";
       box.replaceChildren(
         el("div", { class: "note note-warn" },
           el("p", null, r.ok ? "No plan is on offer just now, so no price is shown." : "The plans could not be loaded just now, so no price is shown."),
@@ -724,7 +724,8 @@
     }
     const { currency, topups } = r.data;
     paintModel(topups === null ? "byok" : "sold");
-    $("from-price").textContent = fromLine(r.data.plans, currency);
+    // Said at the top and again at the foot of the page, where the decision is: both are the same reading of the same plans.
+    for (const node of doc.querySelectorAll("[data-from-price]")) node.textContent = fromLine(r.data.plans, currency);
     const subscription = me ? me.subscription : null;
     // One action to a card, and it says which plan it is for: a row of buttons that all say "Get started" is a row of the same button. A customer with no plan is
     // taken to choose one; one who has a plan is shown the others as a way to change, which is not the main thing.

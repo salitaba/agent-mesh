@@ -1,5 +1,5 @@
-/* The account pages' one stylesheet. The generated block is the UI kit's tokens, shared with the site and the console; the visitor's colour scheme is the only switch.
-   Nothing is loaded from elsewhere or written inline: the policy allows this file, its script and images as data:, which is how icons are drawn. */
+/* One stylesheet for the public pages. The generated block is the kit's tokens; the visitor's colour scheme is the only switch.
+   Nothing is loaded from elsewhere or written inline: the policy allows this file, its script, and images as data:, which is how icons are drawn. */
 /* Icons: nine, 20 units, masks that take the colour of their text. --n picks one (0 check 1 alert 2 refused 3 info 4 eye 5 eye off 6 bars 7 chevron 8 mail), --s sizes it. */
 :root {
   color-scheme: light dark;
@@ -131,7 +131,6 @@ a:hover { text-decoration-thickness: 2px; }
 }
 .skip:focus { top: 12px; }
 main { flex: 1; padding-bottom: 64px; }
-main:has(.auth) { padding-bottom: 0; }
 main:focus { outline: none; }
 h1, h2, h3 { margin: 0; font-weight: 650; text-wrap: balance; }
 h1 { font-size: clamp(1.875rem, 1.3rem + 2.4vw, 3rem); line-height: 1.08; letter-spacing: var(--k-track-display); }
@@ -215,7 +214,6 @@ td, th, dd, .price, .num, .badge, .auth-points li::before { font-variant-numeric
 .bar nav a[aria-current="page"] { background: var(--k-accent-soft); color: var(--k-accent-ink); font-weight: 600; }
 .site-footer { border-top: 1px solid var(--k-line); color: var(--k-muted); font-size: .875rem; }
 .site-footer .wrap { display: flex; flex-wrap: wrap; align-items: center; gap: 0 8px; padding: 10px 0; }
-.site-footer span { margin-right: 8px; }
 .site-footer a {
   display: inline-flex;
   align-items: center;
@@ -439,63 +437,37 @@ meter::-moz-meter-bar { border-radius: var(--k-r-pill); background: currentColor
 .tile-mail::before { --n: 8; }
 .tile-bars::before { --n: 6; }
 
-/* ---- sign-in family: a form, and beside it what a workspace is */
-.auth { display: grid; gap: 32px; padding-block: clamp(28px, 6vh, 64px); }
-.auth-main { width: 100%; max-width: 28rem; margin-inline: auto; }
+/* ---- sign-in family: a form, and under it the way through this page's job */
+.auth { padding-block: clamp(28px, 6vh, 64px); }
+.auth-main, .auth-side { width: 100%; max-width: 28rem; margin-inline: auto; }
 .auth-main h1 { margin-bottom: 8px; }
 .auth-main .lede { margin-bottom: 28px; color: var(--k-muted); }
 .auth-main .btn-row { flex-direction: column; gap: 8px; }
 .auth-main .btn-row .btn, .auth-main form > .btn { width: 100%; min-height: 44px; }
 .auth-main .card { margin-top: 20px; }
-.auth-next { margin: 8px 0 0; color: var(--k-muted); font-size: .9375rem; }
-.auth-side { display: none; }
-@media (min-width: 900px) {
-  .auth { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 56px; min-height: calc(100svh - var(--hdr) - 66px); padding-block: 40px; }
-  .auth-main { align-self: start; margin-inline: 0; padding-top: clamp(0px, 3vh, 32px); }
-  .auth-next { display: none; }
-  .auth-side {
-    position: relative;
-    isolation: isolate;
-    display: flex;
-    flex-direction: column;
-    justify-content: flex-end;
-    overflow: hidden;
-    padding: 40px;
-    border: 1px solid var(--k-line);
-    border-radius: var(--k-r-xl);
-    background: var(--k-sunken) var(--k-glow);
-  }
-  .auth-side::before {
-    content: "";
-    position: absolute;
-    inset: 0;
-    z-index: -1;
-    background: var(--k-rule);
-    mask-image: linear-gradient(to bottom, black, transparent 52%);
-  }
-  .auth-points { counter-reset: point; display: grid; list-style: none; }
-  .auth-points li {
-    counter-increment: point;
-    display: grid;
-    grid-template-columns: 2.25rem minmax(0, 1fr);
-    column-gap: 8px;
-    padding: 18px 0;
-    border-top: 1px solid var(--k-line-strong);
-  }
-  .auth-points li::before {
-    content: counter(point, decimal-leading-zero) / "";
-    grid-row: span 2;
-    padding-top: .25rem;
-    color: var(--k-muted);
-    font-size: .75rem;
-    font-weight: 650;
-    letter-spacing: var(--k-track-caps);
-  }
-  .auth-points strong { color: var(--k-ink); letter-spacing: var(--k-track-tight); }
-  .auth-points span { color: var(--k-muted); font-size: .9375rem; }
-  .auth-points li[aria-current="step"] { border-top-color: var(--k-accent); }
-  .auth-points li[aria-current="step"] strong, .auth-points li[aria-current="step"]::before { color: var(--k-accent-ink); }
+.auth-side { margin-top: 44px; }
+.auth-points { counter-reset: point; display: grid; list-style: none; }
+.auth-points li {
+  counter-increment: point;
+  display: grid;
+  grid-template-columns: 2.25rem minmax(0, 1fr);
+  column-gap: 8px;
+  padding: 14px 0;
+  border-top: 1px solid var(--k-line-strong);
 }
+.auth-points li::before {
+  content: counter(point, decimal-leading-zero) / "";
+  grid-row: span 2;
+  padding-top: .25rem;
+  color: var(--k-muted);
+  font-size: .75rem;
+  font-weight: 650;
+  letter-spacing: var(--k-track-caps);
+}
+.auth-points strong { color: var(--k-ink); letter-spacing: var(--k-track-tight); }
+.auth-points span { color: var(--k-muted); font-size: .9375rem; }
+.auth-points li[aria-current="step"] { border-top-color: var(--k-accent); }
+.auth-points li[aria-current="step"] strong, .auth-points li[aria-current="step"]::before { color: var(--k-accent-ink); }
 .card { padding: clamp(20px, 4vw, 32px); box-shadow: var(--k-hl), var(--k-shadow-2); }
 .aside { margin-top: 20px; color: var(--k-muted); font-size: .9375rem; }
 .aside a { display: inline-block; padding: 12px 2px; margin: -12px 0; }
@@ -519,13 +491,13 @@ body[data-page="home"] main { background: var(--k-glow) top / 100% 520px no-repe
 .hero h1 { max-width: 17ch; font-size: clamp(2.25rem, 1.4rem + 3.4vw, 3.75rem); line-height: 1.04; }
 .hero .lede { max-width: 36rem; margin: 16px 0 24px; color: var(--k-ink-2); font-size: clamp(1rem, .95rem + .3vw, 1.1875rem); }
 .hero .btn, .stage .btn { min-height: 48px; padding-inline: 24px; font-size: 1rem; }
-.price-line { margin: 16px 0 0; color: var(--k-muted); font-size: .9375rem; }
-/* A price is said only when one was read: a line with nothing in it is not drawn, and no price is promised before there is one. */
-.price-line:has(#from-price:empty) { display: none; }
-#from-price { color: var(--k-ink); font-weight: 600; }
-.record { display: none; }
+.price-line { margin: 16px 0 0; color: var(--k-ink); font-size: .9375rem; font-weight: 600; }
+/* A price is said only when one was read: an empty line is not drawn, and none is promised before there is one. */
+.price-line:has([data-from-price]:empty) { display: none; }
+/* The record is what the product makes, so it is drawn at every width: on a phone it is the product a stranger can see before paying. */
+.record { margin: 0; padding: 16px; border: 1px solid var(--k-line); border-radius: var(--k-r-lg); background: var(--k-surface); box-shadow: var(--k-hl), var(--k-shadow-1); }
 @media (min-width: 960px) {
-  .record { display: block; margin: 0; padding: 24px; border: 1px solid var(--k-line); border-radius: var(--k-r-xl); background: var(--k-surface); box-shadow: var(--k-hl), var(--k-shadow-1); }
+  .record { padding: 24px; border-radius: var(--k-r-xl); }
 }
 .record-h { margin: 0 0 12px; color: var(--k-muted); font-size: .75rem; font-weight: 650; letter-spacing: var(--k-track-caps); text-transform: uppercase; }
 .record-list { display: grid; margin: 0; padding: 0; list-style: none; font-family: var(--k-mono); font-size: .8125rem; }
@@ -677,7 +649,7 @@ body[data-page="home"] main { background: var(--k-glow) top / 100% 520px no-repe
 .row-head strong { font-size: 1.125rem; letter-spacing: var(--k-track-tight); }
 .plan-line { margin: 0; color: var(--k-ink-2); }
 .facts-list { display: grid; gap: 4px; list-style: none; color: var(--k-ink-2); font-size: .9375rem; }
-/* A workspace: its state, why, the one thing to do, its address as a band at the foot. */
+/* A workspace: its state, why, the one thing to do, its address at the foot. */
 .ws > div:empty, .ws > .ws-says:empty { display: none; }
 .ws .ws-says, .ws .ws-note, .ws .ws-address { margin: 0; }
 .ws .ws-says { color: var(--k-ink-2); }
@@ -704,7 +676,7 @@ body[data-page="home"] main { background: var(--k-glow) top / 100% 520px no-repe
 .ws-key { display: grid; gap: 10px; padding: 16px 0 0; border-top: 1px solid var(--k-line); }
 .ws-key > p, .ws-key form .field, .ws-key form > p { margin: 0; }
 .ws-key form { display: grid; gap: 14px; max-width: 34rem; }
-/* The plan one workspace is on, and the offer to move it: quiet, and its own line, so the row's own actions stay the row's. */
+/* The plan one workspace is on, and the offer to move it: quiet, on its own line, so the row's actions stay the row's. */
 .ws-plan { display: grid; gap: 10px; }
 .ws-plan > p { margin: 0; }
 .inline-form .hint { display: block; }
@@ -721,7 +693,7 @@ body[data-page="home"] main { background: var(--k-glow) top / 100% 520px no-repe
   .plans { grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); }
 }
 .plan { display: flex; flex-direction: column; gap: 14px; padding: 24px; }
-/* The plan the account is on, and the one a person picked on the way in: an edge, and a badge that says which in words. */
+/* The plan the account is on, and the one picked on the way in: an edge and a badge that says which in words. */
 .plan.current, .plan.picked { border-color: var(--k-accent); box-shadow: var(--k-hl), 0 0 0 1px var(--k-accent); }
 .plan h3 { display: flex; align-items: center; gap: 8px; margin: 0; }
 .plan .price { font-size: 2.25rem; font-weight: 650; letter-spacing: var(--k-track-display); line-height: 1.1; }
@@ -825,6 +797,8 @@ tfoot > tr > * { background: var(--k-surface-2); font-weight: 650; }
 
 /* ---- documents, and the page that is not there */
 .doc { display: grid; gap: 32px; padding-top: clamp(32px, 6vh, 64px); }
+.doc-end { margin-top: 48px; padding-top: 24px; border-top: 1px solid var(--k-line); }
+.doc-end p { margin-bottom: 12px; }
 .toc { display: none; }
 .toc-phone { display: none; }
 @media (max-width: 999px) {
@@ -882,7 +856,7 @@ tfoot > tr > * { background: var(--k-surface-2); font-weight: 650; }
 }
 
 @media (max-width: 380px) {
-  /* Signed in, the bar is the mark and three links: at 320 px that is five pixels wider than the screen, so the bar gives way — the gutter, the gap, the padding — before anything is allowed to run off the edge. */
+  /* Signed in, the bar is the mark and three links: at 320 px it was 5 px too wide, so its gutter, gap and padding give way. */
   .site-header .wrap { padding-inline: 14px; }
   .bar { gap: 8px; }
   .bar nav { gap: 0; }
