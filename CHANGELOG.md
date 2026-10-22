@@ -7,6 +7,21 @@ sections 1 to 26) are described there, run by run.
 
 ## Unreleased
 
+### Fixed: a designer draft belongs to its project
+
+Switching projects in the console is a view change, not a reload, and the designer kept its draft in one shared slot — so
+a draft begun in one project carried that project's `mesh.yaml` path into the next. Save aimed the new project at another
+project's file and was refused ("save path escapes the project directory"), and the browser's saved draft could offer the
+other project's model for restore. A draft now carries the project it was read from: a switch drops it and reads the
+current file, the browser mirror is stored per project, and the refusal names the path it refused.
+
+### Added: the console's frame, redesigned for the hand that holds it
+
+The frame around every page was still built for a desktop: at 360 px it spent 211 px (a quarter of the screen) on itself,
+scrolled the project list sideways, and floated the navigation over a page that still tabbed behind it. It is now two rows
+(117 px), the project list is one switcher that opens a sheet, and every overlay is a proper layer — scrim, `aria-modal`,
+a 44 px close, focus trapped and returned. The visual language is unchanged: same tokens, same type ramp, same primitives.
+
 ### Added: the product's own UI, running — started from the console, proxied into it
 
 Some products do not ship a playground page; they *serve* their UI from a command of their own. The console could frame

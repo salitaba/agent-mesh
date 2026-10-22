@@ -1,6 +1,6 @@
 [package]
 name = "curule-desktop"
-version = "0.2.1"
+version = "0.2.2"
 description = "The Curule desktop shell: the dashboard in a native window."
 authors = ["Ali Tabatabaei"]
 edition = "2021"
