@@ -154,7 +154,11 @@ it was changed, and each figure is from the page after the change.
   "From $149.00 a month" at the top and at the foot.
 - **The record is drawn on a phone.** The figure was `display: none` below 960px, so the
   only picture of what a workspace produces was absent on the owner's phone. It is now
-  drawn at every width: 319px tall at 360, 235 at 768, 335 at 1440.
+  drawn at every width: 319px tall at 360, 235 at 768, 335 at 1440. On a phone it sits
+  between the hero and the plans, so the first plan begins at **1,052** at 360 (693 in
+  the 2026-10-20 record) and the page is 4,364px tall; the price line is still in the
+  first screen at 485. The trade is deliberate: a stranger sees the product before
+  choosing, and the price is still said before it.
 - **The front page ends on Start.** After "04 How billing works" the page ended on prose,
   and a phone read ended with nothing to do. A fifth numbered entry, "05 Start", repeats
   the two doors and the price at the decision point, immediately above the footer.
