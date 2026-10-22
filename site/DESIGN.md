@@ -32,8 +32,10 @@ editing CSS or JS.
    links in a sentence are the exception WCAG allows; a standalone link is not.
 4. **Type stays on the ramp**: 11, 12, 13, 14, 15, 16, 18, 20, 24, 28, 30, 36, 48, 60, 76. Body
    16, captions 12 minimum, terminal 13. Code inside a block is not shrunk a second time.
-5. **No horizontal page scroll at 360 or 320.** A table, a terminal and the console views may
-   scroll inside their own box; the page may not.
+5. **No horizontal page scroll at 360 or 320.** A table, a terminal, the console views and the
+   plan cards may scroll inside their own box; the page may not. A box that scrolls sideways sets
+   `position: relative`, so a screen-reader span inside an off-screen card cannot position itself
+   against the page and widen it.
 6. **Every state says what happened and what is next.** The site has no server-rendered failure
    states, but it does have: docs filter with no matches, copy refused, calculator with a quoted
    plan, menu open, no script, reduced motion, forced colours, print.
@@ -74,30 +76,66 @@ At 360px, reduced motion, touch:
 
 ## What this pass changed
 
-- Home order is now: hero, numbered index, `#pricing`, `#ways`, `#why`, `#how`, `#product`,
-  `#try`, `#security`, `#faq`, closing band. The owner can see the price in the first quarter of
-  the page instead of the last.
+- Home order is now: hero, numbered index (`aria-label="Contents"`), `#pricing`, `#ways`, `#why`,
+  `#how`, `#product`, `#try`, `#security`, `#faq`, closing band. The owner can see the price in
+  the first quarter of the page instead of the last.
+- The hero's reading order on a phone is statement, subhead, actions, picture, then the three
+  claims: the way in is on the first screen, not under three proof points.
 - Explanatory cards (`#why`, the home security answers, pricing's "paying", contact's guidance)
   are ruled entries. Surfaces remain only where there is an action: plans, start cards, document
   cards, addresses, 404 ways, calculator, frames.
-- The home page has a numbered "On this page" index under the hero, at 44px a row.
 - Console views on a phone are one horizontal snap row with a stated hint and a "Full size" link
   under each capture; the decorative drawings are hidden below 640px.
-- Every capture has a "Full size" link, so the text inside a 1440px shot is reachable on a phone.
+- The licence plans on `pricing/` are the same snap row on a phone, with a stated hint, and
+  `position: relative` on the row. Before that, the `.sr` spans of the off-screen cards positioned
+  against the page and made it 872px wide at 360.
+- Every capture has a "Full size" link in the same window, so the text inside a 1440px shot is
+  reachable on a phone.
 - Terminal code is 13px and no longer shrunk by the inline-code rule; brand, footer address,
   security glance links and arrow links meet 44px.
 - The calculator's quoted plan ends on "Total: Quoted, plus model usage", with no empty figure.
+- Segmented-control labels take `clamp(8px, 3vw, 20px)` of side padding, so the Designer tab stays
+  inside a 320px screen; the row used to reach 337px.
 - Sections are closer together (48–104px, from 64–120), and the text-card padding is gone.
+
+## Measurements after this pass (2026-10-22, Chrome 156, 360px, touch, reduced motion)
+
+| Page | Before | After | Overflow, 320 / 360 / 768 / 1440 |
+|---|---|---|---|
+| Home | 17,024 | 13,780 | 0 / 0 / 0 / 0 |
+| Pricing | 15,163 | 12,626 | 0 / 0 / 0 / 0 |
+| Docs | 9,251 | 9,208 | 0 / 0 / 0 / 0 |
+| Security | 11,816 | 11,844 | 0 / 0 / 0 / 0 |
+| Contact | 5,033 | 4,815 | 0 / 0 / 0 / 0 |
+| Legal | 5,271 | 5,292 | 0 / 0 / 0 / 0 |
+| 404 | 2,327 | 2,348 | 0 / 0 / 0 / 0 |
+
+- Home: `#pricing` at **y=1,720** (was 13,106), first plan at **y=2,059**, console at 7,397.
+  Primary hero action **y=532**, inside the 740px first screen; it was y=792.
+- Anchor `#pricing` lands at y=88 with a 69px pinned header (`scroll-padding-top: 88px`).
+- Plans row at 360: 360 client / 1,306 scroll, hint visible, Enterprise ends wholly on screen
+  (35–344), its action 44px; focus returns the row to the first card. Tiles row: 360 / 1,950.
+- Text roles measured for contrast on home and pricing, light and dark: worst light **5.61:1**,
+  worst dark **6.35:1** (AA normal text needs 4.5). Tiny text (<12px) census: empty on every page
+  at 320/360.
+- The only controls under 44px are the hidden 1×1 radios and the 24×24 checkbox whose label is
+  44px.
 
 ## Still wrong / next pass
 
-- The hero's first screen is still tall on a phone (~1,400px): the eyebrow, h1, lede, three proof
-  points, two actions and a note before the frame. It could lose the eyebrow or one proof point.
+- The hero is 1,457px tall at 360. The action is now on the first screen, but the frame is not;
+  a 720px phone capture would let a reader see the product without scrolling.
 - The pricing page's plan table is 720px wide and scrolls under a sticky first column. The sticky
   column is measured, but a phone reader still has to swipe; a per-plan stacked table would be
-  better.
+  better than the snap row plus the wide table.
+- The `#pricing` snap row on the home page and the plans row on `pricing/` show a sliver of the
+  next card, which is intentional, but there is no visible page indicator. If the row is ever
+  more than four cards, add one.
 - The site cannot show Curule Cloud's prices: they live in the app. The home page says so; the next
   pass could add a generated "Cloud plans start at" line once the app exposes one stable price.
 - The screenshots are 1440px wide and therefore small on a phone even at full size. A 720px capture
   set for the phone would read better than pinch-zooming.
-- `site/DESIGN.md` is new; the account pages' record and this one should be read together.
+- Every page was re-measured at 360/768/1440 after the changes; 200% zoom and a large-text profile
+  were not run on this surface.
+- `site/DESIGN.md` and `apps/cloud-server/pages/DESIGN.md` are two halves of one record; read them
+  together.

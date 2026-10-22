@@ -5,6 +5,10 @@ Cloud, create an account, confirm an address, choose a plan and pay. Shared styl
 `assets/app.css`; shared behaviour is `assets/app.js`; the pages are static HTML with no
 external asset and no inline script or style.
 
+The marketing site (`site/`) keeps the other half of this record, in the same direction:
+`site/DESIGN.md`. Read the two together; a rule added there about a card, a target or a state
+applies here too.
+
 ## Direction: the plain ledger
 
 **Exact, unhurried, warm.**
