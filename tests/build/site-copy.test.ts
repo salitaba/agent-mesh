@@ -219,12 +219,13 @@ test("the home page's hero explains itself: a short subhead, at most three proof
     assert.ok(support, `"${point}" is not one of the claims the page argues`);
     assert.ok(home.copy.includes(support![1]), `"${point}" has nothing below it that says: ${support![1]}`);
   }
-  // In reading order: the statement, the subhead, the proof, the actions, and then the picture, which is the first picture on the page.
+  // In reading order: the statement, the subhead, the actions, the picture, and then the claims the page argues.
+  // A phone's first screen is the promise and the way in; the proof points are read under the product.
   const at = (re: RegExp): number => hero.search(re);
-  const order = [/<h1>/, /<p class="lede">/, /<ul class="proof">/, /class="actions"/, /<fieldset class="showcase">/].map(at);
-  assert.deepEqual(order, [...order].sort((a, b) => a - b), "the picture comes after the actions");
+  const order = [/<h1>/, /<p class="lede">/, /class="actions"/, /<fieldset class="showcase">/, /<ul class="proof">/].map(at);
+  assert.deepEqual(order, [...order].sort((a, b) => a - b), "the picture comes after the actions, and the claims after the picture");
   assert.ok(order.every((n) => n >= 0));
-  assert.ok(hero.lastIndexOf('class="actions"') < at(/<fieldset class="showcase">/), "after the actions of both states, so on a phone it is directly under them");
+  assert.ok(hero.lastIndexOf('class="actions"') < at(/<fieldset class="showcase">/), "after the actions of both states, so on a phone the picture is directly under them");
   assert.equal(home.html.indexOf("<img"), home.html.indexOf("<img", home.html.indexOf('<fieldset class="showcase">')), "and no picture comes before it");
   assert.match(hero, /<img src="assets\/shots\/shot-overview-light\.jpg"[^>]*\bfetchpriority="high"/, "the one the page is waiting for");
   assert.ok(!/<img\b[^>]*\bloading="lazy"/.test(/<figure class="pane">[\s\S]*?<\/figure>/.exec(hero)![0]), "which is not loaded lazily");
@@ -483,13 +484,13 @@ test("the pages say what they must: the plans, how licences work, the security s
 test("the hero is one grid that the stylesheet places: the statement, the claims, the actions of both states in one group, and the picture, in the order a phone shows them", () => {
   const hero = /<section class="hero" id="top">[\s\S]*?\n<\/section>/.exec(page(pages, "index.html").html)![0];
   const at = (needle: string): number => hero.indexOf(needle);
-  const order = ['<div class="hero-grid">', '<p class="eyebrow">', "<h1>", '<p class="lede">', '<ul class="proof">', '<div class="hero-cta">', '<div class="hero-visual">'].map(at);
+  const order = ['<div class="hero-grid">', '<p class="eyebrow">', "<h1>", '<p class="lede">', '<div class="hero-cta">', '<div class="hero-visual">', '<ul class="proof">'].map(at);
   assert.ok(order.every((n) => n >= 0), "every part is there");
-  assert.deepEqual(order, [...order].sort((a, b) => a - b), "in reading order: a statement, what it is, the claims, where to start, then the picture");
+  assert.deepEqual(order, [...order].sort((a, b) => a - b), "in reading order: a statement, what it is, where to start, the picture, then the claims");
   const cta = hero.slice(at('<div class="hero-cta">'), at('<div class="hero-visual">'));
   assert.equal((cta.match(/class="actions"/g) ?? []).length, 2, "the actions of the site that is open and of the one that is not");
   assert.equal((cta.match(/<p class="small muted mt-s"/g) ?? []).length, 2, "and what is said under each");
-  assert.ok(!/class="actions"|class="proof"/.test(hero.slice(at('<div class="hero-visual">'))), "nothing of the statement is inside the picture's column");
+  assert.ok(!/class="actions"/.test(hero.slice(at('<div class="hero-visual">'), at('<ul class="proof">'))), "nothing of the actions is inside the picture's column");
 });
 
 test("each of the four reasons is a card of its own, a mark, a title and its words first, and a drawing of the idea after them", () => {

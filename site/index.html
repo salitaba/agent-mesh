@@ -10,7 +10,7 @@
 <link rel="apple-touch-icon" href="assets/apple-touch-icon.png">
 <meta name="theme-color" content="#fbfaf8" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#131211" media="(prefers-color-scheme: dark)">
-<link rel="stylesheet" href="assets/site.css?v=4f3e14c8ba">
+<link rel="stylesheet" href="assets/site.css?v=a7cfa6fb9a">
 <meta property="og:type" content="website">
 <link rel="canonical" href="https://curule.dev/">
 <meta property="og:url" content="https://curule.dev/">
@@ -65,11 +65,6 @@
       <p class="eyebrow">AI agents that keep working, with a record of everything they did</p>
       <h1>A team of AI agents, run like an organization.</h1>
       <p class="lede">Curule runs role-based agents as one organization: a product manager, an architect, developers, QA and security. One console steers the team and audits everything it did.</p>
-      <ul class="proof">
-        <li>Rules enforced by the runtime, not by a prompt</li>
-        <li>Every action recorded, and replayable</li>
-        <li>Done only when every criterion has evidence</li>
-      </ul>
       <div class="hero-cta">
         <div class="actions" data-selfhost-only hidden>
           <a class="btn btn-primary btn-lg" href="#try">Try the demo</a>
@@ -100,27 +95,68 @@
                 <source media="(prefers-color-scheme: dark)" srcset="assets/shots/shot-overview-dark.jpg">
                 <img src="assets/shots/shot-overview-light.jpg" width="1440" height="900" fetchpriority="high" alt="The Curule dashboard after a scripted team of seven agents has taken a payment-API mission from requirements to a merged, reviewed result: the mission is marked Delivered, all seven mandatory checks are evidenced, and the files the team made are listed under What shipped.">
               </picture>
-              <figcaption><b>Overview.</b> The demo after its mission: seven checks evidenced, and the files the team made, each one opening in a reader.</figcaption>
+              <figcaption><b>Overview.</b> The demo after its mission: seven checks evidenced, and the files the team made, each one opening in a reader. <a class="shot-open" href="assets/shots/shot-overview-light.jpg" aria-label="Open the Overview capture at full size">Full size</a></figcaption>
             </figure>
             <figure class="pane">
               <picture>
                 <source media="(prefers-color-scheme: dark)" srcset="assets/shots/shot-events-dark.jpg">
                 <img src="assets/shots/shot-events-light.jpg" width="1440" height="900" loading="lazy" alt="The Events view of the same mission, filtered to messages: the log newest first, who messaged whom and about what, and two red lines for things the runtime did not do, one of them a message it would not deliver, each with the reason it gives.">
               </picture>
-              <figcaption><b>Events.</b> The append-only log as it streams, newest first, here filtered to messages. The red lines are things the runtime refused or did not do, with the reason it gives.</figcaption>
+              <figcaption><b>Events.</b> The append-only log as it streams, newest first, here filtered to messages. The red lines are things the runtime refused or did not do, with the reason it gives. <a class="shot-open" href="assets/shots/shot-events-light.jpg" aria-label="Open the Events capture at full size">Full size</a></figcaption>
             </figure>
             <figure class="pane">
               <picture>
                 <source media="(prefers-color-scheme: dark)" srcset="assets/shots/shot-designer-dark.jpg">
                 <img src="assets/shots/shot-designer-light.jpg" width="1440" height="900" loading="lazy" alt="The Designer view: the seven agents of the demo team as seats with arrows for who may contact whom, an inspector for the selected seat, a badge from the live validation reading Valid with two notes, and a bar for saving the configuration.">
               </picture>
-              <figcaption><b>Designer.</b> The same team as seats and who may contact whom, validated by the engine behind <code>curule validate</code>.</figcaption>
+              <figcaption><b>Designer.</b> The same team as seats and who may contact whom, validated by the engine behind <code>curule validate</code>. <a class="shot-open" href="assets/shots/shot-designer-light.jpg" aria-label="Open the Designer capture at full size">Full size</a></figcaption>
             </figure>
           </div>
         </fieldset>
         <p class="small muted mt-s">Every capture on this page is of the scripted demo, which makes no model calls.</p>
       </div>
+      <ul class="proof">
+        <li>Rules enforced by the runtime, not by a prompt</li>
+        <li>Every action recorded, and replayable</li>
+        <li>Done only when every criterion has evidence</li>
+      </ul>
     </div>
+  </div>
+</section>
+
+<nav class="index" aria-label="Contents">
+  <div class="wrap">
+    <ol>
+      <li><a href="#pricing"><span>01</span>Plans and prices</a></li>
+      <li><a href="#ways"><span>02</span>Who runs it</a></li>
+      <li><a href="#why"><span>03</span>Why rules</a></li>
+      <li><a href="#how"><span>04</span>How it works</a></li>
+      <li><a href="#product"><span>05</span>The console</a></li>
+      <li><a href="#try"><span>06</span>Try it</a></li>
+      <li><a href="#security"><span>07</span>Security</a></li>
+      <li><a href="#faq"><span>08</span>Questions</a></li>
+    </ol>
+  </div>
+</nav>
+
+<section class="section" id="pricing">
+  <div class="wrap">
+    <div class="section-head">
+      <p class="eyebrow">Pricing</p>
+      <h2 class="title">Free to start. Paid licences are per month.</h2>
+      <p class="lede">These are licences for the software you run yourself. Model usage is separate and goes to your own provider, at your own rates. Prices are in US dollars and exclude taxes.</p>
+    </div>
+<!-- generated:plan-teaser:start (scripts/export-pricing.mjs; do not edit between the markers) -->
+<ul class="teaser" aria-label="The plans">
+    <li><h3>Community</h3><p class="amount">Free</p><p class="per">no licence key, no expiry</p><p class="limits">1 project open, 8 agents per mesh, 4 concurrent turns</p></li>
+    <li><h3>Team</h3><p class="amount">$149</p><p class="per">per month, or $124 billed annually</p><p class="limits">5 projects open, 12 agents per mesh, 8 concurrent turns</p></li>
+    <li><h3>Business</h3><p class="amount">$599</p><p class="per">per month, or $499 billed annually</p><p class="limits">25 projects open, 30 agents per mesh, 24 concurrent turns</p></li>
+    <li><h3>Enterprise</h3><p class="amount">Let&rsquo;s talk</p><p class="per">quoted for your terms</p><p class="limits">No limit on projects, agents or concurrent turns</p></li>
+</ul>
+<!-- generated:plan-teaser:end -->
+    <p class="btn-row mt-l"><a class="btn btn-primary" href="pricing/">Compare the plans</a><a class="btn" href="pricing/#licences">How licences work</a></p>
+    <p class="small muted mt-s" data-selfhost-only hidden>There is no checkout and no account: a paid plan starts with an email, and the licence key is issued by hand.</p>
+    <p class="small muted mt-s" data-cloud-only>These are licences for the software you run yourself: a paid plan starts with an email, and the licence key is issued by hand. Curule Cloud has its own sign-up and checkout.</p>
   </div>
 </section>
 
@@ -251,34 +287,35 @@
       <h2 class="title">What you see while it runs.</h2>
       <p class="lede">The console is a set of views of one event log. These are captures of the scripted demo, not mockups.</p>
     </div>
+    <p class="small muted tiles-hint">Six views. Swipe or scroll sideways; every capture opens at full size.</p>
     <ul class="tiles">
       <li class="tile">
-        <figure class="frame"><img src="assets/shots/shot-tile-overview.jpg" width="720" height="450" loading="lazy" alt="Mission control: the Delivered card with the goal and four actions (open the files, reopen with feedback, what it cost, replay), then seven of seven checks evidenced, how long it ran from creation to delivery, tokens against the 2.0M budget, and the seven agents, none working."></figure>
+        <figure class="frame"><img src="assets/shots/shot-tile-overview.jpg" width="720" height="450" loading="lazy" alt="Mission control: the Delivered card with the goal and four actions (open the files, reopen with feedback, what it cost, replay), then seven of seven checks evidenced, how long it ran from creation to delivery, tokens against the 2.0M budget, and the seven agents, none working."><figcaption class="shot-meta"><a class="shot-open" href="assets/shots/shot-tile-overview.jpg" aria-label="Open the Mission control capture at full size">Full size</a></figcaption></figure>
         <h3>Mission control</h3>
         <p>Progress against each acceptance criterion, with the evidence that satisfied it, and the artifacts the team produced.</p>
       </li>
       <li class="tile">
-        <figure class="frame"><img src="assets/shots/shot-tile-events.jpg" width="720" height="450" loading="lazy" alt="Live events: the log newest first, with a search box, an agent filter, counts of alerts, activity and routine events, a row of kinds with Messages selected, a switch that folds routine events, a red line for an agent that could not be woken because the mission was complete, and a line for who messaged whom."></figure>
+        <figure class="frame"><img src="assets/shots/shot-tile-events.jpg" width="720" height="450" loading="lazy" alt="Live events: the log newest first, with a search box, an agent filter, counts of alerts, activity and routine events, a row of kinds with Messages selected, a switch that folds routine events, a red line for an agent that could not be woken because the mission was complete, and a line for who messaged whom."><figcaption class="shot-meta"><a class="shot-open" href="assets/shots/shot-tile-events.jpg" aria-label="Open the Live events capture at full size">Full size</a></figcaption></figure>
         <h3>Live events</h3>
         <p>Everything the mesh does, newest first, streamed from the append-only log. Filter down to alerts, and open any line to see what caused it.</p>
       </li>
       <li class="tile">
-        <figure class="frame"><img src="assets/shots/shot-tile-steps.jpg" width="720" height="450" loading="lazy" alt="The per-turn ledger: filter chips for everything, working now, produced, no output, refused, blocked and crashed turns, a switch that collapses quiet runs, then one row for each agent turn showing who ran, why it woke, whether it produced anything, the reason a decision was refused, and its duration, tokens and start time."></figure>
+        <figure class="frame"><img src="assets/shots/shot-tile-steps.jpg" width="720" height="450" loading="lazy" alt="The per-turn ledger: filter chips for everything, working now, produced, no output, refused, blocked and crashed turns, a switch that collapses quiet runs, then one row for each agent turn showing who ran, why it woke, whether it produced anything, the reason a decision was refused, and its duration, tokens and start time."><figcaption class="shot-meta"><a class="shot-open" href="assets/shots/shot-tile-steps.jpg" aria-label="Open the Per-turn ledger capture at full size">Full size</a></figcaption></figure>
         <h3>Per-turn ledger</h3>
         <p>One row per agent turn: who ran, how long it took, what it produced or refused, and the tokens it used.</p>
       </li>
       <li class="tile">
-        <figure class="frame"><img src="assets/shots/shot-tile-designer.jpg" width="720" height="450" loading="lazy" alt="The team designer: seven seats drawn as cards with arrows for who may contact whom, the product manager at the top and selected, with its links in blue, the explorer as a service seat with a dashed outline, and QA and the developer at the bottom."></figure>
+        <figure class="frame"><img src="assets/shots/shot-tile-designer.jpg" width="720" height="450" loading="lazy" alt="The team designer: seven seats drawn as cards with arrows for who may contact whom, the product manager at the top and selected, with its links in blue, the explorer as a service seat with a dashed outline, and QA and the developer at the bottom."><figcaption class="shot-meta"><a class="shot-open" href="assets/shots/shot-tile-designer.jpg" aria-label="Open the Team designer capture at full size">Full size</a></figcaption></figure>
         <h3>Team designer</h3>
         <p>Seats, authority, who may contact whom, gates and budgets, drawn as a graph and validated as you edit.</p>
       </li>
       <li class="tile">
-        <figure class="frame"><img src="assets/shots/shot-tile-cost.jpg" width="720" height="450" loading="lazy" alt="Cost by agent: a strip that splits what was spent between the agents, then a bar for each agent scaled to the biggest spender, with its tokens, its share of everything spent and its own budget."></figure>
+        <figure class="frame"><img src="assets/shots/shot-tile-cost.jpg" width="720" height="450" loading="lazy" alt="Cost by agent: a strip that splits what was spent between the agents, then a bar for each agent scaled to the biggest spender, with its tokens, its share of everything spent and its own budget."><figcaption class="shot-meta"><a class="shot-open" href="assets/shots/shot-tile-cost.jpg" aria-label="Open the Cost and budgets capture at full size">Full size</a></figcaption></figure>
         <h3>Cost and budgets</h3>
         <p>Tokens against the mission budget, by agent and by model. A host-wide spend ceiling parks every open project when its estimate is reached.</p>
       </li>
       <li class="tile">
-        <figure class="frame"><img src="assets/shots/shot-tile-approvals.jpg" width="720" height="450" loading="lazy" alt="The Approve or reject panel over the dimmed Delivered card: a decision set to Approve, what it is about (release), an optional reason, the files made recently, and a button to record the decision in the log."></figure>
+        <figure class="frame"><img src="assets/shots/shot-tile-approvals.jpg" width="720" height="450" loading="lazy" alt="The Approve or reject panel over the dimmed Delivered card: a decision set to Approve, what it is about (release), an optional reason, the files made recently, and a button to record the decision in the log."><figcaption class="shot-meta"><a class="shot-open" href="assets/shots/shot-tile-approvals.jpg" aria-label="Open the Approvals capture at full size">Full size</a></figcaption></figure>
         <h3>Approvals</h3>
         <p>You are a seat in the team. Record a yes or a no, and any gate that listens for it can move: a release waiting on your approval, for example.</p>
       </li>
@@ -341,27 +378,6 @@ docker build -t curule .</code></pre></div>
     </div>
     <p class="notice neutral mt-m" data-cloud-only>These answers are about the software you run yourself. On Curule Cloud we run it for you, which changes what leaves your environment: <a href="security/#glance">the security page</a> says how.</p>
     <p class="mt-l"><a class="arrow-link" href="security/">Read the whole of it</a></p>
-  </div>
-</section>
-
-<section class="section" id="pricing">
-  <div class="wrap">
-    <div class="section-head">
-      <p class="eyebrow">Pricing</p>
-      <h2 class="title">You pay for the runtime.</h2>
-      <p class="lede">Model usage is separate and goes to your own provider, at your own rates. Prices are in US dollars and exclude taxes.</p>
-    </div>
-<!-- generated:plan-teaser:start (scripts/export-pricing.mjs; do not edit between the markers) -->
-<ul class="teaser" aria-label="The plans">
-    <li><h3>Community</h3><p class="amount">Free</p><p class="per">no licence key, no expiry</p><p class="limits">1 project open, 8 agents per mesh, 4 concurrent turns</p></li>
-    <li><h3>Team</h3><p class="amount">$149</p><p class="per">per month, or $124 billed annually</p><p class="limits">5 projects open, 12 agents per mesh, 8 concurrent turns</p></li>
-    <li><h3>Business</h3><p class="amount">$599</p><p class="per">per month, or $499 billed annually</p><p class="limits">25 projects open, 30 agents per mesh, 24 concurrent turns</p></li>
-    <li><h3>Enterprise</h3><p class="amount">Let&rsquo;s talk</p><p class="per">quoted for your terms</p><p class="limits">No limit on projects, agents or concurrent turns</p></li>
-</ul>
-<!-- generated:plan-teaser:end -->
-    <p class="btn-row mt-l"><a class="btn btn-primary" href="pricing/">Compare the plans</a><a class="btn" href="pricing/#licences">How licences work</a></p>
-    <p class="small muted mt-s" data-selfhost-only hidden>There is no checkout and no account: a paid plan starts with an email, and the licence key is issued by hand.</p>
-    <p class="small muted mt-s" data-cloud-only>These are licences for the software you run yourself: a paid plan starts with an email, and the licence key is issued by hand. Curule Cloud has its own sign-up and checkout.</p>
   </div>
 </section>
 

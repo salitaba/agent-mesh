@@ -60,7 +60,9 @@
     out.appendChild(row("Plan", "", plan.name));
     out.appendChild(row("Platform fee", "(to us)", fee === null ? "quoted" : money(fee) + " / month"));
     out.appendChild(row("Model usage", "(to your provider)", "about " + money(spend) + " / month"));
-    out.appendChild(row("Roughly", "", fee === null ? "" : money(fee + spend) + " / month", true));
+    out.appendChild(fee === null
+      ? row("Total", "", "Quoted, plus model usage", true)
+      : row("Roughly", "", money(fee + spend) + " / month", true));
     out.appendChild(el("p", "fine",
       "Model usage assumes " + missions + " mission" + (missions === 1 ? "" : "s") + " like the one we measured (" + run.seats + " agents, " + run.turns + " turns, " +
       money2(run.costUsd) + " on " + nameOf(run.model) + "), re-priced at " + nameOf(model) + "'s published list price of " + data.modelPrices.asOf +

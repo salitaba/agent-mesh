@@ -458,9 +458,9 @@ test("a card's title has the tile's room above it, a plan's figures share a line
 
 test("a card or a row that a link points at is marked once the link is followed, by a second line or a bar and not by colour alone", () => {
   const css = fs.readFileSync(path.join(SITE, "assets", "site.css"), "utf8");
-  const kinds = ["card", "doc-card", "plan"];
-  assert.match(css, /\n\.card:target, \.doc-card:target, \.plan:target \{ border-color: var\(--accent\); box-shadow: inset 0 0 0 1px var\(--accent\); \}/, "inside the border: the card does not move");
-  assert.match(/@media \(forced-colors: active\) \{[\s\S]*?\n\}/.exec(css)![0], /\.card:target, \.doc-card:target, \.plan:target \{ outline: 2px solid Highlight;/, "a forced-colour mode drops the shadow; an outline stays");
+  const kinds = ["doc-card", "plan"];
+  assert.match(css, /\n\.doc-card:target, \.plan:target \{ border-color: var\(--accent\); box-shadow: inset 0 0 0 1px var\(--accent\); \}/, "inside the border: the card does not move");
+  assert.match(/@media \(forced-colors: active\) \{[\s\S]*?\n\}/.exec(css)![0], /\.doc-card:target, \.plan:target \{ outline: 2px solid Highlight;/, "a forced-colour mode drops the shadow; an outline stays");
   // The contact page's addresses are rows, which the plan buttons, the documentation page and the security page point at: a bar at the
   // row's edge says which one was meant, and a forced-colour mode, which drops the shadow, gets an outline.
   assert.match(css, /\n\.address-row:target \{ background: var\(--panel\); box-shadow: inset 4px 0 0 var\(--accent\); \}/);
@@ -558,3 +558,85 @@ test("the drawings of an idea are decorative: hidden from a screen reader, with 
   assert.equal((/<div class="grid bento">[\s\S]*?<\/section>/.exec(home)![0].match(/<svg class="viz"/g) ?? []).length, 4);
   assert.equal((/<ol class="steps">[\s\S]*?<\/ol>/.exec(home)![0].match(/<svg class="viz"/g) ?? []).length, 3);
 });
+
+test("the home page puts the price before the arguments, under a numbered contents strip", () => {
+  const home = page(pages, "index.html").html;
+  const at = (needle: string): number => home.indexOf(needle);
+  const order = ['<section class="hero" id="top">', '<nav class="index"', '<section class="section" id="pricing">', '<section class="section" id="ways">', '<section class="section band" id="why">', '<section class="section" id="how">', '<section class="section band" id="product">', '<section class="section" id="try">', '<section class="section tint" id="security">', '<section class="section band" id="faq">'].map(at);
+  assert.ok(order.every((n) => n >= 0), "every part is there");
+  assert.deepEqual(order, [...order].sort((a, b) => a - b), "the statement, the contents, the price, then the arguments");
+  // The contents strip names every section below it, in order, numbered like the ledger's entries.
+  const nav = /<nav class="index"[^>]*>([\s\S]*?)<\/nav>/.exec(home)![0];
+  assert.match(nav, /aria-label="Contents"/);
+  const entries = [...nav.matchAll(/href="#([\w-]+)"><span>(\d\d)<\/span>([^<]+)<\/a>/g)].map((m) => [m[1]!, m[2]!, m[3]!]);
+  assert.deepEqual(entries, [
+    ["pricing", "01", "Plans and prices"],
+    ["ways", "02", "Who runs it"],
+    ["why", "03", "Why rules"],
+    ["how", "04", "How it works"],
+    ["product", "05", "The console"],
+    ["try", "06", "Try it"],
+    ["security", "07", "Security"],
+    ["faq", "08", "Questions"],
+  ], "eight entries, in the order the page reads");
+  for (const [id] of entries) assert.match(home, new RegExp(`<section[^>]*\\sid="${id}"`), `#${id} is there`);
+  // Every entry is a thumb's height, and the strip sits on the page's ruled ground.
+  const css = fs.readFileSync(path.join(SITE, "assets", "site.css"), "utf8");
+  assert.match(css, /\n\.index \{ border-block: 1px solid var\(--line\); background: var\(--panel\); \}/);
+  assert.match(css, /\n\.index a \{[^}]*min-height: 48px;/);
+  assert.match(css, /\n\.index \+ \.section \{ padding-top: clamp\(32px, 4vw, 48px\); \}/, "the price does not open with a whole section's gap under the strip");
+});
+
+test("explanatory prose is ruled, and a surface is kept for something a person acts on", () => {
+  const css = fs.readFileSync(path.join(SITE, "assets", "site.css"), "utf8");
+  assert.match(css, /\n\.way, \.plan, \.doc-card, \.start, \.glance, \.result, \.tile, \.teaser, \.addresses, \.nf-list a \{ border: 1px solid var\(--line\);[^}]*background: var\(--panel\);/, "the plans, starts, document cards, addresses and ways out keep their border");
+  assert.match(css, /\n\.card \{ display: flex; flex-direction: column; padding: 20px 0 0; border-top: 1px solid var\(--line2\); \}/, "a reason or a security answer is a ruled entry, not a panel");
+  assert.ok(!/\n\.card, \.way/.test(css), "and it is not one of the border surfaces");
+  // The phone does not spend a thousand pixels on drawings that repeat what the words say.
+  assert.match(css, /@media \(max-width: 639px\) \{ \.bento \.viz, \.steps \.viz \{ display: none; \} \}/);
+  // The groups that are ruled are the ones that only explain; each still starts with its mark.
+  assert.equal((page(pages, "index.html").markup.match(/<div class="card">/g) ?? []).length, 7, "four reasons and three security answers on the home page");
+  assert.equal((page(pages, "pricing/index.html").markup.match(/<div class="card">/g) ?? []).length, 3, "three notes on paying");
+  assert.equal((page(pages, "contact/index.html").markup.match(/<article class="card contact">/g) ?? []).length, 3, "three notes on what to write");
+});
+
+test("terminal text is 13px and the inline-code rule does not shrink it a second time", () => {
+  const css = fs.readFileSync(path.join(SITE, "assets", "site.css"), "utf8");
+  assert.match(css, /\n\.code pre \{[^}]*font: 13px\/1\.6 var\(--mono\);/, "the block is set at 13px, on the ramp and above the 12px floor");
+  assert.match(css, /\n\.code pre code \{ font-size: 1em; \}/, "the generic code rule (0.875em) stops at the block's edge");
+});
+
+test("the small standing targets are 44 pixels: the brand, the footer's address and the glance links", () => {
+  const css = fs.readFileSync(path.join(SITE, "assets", "site.css"), "utf8");
+  assert.match(css, /\n\.brand \{[^}]*min-width: 44px; min-height: 44px;/, "the logo's link is wider than the logo");
+  assert.match(css, /\n\.foot-contact a \{[^}]*min-height: 44px;/, "the address in the footer is a thumb's height");
+  assert.match(css, /\n\.glance-list h3 a \{[^}]*padding: 12px 0;/, "the three answers at the top of the security page are 44px links");
+});
+
+test("every capture has a named way to its full size, in the same window, and the phone's six views are one snap row", () => {
+  const home = page(pages, "index.html").html;
+  const links = [...home.matchAll(/<a class="shot-open" href="([^"]+)"[^>]*aria-label="([^"]+)"[^>]*>Full size<\/a>/g)];
+  assert.equal(links.length, 9, "three in the hero and six in the console");
+  for (const [, href, label] of links) {
+    assert.match(href!, /^assets\/shots\/shot-[a-z-]+\.jpg$/, `${href}: a capture on this site`);
+    assert.match(label!, /^Open the .+ capture at full size$/, `${label}: the name says which capture`);
+    assert.ok(fs.existsSync(path.join(SITE, href!)), `${href} is there`);
+  }
+  assert.ok(!/\starget="_blank"/.test(home), "no link opens a window behind the visitor");
+  assert.match(home, /<p class="small muted tiles-hint">Six views\. Swipe or scroll sideways; every capture opens at full size\.<\/p>/);
+  const css = fs.readFileSync(path.join(SITE, "assets", "site.css"), "utf8");
+  assert.match(css, /@media \(max-width: 719px\) \{\n  \.tiles-hint \{ display: block; margin: 0 0 12px; \}\n  \.tiles \{[^}]*grid-auto-flow: column;[^}]*overflow-x: auto;/);
+  assert.match(css, /\n\.shot-open \{[^}]*min-height: 44px;/, "the way to the full size is a thumb's height");
+});
+
+test("the four plans are one snap row on a phone, and nothing off the row widens the page", () => {
+  const pricing = page(pages, "pricing/index.html").html;
+  assert.match(pricing, /<h2 class="sr">The four plans<\/h2>\n    <p class="small muted plans-hint">Four plans\. Swipe or scroll sideways; the table below compares every line\.<\/p>/);
+  const css = fs.readFileSync(path.join(SITE, "assets", "site.css"), "utf8");
+  assert.match(css, /@media \(max-width: 719px\) \{\n  \.plans-hint \{ display: block; margin: 0 0 12px; \}\n  \.plans \{ position: relative; grid-template-columns: none; grid-auto-flow: column;[^}]*overflow-x: auto;/);
+  // Without a positioned box, the screen-reader spans inside the cards that sit off the row
+  // resolve against the page and make it wider than the phone: measured 872px at 360 before.
+  assert.match(css, /\.plans \{ position: relative;/);
+  assert.match(css, /\.plan \{ scroll-snap-align: start; \}/);
+});
+
