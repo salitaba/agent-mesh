@@ -473,17 +473,6 @@ meter::-moz-meter-bar { border-radius: var(--k-r-pill); background: currentColor
     background: var(--k-rule);
     mask-image: linear-gradient(to bottom, black, transparent 52%);
   }
-  .auth-mark {
-    position: absolute;
-    z-index: -1;
-    top: 32px;
-    right: 32px;
-    width: 280px;
-    height: auto;
-    mask-image: linear-gradient(to bottom, black 50%, transparent 98%);
-  }
-  .auth-mark .ink { stroke: color-mix(in srgb, var(--k-ink) 7%, transparent); }
-  .auth-mark .seat { fill: var(--k-accent); }
   .auth-points { counter-reset: point; display: grid; list-style: none; }
   .auth-points li {
     counter-increment: point;
@@ -531,6 +520,8 @@ body[data-page="home"] main { background: var(--k-glow) top / 100% 520px no-repe
 .hero .lede { max-width: 36rem; margin: 16px 0 24px; color: var(--k-ink-2); font-size: clamp(1rem, .95rem + .3vw, 1.1875rem); }
 .hero .btn, .stage .btn { min-height: 48px; padding-inline: 24px; font-size: 1rem; }
 .price-line { margin: 16px 0 0; color: var(--k-muted); font-size: .9375rem; }
+/* A price is said only when one was read: a line with nothing in it is not drawn, and no price is promised before there is one. */
+.price-line:has(#from-price:empty) { display: none; }
 #from-price { color: var(--k-ink); font-weight: 600; }
 .record { display: none; }
 @media (min-width: 960px) {
@@ -730,7 +721,8 @@ body[data-page="home"] main { background: var(--k-glow) top / 100% 520px no-repe
   .plans { grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); }
 }
 .plan { display: flex; flex-direction: column; gap: 14px; padding: 24px; }
-.plan.current { border-color: var(--k-accent); box-shadow: var(--k-hl), 0 0 0 1px var(--k-accent); }
+/* The plan the account is on, and the one a person picked on the way in: an edge, and a badge that says which in words. */
+.plan.current, .plan.picked { border-color: var(--k-accent); box-shadow: var(--k-hl), 0 0 0 1px var(--k-accent); }
 .plan h3 { display: flex; align-items: center; gap: 8px; margin: 0; }
 .plan .price { font-size: 2.25rem; font-weight: 650; letter-spacing: var(--k-track-display); line-height: 1.1; }
 .plan .price small { margin-left: 4px; color: var(--k-muted); font-size: .9375rem; font-weight: 500; letter-spacing: 0; }
@@ -890,7 +882,11 @@ tfoot > tr > * { background: var(--k-surface-2); font-weight: 650; }
 }
 
 @media (max-width: 380px) {
-  .bar nav a, .bar nav button { padding: 0 8px; }
+  /* Signed in, the bar is the mark and three links: at 320 px that is five pixels wider than the screen, so the bar gives way — the gutter, the gap, the padding — before anything is allowed to run off the edge. */
+  .site-header .wrap { padding-inline: 14px; }
+  .bar { gap: 8px; }
+  .bar nav { gap: 0; }
+  .bar nav a, .bar nav button { padding: 0 7px; font-size: .875rem; }
   .logo { height: 20px; }
 }
 

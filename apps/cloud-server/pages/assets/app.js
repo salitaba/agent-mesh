@@ -609,9 +609,18 @@
 
   // ---- the header, the footer and the numbers every page shares ----
 
+  /** One class on or off, keeping the others and their order. A class is a word among words, and the test's page has no classList. */
+  function dress(node, name, on) {
+    const words = node.className.split(/\s+/).filter((w) => w && w !== name);
+    if (on) words.push(name);
+    node.className = words.join(" ");
+  }
+
   function paintChrome(me, page) {
     const signedIn = me !== null;
     for (const node of doc.querySelectorAll("[data-when]")) node.hidden = (node.dataset.when === "in") !== signedIn;
+    // One filled button is the page's answer; where a signed-in visitor gets a second way forward, the one that led them here is no longer filled.
+    for (const node of doc.querySelectorAll("[data-primary-out]")) dress(node, "btn-primary", !signedIn);
     const here = { home: "home", account: "account", login: "login" }[page] || "";
     for (const a of doc.querySelectorAll("[data-nav]")) {
       if (a.dataset.nav === here) a.setAttribute("aria-current", "page");
@@ -655,8 +664,8 @@
     const current = Boolean(sub) && sub.status !== "ended" && sub.plan === plan.id;
     return el(
       "article",
-      { class: current ? "plan current" : "plan" },
-      el("h3", null, plan.title, current ? el("span", { class: "badge badge-accent" }, "Your plan") : null),
+      { class: current ? "plan current" : "plan", "data-plan": plan.id },
+      el("h3", null, plan.title, current ? el("span", { class: "badge badge-accent" }, "Your plan") : o.picked ? el("span", { class: "badge" }, "Your choice") : null),
       el("div", { class: "price" }, money(plan.priceMinor, currency), el("small", null, ` per ${plan.period}`)),
       plan.summary ? el("p", { class: "muted" }, plan.summary) : null,
       el("ul", null, planFacts(plan, currency).map((fact) => el("li", null, fact))),
@@ -704,6 +713,7 @@
       // Nothing about model usage is known here, so the page falls back to the neutral sentence rather than to one arrangement.
       paintModel("neutral");
       $("topups").textContent = "";
+      $("from-price").textContent = "";
       box.replaceChildren(
         el("div", { class: "note note-warn" },
           el("p", null, r.ok ? "No plan is on offer just now, so no price is shown." : "The plans could not be loaded just now, so no price is shown."),
@@ -718,7 +728,7 @@
     const subscription = me ? me.subscription : null;
     // One action to a card, and it says which plan it is for: a row of buttons that all say "Get started" is a row of the same button. A customer with no plan is
     // taken to choose one; one who has a plan is shown the others as a way to change, which is not the main thing.
-    const action = me ? (plan) => el("a", { class: holdsPlan(subscription) ? "btn" : "btn btn-primary", href: "/account#plan-h" }, `Choose ${plan.title}`) : (plan) => el("a", { class: "btn btn-primary", href: "/signup" }, `Start with ${plan.title}`);
+    const action = me ? (plan) => el("a", { class: holdsPlan(subscription) ? "btn" : "btn btn-primary", href: `/account?plan=${encodeURIComponent(plan.id)}#plan-h` }, `Choose ${plan.title}`) : (plan) => el("a", { class: "btn btn-primary", href: `/signup?plan=${encodeURIComponent(plan.id)}` }, `Start with ${plan.title}`);
     box.replaceChildren(...r.data.plans.map((plan) => planCard(plan, currency, { subscription, action })));
     $("topups").textContent = topups ? topupLine(topups, currency) : NO_USAGE_SOLD;
   }
@@ -729,6 +739,8 @@
   const RESEND_WAIT = 60;
   /** What the sign-up page passes to itself across a reload, in the tab and once: the address that was typed, so that a typo can be put right and not typed again. */
   const SIGNUP_ADDRESS = "curule:signup-address";
+  /** The plan a visitor picked on the front page: kept across sign-up and the confirmation link, and read once by the account it was picked for. */
+  const PICKED_PLAN = "curule:picked-plan";
 
   /**
    * Asking for the link again, on the page that sent it (`addressOf` gives the address it was sent to) or on the page for a link that did
@@ -786,6 +798,9 @@
     const status = $("status");
     const email = $("email");
     const password = $("password");
+    // A plan chosen on the front page is kept for the account this address makes, so the choice is not asked for again as if it had not been made.
+    const wanted = new URLSearchParams(location.search).get("plan");
+    if (wanted) store.set(PICKED_PLAN, wanted);
     // A person who came back to put a typo right finds the address there: it is read once and forgotten.
     const before = store.get(SIGNUP_ADDRESS);
     store.remove(SIGNUP_ADDRESS);
@@ -999,6 +1014,10 @@
       else say($("notice"), "bad", `${first.error.message} Reload the page to try again.`);
       return;
     }
+    // A plan picked on the front page: the account it was picked for is this one, and the choice is read once.
+    const params = new URLSearchParams(location.search);
+    const wanted = params.get("plan") || store.get(PICKED_PLAN) || "";
+    store.remove(PICKED_PLAN);
     const state = {
       me: first.data,
       plans: [],
@@ -1017,8 +1036,10 @@
       planNote: null,
       timer: 0,
       watched: 0,
-      /** Whether the other plans are shown under the plan the account is on. */
-      changing: false,
+      /** Whether the other plans are shown under the plan the account is on. A customer's picked plan is one of the others. */
+      changing: wanted !== "" && holdsPlan(first.data.account.subscription),
+      /** The plan picked on the front page, if one was: its card is marked, and the page goes to it rather than to the top. */
+      picked: wanted,
       /** The workspaces whose less used actions (deleting one) are shown. */
       more: new Set(),
       /** The workspaces whose plan the person is changing, so that only that card's list of plans is open. */
@@ -1778,6 +1799,21 @@
 
     // -- plan --
 
+    /** A plan picked on the front page is opened, marked, and gone to: a link that lands at the top of the page, with the plan it asked for behind a closed button, has not taken the person anywhere. */
+    function landOnPlan(id) {
+      const card = [...doc.querySelectorAll(".plan")].find((n) => n.dataset.plan === id);
+      history.replaceState(null, "", "/account#plan-h");
+      if (!card) {
+        const panel = $("plan-h");
+        if (panel && typeof panel.scrollIntoView === "function") panel.scrollIntoView();
+        return;
+      }
+      dress(card, "picked", true);
+      card.setAttribute("tabindex", "-1");
+      card.focus();
+      if (typeof card.scrollIntoView === "function") card.scrollIntoView({ block: "center" });
+    }
+
     function renderPlan() {
       const box = $("plan");
       const sub = subscription();
@@ -1820,13 +1856,13 @@
                 )
               : null,
             live && others.length > 0
-              ? el("div", { id: "plan-change", class: "disclosed", hidden: !state.changing }, el("div", { class: "plans" }, others.map((p) => planCard(p, state.currency, { subscription: sub, action: (x) => button(`Switch to ${x.title}`, { onclick: checkout(x) }) }))))
+              ? el("div", { id: "plan-change", class: "disclosed", hidden: !state.changing }, el("div", { class: "plans" }, others.map((p) => planCard(p, state.currency, { subscription: sub, picked: state.picked === p.id, action: (x) => button(`Switch to ${x.title}`, { onclick: checkout(x) }) }))))
               : null,
           ),
         );
       }
       if (!state.plansKnown) parts.push(el("p", { class: "muted" }, "The plans could not be loaded just now. Reload the page to try again."));
-      else if (!live && state.plans.length > 0) parts.push(el("div", { class: "plans" }, state.plans.map((p) => planCard(p, state.currency, { subscription: sub, action: (x) => button(`Choose ${x.title}`, { kind: "primary", onclick: checkout(x) }) }))));
+      else if (!live && state.plans.length > 0) parts.push(el("div", { class: "plans" }, state.plans.map((p) => planCard(p, state.currency, { subscription: sub, picked: state.picked === p.id, action: (x) => button(`Choose ${x.title}`, { kind: "primary", onclick: checkout(x) }) }))));
       box.replaceChildren(...parts);
       const status = $("plan-status");
       if (state.planNote) say(status, state.planNote.kind, state.planNote.text);
@@ -2047,6 +2083,7 @@
 
     renderTopups();
     renderAll();
+    if (state.picked) landOnPlan(state.picked);
     // A workspace that became ready while the tab was behind another is opened when the person comes back to it.
     doc.addEventListener("visibilitychange", openWhenReady);
     // The browser's back button can bring this page back from where it was, and with a payment page's button still pressed.
@@ -2054,7 +2091,6 @@
       if (event.persisted) location.reload();
     });
 
-    const params = new URLSearchParams(location.search);
     const paid = params.get("paid") === "1";
     const cancelled = params.get("cancelled") === "1";
     if (paid || cancelled) history.replaceState(null, "", "/account");

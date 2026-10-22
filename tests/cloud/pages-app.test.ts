@@ -134,7 +134,7 @@ test("the header and the front page: a visitor is offered the way in, a customer
   assert.equal(cards.length, 2);
   assert.equal(v.text(cards[0]!), "Team $149.00 per month $20.00 of model usage each month 1 workspace Model tiers: fast, balanced Start with Team");
   assert.equal(v.text(cards[1]!), "Business $599.00 per month For a team that runs several projects. $100.00 of model usage each month 3 workspaces Start with Business");
-  assert.equal(v.link(cards[0]!, "Start with Team").getAttribute("href"), "/signup");
+  assert.equal(v.link(cards[0]!, "Start with Team").getAttribute("href"), "/signup?plan=team", "the plan the visitor picked is carried into signing up, so it is not asked for again as if it had not been");
   assert.equal(v.text("topups"), "Add credit at any time, from $5.00 to $1,000.00 at once. Each $1.00 adds $1.00 of usage, and credit does not expire.");
   const policy = v.doc.querySelectorAll("[data-policy]").map((n) => `${n.dataset.policy}=${n.textContent}`);
   assert.deepEqual(policy, ["graceDays=3 days", "retentionDays=30 days"], "the periods on the page are the service's settings");
@@ -150,7 +150,7 @@ test("a front page for someone who is signed in marks their plan and points the 
   assert.equal(cards[0]!.className, "plan current");
   assert.match(v.text(cards[0]!), /^Team Your plan /);
   assert.equal(v.buttons(cards[0]!).length + cards[0]!.querySelectorAll("a").length, 0, "the plan a person is on is not offered to them again");
-  assert.equal(v.link(cards[1]!, "Choose Business").getAttribute("href"), "/account#plan-h");
+  assert.equal(v.link(cards[1]!, "Choose Business").getAttribute("href"), "/account?plan=business#plan-h", "and a customer's choice is carried to the plan itself, not to the top of the account");
   assert.equal(v.link(cards[1]!, "Choose Business").className, "btn", "a customer who has a plan is shown the others as a way to change, which is not the main thing");
 
   const none = await visit("home", { routes: world().routes });
@@ -185,7 +185,9 @@ test("a front page that cannot get the plans says so, claims nothing about model
   });
   const v = await visit("home", { routes: w.routes });
   assert.equal(v.text(v.$("plans").querySelector("p")!), "The plans could not be loaded just now, so no price is shown.");
-  assert.equal(v.text("from-price"), "Plans and prices below", "no price is claimed when none was read");
+  assert.equal(v.text("from-price"), "", "no price is claimed when none was read");
+  // Before this, the hero said "Plans and prices below" in the same view as "no price is shown": the page contradicted itself.
+  assert.doesNotMatch(v.text("main"), /Plans and prices below/, "and it does not promise prices below while saying below that there are none");
   for (const claim of [/bring your own model key/i, /Your own model key/, /Hosting, not tokens/, /does not resell/i, /not part of the payment/i, /model usage each month/i, /included usage/i]) assert.doesNotMatch(v.text("main"), claim, `a page that could not read the plans must not say ${claim}`);
   assert.match(v.text("main"), /Model usage, stated/, "it says only what is true of either arrangement: the plan states which it is");
   const retry = v.$("plans").querySelector("button")!;
@@ -501,10 +503,14 @@ test("the page for a wrong address offers a visitor the plans and the way in, an
   const v = await visit("404", { routes: out.routes });
   assert.equal(v.text("main"), "That page is not here. The address may have changed, or it may never have existed. These pages do exist. See the plans and prices Sign in Create an account");
   assert.deepEqual(v.doc.querySelectorAll("a").filter((a) => v.shows(a) && !a.className.includes("brand") && a.getAttribute("href") !== "#main" && !v.doc.querySelector("footer")!.contains(a)).map((a) => a.getAttribute("href")), ["/", "/login", "/", "/login", "/signup"], "the header's two, then the page's three");
+  const filled = (x: typeof v): string[] => x.doc.querySelectorAll(".btn-primary").filter((a) => x.shows(a)).map((a) => a.textContent!);
+  assert.deepEqual(filled(v), ["See the plans and prices"], "a signed-out visitor is offered one filled answer");
   const signedIn = world(paid);
   const u = await visit("404", { routes: signedIn.routes });
   assert.equal(u.text("main"), "That page is not here. The address may have changed, or it may never have existed. These pages do exist. See the plans and prices Go to your account");
   assert.equal(u.link("main", "Go to your account").getAttribute("href"), "/account");
+  // Measured before this: signed in, the page had two filled buttons, so the one answer a lost person needs was the one thing it did not give.
+  assert.deepEqual(filled(u), ["Go to your account"], "and a customer is offered their account, not two answers at once");
   assert.deepEqual(u.consoleErrors, []);
 });
 
@@ -755,6 +761,37 @@ test("a new account sees what to do first: choose a plan, and nothing to create,
   assert.equal(v.to("GET", "/api/usage").length, 0, "and usage is not asked for until there is a plan that sells it");
   assert.equal(v.text("notice"), "");
   assert.deepEqual(v.consoleErrors, []);
+});
+
+test("a plan picked on the front page is kept through sign-up, opened on the account, marked in words, and gone to", async () => {
+  // Measured before this, "Choose Business" on the front page led to /account#plan-h and nothing else: the customer arrived at the top,
+  // the plan was behind a closed "Change plan" button, and the page had not moved.
+  const w = world((x) => (x.signedIn = false));
+  const signup = await visit("signup", { routes: w.routes, search: "?plan=business" });
+  assert.equal(signup.storage.get("curule:picked-plan"), "business", "the choice is kept for the account the address makes");
+
+  // A new account: both plans are out, and the one picked is marked and has the cursor.
+  const a = world();
+  const v = await visit("account", { routes: a.routes, search: "?plan=team" });
+  const cards = v.$("plan").querySelectorAll(".plan");
+  assert.match(v.text(cards[0]!), /^Team Your choice /, "the card says which one was picked, in words");
+  assert.doesNotMatch(v.text(cards[1]!), /Your choice/);
+  assert.equal(v.doc.activeElement, cards[0], "the person is put at the plan they picked");
+  assert.deepEqual(v.history, ["/account#plan-h"], "and the address no longer carries the pick");
+
+  // A customer: the others are behind "Change plan", so the list is opened before the page goes there.
+  const p = world(paid);
+  const u = await visit("account", { routes: p.routes, search: "?plan=business" });
+  assert.equal(u.shows(u.$("plan-change")), true, "the list is open, so the plan is really on the page");
+  const others = u.$("plan-change").querySelectorAll(".plan");
+  assert.equal(others.length, 1);
+  assert.match(u.text(others[0]!), /^Business Your choice /);
+  assert.equal(u.doc.activeElement, others[0]);
+
+  // The same choice kept in the tab, as the confirmation link's account finds it: read once, and forgotten.
+  const again = await visit("account", { routes: p.routes, storage: { "curule:picked-plan": "business" } });
+  assert.equal(again.storage.has("curule:picked-plan"), false, "the account takes the pick and forgets it");
+  assert.equal(again.shows(again.$("plan-change")), true, "and opens the list it is in");
 });
 
 test("choosing a plan asks for that plan's checkout and goes to the payment page the service returns, remembering what the account looked like before", async () => {

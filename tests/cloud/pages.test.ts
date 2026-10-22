@@ -287,7 +287,8 @@ test("the sign-in pages are one shell: the form first, and beside it the way thr
     assert.deepEqual(items.map((li) => li.querySelector("strong")!.textContent), rail.steps, `${name}: the rail is this page's job, not the marketing panel every page used to repeat`);
     assert.ok(items.every((li) => li.querySelector("span")!.textContent.trim().length > 0), `${name}: each step says what happens in it`);
     assert.deepEqual(items.filter((li) => attr(li, "aria-current") === "step").map((li) => li.querySelector("strong")!.textContent), [rail.at], `${name}: exactly one step is where the reader is, and it is the right one`);
-    assert.equal(attr(side!.querySelector("svg")!, "aria-hidden"), "true", `${name}: the mark is for the eye`);
+    // The panel used to carry a second, 280 px watermark of the mark; the page's header already has the mark, and the rail on ruled paper is the panel's idea.
+    assert.equal(side!.querySelector("svg"), null, `${name}: the mark is the header's, once`);
   }
   // Nothing in the panel is new: each is a sentence, or the two halves of one, that a page already has.
   const textOf = (file: string): string => read(path.join(PAGES_DIR, file)).replace(/<[^>]+>/g, " ").replace(/\s+/g, " ");
@@ -416,8 +417,13 @@ test("a name a person typed cannot widen the page: the cards that show one break
   // A workspace is named by its owner and nothing says where the name may break: without this a card is as wide as its name and the page scrolls sideways.
   for (const selector of [".row", ".stage", ".confirm"]) assert.equal(own(selector, "overflow-wrap"), "anywhere", selector);
   // The header's three links stay on one line, and on a phone as small as 320 px they and the mark are made smaller before anything is allowed to wrap or overflow.
+  // Signed in, the bar holds the mark and three links: measured at 320 px it came to 325 px (327 on the account), so the bar gives way in four places rather than the page.
   assert.equal(own(".bar nav a", "white-space"), "nowrap", "a link is a word, not two");
-  assert.equal(own(".bar nav a", "padding", "max-width: 380px"), "0 8px");
+  assert.equal(own(".site-header .wrap", "padding-inline", "max-width: 380px"), "14px", "the header's gutter narrows before the page scrolls");
+  assert.equal(own(".bar", "gap", "max-width: 380px"), "8px");
+  assert.equal(own(".bar nav", "gap", "max-width: 380px"), "0");
+  assert.equal(own(".bar nav a", "padding", "max-width: 380px"), "0 7px");
+  assert.equal(own(".bar nav a", "font-size", "max-width: 380px"), ".875rem");
   assert.equal(own(".logo", "height", "max-width: 380px"), "20px");
 });
 
