@@ -90,9 +90,8 @@ here is an impression.
 - **A failed plans request no longer lies about the bill.** Previously `/api/plans`
   failing fell through to the hosting-only claims, so a usage-selling service told the
   reader it did not sell usage. The failure state now hides both conditional arrangements,
-  shows the neutral "Model usage, stated" fact, keeps the price line unchanged ("Plans and
-  prices below"), and offers **Try again**, which clears the cached failure and re-runs
-  the request. The retry test takes the page from no cards to two cards and
+  shows the neutral "Model usage, stated" fact, promises no price, and offers **Try
+  again**, which clears the cached failure and re-runs the request. The retry test takes the page from no cards to two cards and
   "From $149.00 a month". "No plan is on offer just now" and "could not be loaded" are
   distinct sentences.
 - **Legal pages are navigable on a phone.** The side contents are hidden below 1000px, so
@@ -104,10 +103,10 @@ here is an impression.
   h1, lede and rail of three or four steps, exactly one step marked
   `aria-current="step"`: signup (create → plan → workspace → team), login (sign in →
   workspaces → plan → settings), verify (link → once only → expiry), forgot (email →
-  open link → sign in) and reset (the link → new password → sign in). A phone-only line
-  under the form says what happens next ("Next: confirm your email, then choose a plan.").
-  Signup's consent links are **44px tall** at 360 (they were 18px); the label grows to
-  108px to give each line its own target.
+  open link → sign in) and reset (the link → new password → sign in). At the time, a
+  phone-only line under the form said what happens next; the 2026-10-22 pass replaced it
+  with the rail itself, now shown at every width. Signup's consent links are **44px tall**
+  at 360 (they were 18px); the label grows to 108px to give each line its own target.
 - **The account's section strip wraps instead of hiding Settings.** At 360 the strip was
   421px of content in a 328px box with `scrollbar-width: none`: Settings ended at x = 437,
   93px past the edge, with no visible cue. It now wraps onto two rows; scroll width equals
@@ -128,6 +127,50 @@ here is an impression.
   selectors). The rules are gone. The stylesheet is **40,564 bytes** against its 40,960
   byte budget.
 
+## What this pass changed (2026-10-22)
+
+Same harness: Chromium 1248 against the trial service, `prefers-reduced-motion: reduce`,
+at 320 / 360 / 768 / 1024 / 1440. Each defect below was reproduced in the browser before
+it was changed, and each figure is from the page after the change.
+
+- **The bar fits a 320px phone when signed in.** The signed-in bar was 5px wider than the
+  screen: the nav's right edge sat at 325 on a 320px page (327 on the account). At 380px
+  and below the bar now narrows its gutter, its gaps and its link padding: the nav ends
+  at 312 (313 on the account), and the page does not scroll sideways.
+- **The 404 has one primary action for each state.** A signed-in reader was offered two
+  filled buttons ("See the plans and prices" and "Go to your account"), and the page
+  cannot know which one the reader needs. The outbound plans link now carries
+  `data-primary-out` and is filled only while signed out; a test counts the filled
+  answers in both states.
+- **A chosen plan is carried to the account.** "Choose Business" led to
+  `/account#plan-h`, so the customer arrived at the top of the page with the plan list
+  still closed. The link now carries the plan, sign-up keeps the pick, and the account
+  opens the list, marks the card with a "Your choice" badge, focuses it and scrolls to it:
+  measured `scrollY` 1359 with the card at 246px from the top.
+- **A price is said only when one was read.** With the plans failing, the hero said
+  "Plans and prices below" directly above "no price is shown". The hero and the foot now
+  hold `[data-from-price]` nodes filled from one reading of the plans, and an empty line
+  is not drawn. Measured with the plans down: both lines empty and hidden; with them up:
+  "From $149.00 a month" at the top and at the foot.
+- **The record is drawn on a phone.** The figure was `display: none` below 960px, so the
+  only picture of what a workspace produces was absent on the owner's phone. It is now
+  drawn at every width: 319px tall at 360, 235 at 768, 335 at 1440.
+- **The front page ends on Start.** After "04 How billing works" the page ended on prose,
+  and a phone read ended with nothing to do. A fifth numbered entry, "05 Start", repeats
+  the two doors and the price at the decision point, immediately above the footer.
+- **The sign-in rail is on every screen.** The steps through each page's job (with the
+  reader's step marked) lived inside `min-width: 900px`, so a phone never saw them. The
+  rail now follows the form in the same column at every width, and the "Next:" line it
+  duplicated is gone. Measured at 320/360/768/1024/1440: the rail is drawn, as wide as
+  the form's card, with no horizontal overflow; its steps are styled outside any media
+  query, which a test now checks.
+- **The legal pages end on the way back.** The terms and the privacy notice ended on
+  their last clause. Each now closes inside the article with the doors the header offers
+  for the reader's state, plus the plans; the targets are 44px at 320 and 360.
+- **The budget.** The stylesheet is **39,971 bytes** against 40,960. The sign-in panel's
+  chrome and the mark's second drawing (a 280px watermark) paid for the additions; the
+  header already carries the mark once.
+
 ## What is still wrong
 
 - **A dead reset link is only refused on submit.** The reset page cannot ask the API
@@ -143,8 +186,10 @@ here is an impression.
 - **The account headings are not numbered entries.** They are labelled regions with
   pinned ids; adding a visible number inside the h2 would enter the accessible name of
   the section (an `aria-labelledby` reference includes hidden text), so it needs an
-  `aria-label` on each panel or a number placed outside the heading. Left alone rather
-  than half-done.
+  `aria-label` on each panel or a number placed outside the heading. A CSS counter would
+  also be wrong while the page loads: `display: none` panels do not increment, and
+  Settings is visible before the others arrive, so it would be numbered 01 and then 05.
+  Left alone rather than half-done.
 - **The checkout page is the trial's stand-in.** The real payment provider's page is not
   part of this repository's surface and was not inspected. Prices and periods on the site
   were checked against the trial's plan fixtures (Team $149/month, Business $599/month,
@@ -156,10 +201,6 @@ here is an impression.
 - **200% zoom at 360px was not run.** The harness has no zoom emulation; the 320px pass is
   the closest stand-in, and it shows no horizontal overflow. A larger-text phone should be
   the first check of the next pass.
-- **The signed-in 404 offers two primary buttons** ("See the plans and prices" and "Go to
-  your account"). Both are reasonable destinations and the page is not broken; the
-  hierarchy would be cleaner with the account first for a signed-in reader, which needs a
-  session-aware class swap rather than a hidden-attribute selector.
 
 ## Next pass
 
