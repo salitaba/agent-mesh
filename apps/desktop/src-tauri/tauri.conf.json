@@ -46,7 +46,7 @@
     },
     "android": {
       "minSdkVersion": 24,
-      "versionCode": 2001
+      "versionCode": 2002
     },
     "windows": {
       "webviewInstallMode": {
