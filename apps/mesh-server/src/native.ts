@@ -1,5 +1,6 @@
 import type { ResolvedMeshConfig } from "../../../packages/config/src/index";
 import { NativeRuntime, type NativeProviderConfig, type NativeRuntimeOptions } from "../../../packages/runtime-native/src/index";
+import { managedContextWindow } from "./managed";
 
 /**
  * The native runtime, configured from a mesh's `mesh.runtime` block.
@@ -47,6 +48,9 @@ export function nativeRuntimeOptions(config: ResolvedMeshConfig, wiring: NativeW
       ...(p.cacheTtlMs ? { cacheTtlMs: p.cacheTtlMs } : p.kind === "anthropic" ? { cacheTtlMs: config.defaultStaleAfterMs ?? ANTHROPIC_CACHE_TTL_MS } : {}),
     };
   }
+  // A window the mesh names always wins. On a host the service supplied a model to, the service also says how large that model's
+  // window is; without it a 1M-token model is measured against the 128k default and rotates a conversation it could have kept.
+  const contextWindow = config.defaultContextWindow ?? managedContextWindow(wiring.env);
   return {
     providers,
     ...(spec?.defaultProvider ? { defaultProvider: spec.defaultProvider } : {}),
@@ -57,7 +61,7 @@ export function nativeRuntimeOptions(config: ResolvedMeshConfig, wiring: NativeW
     ...(spec?.shellEnv ? { shellEnv: spec.shellEnv } : {}),
     ...(spec?.extraReadRoots.length ? { extraReadRoots: spec.extraReadRoots } : {}),
     ...(spec?.maxSteps ? { maxSteps: spec.maxSteps } : {}),
-    ...(config.defaultContextWindow ? { contextWindow: config.defaultContextWindow } : {}),
+    ...(contextWindow !== undefined ? { contextWindow } : {}),
     env: wiring.env,
     onNotice: (n) => wiring.notice(`native runtime: ${n.message}`),
     onRotate: wiring.onRotate,

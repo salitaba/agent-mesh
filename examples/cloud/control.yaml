@@ -16,6 +16,11 @@ workspaces:
   # With only one domain, `ws.curule.example` beside `app.curule.example` is refused, unless you write the next line, which says
   # you know what it costs (docs/cloud-control-plane.md, "What the check refuses") and makes the check warn of it every time.
   # allow_same_site: true
+  # Environment for every workspace's host. The service sets its own names (its token, a licence, a model key) after these, so
+  # this cannot replace one. The one that matters most is the context window of the model you supply: a host told nothing assumes
+  # 128,000 tokens, and rotates a 1M-token conversation at 60% of that. A mesh's own `context_window` still wins.
+  # env:
+  #   CURULE_MODEL_CONTEXT_WINDOW: "1000000"
 
 # What the load balancer in front of the service connects to.
 public:

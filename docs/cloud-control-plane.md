@@ -278,6 +278,7 @@ prints what the service would run (no secret is in it), and touches nothing.
 |---|---|
 | `app_url` | Where customers reach the app, as an address with no path: `https://app.example.com`. An `https` address means production: cookies are `Secure`, `Strict-Transport-Security` is sent, and the local provisioner is refused. An `http` address is a trial on one machine. |
 | `workspaces.domain` | Workspaces are served at `<slug>.<domain>`. See below for what it may not be. `allow_same_site: true` beside it accepts, knowingly, a domain under the app's own. |
+| `workspaces.env` | Environment given to every workspace's host, as a mapping of names to one line of text: an egress proxy, or `CURULE_MODEL_CONTEXT_WINDOW: "1000000"` for the window of the model this service supplies. A name the service sets itself (the operator token, a licence, a model key) is set after this and wins. |
 | `public` | The listener a load balancer connects to: `host`, `port`, and `trust_proxy_hops`, how many proxies in front add to `X-Forwarded-For`. With 0 the header is not read, and behind a proxy every caller then looks like the proxy. |
 | `owner` | The operator's listener (`host`, `port`) and `token_env`, the environment variable that holds its token (24 characters or more). |
 | `pages` | A directory of account pages: the product's own are in `apps/cloud-server/pages` ([below](#the-account-pages)). Leave it out to serve the API alone. |

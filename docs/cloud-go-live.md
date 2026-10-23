@@ -189,11 +189,14 @@ npm run deploy:cloud -- --dry-run      # the commit, release, image, units and c
 npm run deploy:cloud                   # build, restart, recreate, verify
 ```
 
-It builds the release from the commit (not from the working tree), tags the image it replaces for rollback, rebuilds the
-workspace image, restarts the active units, recreates every container labelled `curule.workspace` with its environment,
-volume, network address and limits carried over, and then checks each container's health, the release it was built from,
-and the default team it serves. It ends by naming any registered project whose `mesh.yaml` has fewer seats than the new
-default: existing projects are never rewritten behind their owner's back; that upgrade is deliberate, in the Designer.
+It builds the release from the commit (not from the working tree), checks the configuration with the new release before
+restarting anything, tags the image it replaces for rollback, rebuilds the workspace image, restarts the active units,
+recreates every container labelled `curule.workspace` with its environment, volume, network address and limits carried
+over, and then checks each container's health, the release it was built from, and the default team it serves.
+`workspaces.env` in `control.yaml` is applied to those containers too, so a setting added to the service (for example
+`CURULE_MODEL_CONTEXT_WINDOW`, the window of the model the service supplies) reaches the workspaces that already exist.
+It ends by naming any registered project whose `mesh.yaml` has fewer seats than the new default: existing projects are
+never rewritten behind their owner's back; that upgrade is deliberate, in the Designer.
 
 An active workspace restarts during a deploy, so a turn in flight is interrupted the way any restart interrupts it; do it
 when the runs you care about are idle. `npm run deploy:cloud -- --verify` checks what is running without building or

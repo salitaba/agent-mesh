@@ -27,6 +27,12 @@ export const MODEL_PROVIDER_ENV = "CURULE_MODEL_PROVIDER";
 export const MODEL_NAME_ENV = "CURULE_MODEL_NAME";
 export const MODEL_KEY_ENV = "CURULE_MODEL_KEY";
 export const MODEL_BASE_URL_ENV = "CURULE_MODEL_BASE_URL";
+/**
+ * The context window, in tokens, of the model this host was given. A workspace's service knows which model it supplies, and a mesh
+ * that names no `context_window` would otherwise assume 128,000 and rotate a 1M-token conversation at 60% of 128k. It only fills in
+ * what the mesh does not say: a seat's own, a model's, a provider's and `mesh.runtime.context_window` all win over it.
+ */
+export const MODEL_CONTEXT_WINDOW_ENV = "CURULE_MODEL_CONTEXT_WINDOW";
 
 /** The name the gateway goes by in a mesh's providers, and so the first half of the model every seat uses: `curule/balanced`. */
 export const MANAGED_PROVIDER = "curule";
@@ -43,9 +49,22 @@ export interface ManagedModels {
   keyEnv: string;
   /** The tier a seat uses when it names no model (for the customer's own key, the model they named). */
   tier: string;
+  /** The model's context window, in tokens, when the service supplying it knows one. */
+  contextWindow?: number;
 }
 
 const OWN_MODEL = /^[A-Za-z0-9][A-Za-z0-9._:/@+-]{0,127}$/;
+const MIN_CONTEXT_WINDOW = 1_000;
+const MAX_CONTEXT_WINDOW = 10_000_000;
+
+/** The context window the service says its model has, or undefined when it says nothing or says it badly. */
+export function managedContextWindow(env: NodeJS.ProcessEnv): number | undefined {
+  const raw = (env[MODEL_CONTEXT_WINDOW_ENV] ?? "").trim();
+  if (raw === "") return undefined;
+  if (!/^[0-9]+$/.test(raw)) return undefined;
+  const window = Number(raw);
+  return Number.isSafeInteger(window) && window >= MIN_CONTEXT_WINDOW && window <= MAX_CONTEXT_WINDOW ? window : undefined;
+}
 
 /** The customer's own key and where it goes, when the host was given one. */
 function ownModels(env: NodeJS.ProcessEnv): ManagedModels | undefined {
@@ -53,7 +72,9 @@ function ownModels(env: NodeJS.ProcessEnv): ManagedModels | undefined {
   const kind = (env[MODEL_PROVIDER_ENV] ?? "").trim();
   const model = (env[MODEL_NAME_ENV] ?? "").trim();
   if (key === "" || !OWN_MODEL.test(model)) return undefined;
-  if (kind === "anthropic") return { source: "own", kind, keyEnv: MODEL_KEY_ENV, tier: model };
+  const contextWindow = managedContextWindow(env);
+  const window = contextWindow !== undefined ? { contextWindow } : {};
+  if (kind === "anthropic") return { source: "own", kind, keyEnv: MODEL_KEY_ENV, tier: model, ...window };
   if (kind !== "openai-compatible") return undefined;
   const base = (env[MODEL_BASE_URL_ENV] ?? "").trim();
   try {
@@ -62,7 +83,7 @@ function ownModels(env: NodeJS.ProcessEnv): ManagedModels | undefined {
   } catch {
     return undefined;
   }
-  return { source: "own", kind, baseUrl: base.replace(/\/+$/, ""), keyEnv: MODEL_KEY_ENV, tier: model };
+  return { source: "own", kind, baseUrl: base.replace(/\/+$/, ""), keyEnv: MODEL_KEY_ENV, tier: model, ...window };
 }
 
 /** The managed models this host was given, or undefined when it holds both the address and the key of none. */
@@ -83,7 +104,8 @@ function gatewayModels(env: NodeJS.ProcessEnv): ManagedModels | undefined {
     return undefined;
   }
   const tier = (env[GATEWAY_MODEL_ENV] ?? "").trim();
-  return { source: "gateway", kind: "openai-compatible", baseUrl: url.replace(/\/+$/, ""), keyEnv: GATEWAY_KEY_ENV, tier: /^[A-Za-z0-9._-]{1,64}$/.test(tier) ? tier : DEFAULT_TIER };
+  const window = managedContextWindow(env);
+  return { source: "gateway", kind: "openai-compatible", baseUrl: url.replace(/\/+$/, ""), keyEnv: GATEWAY_KEY_ENV, tier: /^[A-Za-z0-9._-]{1,64}$/.test(tier) ? tier : DEFAULT_TIER, ...(window !== undefined ? { contextWindow: window } : {}) };
 }
 
 /**
@@ -115,6 +137,7 @@ export function rewriteForManagedModels(text: string, managed: ManagedModels): {
   if (inherits) doc.setIn(["mesh", "runtime", "default"], "native");
   doc.setIn(["mesh", "runtime", "model"], `${MANAGED_PROVIDER}/${managed.tier}`);
   doc.setIn(["mesh", "runtime", "designer"], "native");
+  if (managed.contextWindow !== undefined) doc.setIn(["mesh", "runtime", "context_window"], managed.contextWindow);
   doc.setIn(["mesh", "runtime", "providers"], doc.createNode({ [MANAGED_PROVIDER]: { kind: managed.kind, ...(managed.baseUrl ? { base_url: managed.baseUrl } : {}), api_key_env: managed.keyEnv } }));
   return { text: String(doc), changed: true };
 }

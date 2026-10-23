@@ -86,7 +86,10 @@ floor. A mesh-wide value never raises a model the adapter knows to be smaller.
 
 Set it when seats run a model the adapter does not know. A proxied
 `deepseek-v4.1-flash` is one example: it fell to the 120k floor while having a 1M
-window, and each such fallback is logged once. The adapter measures a session's
+window, and each such fallback is logged once. On a hosted workspace whose service
+supplies the model, the service can set `CURULE_MODEL_CONTEXT_WINDOW` (the control
+plane's `workspaces.env`): the host uses it when the mesh says nothing, and a
+`context_window` in the file, on a provider or on a seat still wins. The adapter measures a session's
 context as the largest single prompt of its last turn. It reads the usage on
 `message_start`, on `message_delta` (the only frame some proxies fill) and on
 assistant frames. When no frame reports usage, it estimates the size from the

@@ -168,6 +168,7 @@ export async function startControl(config: ControlConfig, options: StartOptions 
         provisioner,
         secret: config.secret,
         workspaceDomain: config.workspaces.domain,
+        ...(config.workspaces.env ? { workspaceEnv: config.workspaces.env } : {}),
         ...(config.gateway ? { gatewayUrl: config.gateway.tenantUrl } : {}),
         limits: config.provisioner.limits,
         ...(config.licence ? { signer: { kid: config.licence.kid, privateKey: config.licence.privateKey } } : {}),

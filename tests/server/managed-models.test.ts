@@ -10,7 +10,7 @@ import * as os from "os";
 import * as path from "path";
 import { shellEnv } from "../../packages/runtime-native/src/index";
 import { startHostServer, type HostHandle } from "../../apps/mesh-server/src/host";
-import { DEFAULT_TIER, managedModels, rewriteForManagedModels, type ManagedModels } from "../../apps/mesh-server/src/managed";
+import { DEFAULT_TIER, managedContextWindow, managedModels, rewriteForManagedModels, type ManagedModels } from "../../apps/mesh-server/src/managed";
 import { nativeRuntimeOptions } from "../../apps/mesh-server/src/native";
 import { findShippedRoot, defaultMeshTemplate, resolveConfig, scaffoldExample } from "../../packages/config/src/index";
 
@@ -322,6 +322,33 @@ test("the customer's own key is read by the runtime from its variable, and that 
     const seatShell = shellEnv({ ...OWN_ENV, PATH: "/usr/bin" }, "inherit", Object.values(options.providers).flatMap((p) => (p.keyEnv ? [p.keyEnv] : [])));
     assert.ok(!("CURULE_MODEL_KEY" in seatShell), "the seat's shell does not have the key");
     assert.ok(!Object.values(seatShell).includes(OWN_KEY));
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("the window the service says its model has is written into the mesh, and fills in when the mesh says nothing", () => {
+  // A proxied deepseek-v4.1-flash has a 1M window and is measured against 128k when nobody says otherwise.
+  const env = { ...OWN_ENV, CURULE_MODEL_CONTEXT_WINDOW: "1000000" };
+  assert.equal(managedContextWindow(env), 1_000_000);
+  assert.equal(managedModels(env)!.contextWindow, 1_000_000);
+  for (const bad of ["", "0", "999", "10000001", "1e6", "1,000,000", "-1", "many"]) assert.equal(managedContextWindow({ CURULE_MODEL_CONTEXT_WINDOW: bad }), undefined, JSON.stringify(bad));
+
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "managed-window-"));
+  try {
+    const withWindow = rewriteForManagedModels(defaultMeshTemplate("Shop", "shop", "claude"), managedModels(env)!).text;
+    assert.match(withWindow, /context_window: 1000000/);
+    fs.writeFileSync(path.join(dir, "mesh.yaml"), withWindow);
+    const stated = resolveConfig(path.join(dir, "mesh.yaml"));
+    assert.equal(stated.defaultContextWindow, 1_000_000, "the file says it, so a person can read and change it");
+
+    // A mesh that names its own window keeps it; one that names none gets the service's.
+    fs.writeFileSync(path.join(dir, "mesh.yaml"), rewriteForManagedModels(defaultMeshTemplate("Shop", "shop", "claude"), MANAGED).text);
+    const silent = resolveConfig(path.join(dir, "mesh.yaml"));
+    assert.equal(silent.defaultContextWindow, undefined);
+    const wiring = { env, notice: () => undefined, warn: () => undefined, onRotate: () => undefined };
+    assert.equal(nativeRuntimeOptions(silent, wiring).contextWindow, 1_000_000, "the service's window, when the mesh is silent");
+    assert.equal(nativeRuntimeOptions(stated, { ...wiring, env: { ...env, CURULE_MODEL_CONTEXT_WINDOW: "500000" } }).contextWindow, 1_000_000, "the mesh's own window wins");
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }

@@ -38,11 +38,14 @@ Environment:
   IMAGE=curule-workspace:launch         the image every workspace runs
   UNITS="curule-control curule-egress"  systemd --user units that run the release
   CONTROL_HEALTH=http://127.0.0.1:7500/healthz
+  CONTROL_CONFIG=~/deploy/curule-cloud/control.yaml  where workspaces.env is read from
 
-A full deploy: builds the release, rebuilds the workspace image (tagging the old one for rollback),
-restarts the active units, recreates every container labelled curule.workspace from that image with
-its environment, volumes, network address and limits carried over, then verifies health, the release
-each container was built from, and the default team it serves.
+A full deploy: checks the configuration with the new release, builds it, rebuilds the workspace image
+(tagging the old one for rollback), restarts the active units, recreates every container labelled
+curule.workspace from that image with its environment, volumes, network address and limits carried
+over — and with workspaces.env from the control configuration applied, so a setting added to the
+service also reaches containers it did not create — then verifies health, the release each container
+was built from, and the default team it serves.
 EOF
 }
 
@@ -51,6 +54,7 @@ REPO="${REPO:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 IMAGE="${IMAGE:-curule-workspace:launch}"
 UNITS="${UNITS:-curule-control curule-egress}"
 CONTROL_HEALTH="${CONTROL_HEALTH:-http://127.0.0.1:7500/healthz}"
+CONTROL_CONFIG="${CONTROL_CONFIG:-$DEPLOY/control.yaml}"
 WORKSPACE_LABEL="curule.workspace"
 REVISION_LABEL="org.opencontainers.image.revision"
 
@@ -64,6 +68,29 @@ note() { printf '%s\n' "$*"; }
 step() { printf '\n== %s\n' "$*"; }
 warn() { printf 'warning: %s\n' "$*" >&2; }
 die() { printf 'deploy: %s\n' "$*" >&2; exit 1; }
+
+# `workspaces.env` from the control configuration, as KEY=VALUE lines. A container the control creates gets these; one this script
+# recreates must get them too, or a setting added to the service (the model's context window, an egress proxy) never reaches the
+# workspaces that already exist.
+control_workspace_env() {
+  [ -f "$CONTROL_CONFIG" ] || return 0
+  NODE_PATH="$REPO/node_modules${NODE_PATH:+:$NODE_PATH}" node -e '
+    const fs = require("fs");
+    const { parse } = require("yaml");
+    let config;
+    try {
+      config = parse(fs.readFileSync(process.argv[1], "utf8"));
+    } catch (err) {
+      console.error(`deploy: cannot read ${process.argv[1]}: ${err.message}`);
+      process.exit(1);
+    }
+    const env = config && config.workspaces && config.workspaces.env;
+    if (!env || typeof env !== "object" || Array.isArray(env)) process.exit(0);
+    for (const [name, value] of Object.entries(env)) {
+      if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") process.stdout.write(`${name}=${value}\n`);
+    }
+  ' "$CONTROL_CONFIG"
+}
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -139,6 +166,10 @@ if [ "$VERIFY" = 0 ]; then
   else
     note "  containers      ${PLANNED[*]}"
   fi
+  if [ "${#PLANNED[@]}" -gt 0 ] && [ -f "$CONTROL_CONFIG" ]; then
+    env_names="$(control_workspace_env | sed 's/=.*//' | tr '\n' ' ')"
+    [ -z "$env_names" ] || note "  workspace env   $env_names (from $CONTROL_CONFIG)"
+  fi
   note "  note            each listed container restarts; a turn in flight is interrupted"
 fi
 if [ "$DRY" = 1 ]; then
@@ -182,6 +213,12 @@ if [ "$VERIFY" = 0 ]; then
   step "building release $SHORT"
   REPO="$REPO" "$DEPLOY/bin/build-release.sh" "$SHA"
   [ -f "$REL/Dockerfile" ] || die "the build said it wrote $REL, but there is no Dockerfile there"
+  # The service is stopped for no configuration the release it is about to run would refuse. This is the account pages' own check,
+  # with the operator's secrets loaded as systemd loads them.
+  if [ -x "$DEPLOY/bin/check-config.sh" ]; then
+    step "checking the configuration with the new release"
+    "$DEPLOY/bin/check-config.sh" || die "the new release refuses this configuration (above); nothing was restarted"
+  fi
 fi
 [ -d "$REL" ] || die "no release at $REL"
 
@@ -249,6 +286,16 @@ recreate_container() {
   envfile="$TMP_DIR/env.$name"
   docker inspect -f '{{range .Config.Env}}{{println .}}{{end}}' "$name" > "$envfile"
   chmod 600 "$envfile"
+  # What the control plane would give a container it made now. Replace a key rather than adding it twice: the last value wins in a
+  # Docker env-file, and a stale one in front of it reads as if the service still said it.
+  local env_key env_value
+  while IFS='=' read -r env_key env_value; do
+    [ -n "$env_key" ] || continue
+    grep -v "^${env_key}=" "$envfile" > "$envfile.next" || true
+    printf '%s=%s\n' "$env_key" "$env_value" >> "$envfile.next"
+    mv "$envfile.next" "$envfile"
+    chmod 600 "$envfile"
+  done < <(control_workspace_env)
 
   local -a args=(--detach --name "$name" --hostname "$hostname" --network "$net")
   [ -z "$ip" ] || args+=(--ip "$ip")

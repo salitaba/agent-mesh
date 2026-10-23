@@ -40,6 +40,11 @@ export interface ControlConfig {
     port?: number;
     /** The operator has accepted, in the file, that the domain shares its registrable domain with the app. */
     allowSameSite?: true;
+    /**
+     * Environment given to every workspace's host: an egress proxy, or the context window of the model this service supplies
+     * (`CURULE_MODEL_CONTEXT_WINDOW`). The service's own names are set after these and cannot be replaced by them.
+     */
+    env?: Record<string, string>;
   };
   /** True when the service is behind TLS. The local provisioner is refused then. */
   production: boolean;
@@ -341,6 +346,26 @@ export function loadControlConfig(file: string, env: NodeJS.ProcessEnv = process
   if (ws && !HOSTNAME.test(domain)) problems.push(`workspaces.domain '${String(ws.domain ?? "")}' is not a domain name`);
   if (ws && ws.allow_same_site !== undefined && typeof ws.allow_same_site !== "boolean") problems.push("workspaces.allow_same_site must be true or false");
   const allowSameSite = ws?.allow_same_site === true;
+  // Extra environment for every workspace's host. A name the service sets itself (the operator token, a licence, a model key) is set
+  // after this and wins, so nothing here can replace one; these are for settings the host reads, such as the model's context window.
+  const workspaceEnv: Record<string, string> = {};
+  if (ws?.env !== undefined && ws.env !== null) {
+    if (!isObject(ws.env)) problems.push("workspaces.env must be a mapping of variable names to text");
+    else {
+      for (const [name, value] of Object.entries(ws.env)) {
+        if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)) {
+          problems.push(`workspaces.env '${name}' is not a variable name (letters, digits and _, not starting with a digit)`);
+          continue;
+        }
+        const text = typeof value === "string" ? value : typeof value === "number" || typeof value === "boolean" ? String(value) : "";
+        if (text === "" || text.length > 4096 || /[\x00\r\n]/.test(text)) {
+          problems.push(`workspaces.env.${name} must be one line of text, 1 to 4096 characters`);
+          continue;
+        }
+        workspaceEnv[name] = text;
+      }
+    }
+  }
   let sameSiteAccepted = false;
   if (app && HOSTNAME.test(domain) && !(isLocal(appHost) && isLocal(domain))) {
     if (domain === appHost || appHost.endsWith(`.${domain}`) || domain.endsWith(`.${appHost}`)) problems.push(`workspaces.domain '${domain}' must not be the app's host '${appHost}', or above it or below it: a workspace is served at <slug>.${domain}`);
@@ -544,7 +569,7 @@ export function loadControlConfig(file: string, env: NodeJS.ProcessEnv = process
   return {
     appUrl,
     appHost,
-    workspaces: { domain, scheme: production ? "https" : "http", ...(workspacePort !== undefined ? { port: workspacePort } : {}), ...(sameSiteAccepted ? { allowSameSite: true as const } : {}) },
+    workspaces: { domain, scheme: production ? "https" : "http", ...(workspacePort !== undefined ? { port: workspacePort } : {}), ...(sameSiteAccepted ? { allowSameSite: true as const } : {}), ...(Object.keys(workspaceEnv).length > 0 ? { env: workspaceEnv } : {}) },
     production,
     public: { ...publicListen, trustProxyHops },
     owner: { ...ownerListen, token: ownerToken },

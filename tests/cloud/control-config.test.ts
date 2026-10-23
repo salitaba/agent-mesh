@@ -96,6 +96,20 @@ test("a trial on one machine is http on localhost, with workspaces beside it, lo
   );
 });
 
+test("workspaces.env gives every host the settings it reads, and refuses what is not a name and one line of text", () => {
+  using(
+    workdir((raw) => (raw.workspaces = { domain: "curule-ws.example", env: { CURULE_MODEL_CONTEXT_WINDOW: "1000000", HTTPS_PROXY: "http://egress.curule-workspaces:3128" } })),
+    (w) => assert.deepEqual(load(w).workspaces.env, { CURULE_MODEL_CONTEXT_WINDOW: "1000000", HTTPS_PROXY: "http://egress.curule-workspaces:3128" }),
+  );
+  using(workdir((raw) => (raw.workspaces = { domain: "curule-ws.example", env: { CURULE_MODEL_CONTEXT_WINDOW: 1000000 } })), (w) => {
+    assert.equal(load(w).workspaces.env?.CURULE_MODEL_CONTEXT_WINDOW, "1000000", "a number is the text of itself");
+  });
+  using(workdir((raw) => (raw.workspaces = { domain: "curule-ws.example", env: "nope" })), (w) => assert.match(refusal(w), /workspaces\.env must be a mapping of variable names to text/));
+  using(workdir((raw) => (raw.workspaces = { domain: "curule-ws.example", env: { "bad name": "x" } })), (w) => assert.match(refusal(w), /workspaces\.env 'bad name' is not a variable name/));
+  using(workdir((raw) => (raw.workspaces = { domain: "curule-ws.example", env: { OK: "two\nlines" } })), (w) => assert.match(refusal(w), /workspaces\.env\.OK must be one line of text/));
+  using(workdir((raw) => (raw.workspaces = { domain: "curule-ws.example", env: { OK: true } })), (w) => assert.equal(load(w).workspaces.env?.OK, "true"));
+});
+
 test("an address with its default port is the origin without it, and a trailing slash is no path", () => {
   using(workdir((raw) => (raw.app_url = "https://app.curule.example:443/")), (w) => {
     const c = load(w);
