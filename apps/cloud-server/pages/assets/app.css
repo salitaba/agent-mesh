@@ -334,7 +334,7 @@ input:disabled, select:disabled { background: var(--k-surface-2); cursor: not-al
 .reveal:hover { background: var(--k-surface-2); color: var(--k-ink); }
 .reveal:focus-visible { outline-offset: -5px; border-radius: var(--k-r-sm); }
 .reveal[aria-label^="Hide"] { --n: 5; }
-.check { display: flex; align-items: flex-start; gap: 12px; margin-bottom: 16px; font-size: .9375rem; }
+.check { display: flex; align-items: flex-start; gap: 12px; margin-bottom: 12px; font-size: .9375rem; }
 .check label { display: block; min-height: 44px; padding: 10px 0; line-height: 24px; cursor: pointer; }
 input[type="checkbox"] {
   appearance: none;
@@ -438,10 +438,10 @@ meter::-moz-meter-bar { border-radius: var(--k-r-pill); background: currentColor
 .tile-bars::before { --n: 6; }
 
 /* ---- sign-in family: a form, and under it the way through this page's job */
-.auth { padding-block: clamp(28px, 6vh, 64px); }
+.auth { padding-block: clamp(24px, 4vh, 56px); }
 .auth-main, .auth-side { width: 100%; max-width: 28rem; margin-inline: auto; }
 .auth-main h1 { margin-bottom: 8px; }
-.auth-main .lede { margin-bottom: 28px; color: var(--k-muted); }
+.auth-main .lede { margin-bottom: 24px; color: var(--k-muted); }
 .auth-main .btn-row { flex-direction: column; gap: 8px; }
 .auth-main .btn-row .btn, .auth-main form > .btn { width: 100%; min-height: 44px; }
 .auth-main .card { margin-top: 20px; }

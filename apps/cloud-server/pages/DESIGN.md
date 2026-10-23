@@ -383,3 +383,32 @@ from Chromium's accessibility tree.
   720px is what a 1440 window has at 200% zoom, while the 360px text checks raise the root
   rather than change the browser's default size. No axe-core run, and the usage tables
   have not been seen with a real model key behind them.
+
+## 2026-10-23: the way-in pass
+
+Same trial service (`trial --port 7620`), Chromium 1208 through `playwright-core`, 320 /
+360 / 768 / 1440 at 800 tall, `prefers-reduced-motion: reduce`. Heights are
+`document.documentElement.scrollHeight`; positions are `getBoundingClientRect`.
+
+- **The way in fits one phone screen.** The sign-in family opened 48px below the header at a
+  360×800 phone, which left the sign-up form's action at the very bottom (y = 709, bottom
+  753) and the line to the other door — "Already have an account? Sign in" — below the fold
+  at 818. The column's opening is now `clamp(24px, 4vh, 56px)` (32 at 800), the lede's gap
+  to the form is 24 (was 28) and the consent row's gap to the button 12 (was 16): the action
+  ends at 729 and the aside at **794**, both in the first screen, and `/signup` is
+  **1,480 → 1,440** at 360 (320: 1,627 → 1,587; 768: 1,439 → 1,399; 1440: 963 → 923).
+- **A refusal's action stays in the first screen.** After an empty submit the note grows the
+  form by 66px, so the submit used to end at 819; it ends at **795**. A two-line refusal
+  ("Choose a password of at least 10 characters.") still ends at 819, 19px below an 800px
+  screen: the next pass would shorten that sentence or bring the note to the field.
+- **A refused sign-in keeps its next action in view.** The resend block the page reveals
+  ends at **787** (was 807) and its card at 808 (was 828); the primary "Sign in" is at 568.
+- **A refusal describes the field it names, and stops when the field changes.** `invalid()`
+  now appends the status region to the field's `aria-describedby` (the password keeps
+  `password-hint`, so it reads "password-hint status") and the notice is cleared when that
+  field is edited. Before, the mark was cleared on input but the sentence stayed: after
+  typing the email the note was still 50px tall and the page 1,506px; now it is empty and
+  the page back at 1,440.
+- **The account is unchanged.** The plan-less account at 360 is 1,627px, no sideways
+  scroll, nothing under 12px, no target under 44px, its first price at y = 708 and the
+  "Choose a plan" action at 498. Both schemes, 320 and 1440 included.
