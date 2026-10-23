@@ -297,3 +297,89 @@ has at 200% zoom). Figures are `scrollHeight`, `getBoundingClientRect` and `getC
   flow.
 - Re-run the failure, empty, refused and long-output states against a real deployment with
   a model key, where the account's usage table has more than one row.
+
+## 2026-10-23: the large-text and long-table pass
+
+Same surface, same trial service (`trial --port 7517`), Chromium 1248 through
+`playwright-core`: 320 / 360 / 768 / 1000 / 1440 in light and dark,
+`prefers-reduced-motion: reduce`, 720 as the 200% zoom stand-in, and a large-text profile
+made by raising the root to **24px (150%)** at 320 and 360 and **32px (200%)** at 320, 360
+and 1440. Each defect below was reproduced before it was changed. Heights are
+`document.documentElement.scrollHeight`; positions are `getBoundingClientRect`; names are
+from Chromium's accessibility tree.
+
+- **The header now wraps instead of passing the edge when the text is large.** At 24px
+  text on a 360 phone the signed-in bar was **390px wide on a 360px page** (the nav began
+  at 112 and ended at 390); at 320 it was also 390. At 32px text it was **474px**. The bar
+  had no wrap and the header added 14px of padding inside the page's 16px gutter. It now
+  takes the page's gutter and, at 720px and narrower, lets the bar and its nav wrap: at
+  24px the header is **97px tall** (the mark, then the links on one row) and the page is
+  320/360 wide again; at 32px on 360 it is **141px** with the links in two rows; at 320 it
+  is 141. Normal text is unchanged: the header is still **61px**, and on a 320 page the
+  mark starts at **16** (it was 30) and the nav ends at **304** (it was 313). The account
+  is 3,082px tall at 320 and 2,955 at 360 with the same fixture, before and after.
+- **At 200% text the balance's two small figures no longer widen the page.** At 32px text
+  on 360 the "From credit you added" column reached **401px** and its `$10.00` text
+  reached **362** (41 and 2 past the page). The figures' grid items can now shrink, and
+  the two secondary amounts are capped at `min(1.375rem, 9vw)`: they are **32.4px** on a
+  360 screen and **28.8px** on 320, while "Available" stays **72px**. The page is 360 wide
+  with no sideways scroll at either text size. The trade is deliberate: at 200% text the
+  secondary figure is only about 4px larger than its 28px label, but it is on the page.
+- **A long usage table keeps the name of its row while the money scrolls.** With 14 days
+  and 8 workspaces, the by-day table is 781px in a 326px box at 360. Scrolled to the
+  money (`scrollLeft` 455), the "Oct 22, 2026" cell was at **x = -438**, off the box; the
+  reader saw two columns of figures with no day attached. The first cell of every row
+  (header, body and total) is now sticky at the left edge: at the same scroll the day is
+  at **x = 17** with the box at 16, and `DAY` and `Total` stay too. At 1000 and 1440 the
+  table fits (934/934 and 1,078/1,078), so the rule does nothing there.
+- **Following the account's section list gives the cursor to the section.** With the list
+  focused, Enter on "Usage" updated the hash and scrolled to the right place, but left
+  `document.activeElement` on **BODY**, so the next Tab went to Settings, past the
+  section. A same-page link now focuses what it names (after the browser's own jump): the
+  heading **Usage** has the cursor and a 2px ring, and the next Tab is the table region.
+  Settings focuses its **summary** (the disclosure opens) and the next Tab is "Current
+  password". The same handler serves the legal pages: the phone contents' second link now
+  puts the cursor on **"What the service is"** instead of the body. All links without a
+  target (`#`) are left alone.
+- **The account's five sections are numbered entries, with their names intact.** Each
+  heading carries `data-entry` 01–05 and draws it in 12px monospace before the title, as
+  the home page does. The number is generated content with empty alternative text
+  (`content: attr(data-entry) / ""`), so the accessibility tree still says
+  **Workspaces, Plan, Balance, Usage, Settings**, not "01 Workspaces". The headings did not
+  move; the page height is unchanged. A plan-only account shows 02 and 05, which are the
+  sections it has: the numbers belong to the section, not to the count of what is visible.
+- **States and schemes.** The account's loading, failed, empty, cancelled and paid states
+  were walked again at 320/360 (the paid return leaves "Your payment has arrived." at
+  y = 220 with the page at scrollY 0). The long, empty and failed usage tables were
+  measured with the same fixtures. 320, 360, 768, 1000, 1440, 720 and the two text sizes
+  have no sideways page scroll; the smallest text still computes to **12px** at normal
+  text; both schemes were checked.
+- **The budget.** `app.css` is **40,958 bytes of 40,960** (was 40,871, a net +87). The
+  sticky column, the numbers, the wrap and the figures' cap cost more than that; comments
+  and two merged media blocks paid for the difference. Two bytes remain: the next pass
+  removes before it adds.
+  `tests/cloud/pages.test.ts` now pins the sticky first cell, the number's empty spoken
+  form and the wrap; the Settings summary assertion allows the `data-entry` attribute, and
+  the header gutter assertion reads 0 (the design record here explains why). The behaviour
+  of the jump is pinned in `pages-dashboard.test.ts`.
+
+### What is still wrong
+
+- **A dead reset link is still only refused on submit.** No `GET` token route exists in the
+  control plane, and this surface must not add one. The form says "That link did not work"
+  with the server's reason after the password is sent; a reader still types before
+  learning.
+- **The trial's payment page is not this surface and overflows by 5px at 360.** It lives in
+  `apps/cloud-server/src/trial.ts`, not in `pages/`, and was looked at as a page
+  (title "Pay: a trial", the plan and amount, one button and Cancel) but not changed. The
+  real provider's page is still uninspected.
+- **The secondary balance figures are capped rather than stacked at 200% text.** At 32px
+  text on a 360 phone they are 32.4px against a 28px label. Stacking them would restore the
+  hierarchy but add about 60px to every phone's balance.
+- **Numbering leaves gaps when a section is absent.** A plan-only account shows 02 Plan and
+  05 Settings; that is the section's place in the record, not a mistake, but a reader may
+  look for 01.
+- **Prose-only inline links remain 18–19px tall**, and the 200% check is still a stand-in:
+  720px is what a 1440 window has at 200% zoom, while the 360px text checks raise the root
+  rather than change the browser's default size. No axe-core run, and the usage tables
+  have not been seen with a real model key behind them.
