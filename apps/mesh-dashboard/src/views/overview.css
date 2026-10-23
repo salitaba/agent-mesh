@@ -8,6 +8,11 @@
 .ov { display: flex; flex-direction: column; gap: var(--s3); }
 .ov .view-title { margin-bottom: 0; }
 .ov-empty { margin: 0; font-size: 14px; color: var(--muted); }
+/* An empty panel is a sentence and the way to fill it, in one row: "No work yet." on its own was a dead end. The same shape as
+   the retry row a failed read uses, so a card that has nothing and a card that could not read look like one page. The sentence
+   has a small basis, so at a desk it shares the row with the button; on a phone it wraps above it rather than squeeze. */
+.ov-empty-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s2) var(--s3); font-size: 14px; color: var(--text-dim); }
+.ov-empty-row > span { flex: 1 1 22ch; min-width: 0; }
 .ov-retry { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s2); font-size: 14px; color: var(--text-dim); }
 /* Something that is running right now breathes a ring. It is a pseudo-element, so what it rings keeps its own ring and shadow where they are. */
 .lit { position: relative; }
@@ -184,7 +189,10 @@ details.ov-note { display: block; }
 @media (max-width: 620px) {
   .ov-hero-top, .ov-now, .ov-note { padding-left: var(--s4); padding-right: var(--s4); }
   .ov-hero-top { gap: var(--s3); }
-  .ov-headline > b { font-size: 24px; }
+  /* At 390 the page's signpost and the mission's state were both 24, so "Overview" competed with "Parked.". The record says the
+     hero is the news and the page name is a signpost: a short state keeps the display step, and only a sentence-long one steps
+     down (the rule above already picks .long by length). Measured 24 → 30 on "Parked."; the hero grew 7 px. */
+  .ov-headline > b { font-size: 30px; }
   .ov-headline > b.long { font-size: 20px; }
   .ov-headline > span { font-size: 16px; }
   .ov-acts { padding-left: 0; gap: var(--s2); }

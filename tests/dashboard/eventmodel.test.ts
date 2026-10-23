@@ -209,6 +209,16 @@ test("a shorter run of notice events stays as rows, and an alert is never folded
   assert.deepEqual(mini(miniFeed(list)), ["agent.completed", "agent.completed", "agent.state_changed", "agent.state_changed", "agent.state_changed", "agent.state_changed"]);
 });
 
+test("a parked mission's summary is the goal, not the roster: the seats joining fold into one row", () => {
+  n = 0;
+  const list = [
+    ...Array.from({ length: 8 }, (_, i) => ev("agent.created", 3 + i)),
+    ev("thread.created", 2),
+    ev("goal.created", 1),
+  ];
+  assert.deepEqual(mini(miniFeed(list)), ["fold(8 joined the team)", "thread.created", "goal.created"]);
+});
+
 test("a summary of a busy log is capped, and a fold's key is its oldest event so rows arriving at the top do not remount it", () => {
   n = 0;
   const list = Array.from({ length: 20 }, (_, i) => ev("goal.status_changed", i, { payload: { status: "ACTIVE" } }));
