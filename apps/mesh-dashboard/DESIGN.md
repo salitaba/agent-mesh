@@ -38,7 +38,9 @@ ring), not only how wide it is.
 
 1. **The brief** — `PageHeader`: the view's name, its status if it has one, one
    sentence saying what the page is for, and the page's actions. On a phone the
-   actions take their own row and controls may grow to fill it.
+   actions take their own row and controls may grow to fill it. When the page
+   shows a first-run guide, the guide *is* the brief and the header's sentence is
+   omitted: two briefs pushed the Designer's first seat out of the screen.
 2. **The state, before the content** — a banner for stale or refused, an
    `ErrorState` with a retry, an `EmptyState` with the next move. Never an empty
    card, never zeros standing in for "not read".
@@ -123,7 +125,9 @@ Breakpoints: **1280 1100 900 800 760 620 560**. 800 is the sidebar drawer (JS
   `aria-modal`, the page behind `inert` and not scrolling, Tab cycling inside it,
   and focus returning to its opener. On a phone it takes the whole screen
   (`100dvh`) and its own safe-area insets. The same rules for the navigation
-  drawer as for the Help panel, the command palette and the confirmation dialog.
+  drawer as for the Help panel, the command palette and the confirmation dialog —
+  and for the Designer's inspector, YAML preview and assistant dock where they
+  cover the page (pinned by `tests/dashboard/designer-layers.test.ts`).
 - A notice can be dismissed by hand; an action that resolves it dismisses it
   too. Nothing waits out a timer to get out of the way.
 
@@ -145,8 +149,14 @@ Breakpoints: **1280 1100 900 800 760 620 560**. 800 is the sidebar drawer (JS
   deliberate trade that made it one row; the goal leads Overview and is one tap
   away, but a reader on Events cannot see it without leaving the page. Watch
   whether that absence costs a visit in real use.
-- The Designer is out of this pass's surface, but its phone inspector is the next
-  place where desktop controls are still being stacked.
+- The Designer's phone header still stacks its actions three rows deep (116 px)
+  before the roster; and its first-run guide plus header leave only the first
+  seat row on an 844 px screen. Both are measured in the 2026-10-23 entry with
+  the two shapes that would shorten them and what each would hide.
+- The Designer's YAML preview scrolls sideways inside its own box (2,043 px of
+  text at 360). A wrap toggle is the next move; the page itself stays put.
+- 768 px is just above the Designer's 760 phone layout: the guide disclosures
+  are 32 px and the canvas wire handles 26 px on a touch-class screen.
 - Overview's avatar initials are 11 px glyphs in a 22 px disc. They are marks, not
   words, and stay at 11 on a phone.
 - The public site (`apps/cloud-server/pages`) has its own memory; this pass did
@@ -161,12 +171,78 @@ Breakpoints: **1280 1100 900 800 760 620 560**. 800 is the sidebar drawer (JS
 3. Prove whether 768 px needs the project sheet: seed enough projects that the
    strip overflows at 768 and judge it as a tablet's one-row alternative to the
    phone's switcher.
-4. Read the console with a real thumb on a real phone: the measurements here are
+4. The Designer's phone header: move undo/redo into `⋯` and measure whether the
+   52 px it returns is worth the extra press; then decide the guide's shape (the
+   path in one line, or a sheet) against the roster's first two rows being
+   visible on arrival.
+5. Give the YAML preview a wrap toggle and measure a 2,043 px line at 360.
+6. Decide whether a touch-class 768 px tablet inherits the Designer's 44 px
+   controls or stays at pointer density.
+7. Read the console with a real thumb on a real phone: the measurements here are
    Chromium at 360 px with touch emulation only in CSS, not a hardware device.
-5. Check the frame's safe-area claims on a notched device in both orientations;
+8. Check the frame's safe-area claims on a notched device in both orientations;
    the insets are in the CSS but the stand-in browser reports them as zero.
 
 ## Pass log
+
+### 2026-10-23 — the designer, drawn by one hand
+
+Surface: `apps/mesh-dashboard/src/designer` (canvas, roster, inspector, assistant dock, setup guide, checks/YAML chrome).
+Direction unchanged: dense, plain, one-thumbed. The work was to make the surface obey the rules this file already claimed,
+and to give a seat's name the space it needs at every width. Measured in a driven Chromium at 360, 768 and 1440 against a
+nine-seat copy (`/tmp/full-squad`) and an eight-seat project with a placeholder goal (`/tmp/designer-empty`).
+
+**Bugs found, proved, fixed**
+
+- **The roster cut seat names.** At 360 the name measured 88 px of width for 151 px of text; six of nine rows read
+  `frontend-…`, `ux-desig…`. The flags shared the name's line. Now the name is its own wrapping line: measured 194/194 px,
+  0 of 9 cut, and the row below it carries role + flags, then `May message N seats · M may message it`.
+- **The phone inspector was not a layer.** It was a fixed 360 × 844 box with `role` and `aria-modal` both null, no scrim,
+  the page scrollable behind it, and Shift+Tab from its close button landed on a seat row behind it. Now `role="dialog"`,
+  `aria-modal="true"`, named by its heading (`Seat: pm`, `Mesh settings`, `Policy settings`), a scrim at z 39 under the
+  drawer at z 40, `#view` and `body` locked, focus entering at the layer (not the seat-id field, which opened the phone
+  keyboard), 16 of 16 Tabs staying inside, and Escape returning focus to the row that opened it.
+- **The YAML slide said dialog but behaved as a panel.** `aria-modal` was absent, there was no ground behind it, and the
+  22 px page gutter stayed live. Now modal, with a scrim, the page locked, a 44 px close; the 5,972 px YAML stays in its
+  own 295 × 589 scroll box with the copy control outside it.
+- **The assistant dock covered the phone without being a layer, and it opened the keyboard.** At ≤ 560 it was 360 × 844
+  with no scrim, no modal state, Tab leaving it, and focus on the composer. Now it is a layer there only (desktop remains a
+  non-modal 440 px slide-over): scrim, `aria-modal`, z 40, focus on the panel, 8 of 8 Tabs inside, Escape closes and focus
+  returns to the `⋯` button. Desktop measured `aria-modal` null, no scrim, composer focused.
+- **Canvas names were cut and cards repeated the name as the role.** At 1440 the name had 78 px for up to 140 px of text,
+  six of nine cards were ellipsized, and six printed the id twice (`pm / pm`). Now names wrap to two lines (long ones
+  measure 33 px tall), the role line appears only when it differs (2 of 9), and the starts/attention marks ride the avatar
+  as dots. Cards are 168 × 56 up to nine seats, then 140 × 56: 0 of 9 cut.
+- **The setup guide was a wall.** All four steps were open at once (553 px at 360) and the first seat began at y=881 on an
+  844 px screen, so the instructions hid the thing they were about. Now only the `now` step is open, the header says
+  `Step 1 of 4`, the other steps are 44 px disclosure buttons, and the guide is 459 px. The header's own sentence is
+  suppressed while the guide shows (page header 229 → 150 px): the first roster row now begins at y=795, visible.
+- **A dead end in the checks.** An error with no field said "Edit mesh.yaml directly", with no route. It now names the file
+  and the route: More → Discard the draft and reload mesh.yaml.
+
+**Measurements after (Chromium, no horizontal page scroll at any width)**
+
+| Width | Page | Names | Targets | Other |
+|---|---|---|---|---|
+| 360 | doc 360/360 | 194/194 px, 0/9 cut | 0 controls under 44 in the page and 0 in the open drawer (its only 18 px box is a checkbox inside a 332 × 44 label) | guide 459 px, first row y=795; drawer/dock 360 × 844, close 44; YAML 338 × 844 |
+| 768 | 768/768 | 106/106 px, 0/9 cut | canvas wire handles 26 px (pointer density); guide toggles 32 px because this is above the 760 phone layout | stage 718 px, 9 cards 168 × 56; guide 390 px |
+| 1440 | 1440/1440 | 106 px box, long names 2 lines, 0/9 cut | desk density (30 px tool chips, 26 px handles) | stage 714 px, 9 cards 168 × 56; role line only on the 2 cards whose role differs |
+
+Type census at both ends is on the ramp (11/12/13/14/15/16/24); text contrast measured a 5.61:1 minimum across 202 runs at
+360 and 193 at 1440, with no WCAG AA failure. Pinned by `tests/dashboard/designer-layers.test.ts` plus the updated
+`designer-topology.test.ts` and `designer-escape.test.ts`.
+
+**Left for the next pass**
+
+- The phone page header still spends 116 px on actions in three rows (undo/redo, verdict, inspector, more). Folding
+  undo/redo into `⋯` would give the roster another 52 px; not done because undo is the one act a mis-tap needs.
+- At 360 the guide plus header still use 709 px, so only the first roster row reaches the screen. Opening the guide as a
+  sheet, or collapsing `next` steps behind one line, would show two or three; both hide the path, and the path is why the
+  guide exists.
+- The YAML preview scrolls sideways inside its own box (2,043 px of text). A wrap toggle is the obvious fix; the page
+  itself does not scroll.
+- 768 sits just above the 760 phone layout, so the guide's disclosures are 32 px and the canvas handles 26 px on a
+  touch-class tablet. Decide whether the tablet should inherit the phone's 44 px.
 
 ### 2026-10-22 — the path is the product
 
