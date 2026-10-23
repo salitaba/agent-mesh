@@ -471,3 +471,60 @@ brand tokens are untouched; the new quiet-action rule uses 13 px, an existing st
 - `npm run qa:console` could not launch this machine's Chrome (no libatk); the same pairs were read through the shared Chrome
   over CDP with axe-core injected. That is the browser §7 names, but it is not the script's own launch path.
 
+## 2026-10-23 — the summary says what happened, the thumb hits, and Clear clears
+
+Run against `examples/demo-stub/mesh.yaml` at **Delivered** (the scripted demo, no model calls), served by
+`curule console --resume` on the production build: 12 views at 1440, 1280, 768, 390 and 360, light and dark,
+`prefers-reduced-motion: reduce`. The browser was the same Chromium 156 Playwright binary as the earlier pass (launched with
+the local `LD_LIBRARY_PATH`; `qa:console`'s own launch path still lacks libatk here). **axe-core was not installed in this
+worktree**, so this pass has no axe numbers: the checks below are the browser's own measurements plus the unit suite.
+
+**What changed.**
+
+- **The Overview's *Just happened* is a summary, not the newest eight rows.** On a delivered run it took the newest eight
+  events whatever they were: measured at 1440, eight of eight were `recovery-manager released its hold …` repeats, and the
+  mission's own completion was not on the panel. `eventmodel.ts` now has `miniFeed`: it keeps the newest rows but collapses
+  runs of routine bookkeeping (as the Events page already did) and runs of a kind with a plain sentence (`agent.completed`,
+  files, messages, reviews, checks). A fold is one row that says the count, that the rest is folded, and where to read each
+  one; it is a button that opens Events. The same buffer now puts `mission complete` and the `pm could not be woken` alert on
+  the panel. A fold is keyed by its oldest event, so new events at the top do not remount the row under a pointer.
+- **Phone targets reach the floor.** `CopyButton`'s icon-only form was 24×24 on a phone (three in one event detail: types,
+  event id, goal id) and the search box's clear control was 40×40. Both are 44×44 now: `.copy-btn.compact` and `.srch-clear`
+  joined the shared 44 px floor in `styles.css`, and `live.css` no longer overrides the clear control to 40.
+- **The Files filter button no longer claims a filter the page set itself.** "Latest of each name" is on when the page opens,
+  but the count included it, so a phone opened on `Filters (1)` with a `Clear` that reset the filter to the value it already
+  had. `activeFilterCount` and `filtersApplied` count only a change from the default; on arrival the button reads `Filters`
+  and there is no Clear. Turning the switch off, choosing a type/status, or typing a search brings Clear back.
+- **The Overview's quiet actions fit one row at 360.** The three quiet actions needed 302 px and had 8 px of side padding
+  each; the third wrapped. On the phone break they now take 4 px of side padding with the existing 8 px gap, so the same
+  words share one row without going below 13 px.
+
+**Measured.**
+
+| | Before | After |
+|---|---|---|
+| Overview *Just happened*, 1440 | 8 of 8 rows were routine budget releases; no completion row | 8 rows: 3 folds (28 routine, 7 seats finished, 5 reviews), the alert, `mission complete`, the check it met, the 6-of-7 progress line |
+| Overview actions, 360 | 194 px; Replay on a fourth row (y = 451) | 148 px; all three quiet actions on one row (y = 405) |
+| Event detail, 390 | 3 copy buttons 24×24; search clear 40×40 | every control ≥ 44×44; measured 0 under the floor |
+| Files, 390, on arrival | `Filters (1)` + a no-op `Clear` | `Filters`; no `Clear`; Clear returns with a query |
+| Horizontal page scroll, 12 views × 5 widths | none | none |
+| Overview fold row, keyboard | — | a button with a 2 px ring; Enter opens Events; reduced motion leaves 0 running animations |
+
+`npm run typecheck` and `npm run build` pass; `node --test "dist/tests/dashboard/*.test.js" "dist/tests/build/*.test.js"`
+passes 1,313 tests. `phone-targets` and `primitives-a11y` now name the two controls that reached the floor, and
+`files-phone` reads the count from the model that owns it.
+
+**Left.**
+
+- The Overview still shows two routine folds in the delivered buffer (28 and 6): runs are grouped by consecutiveness, not
+  merged across the whole log. The panel says the count and sends the reader to Events, the audit trail. Merging them by kind
+  is a reading decision, not a style one.
+- The eighth row can still be an old `6 of 7 checks done` progress event. The feed is newest-first and stops at eight rows;
+  preferring completion over progress would reorder the log, which the Events page is for.
+- At 360 the token figure's unit wraps inside its cell (`51.0k` / `of 2.0M`). The text is complete and the cell is one of four;
+  widening the cell would take the width from the checks and the clock. Left for a cell-layout decision.
+- A single-mesh console still logs 404s for `/api/projects` and `/api/host/config` while it establishes that it has no host.
+  They are read as "no host", not shown, and are not user-visible; the server routes are outside this console pass.
+- No axe-core run (not installed here); `qa:console`'s own Chrome launch is still blocked by libatk on this machine. Safari,
+  Firefox, a real phone's touch, a screen reader and real Windows High Contrast remain untested by this pass.
+
