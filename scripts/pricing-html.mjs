@@ -127,8 +127,8 @@ export function renderPlanStack(out) {
   const cards = out.plans.map((p) => `    <article class="stack-plan" aria-labelledby="stack-${esc(p.id)}-name">
       <h3 id="stack-${esc(p.id)}-name">${esc(p.name)}</h3>
       <dl>
-        <div><dt>Per month, billed annually</dt><dd>${price(p, true)}</dd></div>
-        <div><dt>Per month, billed monthly</dt><dd>${price(p, false)}</dd></div>
+        <div class="period-annual"><dt>Per month, billed annually</dt><dd>${price(p, true)}</dd></div>
+        <div class="period-monthly"><dt>Per month, billed monthly</dt><dd>${price(p, false)}</dd></div>
         <div><dt>Projects open at once per host</dt><dd>${shown(p.limits.maxProjects)}</dd></div>
         <div><dt>Agents (seats) per mesh</dt><dd>${shown(p.limits.maxSeatsPerMesh)}</dd></div>
         <div><dt>Concurrent agent turns per host</dt><dd>${shown(p.limits.maxConcurrentTurns)}</dd></div>

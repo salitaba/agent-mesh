@@ -227,7 +227,7 @@ test("the documentation page's card for Curule Cloud, and its entry in the map, 
   assert.deepEqual(open.querySelectorAll("a").map((a) => [a.textContent, a.href]), [["Curule Cloud: the hosted service", "https://github.com/salitaba/agent-mesh/blob/main/docs/cloud.md"], ["Sign up", `${APP}/signup`]]);
 });
 
-test("when it is open, the pricing page puts the two ways in side by side, says the plans below are licences and sends a visitor to the app for Curule Cloud's, which are kept there and not copied", () => {
+test("when it is open, the pricing page puts the two ways in side by side, says the plans above are licences and sends a visitor to the app for Curule Cloud's, which are kept there and not copied", () => {
   const doc = visit("pricing/index.html", APP);
   const ways = doc.getElementById("ways")!;
   assert.equal(shown(ways), true);
@@ -246,10 +246,10 @@ test("when it is open, the pricing page puts the two ways in side by side, says 
     "and says the thing that changed: a workspace runs on a plan of its own",
   );
   assert.match(cloud.textContent, /You bring your own model key and pay your provider directly: we do not resell model usage\./);
-  assert.match(licence.textContent, /The plans below are licences for the software you run yourself\./);
+  assert.match(licence.textContent, /The plans above are licences for the software you run yourself\./);
   assert.deepEqual(cloud.querySelectorAll("a").map((a) => [a.textContent, a.href]), [["See the Curule Cloud plans", `${APP}/`]], "one action in each");
   assert.deepEqual(licence.querySelectorAll("a").map((a) => [a.textContent, a.href]), [["See the licence plans", "#plans"]]);
-  assert.ok(!/\$\s?\d/.test(ways.textContent), "no price is written in it: Curule Cloud's plans are the account pages' to state, and the licences' are in the cards below");
+  assert.ok(!/\$\s?\d/.test(ways.textContent), "no price is written in it: Curule Cloud's plans are the account pages' to state, and the licences' are in the cards above");
   assert.equal(page(pages, "pricing/index.html").html.includes('id="cloud"'), false, "and the strip it replaces is gone: the way in is said once");
   assert.equal(shown(visit("pricing/index.html", "").getElementById("ways")!), false, "while it is closed there is one way, and the page starts at the plans");
   const rows = doc.querySelectorAll("li").filter((li) => shown(li) && li.textContent.startsWith("A hosted service."));

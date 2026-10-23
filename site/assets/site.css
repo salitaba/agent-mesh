@@ -269,6 +269,8 @@ main:has(.hero) .section-head .eyebrow::before { counter-increment: sec; content
 .frame img { display: block; width: 100%; height: auto; }
 .frame figcaption { margin: 0; padding: 14px 18px; border-top: 1px solid var(--line); background: var(--panel); color: var(--muted); font-size: .8125rem; line-height: 1.5; }
 .frame figcaption b { color: var(--ink); font-weight: 600; }
+/* The generic code rule shrinks inline code to .875em; a caption is already 13px, so it would land at 11.375px. */
+.frame figcaption code { font-size: 1em; }
 .showcase .frame { border-radius: var(--k-r-xl); box-shadow: var(--k-hl), var(--k-shadow-5); }
 .tab-input, .billing-input { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
 .pane { display: none; margin: 0; }
@@ -565,6 +567,7 @@ main:has(.hero) .section-head .eyebrow::before { counter-increment: sec; content
 @media (min-width: 1040px) { .plans { grid-template-columns: var(--c4); } }
 /* On a phone the four rate cards are one snap row, so a reader meets the plans in a screen rather
    than four; the table under them still holds every line side by side. */
+.plans-title { margin-bottom: 10px; }
 .plans-hint { display: none; }
 @media (max-width: 719px) {
   .plans-hint { display: block; margin: 0 0 12px; }
@@ -610,6 +613,10 @@ main:has(.hero) .section-head .eyebrow::before { counter-increment: sec; content
   .stack-plan dd { margin: 0; font-size: .9375rem; line-height: 1.45; font-variant-numeric: tabular-nums; }
   .stack-plan h3, .stack-plan dt, .stack-plan dd { overflow-wrap: anywhere; }
   #compare .table-wrap, #calculator .table-wrap { display: none; }
+  /* The Annual/Monthly switch above the plans is the reader's choice for the whole page: the phone's
+     comparison shows that period's line, not both. The surviving row still says which period it is. */
+  body:has(#billing-monthly:checked) #compare .plan-stack .period-annual,
+  body:has(#billing-annual:checked) #compare .plan-stack .period-monthly { display: none; }
 }
 .compare .yes, .compare .no, .stack-plan .yes, .stack-plan .no { white-space: nowrap; }
 .compare .yes, .stack-plan .yes { color: var(--k-ok); font-weight: 600; }

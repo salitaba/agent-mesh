@@ -448,9 +448,9 @@ test("a card's title has the tile's room above it, a plan's figures share a line
   assert.match(css, /\n\.cta \.lede \{ margin-top: 16px;/);
   assert.match(css, /@media \(min-width: 900px\) \{ \.cta \.wrap \{[^}]*\} \.cta \.btn-row \{[^}]*margin-top: 0;/);
   // The room under the On this page bar is the first visible section's, also where the section before it is closed: the pricing page
-  // opens with the choice between the two ways, which is for Curule Cloud, and the plans come right after it.
+  // opens with the licence plans, and the choice between the two ways, which is for Curule Cloud, comes after them.
   assert.match(css, /\n\.page-head \+ \.section, \.toc-bar \+ \.section, \.toc-bar \+ \[hidden\] \+ \.section \{ padding-top: clamp\(32px, 4vw, 48px\); \}/);
-  assert.match(page(pages, "pricing/index.html").markup, /<\/nav>\s*<section class="section" id="ways" data-cloud-only>[\s\S]*?<\/section>\s*<section class="section" id="plans">/, "the plans follow the choice that is only for Curule Cloud");
+  assert.match(page(pages, "pricing/index.html").markup, /<\/nav>\s*<section class="section" id="plans">[\s\S]*?<\/section>\s*<section class="section" id="ways" data-cloud-only>/, "the licence plans open the page, and the choice that is only for Curule Cloud follows them");
   // And one section of the pages is what the lone-note rule was written for.
   const notes = pages.filter((p) => /<section class="section">\s*<div class="wrap">\s*<p class="measure">[^]*?<\/p>\s*<\/div>\s*<\/section>/.test(p.markup));
   assert.deepEqual(notes.map((p) => p.rel), ["contact/index.html"], "the contact page ends with a note in a section of its own");
@@ -637,7 +637,7 @@ test("every capture has a named way to its full size, in the same window, and th
 
 test("the four plans are one snap row on a phone, and nothing off the row widens the page", () => {
   const pricing = page(pages, "pricing/index.html").html;
-  assert.match(pricing, /<h2 class="sr">The four plans<\/h2>\n    <p class="small muted plans-hint">Four plans\. Swipe or scroll sideways; the comparison below lists every line\.<\/p>/);
+  assert.match(pricing, /<h2 class="legend-title plans-title">The licence plans\.<\/h2>\n    <p class="small muted plans-hint">Four plans\. Swipe or scroll sideways; the comparison below lists every line\.<\/p>/);
   const css = fs.readFileSync(path.join(SITE, "assets", "site.css"), "utf8");
   assert.match(css, /@media \(max-width: 719px\) \{\n  \.plans-hint \{ display: block; margin: 0 0 12px; \}\n  \.plans \{ position: relative; grid-template-columns: none; grid-auto-flow: column;[^}]*overflow-x: auto;/);
   // Without a positioned box, the screen-reader spans inside the cards that sit off the row
