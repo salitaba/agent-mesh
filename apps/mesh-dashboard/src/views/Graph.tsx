@@ -200,12 +200,12 @@ export default function Graph(): React.JSX.Element {
                 : `${ties.count.toLocaleString("en-US")} ${ties.count === 1 ? "message" : "messages"} with ${first}${more}.`;
               return (
                 <li key={nd.id}>
-                  <button type="button" className="gr-seat-row" onClick={() => open(nd.id)} aria-label={`${nd.id}, ${state}. ${words} Open details.`}>
+                  <button type="button" className="gr-seat-row" onClick={() => open(nd.id)}>
                     <AgentAvatar id={nd.id} color={agentColor(nd.role ?? nd.id)} />
                     <span className="gr-seat-main">
                       <b>{nd.id}</b>
                       <span className="gr-seat-meta">{[nd.role, state].filter(Boolean).join(" · ")}</span>
-                      <span className="gr-seat-ties">{words}</span>
+                      <span className="gr-seat-ties">{words}<span className="sr-only"> Open details.</span></span>
                     </span>
                     {ties.count ? <span className="gr-seat-n" aria-hidden="true">{ties.count.toLocaleString("en-US")}<small>{ties.count === 1 ? "message" : "messages"}</small></span> : null}
                   </button>
@@ -262,7 +262,8 @@ export default function Graph(): React.JSX.Element {
                 data-id={nd.id}
                 role="button"
                 tabIndex={0}
-                aria-label={`${nd.id}, ${state}. Open details.`}
+                aria-labelledby={`gn-${nd.id}-init gn-${nd.id}-name gn-${nd.id}-state`}
+                aria-describedby={`gn-${nd.id}-desc`}
                 onClick={() => open(nd.id)}
                 onKeyDown={rowKey(() => open(nd.id))}
                 onMouseEnter={() => setSeat(nd.id)}
@@ -271,13 +272,16 @@ export default function Graph(): React.JSX.Element {
                 onBlur={() => setSeat((c) => (c === nd.id ? null : c))}
               >
                 <title>{nd.id}</title>
+                <desc id={`gn-${nd.id}-desc`}>Open details.</desc>
                 {/* The seat's disc is its role's colour (who it is), the ring around it the state it is in (what it is doing). */}
                 {tone === "working" ? <circle className="halo" cx={s.x} cy={s.y} r={SEAT + 4} /> : null}
                 <circle className="ring" cx={s.x} cy={s.y} r={SEAT + 3} />
                 <circle className="node" cx={s.x} cy={s.y} r={SEAT} />
-                <text className="init" x={s.x} y={s.y + 5} textAnchor="middle">{nd.id.slice(0, 2).toUpperCase()}</text>
-                <text className="name" x={s.x + spot.name.dx} y={s.y + spot.name.dy} textAnchor={spot.anchor}>{middleClip(nd.id, 16)}</text>
-                <text className="dim" x={s.x + spot.state.dx} y={s.y + spot.state.dy} textAnchor={spot.anchor}>{state}</text>
+                <text id={`gn-${nd.id}-init`} className="init" x={s.x} y={s.y + 5} textAnchor="middle">{nd.id.slice(0, 2).toUpperCase()}</text>
+                {" "}
+                <text id={`gn-${nd.id}-name`} className="name" x={s.x + spot.name.dx} y={s.y + spot.name.dy} textAnchor={spot.anchor}>{middleClip(nd.id, 16)}</text>
+                {" "}
+                <text id={`gn-${nd.id}-state`} className="dim" x={s.x + spot.state.dx} y={s.y + spot.state.dy} textAnchor={spot.anchor}>{state}</text>
               </g>
             );
           })}
@@ -312,7 +316,7 @@ export default function Graph(): React.JSX.Element {
                     <span className="gr-n">{e.count.toLocaleString("en-US")}</span>
                   </button>
                   <Button
-                    variant="small" extra="gr-open" icon="arrow-right" aria-label={`See the messages from ${e.from} to ${e.to} in Events`}
+                    variant="small" extra="gr-open" icon="arrow-right" aria-label={`See messages from ${e.from} to ${e.to} in Events`}
                     title={`Open Events with ${e.from}'s messages that name ${e.to}`} onClick={() => openMessages(e)}
                   >
                     <span className="gr-open-t">See messages</span>

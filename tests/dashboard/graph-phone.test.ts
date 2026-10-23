@@ -17,7 +17,11 @@ test("a phone gets a row per seat, each row a target that opens the seat", () =>
   assert.match(tsx, /className="gr-seat-list"/, "the phone branch renders the seat list");
   assert.match(tsx, /className="gr-seat-row"[^>]*onClick=\{\(\) => open\(nd\.id\)\}/, "the whole row opens the seat");
   assert.match(tsx, /AgentAvatar/, "the row carries the seat's avatar");
-  assert.match(tsx, /aria-label=\{`\$\{nd\.id\}, \$\{state\}\. \$\{words\} Open details\.`\}/, "the row's label is its sentence, not its colour");
+  // The row names itself from its own words (name, role, state, its ties). An aria-label shorter than that visible line renamed the
+  // control for a screen reader and failed WCAG 2.5.3 (axe: label-content-name-mismatch, 7 rows at 390); the action is added as
+  // hidden text instead, so what is read and what is written agree.
+  assert.match(tsx, /className="gr-seat-ties">\{words\}<span className="sr-only"> Open details\.<\/span>/, "the row's own sentence names it");
+  assert.doesNotMatch(tsx, /className="gr-seat-row"[^>]*aria-label=/, "no shorter label renames the row");
 });
 
 test("the sideways-scrolling phone drawing is gone", () => {
