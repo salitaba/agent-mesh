@@ -12,9 +12,11 @@ import { FileTile } from "../fileview";
 import {
   FILE_GROUPS,
   NO_FILTER,
+  activeFilterCount,
   countLabel,
   emptyCopy,
   filterFiles,
+  filtersApplied,
   groupCounts,
   groupFiles,
   latestArtifactSeq,
@@ -172,8 +174,9 @@ export default function Artifacts(): React.JSX.Element {
   };
 
   const filtering = filter.query.trim() !== "" || filter.type !== "" || filter.group !== "";
-  // What the folded button counts: the filters that are not their default. The search is in plain sight and is not counted.
-  const filterCount = Number(filter.type !== "") + Number(filter.group !== "") + Number(filter.latestOnly);
+  // What the folded button counts: the filters that are not their default. The search is in plain sight and is not counted, and
+  // "Latest of each name" opens switched on, so it is not a filter the person set.
+  const filtersOn = activeFilterCount(filter);
   const filterControls = (
     <>
       <Select aria-label="Type" value={filter.type} onChange={(e) => setFilter({ ...filter, type: e.target.value })}>
@@ -241,9 +244,9 @@ export default function Artifacts(): React.JSX.Element {
                   aria-expanded={filtersOpen} aria-controls="files-filters"
                   onClick={() => setFiltersOpen((o) => !o)}
                 >
-                  Filters{filterCount ? ` (${filterCount})` : ""}
+                  Filters{filtersOn ? ` (${filtersOn})` : ""}
                 </Button>
-                {filtering || filter.latestOnly ? <Button variant="ghost" icon="x" onClick={() => setFilter({ ...NO_FILTER })}>Clear</Button> : null}
+                {filtering || filtersApplied(filter) ? <Button variant="ghost" icon="x" onClick={() => setFilter({ ...NO_FILTER })}>Clear</Button> : null}
                 {filtersOpen ? <div className="files-filters" id="files-filters">{filterControls}</div> : null}
               </>
             ) : filterControls}
