@@ -10,7 +10,7 @@
 <link rel="apple-touch-icon" href="../assets/apple-touch-icon.png">
 <meta name="theme-color" content="#fbfaf8" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#131211" media="(prefers-color-scheme: dark)">
-<link rel="stylesheet" href="../assets/site.css?v=cf10690f6a">
+<link rel="stylesheet" href="../assets/site.css?v=47bdd63c8c">
 <meta property="og:type" content="website">
 <link rel="canonical" href="https://curule.dev/pricing/">
 <meta property="og:url" content="https://curule.dev/pricing/">
@@ -107,7 +107,7 @@
 <section class="section" id="plans">
   <div class="wrap">
     <h2 class="sr">The four plans</h2>
-    <p class="small muted plans-hint">Four plans. Swipe or scroll sideways; the table below compares every line.</p>
+    <p class="small muted plans-hint">Four plans. Swipe or scroll sideways; the comparison below lists every line.</p>
 <!-- generated:plan-cards:start (scripts/export-pricing.mjs; do not edit between the markers) -->
 <fieldset class="pricing">
 <legend class="sr">Billing period</legend>
@@ -221,9 +221,8 @@
   <div class="wrap">
     <div class="section-head">
       <p class="eyebrow">Compare</p>
-      <h2 class="title">The plans, side by side.</h2>
+      <h2 class="title">The plans, compared.</h2>
     </div>
-    <p class="small muted table-hint">Swipe the table sideways to compare a line; the first column stays where it is.</p>
 <!-- generated:plan-table:start (scripts/export-pricing.mjs; do not edit between the markers) -->
 <div class="table-wrap" role="region" aria-label="The plans compared" tabindex="0">
   <table class="compare">
@@ -241,6 +240,58 @@
   </table>
 </div>
 <!-- generated:plan-table:end -->
+<!-- generated:plan-stack:start (scripts/export-pricing.mjs; do not edit between the markers) -->
+<div class="stack-table plan-stack" role="group" aria-label="The plans compared, one at a time">
+    <article class="stack-plan" aria-labelledby="stack-community-name">
+      <h3 id="stack-community-name">Community</h3>
+      <dl>
+        <div><dt>Per month, billed annually</dt><dd>Free</dd></div>
+        <div><dt>Per month, billed monthly</dt><dd>Free</dd></div>
+        <div><dt>Projects open at once per host</dt><dd>1</dd></div>
+        <div><dt>Agents (seats) per mesh</dt><dd>10</dd></div>
+        <div><dt>Concurrent agent turns per host</dt><dd>4</dd></div>
+        <div><dt>Usage export and Prometheus metrics</dt><dd class="no">No</dd></div>
+        <div><dt>Support</dt><dd>Community (issues and documentation)</dd></div>
+      </dl>
+    </article>
+    <article class="stack-plan" aria-labelledby="stack-team-name">
+      <h3 id="stack-team-name">Team</h3>
+      <dl>
+        <div><dt>Per month, billed annually</dt><dd>$124 a month ($1,488 a year)</dd></div>
+        <div><dt>Per month, billed monthly</dt><dd>$149 a month</dd></div>
+        <div><dt>Projects open at once per host</dt><dd>5</dd></div>
+        <div><dt>Agents (seats) per mesh</dt><dd>12</dd></div>
+        <div><dt>Concurrent agent turns per host</dt><dd>8</dd></div>
+        <div><dt>Usage export and Prometheus metrics</dt><dd class="yes">Yes</dd></div>
+        <div><dt>Support</dt><dd>Email, next business day</dd></div>
+      </dl>
+    </article>
+    <article class="stack-plan" aria-labelledby="stack-business-name">
+      <h3 id="stack-business-name">Business</h3>
+      <dl>
+        <div><dt>Per month, billed annually</dt><dd>$499 a month ($5,988 a year)</dd></div>
+        <div><dt>Per month, billed monthly</dt><dd>$599 a month</dd></div>
+        <div><dt>Projects open at once per host</dt><dd>25</dd></div>
+        <div><dt>Agents (seats) per mesh</dt><dd>30</dd></div>
+        <div><dt>Concurrent agent turns per host</dt><dd>24</dd></div>
+        <div><dt>Usage export and Prometheus metrics</dt><dd class="yes">Yes</dd></div>
+        <div><dt>Support</dt><dd>Priority email, 4 business hours first response</dd></div>
+      </dl>
+    </article>
+    <article class="stack-plan" aria-labelledby="stack-enterprise-name">
+      <h3 id="stack-enterprise-name">Enterprise</h3>
+      <dl>
+        <div><dt>Per month, billed annually</dt><dd>Quoted</dd></div>
+        <div><dt>Per month, billed monthly</dt><dd>Quoted</dd></div>
+        <div><dt>Projects open at once per host</dt><dd><span aria-hidden="true">&infin;</span><span class="sr">Unlimited</span></dd></div>
+        <div><dt>Agents (seats) per mesh</dt><dd><span aria-hidden="true">&infin;</span><span class="sr">Unlimited</span></dd></div>
+        <div><dt>Concurrent agent turns per host</dt><dd><span aria-hidden="true">&infin;</span><span class="sr">Unlimited</span></dd></div>
+        <div><dt>Usage export and Prometheus metrics</dt><dd class="yes">Yes</dd></div>
+        <div><dt>Support</dt><dd>Named contact and a support agreement</dd></div>
+      </dl>
+    </article>
+</div>
+<!-- generated:plan-stack:end -->
     <p class="small muted mt-m">A seat is one agent in a mesh; the operator at the console is not a seat. A project is one mesh: the limit is how many may be open at once, and registering more is free. Concurrent turns is how many agent turns may run at the same moment across the host. A plan is for one host: the licence key installs on a single instance, and these limits are that instance&rsquo;s.</p>
   </div>
 </section>
@@ -287,7 +338,46 @@
     </div>
     <h3 class="mt-xl">The mission it is based on</h3>
     <p class="mt-s measure">We have measured one mission class: five agents built a small library in 31 minutes for $5.52 of model usage, and an independent check scored it 99.6%. One run is not a rate. The table prices the same tokens at each model&rsquo;s list price; another model would take a different number of turns, so read the spread as a range, not a forecast.</p>
-    <p class="small muted table-hint">Swipe the table sideways for the monthly columns.</p>
+<!-- generated:run-stack:start (scripts/export-pricing.mjs; do not edit between the markers) -->
+<div class="stack-table run-stack" role="group" aria-label="What the measured mission costs at each model's list price, one at a time">
+    <article class="stack-plan">
+      <h3>Claude Haiku 4.5 <span class="tag">what it ran on</span></h3>
+      <dl>
+        <div><dt>This mission</dt><dd>$5.52</dd></div>
+        <div><dt>10 a month</dt><dd>$55.20</dd></div>
+        <div><dt>25 a month</dt><dd>$138.00</dd></div>
+        <div><dt>100 a month</dt><dd>$552.00</dd></div>
+      </dl>
+    </article>
+    <article class="stack-plan">
+      <h3>Claude Sonnet 5.5</h3>
+      <dl>
+        <div><dt>This mission</dt><dd>$11.03</dd></div>
+        <div><dt>10 a month</dt><dd>$110.30</dd></div>
+        <div><dt>25 a month</dt><dd>$275.75</dd></div>
+        <div><dt>100 a month</dt><dd>$1,103.00</dd></div>
+      </dl>
+    </article>
+    <article class="stack-plan">
+      <h3>Claude Opus 5.5</h3>
+      <dl>
+        <div><dt>This mission</dt><dd>$15.60</dd></div>
+        <div><dt>10 a month</dt><dd>$156.00</dd></div>
+        <div><dt>25 a month</dt><dd>$390.00</dd></div>
+        <div><dt>100 a month</dt><dd>$1,560.00</dd></div>
+      </dl>
+    </article>
+    <article class="stack-plan">
+      <h3>Claude Fable 5.1</h3>
+      <dl>
+        <div><dt>This mission</dt><dd>$30.93</dd></div>
+        <div><dt>10 a month</dt><dd>$309.30</dd></div>
+        <div><dt>25 a month</dt><dd>$773.25</dd></div>
+        <div><dt>100 a month</dt><dd>$3,093.00</dd></div>
+      </dl>
+    </article>
+</div>
+<!-- generated:run-stack:end -->
 <!-- generated:run-costs:start (scripts/export-pricing.mjs; do not edit between the markers) -->
 <div class="table-wrap" role="region" aria-label="What the measured mission costs at each model's list price" tabindex="0">
   <table class="compare">

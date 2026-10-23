@@ -627,16 +627,46 @@ test("every capture has a named way to its full size, in the same window, and th
   const css = fs.readFileSync(path.join(SITE, "assets", "site.css"), "utf8");
   assert.match(css, /@media \(max-width: 719px\) \{\n  \.tiles-hint \{ display: block; margin: 0 0 12px; \}\n  \.tiles \{[^}]*grid-auto-flow: column;[^}]*overflow-x: auto;/);
   assert.match(css, /\n\.shot-open \{[^}]*min-height: 44px;/, "the way to the full size is a thumb's height");
+  // The row's page index: six 44px tabs, one per card, only where the row scrolls.
+  const index = /<nav class="row-index" aria-label="Jump to a view">([\s\S]*?)<\/nav>/.exec(home)?.[1] ?? "";
+  assert.equal((index.match(/<a href="#view-[a-z]+"/g) ?? []).length, 6, "one tab for each view");
+  for (const id of ["overview", "events", "steps", "designer", "cost", "approvals"]) assert.ok(home.includes(`id="view-${id}"`), `the card ${id} is the tab's destination`);
+  assert.match(css, /\n\.row-index \{ display: none; \}/);
+  assert.match(css, /@media \(max-width: 719px\) \{\n  \.row-index \{ display: block;/, "the index is shown where the row scrolls");
 });
 
 test("the four plans are one snap row on a phone, and nothing off the row widens the page", () => {
   const pricing = page(pages, "pricing/index.html").html;
-  assert.match(pricing, /<h2 class="sr">The four plans<\/h2>\n    <p class="small muted plans-hint">Four plans\. Swipe or scroll sideways; the table below compares every line\.<\/p>/);
+  assert.match(pricing, /<h2 class="sr">The four plans<\/h2>\n    <p class="small muted plans-hint">Four plans\. Swipe or scroll sideways; the comparison below lists every line\.<\/p>/);
   const css = fs.readFileSync(path.join(SITE, "assets", "site.css"), "utf8");
   assert.match(css, /@media \(max-width: 719px\) \{\n  \.plans-hint \{ display: block; margin: 0 0 12px; \}\n  \.plans \{ position: relative; grid-template-columns: none; grid-auto-flow: column;[^}]*overflow-x: auto;/);
   // Without a positioned box, the screen-reader spans inside the cards that sit off the row
   // resolve against the page and make it wider than the phone: measured 872px at 360 before.
   assert.match(css, /\.plans \{ position: relative;/);
   assert.match(css, /\.plan \{ scroll-snap-align: start; \}/);
+});
+
+test("the two wide comparisons are one plan or model at a time on a phone, from the same generated data", () => {
+  const pricing = page(pages, "pricing/index.html").html;
+  const css = fs.readFileSync(path.join(SITE, "assets", "site.css"), "utf8");
+  assert.match(css, /\n\.stack-table \{ display: none; \}/, "the stacked view is off where the table fits");
+  assert.match(css, /@media \(max-width: 719px\) \{\n  \.stack-table \{ display: grid; \}/);
+  assert.match(css, /#compare \.table-wrap, #calculator \.table-wrap \{ display: none; \}/, "the table gives way to the stack on a phone");
+  const block = (name: string): string => {
+    const start = pricing.indexOf(`generated:${name}:start`);
+    const end = pricing.indexOf(`generated:${name}:end`);
+    assert.ok(start > 0 && end > start, `${name} is fenced in the page`);
+    return pricing.slice(start, end);
+  };
+  for (const [name, count] of [["plan-stack", 4], ["run-stack", 4]] as const) {
+    const body = block(name);
+    assert.equal((body.match(/<article class="stack-plan"/g) ?? []).length, count, `${name}: one article per item`);
+    assert.ok(!/<table\b/.test(body), `${name}: no table to swipe`);
+  }
+  const plans = block("plan-stack");
+  for (const label of ["Per month, billed annually", "Per month, billed monthly", "Projects open at once per host", "Agents (seats) per mesh", "Concurrent agent turns per host", "Usage export and Prometheus metrics", "Support"]) {
+    assert.ok(plans.includes(`<dt>${label}</dt>`), `the stacked plans keep the table's line: ${label}`);
+  }
+  assert.ok(!pricing.includes("Swipe the table sideways"), "no page tells a phone to swipe a table it is not given");
 });
 
