@@ -436,6 +436,13 @@
   function invalid(input, status, text) {
     say(status, "bad", text);
     input.setAttribute("aria-invalid", "true");
+    // The reason stays with the field, not only in the live region: the cursor is about to land there, and a reader who comes back
+    // to the field afterwards hears why it was refused. What the field already described (the password's hint) is kept.
+    if (status.id) {
+      if (input.dataset.describedby === undefined) input.dataset.describedby = input.getAttribute("aria-describedby") || "";
+      input.setAttribute("aria-describedby", [input.dataset.describedby, status.id].filter(Boolean).join(" "));
+      input.dataset.refused = status.id;
+    }
     input.focus();
     return false;
   }
@@ -2169,7 +2176,21 @@
     if (page === "account") skeleton(true);
     if (page === "home") planShape();
     doc.addEventListener("input", (event) => {
-      if (event.target && event.target.removeAttribute) event.target.removeAttribute("aria-invalid");
+      const field = event.target;
+      if (!field || !field.removeAttribute) return;
+      field.removeAttribute("aria-invalid");
+      // The refusal's sentence goes with the refusal: once the field is being corrected it describes what it originally did.
+      if (field.dataset.describedby !== undefined) {
+        if (field.dataset.describedby) field.setAttribute("aria-describedby", field.dataset.describedby);
+        else field.removeAttribute("aria-describedby");
+        delete field.dataset.describedby;
+      }
+      // A sentence about this field is answered by the change to it, so it stops being said rather than describing a value that is gone.
+      if (field.dataset.refused) {
+        const status = doc.getElementById(field.dataset.refused);
+        if (status) say(status, "", "");
+        delete field.dataset.refused;
+      }
     });
     // A link to a place on this page gives the cursor to what it names, so a reader who follows it hears the heading they arrived at
     // and the tab key goes on from there. The browser's own jump takes the cursor back to the page: the second focus comes after it.
