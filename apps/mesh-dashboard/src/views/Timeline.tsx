@@ -2,7 +2,7 @@ import { localDateTime, opsSummary, plainReason, zoneLabel } from "../format";
 import { sinceText } from "../feed";
 import { AgentAvatar, IconTile, OutcomePill, Skeleton, agentColor, useNow } from "../components";
 import { EventSummary, evSeverity } from "../events";
-import type { NameOf } from "../eventmodel";
+import type { MiniFeedRow, NameOf } from "../eventmodel";
 import { eventLook } from "../overview-model";
 import type { TimelineEvent, TurnStep } from "../store";
 import "./overview.css";
@@ -36,19 +36,53 @@ export function WorkTimeline({ steps, roleOf, onOpen }: { steps: TurnStep[]; rol
   );
 }
 
+/** One event as a row of a timeline: the mark for its kind, the line, and when. Shared by the full list and the Overview's summary. */
+function EventRow({ e, nameOf, now, onOpen }: { e: TimelineEvent; nameOf: NameOf; now: number; onOpen: (seq: number) => void }): React.JSX.Element {
+  const look = eventLook(e.type, evSeverity(e));
+  return (
+    <li>
+      <button type="button" className={`tl-row sev-${evSeverity(e)}`} data-seq={e.seq} onClick={() => onOpen(e.seq)}>
+        <span className="tl-mark"><IconTile size="sm" icon={look.icon} tone={look.tone} /></span>
+        <span className="tl-main"><span className="tl-line"><EventSummary e={e} nameOf={nameOf} /></span></span>
+        <time className="tl-time" dateTime={e.timestamp} title={exact(e.timestamp)}>{since(e.timestamp, now)}</time>
+      </button>
+    </li>
+  );
+}
+
 /** The log, newest first: the icon of what kind of thing happened, the line eventmodel.ts writes for it, and when. */
 export function EventTimeline({ events, nameOf, onOpen }: { events: TimelineEvent[]; nameOf: NameOf; onOpen: (seq: number) => void }): React.JSX.Element {
   const now = useNow(5000);
   return (
     <ul className="tl">
-      {events.map((e) => {
-        const look = eventLook(e.type, evSeverity(e));
+      {events.map((e) => <EventRow key={e.seq || e.id} e={e} nameOf={nameOf} now={now} onOpen={onOpen} />)}
+    </ul>
+  );
+}
+
+/**
+ * The Overview's "Just happened": the same rows, with the runs eventmodel.ts's `miniFeed` folds said as one row. A fold is a
+ * button too, and it goes to the place each event can be read: the folded rows are not hidden, only summarised. The line says
+ * the count and what happened; the second line says where the rows are, so a press is not a guess.
+ */
+export function MiniFeed({ rows, nameOf, onOpen, onAll }: { rows: MiniFeedRow<TimelineEvent>[]; nameOf: NameOf; onOpen: (seq: number) => void; onAll: () => void }): React.JSX.Element {
+  const now = useNow(5000);
+  return (
+    <ul className="tl">
+      {rows.map((r) => {
+        if (r.kind === "event") return <EventRow key={r.key} e={r.e} nameOf={nameOf} now={now} onOpen={onOpen} />;
+        const newest = r.items[0]!;
+        const oldest = r.items[r.items.length - 1]!;
+        const look = eventLook(newest.type, evSeverity(newest));
         return (
-          <li key={e.seq || e.id}>
-            <button type="button" className={`tl-row sev-${evSeverity(e)}`} data-seq={e.seq} onClick={() => onOpen(e.seq)}>
+          <li key={r.key}>
+            <button type="button" className="tl-row tl-fold" onClick={onAll}>
               <span className="tl-mark"><IconTile size="sm" icon={look.icon} tone={look.tone} /></span>
-              <span className="tl-main"><span className="tl-line"><EventSummary e={e} nameOf={nameOf} /></span></span>
-              <time className="tl-time" dateTime={e.timestamp} title={exact(e.timestamp)}>{since(e.timestamp, now)}</time>
+              <span className="tl-main">
+                <span className="tl-line"><b>{r.items.length}</b> {r.what}</span>
+                <span className="tl-sub">Folded. Open Events for each one.</span>
+              </span>
+              <time className="tl-time" dateTime={newest.timestamp} title={`${exact(oldest.timestamp)} to ${exact(newest.timestamp)}`}>{since(newest.timestamp, now)}</time>
             </button>
           </li>
         );

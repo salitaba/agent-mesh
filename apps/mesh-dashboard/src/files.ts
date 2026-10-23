@@ -108,6 +108,20 @@ export interface FileFilter {
 export const NO_FILTER: FileFilter = { query: "", type: "", group: "", latestOnly: true };
 
 /**
+ * How many filters are set, counting only what differs from the defaults. "Latest of each name" is on when the page opens, so
+ * counting it said "Filters (1)" on arrival and offered a Clear that changed nothing. Turning it off is a change worth counting;
+ * the default is not.
+ */
+export function activeFilterCount(f: FileFilter): number {
+  return Number(f.type !== "") + Number(f.group !== "") + Number(f.latestOnly !== NO_FILTER.latestOnly);
+}
+
+/** Whether anything other than the search is set, so the Clear control has something of its own to clear. */
+export function filtersApplied(f: FileFilter): boolean {
+  return f.type !== "" || f.group !== "" || f.latestOnly !== NO_FILTER.latestOnly;
+}
+
+/**
  * What a file is, in four words a person sorts a list by: a patch to review, a release plan, a report that says how something
  * went, or a document. It decides the glyph in front of the name, so the list can be run down by shape before it is read. The
  * protocol's own machines say the first two (a CodePatch has the code states, a ReleasePlan the release ones); the rest of

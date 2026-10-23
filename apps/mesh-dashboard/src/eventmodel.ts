@@ -927,3 +927,67 @@ export function buildRows<T extends EventLike>(list: readonly T[], now: number, 
   flush();
   return out;
 }
+
+/* ------------------------------ the Overview's summary ------------------------------ */
+
+/** How many rows the Overview's "Just happened" shows. */
+export const MINI_FEED_ROWS = 8;
+
+/** A run of this many consecutive events of one folded kind becomes one row in the Overview. */
+export const MINI_FOLD_AT = 3;
+
+/**
+ * The same kinds of run the Events page folds, said as the thing that happened rather than as the event type. Only a kind with
+ * words here folds: an event nobody has phrased is shown one by one, because a summary that invented a sentence would be worse
+ * than a longer list. `agent.completed` is the one that matters on a delivered mission: seven seats finishing is one fact, not
+ * seven rows that push the mission's own completion off the panel.
+ */
+const MINI_FOLD_WORD: Record<string, string> = {
+  "agent.completed": "seats finished",
+  "artifact.created": "files published",
+  "artifact.versioned": "files updated",
+  "message.sent": "messages sent",
+  "review.approved": "reviews approved",
+  "requirement.satisfied": "checks met",
+};
+
+export type MiniFeedRow<T extends EventLike = EventLike> =
+  | { kind: "event"; key: string; e: T }
+  | { kind: "fold"; key: string; items: T[]; what: string };
+
+/**
+ * The Overview's two lists are a summary, not the audit trail. It used to take the newest eight events whatever they were, so
+ * a delivered run's panel could be eight releases of a budget hold, or seven seats finishing, and the mission's own completion
+ * was below the fold. This keeps the newest rows but collapses two kinds of run: consecutive routine bookkeeping (as the Events
+ * page does) and consecutive events of a kind that has a sentence above. A fold is keyed by its oldest event, so events arriving
+ * at the top do not remount one the reader is about to press. `newestFirst` is the order both lists are read in.
+ */
+export function miniFeed<T extends EventLike>(newestFirst: readonly T[], limit = MINI_FEED_ROWS): MiniFeedRow<T>[] {
+  const out: MiniFeedRow<T>[] = [];
+  let i = 0;
+  while (i < newestFirst.length && out.length < limit) {
+    const head = newestFirst[i]!;
+    const sev = evSeverity(head);
+    let end = i + 1;
+    let what: string | null = null;
+    if (sev === "routine") {
+      while (end < newestFirst.length && evSeverity(newestFirst[end]!) === "routine") end++;
+      what = "routine events";
+    } else if (sev !== "alert") {
+      const word = MINI_FOLD_WORD[head.type];
+      if (word) {
+        while (end < newestFirst.length && newestFirst[end]!.type === head.type && evSeverity(newestFirst[end]!) === sev) end++;
+        what = word;
+      }
+    }
+    if (what && end - i >= MINI_FOLD_AT) {
+      const items = newestFirst.slice(i, end);
+      out.push({ kind: "fold", key: `mf${items[items.length - 1]!.seq}`, items, what });
+      i = end;
+      continue;
+    }
+    out.push({ kind: "event", key: String(head.seq || head.id), e: head });
+    i += 1;
+  }
+  return out;
+}

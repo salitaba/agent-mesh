@@ -11,13 +11,16 @@ import * as path from "path";
 
 const SRC = path.resolve(__dirname, "..", "..", "..", "apps", "mesh-dashboard", "src");
 const tsx = fs.readFileSync(path.join(SRC, "views", "Artifacts.tsx"), "utf8");
+const model = fs.readFileSync(path.join(SRC, "files.ts"), "utf8");
 const css = fs.readFileSync(path.join(SRC, "views", "files.css"), "utf8");
 
 test("a phone keeps search out and folds the other file filters behind one counted button", () => {
   assert.match(tsx, /files-filters-toggle/, "the disclosure button exists");
   assert.match(tsx, /aria-expanded=\{filtersOpen\}/, "the button says whether the panel is open");
-  assert.match(tsx, /Filters\{filterCount \? ` \(\$\{filterCount\}\)` : ""\}/, "the button counts the filters that are on");
-  assert.match(tsx, /filterCount = Number\(filter\.type !== ""\) \+ Number\(filter\.group !== ""\) \+ Number\(filter\.latestOnly\)/, "the count covers every folded filter");
+  assert.match(tsx, /Filters\{filtersOn \? ` \(\$\{filtersOn\}\)` : ""\}/, "the button counts the filters that are on");
+  assert.match(tsx, /const filtersOn = activeFilterCount\(filter\)/, "the count comes from the model, not a second arithmetic here");
+  // The default "Latest of each name" is on, so counting it said (1) on arrival and offered a Clear that did nothing.
+  assert.match(model, /f\.type !== ""\) \+ Number\(f\.group !== ""\) \+ Number\(f\.latestOnly !== NO_FILTER\.latestOnly\)/, "the count covers every folded filter that differs from its default");
 });
 
 test("one \"Latest of each name\" switch, with the other filters, at every width", () => {

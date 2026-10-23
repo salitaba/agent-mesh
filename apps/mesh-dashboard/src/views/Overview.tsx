@@ -5,6 +5,7 @@ import { ArtifactDrawer, StepDrawer } from "../drawers";
 import { latestArtifactSeq } from "../files";
 import { CollabCard } from "../collabcard";
 import { useNameOf } from "../events";
+import { miniFeed } from "../eventmodel";
 import { useProjectsOptional } from "../projects";
 import { useMission } from "../useMission";
 import { useMissionActions } from "../useMissionActions";
@@ -21,7 +22,7 @@ import { MissionHero } from "./MissionHero";
 import { Panel } from "./Panel";
 import { ReplayDrawer } from "./ReplayDrawer";
 import { Shipped } from "./Shipped";
-import { EventTimeline, TimelineSkeleton, WorkTimeline } from "./Timeline";
+import { MiniFeed, TimelineSkeleton, WorkTimeline } from "./Timeline";
 import "./overview.css";
 
 /** How many of the newest events the page asks for when its buffer stops short of the log. */
@@ -178,6 +179,7 @@ export default function Overview(): React.JSX.Element {
   // the live ones. The Overview reads the latest events, so it asks for them once when it finds the buffer behind the log, and reads
   // the buffer in the order it was written.
   const timeline = useMemo(() => bySeq(events), [events]);
+  const feed = useMemo(() => miniFeed([...timeline].reverse()), [timeline]);
   const nameOf = useNameOf(events);
   const behind = bufferIsBehind(timeline.length ? timeline[timeline.length - 1]!.seq : 0, status?.eventCount);
   const tailAsked = useRef(false);
@@ -348,7 +350,7 @@ export default function Overview(): React.JSX.Element {
           {/* The mini-feed hands off to the console rather than opening a drawer over the Overview: the events page is where an
               event can actually be read, and arriving there with it selected keeps the stream in view. */}
           {timeline.length ? (
-            <EventTimeline events={timeline.slice(-8).reverse()} nameOf={nameOf} onOpen={(s) => openDetail("event", String(s), "events")} />
+            <MiniFeed rows={feed} nameOf={nameOf} onOpen={(s) => openDetail("event", String(s), "events")} onAll={() => setView("events")} />
           ) : sseState === "connecting" ? <TimelineSkeleton label="Loading the latest events." rows={4} /> : <p className="ov-empty">No events yet.</p>}
         </Panel>
       </div>

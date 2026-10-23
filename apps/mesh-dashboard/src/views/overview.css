@@ -187,13 +187,14 @@ details.ov-note { display: block; }
   .ov-headline > b { font-size: 24px; }
   .ov-headline > b.long { font-size: 20px; }
   .ov-headline > span { font-size: 16px; }
-  .ov-acts { padding-left: 0; gap: var(--s1-5); }
+  .ov-acts { padding-left: 0; gap: var(--s2); }
   .ov-acts > button.primary, .ov-acts > button.soft:not(.menu-btn) { flex: 1 1 auto; justify-content: center; }
   /* A phone runs out of width before it runs out of actions. The three quiet ones are words with a picture beside them; the picture is
      decoration, so it goes and the words share one row (they fitted 252 px at 320 with the tighter padding and one size down). Five
-     rows of buttons was 252 px of the first screen. */
+     rows of buttons was 252 px of the first screen. Measured at 360 the row still wrapped to a fourth line (194 px) with the old
+     8 px side padding; 4 px of padding and an 8 px gap put the three on one line (148 px) without shrinking the words. */
   .ov-acts > button.ghost > .icon { display: none; }
-  .ov-acts > button.ghost { padding-inline: var(--s2); font-size: 13px; }
+  .ov-acts > button.ghost { padding-inline: var(--s1); font-size: 13px; }
   /* The goal is what the mission is. A phone hid the last two words of a one-sentence goal behind an ellipsis; three lines fit it. */
   .ov-goal-line { -webkit-line-clamp: 3; line-clamp: 3; }
   .stat-cell, .stat-cell:first-child, .stat-cell:nth-child(odd), .stat-cell:last-child { padding: var(--s3-5) var(--s4); }

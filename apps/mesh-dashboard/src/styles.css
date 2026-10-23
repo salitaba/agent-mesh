@@ -1408,10 +1408,11 @@ ul.errs { margin: var(--s1-5) 0; padding-left: 18px; font-size: 14px; color: var
       .evd-tr, .evd-title .icon-btn, .evc-row, .evc-foldbar, .ptree-row, .chg-row, .crumb-btn,
       .menu-item, .tab-btn, .toast-act, .st-now, .st-tl-cap, .sv-jump-b, .gr-key, .gr-plain, .gr-link,
       .icon-btn, button.linklike, summary, .close-x, .palette-x, .palette-item, .pj-opt, .toast-x,
+      .copy-btn.compact, .srch-clear,
       input.search, input.txt, select.sel, textarea.txt) {
     min-height: 44px;
   }
-  :is(.pj-home, .ptab-x, .ptab-add, .agent-open, .gr-open, .icon-btn, .close-x, .palette-x, .toast-x) { min-width: 44px; }
+  :is(.pj-home, .ptab-x, .ptab-add, .agent-open, .gr-open, .icon-btn, .close-x, .palette-x, .toast-x, .copy-btn.compact, .srch-clear) { min-width: 44px; }
   /* A tab's close control used to appear only under a pointer resting on the tab. A touch screen has no resting pointer, so a
      background project could not be closed without first selecting it. */
   .ptab-x { opacity: 1; }

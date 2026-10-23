@@ -6,6 +6,7 @@ import {
   FILE_KIND_LABEL,
   LINE_WINDOW,
   NO_FILTER,
+  activeFilterCount,
   countLabel,
   distinctVersions,
   downloadName,
@@ -13,6 +14,7 @@ import {
   fileKind,
   fileModes,
   filterFiles,
+  filtersApplied,
   fmtSize,
   groupCounts,
   groupFiles,
@@ -120,6 +122,15 @@ test("filters combine, and a copy hidden by 'latest of each name' never matches 
   assert.deepEqual(filterFiles(all, { ...NO_FILTER, group: "done" }).map((a) => a.id), ["art-code", "art-new"]);
   assert.deepEqual(filterFiles(all, { ...NO_FILTER, group: "draft" }), [], "the hidden draft copy is not found by its group");
   assert.deepEqual(filterFiles(all, { ...NO_FILTER, group: "draft", latestOnly: false }).map((a) => a.id), ["art-old"]);
+});
+
+test("the phone counts a filter only when it differs from the default, so Clear has something to clear", () => {
+  assert.equal(activeFilterCount(NO_FILTER), 0, "the page opens with no count and no Clear");
+  assert.equal(filtersApplied(NO_FILTER), false);
+  assert.equal(activeFilterCount({ ...NO_FILTER, latestOnly: false }), 1, "turning the default off is a change");
+  assert.equal(filtersApplied({ ...NO_FILTER, latestOnly: false }), true);
+  assert.equal(activeFilterCount({ ...NO_FILTER, type: "CodePatch", group: "done" }), 2);
+  assert.equal(filtersApplied({ ...NO_FILTER, type: "CodePatch" }), true);
 });
 
 test("equal times keep a stable order, so a refresh of the same data does not shuffle the list", () => {
