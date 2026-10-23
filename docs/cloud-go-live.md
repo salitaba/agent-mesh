@@ -175,6 +175,32 @@ cut short by a crash is dropped when the file opens, and a line that cannot be r
 being skipped, because a record of money or of what was granted is not skipped; so restoring a log is putting a copy of the
 file back before the process starts. A restore that has not been tried is not a backup: try it before opening.
 
+## 11. Updating it
+
+A running service is three things, and a new release is only the first: the release `curule-control` serves, the
+`curule-workspace:launch` image every workspace is built from, and the containers already running from the old image.
+Updating a default, a role prompt, a schema or the plan table means all three, or a customer's workspace keeps the old
+code while the account pages already say the new thing.
+
+From a clean, committed checkout of the repository the deploy folder builds from:
+
+```bash
+npm run deploy:cloud -- --dry-run      # the commit, release, image, units and containers it would move
+npm run deploy:cloud                   # build, restart, recreate, verify
+```
+
+It builds the release from the commit (not from the working tree), tags the image it replaces for rollback, rebuilds the
+workspace image, restarts the active units, recreates every container labelled `curule.workspace` with its environment,
+volume, network address and limits carried over, and then checks each container's health, the release it was built from,
+and the default team it serves. It ends by naming any registered project whose `mesh.yaml` has fewer seats than the new
+default: existing projects are never rewritten behind their owner's back; that upgrade is deliberate, in the Designer.
+
+An active workspace restarts during a deploy, so a turn in flight is interrupted the way any restart interrupts it; do it
+when the runs you care about are idle. `npm run deploy:cloud -- --verify` checks what is running without building or
+restarting anything. The end of a deploy prints the commands that put the previous release and image back. A deploy is a
+release of one commit: commit first, or the script refuses, because a build from `git archive` cannot carry a working
+tree's uncommitted changes.
+
 ## What this does not cover
 
 The control plane and the gateway each run as one process; running more of either, a second region, a cluster scheduler, and a

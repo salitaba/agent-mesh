@@ -139,6 +139,7 @@ if [ "$VERIFY" = 0 ]; then
   else
     note "  containers      ${PLANNED[*]}"
   fi
+  note "  note            each listed container restarts; a turn in flight is interrupted"
 fi
 if [ "$DRY" = 1 ]; then
   note ""
