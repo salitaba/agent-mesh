@@ -2,8 +2,8 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import {
-  EV_FILTER_GROUPS, FOLD_AT, SEVERITY_ORDER, applySeverity, buildRows, eventHaystack, evGroupOf, evSeverity, facetOne, facetValues,
-  filterBase, parseFacets, setFacet, severityCounts, toggleFacet, topActors, type EventLike,
+  EV_FILTER_GROUPS, FOLD_AT, MINI_FEED_ROWS, MINI_FOLD_AT, SEVERITY_ORDER, applySeverity, buildRows, eventHaystack, evGroupOf, evSeverity, facetOne, facetValues,
+  filterBase, miniFeed, parseFacets, setFacet, severityCounts, toggleFacet, topActors, type EventLike,
 } from "../../apps/mesh-dashboard/src/eventmodel";
 
 /**
@@ -182,4 +182,40 @@ test("every row has a unique key, so React keeps the right row when the list mov
   const list = Array.from({ length: 30 }, (_, i) => ev(i % 4 === 0 ? "goal.progress" : "budget.consumed", i * 20));
   const keys = buildRows(list, NOW, true).map((r) => r.key);
   assert.equal(new Set(keys).size, keys.length);
+});
+
+/* -------------------------------------------------------------- mini feed */
+
+const mini = (rows: ReturnType<typeof miniFeed>): string[] => rows.map((r) => (r.kind === "fold" ? `fold(${r.items.length} ${r.what})` : r.e.type));
+
+test("the Overview's summary folds bookkeeping and a run of seats finishing, so the mission's own completion stays in view", () => {
+  n = 0;
+  const list = [
+    ...Array.from({ length: 7 }, (_, i) => ev("agent.completed", i + 1, { payload: { agentId: `seat-${i}` } })),
+    ...Array.from({ length: 28 }, (_, i) => ev("budget.released", 20 + i)),
+    ev("goal.completed", 60, { payload: { reason: "all_mandatory_criteria_evidenced" } }),
+  ];
+  assert.equal(MINI_FOLD_AT, 3);
+  assert.equal(MINI_FEED_ROWS, 8);
+  assert.deepEqual(mini(miniFeed(list)), ["fold(7 seats finished)", "fold(28 routine events)", "goal.completed"]);
+});
+
+test("a shorter run of notice events stays as rows, and an alert is never folded", () => {
+  n = 0;
+  const list = [
+    ev("agent.completed", 1), ev("agent.completed", 2),
+    ...Array.from({ length: 4 }, (_, i) => ev("agent.state_changed", 3 + i, { payload: { to: "FAILED" } })),
+  ];
+  assert.deepEqual(mini(miniFeed(list)), ["agent.completed", "agent.completed", "agent.state_changed", "agent.state_changed", "agent.state_changed", "agent.state_changed"]);
+});
+
+test("a summary of a busy log is capped, and a fold's key is its oldest event so rows arriving at the top do not remount it", () => {
+  n = 0;
+  const list = Array.from({ length: 20 }, (_, i) => ev("goal.status_changed", i, { payload: { status: "ACTIVE" } }));
+  assert.equal(miniFeed(list).length, MINI_FEED_ROWS);
+  const base = [ev("agent.completed", 10), ev("agent.completed", 11), ev("agent.completed", 12)];
+  const before = miniFeed(base).find((r) => r.kind === "fold")!;
+  const after = miniFeed([ev("agent.completed", 9), ...base]).find((r) => r.kind === "fold")!;
+  assert.equal(after.key, before.key);
+  assert.equal(after.kind === "fold" && after.items.length, 4);
 });
