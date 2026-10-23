@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<meta name="color-scheme" content="light dark">
+<title>The UX pass record — Curule</title>
+<style>
+  :root { --ink:#161514; --ink2:#54504a; --line:#ddd8cf; --panel:#f7f5f1; --bg:#fbfaf8; --accent:#1c5d3f; --mono:ui-monospace,SFMono-Regular,Menlo,monospace; }
+  @media (prefers-color-scheme: dark) { :root { --ink:#f2efe9; --ink2:#b3ada3; --line:#3a3733; --panel:#211f1c; --bg:#181715; --accent:#7fd1a5; } }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); font:16px/1.55 ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; }
+  .wrap { max-width:960px; margin:0 auto; padding:28px 18px 64px; }
+  h1 { font-size:clamp(26px,6vw,36px); line-height:1.15; margin:0 0 8px; letter-spacing:-.02em; }
+  .lede { color:var(--ink2); max-width:60ch; margin:0 0 6px; }
+  .stat { color:var(--ink2); font-size:14px; border-top:1px solid var(--line); border-bottom:1px solid var(--line); padding:10px 0; margin:18px 0 26px; display:flex; flex-wrap:wrap; gap:6px 18px; }
+  .stat b { color:var(--ink); }
+  .pass { background:var(--panel); border:1px solid var(--line); border-radius:14px; padding:16px; margin:0 0 18px; }
+  .pass.unmerged { opacity:.72; border-style:dashed; }
+  .pass header { display:flex; align-items:baseline; gap:10px; flex-wrap:wrap; margin-bottom:10px; }
+  .pass h2 { font-size:18px; margin:0; letter-spacing:-.01em; }
+  .when { margin:0; color:var(--ink2); font-size:13px; }
+  .pair { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin:0 0 12px; }
+  .pair.three { grid-template-columns:repeat(3,1fr); }
+  .now { margin:0 0 4px; }
+  .now h2 { font-size:14px; text-transform:uppercase; letter-spacing:.08em; color:var(--ink2); margin:22px 0 8px; font-weight:600; }
+  @media (max-width:700px) { .pair.three { grid-template-columns:1fr; } }
+  @media (max-width:560px) { .pair { grid-template-columns:1fr; } }
+  .shot { display:block; border:1px solid var(--line); border-radius:10px; overflow:hidden; background:var(--bg); text-decoration:none; color:inherit; }
+  .shot img { display:block; width:100%; height:auto; max-height:420px; object-fit:cover; object-position:top; }
+  .shot span { display:block; padding:6px 9px; font-size:12px; color:var(--ink2); border-top:1px solid var(--line); }
+  .none { display:block; padding:14px; border:1px dashed var(--line); border-radius:10px; color:var(--ink2); font-size:13px; }
+  .did { margin:10px 0 0; padding-left:18px; }
+  .did li { margin:0 0 6px; }
+  details { margin-top:10px; }
+  summary { cursor:pointer; color:var(--ink2); font-size:14px; min-height:44px; display:flex; align-items:center; }
+  .bugs { margin:8px 0 0; padding-left:20px; font-size:14px; color:var(--ink2); }
+  .bugs li { margin:0 0 10px; }
+  .bugs b { color:var(--ink); }
+  .was { color:#a15; font-weight:600; } .now { color:var(--accent); font-weight:600; }
+  @media (prefers-color-scheme: dark) { .was { color:#f0a0b8; } }
+  .meta { margin:12px 0 0; font-size:12px; color:var(--ink2); }
+  code { font-family:var(--mono); font-size:12px; }
+  footer { color:var(--ink2); font-size:13px; border-top:1px solid var(--line); padding-top:14px; }
+</style>
+</head>
+<body><div class="wrap">
+<h1>What the UX pass has done</h1>
+<p class="lede">Every twelve hours a pass takes one surface of Curule — the landing page, the account pages, the console or the designer — redesigns it as a whole, and lands it only when the suite is green. This is the record, written from the passes' own reports.</p>
+<section class="now">
+  <h2>Where they stand now</h2>
+  <div class="pair three"><a class="shot" href="shots/landing-now.png"><img src="shots/landing-now.png" alt="the landing page" loading="lazy"><span>the landing page</span></a><a class="shot" href="shots/account-now.png"><img src="shots/account-now.png" alt="the account pages" loading="lazy"><span>the account pages</span></a><a class="shot" href="shots/console-now.png"><img src="shots/console-now.png" alt="the console" loading="lazy"><span>the console</span></a></div>
+</section>
+<p class="stat"><span><b>9</b> passes</span><span><b>8</b> merged</span><span><b>4</b> surfaces</span><span>updated 23 Oct 2026 12:09</span></p>
+<article class="pass">
+  <header>
+    <h2>the designer</h2>
+    <p class="when">23 Oct 2026 · 08:50</p>
+  </header>
+  
+  <ul class="did"><li>A name is content, not a label. The roster and the canvas now spend their width on the seat's name before anything else; role, flags and wire counts are subordinate lines. At 360 the roster name gets 194 px and no longer cuts; at 1440 a long name wraps to two lines instead of reading frontend-….</li><li>A thing that covers the page is a layer. The inspector drawer, the YAML preview and the assistant dock now have a scrim, a named modal dialog, a held page, a Tab trap, a 44 px way out and focus returned to the opener. Before, the phone inspector had none of these while covering all 360 × 844 px.</li><li>One move is open at a time. The first-run guide was four open instructions (553 px) above a roster that started at y=881 on an 844 px screen. It now opens only the step that is *now*, states Step 1 of 4, and the first seat row begins at y=795 — on the screen.</li><li>One voice. Every Designer state uses the same lede; the drawer's heading says what it is editing (Seat: pm, Mesh settings) rather than Inspector; a checks error with no field now names the route out instead of ending at &quot;edit mesh.yaml&quot;.</li></ul>
+  <details><summary>3 bugs found, proved and fixed</summary><ol class="bugs"><li><b>Read `.ms-seatrow .nm` at 360</b><br><span class="was">was:</span> Name box 88 px for 151 px of text; **6 of 9 names clipped** (`frontend-…`, `ux-desig…`); flags shared the line<br><span class="now">now:</span> Name its own line, flags/counts below. Measured **194/194 px, 0/9 cut**</li><li><b>Open a seat at 360; inspect drawer, Tab/Shift+Tab</b><br><span class="was">was:</span> 360 × 844 fixed box, `role=null`, `aria-modal=null`, no scrim, page scrolled behind, **Shift+Tab landed on a seat row behind it**<br><span class="now">now:</span> Scrim z 39 under drawer z 40, `role=dialog`, `aria-modal=true`, labelled by the seat heading, body/view locked, **16/16 Tabs inside**, Shift+Tab from root inside, close **44 × 44**, Escape returns focus to the row</li><li><b>Open the drawer on a phone</b><br><span class="was">was:</span> Focus went to the first input → on-screen keyboard over the panel<br><span class="now">now:</span> `initialFocus: &quot;root&quot;`; measured active element = `.ms-side`, not a field</li></ol></details>
+  <p class="meta">16 files changed · yes | tests 6289 pass 6287 fail 0</p>
+</article>
+<article class="pass unmerged">
+  <header>
+    <h2>the landing page</h2>
+    <p class="when">22 Oct 2026 · 19:48 · <b>not merged</b></p>
+  </header>
+  
+  
+  
+  <p class="meta">14 files changed · no | tests 6282 pass 6279 fail 1</p>
+</article>
+<article class="pass">
+  <header>
+    <h2>the account pages</h2>
+    <p class="when">22 Oct 2026 · 14:59</p>
+  </header>
+  <div class="pair"><a class="shot" href="shots/account-before.png"><img src="shots/account-before.png" alt="before this pass" loading="lazy"><span>before this pass</span></a><a class="shot" href="shots/account-after.png"><img src="shots/account-after.png" alt="after" loading="lazy"><span>after</span></a></div>
+  
+  
+  <p class="meta">14 files changed · <code>6d23268</code> · yes | tests 6274 pass 6272 fail 0</p>
+</article>
+<article class="pass">
+  <header>
+    <h2>the console</h2>
+    <p class="when">22 Oct 2026 · 01:39</p>
+  </header>
+  
+  
+  
+  <p class="meta">31 files changed · yes | tests 6271 pass 6269 fail 0</p>
+</article>
+<article class="pass">
+  <header>
+    <h2>the console</h2>
+    <p class="when">21 Oct 2026 · 12:07</p>
+  </header>
+  
+  
+  
+  <p class="meta">12 files changed · yes | tests 6260 pass 6258 fail 0</p>
+</article>
+<article class="pass">
+  <header>
+    <h2>the account pages</h2>
+    <p class="when">20 Oct 2026 · 22:58</p>
+  </header>
+  
+  
+  
+  <p class="meta">14 files changed · yes | tests 6241 pass 6239 fail 0</p>
+</article>
+<article class="pass">
+  <header>
+    <h2>the console</h2>
+    <p class="when">20 Oct 2026 · 09:08</p>
+  </header>
+  
+  
+  
+  <p class="meta">24 files changed · yes | tests 6239 pass 6237 fail 0</p>
+</article>
+<article class="pass">
+  <header>
+    <h2>the console</h2>
+    <p class="when">20 Oct 2026 · 04:13</p>
+  </header>
+  
+  
+  
+  <p class="meta">6 files changed · yes | tests 6220 pass 6218 fail 0</p>
+</article>
+<article class="pass">
+  <header>
+    <h2>the console</h2>
+    <p class="when">19 Oct 2026 · 15:05</p>
+  </header>
+  
+  
+  
+  <p class="meta">8 files changed · yes | tests 6214 pass 6212 fail 0</p>
+</article>
+<footer>Generated from the pass reports and the git history by <code>ux-history.mjs</code>, on every deploy. Captures are rendered at 360 px with the workspace image's own Chromium; the console is a single-page app that needs a running mesh, so it is shown as it is now rather than as a "before" no checkout can serve.</footer>
+</div></body></html>
