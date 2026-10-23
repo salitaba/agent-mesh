@@ -258,7 +258,7 @@ said). The before column is today's site before this pass, re-measured; no earli
 | Page | 360 before / after | 320 before / after | 768 / 1440 |
 |---|---|---|---|
 | Home | 13,648 / **13,700** | 14,400 / **14,452** | 13,108 / 12,282 (unchanged) |
-| Pricing | 12,676 / **13,944** | 13,574 / **14,972** | 10,662 / 9,174 (unchanged) |
+| Pricing | 12,676 / **13,944** | 13,574 / **14,972** | 10,682 / 9,174 |
 | Docs | 9,232 / 9,232 | 9,842 / 9,842 | 6,146 / 4,678 (unchanged) |
 | Security | 11,916 / 11,916 | 12,823 / 12,823 | 8,327 / 7,668 (unchanged) |
 | Contact | 4,815 / 4,815 | 5,110 / 5,110 | 3,871 / 2,815 (unchanged) |
@@ -268,7 +268,9 @@ said). The before column is today's site before this pass, re-measured; no earli
 - **Pricing at 360:** the plan table was 660×676 in a 326px window; the stack is four plans and
   1,558px tall, the run stack 803px. The page is 1,268px taller because all four plans are now read,
   not swiped. At 320 the stack is 1,666px and the page 1,398px taller. At 720 (the 200% stand-in) the
-  table is 662×676 in a 662px box and the stack is hidden; the page is 11,152px, unchanged.
+  table is 662×676 in a 662px box and the stack is hidden; the page is 11,152px, unchanged. At 768
+  the table is 707×628, the stack is hidden, and one extra line in the mission's paragraph makes the
+  page 10,682px (was 10,662).
 - **The six-view index** is 328×44 at 360 and 288×44 at 320. Home is 52px taller at both (the index
   only); 768 and 1440 are unchanged. Pressing `06` put the Approvals card at **left 34, top 88**
   with the row at `scrollLeft 1,590`.
