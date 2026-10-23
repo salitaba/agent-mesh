@@ -10,11 +10,11 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import * as fs from "fs";
 import * as path from "path";
-import { ROOT, SITE, headingAnchors, imageSize, page, shareable, sitePages, walk, type Page } from "./site-pages";
+import { ROOT, SITE, headingAnchors, imageSize, page, shareable, siteFiles, sitePages, type Page } from "./site-pages";
 import { parsePage } from "../cloud/pages-support";
 
 const pages = sitePages();
-const files = walk(SITE);
+const files = siteFiles();
 const scriptFiles = files.filter((f) => f.endsWith(".js"));
 const cssFiles = files.filter((f) => f.endsWith(".css"));
 

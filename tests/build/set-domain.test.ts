@@ -5,7 +5,7 @@ import * as crypto from "crypto";
 import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
-import { walk } from "./site-pages";
+import { siteFiles } from "./site-pages";
 
 /**
  * `scripts/set-domain.mjs` applies the domain that was chosen to every place that carries it, so that they cannot disagree and
@@ -159,7 +159,7 @@ function switchedRepo(): string {
 /** The repository's own site (its pages and script), policy and licence, in whatever state they are in today. */
 function realRepo(): string {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "curule-domain-real-"));
-  for (const f of walk(path.join(ROOT, "site")).filter((x) => /\.(html|js)$/.test(x))) {
+  for (const f of siteFiles().filter((x) => /\.(html|js)$/.test(x))) {
     fs.mkdirSync(path.dirname(path.join(dir, "site", f)), { recursive: true });
     fs.copyFileSync(path.join(ROOT, "site", f), path.join(dir, "site", f));
   }

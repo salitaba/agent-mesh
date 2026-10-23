@@ -25,6 +25,15 @@ export interface Page {
   prose: string;
 }
 
+/**
+ * Folders under site/ that a host serves but that are not pages of the site: the UX record (site/ux) is an unlisted,
+ * noindex page of its own, with its own styles and its own pictures, so the rules that make the seven pages one family
+ * (the shared header and footer, the fingerprints, one h1, a way back home) do not apply to it. It is left alone by every
+ * script that writes a page and by every test that reads one.
+ */
+export const UNPUBLISHED = new Set(["ux"]);
+export const isPublicPath = (rel: string): boolean => !UNPUBLISHED.has(rel.split("/")[0]!);
+
 const ENTITIES: Record<string, string> = { "&amp;": "&", "&lt;": "<", "&gt;": ">", "&quot;": '"', "&rsquo;": "'", "&lsquo;": "'", "&ldquo;": '"', "&rdquo;": '"', "&middot;": "·", "&infin;": "∞", "&nbsp;": " ", "&mdash;": "—", "&ndash;": "–" };
 export const decode = (s: string): string => s.replace(/&[a-z]+;/g, (e) => ENTITIES[e] ?? e);
 
@@ -59,7 +68,7 @@ export function sitePages(): Page[] {
   const pages: Page[] = [];
   if (fs.existsSync(path.join(SITE, "index.html"))) pages.push(build("index.html", ""));
   for (const entry of fs.readdirSync(SITE, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
-    if (entry.isDirectory() && fs.existsSync(path.join(SITE, entry.name, "index.html"))) pages.push(build(`${entry.name}/index.html`, `${entry.name}/`));
+    if (entry.isDirectory() && !UNPUBLISHED.has(entry.name) && fs.existsSync(path.join(SITE, entry.name, "index.html"))) pages.push(build(`${entry.name}/index.html`, `${entry.name}/`));
   }
   if (fs.existsSync(path.join(SITE, "404.html"))) pages.push(build("404.html", null));
   return pages;
@@ -83,6 +92,11 @@ export function walk(dir: string, rel = ""): string[] {
     else out.push(r);
   }
   return out.sort();
+}
+
+/** Every file of the public site: what `walk(SITE)` finds, without the folders that are served but are not its pages. */
+export function siteFiles(): string[] {
+  return walk(SITE).filter(isPublicPath);
 }
 
 /**

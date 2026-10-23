@@ -102,13 +102,19 @@ function edit(text, pattern, replacement, what, { optional = false } = {}) {
   return text.replace(pattern, typeof replacement === "function" ? replacement : () => replacement);
 }
 
+/** Folders under site/ that a host serves but that are not pages of the site: the UX record (site/ux) is unlisted and
+ * noindex, with its own styles and its own pictures, so this script leaves it exactly as it is. */
+const UNPUBLISHED = new Set(["ux"]);
+
 /** Every file under a folder, as paths relative to it, in a fixed order. */
 function walk(dir, rel = "") {
   const out = [];
   for (const entry of fs.readdirSync(path.join(dir, rel), { withFileTypes: true })) {
     const r = rel === "" ? entry.name : `${rel}/${entry.name}`;
-    if (entry.isDirectory()) out.push(...walk(dir, r));
-    else out.push(r);
+    if (entry.isDirectory()) {
+      if (rel === "" && UNPUBLISHED.has(entry.name)) continue;
+      out.push(...walk(dir, r));
+    } else out.push(r);
   }
   return out.sort();
 }

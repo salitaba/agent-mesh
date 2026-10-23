@@ -172,12 +172,16 @@ ${cols}
 </footer>`;
 }
 
+/** Folders under site/ that a host serves but that are not pages of the site: the UX record (site/ux) draws itself and is
+ * not part of the family this script writes. It is left exactly as it is. */
+const UNPUBLISHED = new Set(["ux"]);
+
 /** The pages of a site folder: its index.html, one folder deep, and 404.html. */
 export function pagesOf(siteDir) {
   const pages = [];
   if (fs.existsSync(path.join(siteDir, "index.html"))) pages.push({ id: "", file: "index.html", root: "" });
   for (const entry of fs.readdirSync(siteDir, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
-    if (entry.isDirectory() && fs.existsSync(path.join(siteDir, entry.name, "index.html"))) {
+    if (entry.isDirectory() && !UNPUBLISHED.has(entry.name) && fs.existsSync(path.join(siteDir, entry.name, "index.html"))) {
       pages.push({ id: entry.name, file: `${entry.name}/index.html`, root: "../" });
     }
   }
