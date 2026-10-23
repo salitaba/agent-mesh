@@ -139,3 +139,86 @@ At 360px, reduced motion, touch:
   were not run on this surface.
 - `site/DESIGN.md` and `apps/cloud-server/pages/DESIGN.md` are two halves of one record; read them
   together.
+
+## 2026-10-23: the first screen, the row's numbers, pricing's table
+
+Measured with the same probe (Chrome 156 over CDP, reduced motion, touch, 360/768/1440, light and dark).
+The before column is the previous pass's record, re-measured today and unchanged.
+
+### What changed
+
+- **The phone's first screen** now holds the product. At `max-width: 719px` the hero's spacing is one
+  step tighter (top 24→16, eyebrow 20→12, lede 24→16, actions 28→20, picture 36→20), and the note
+  that sat under the actions is laid out below the capture it describes (CSS `order`; the DOM order
+  the test pins is untouched, and the note holds no control). The tabs and 125px of the capture are
+  inside an 800px screen; the capture itself starts 153px higher.
+- **The six console views are numbered 01–06** in the same 12px muted, tabular figure as the section
+  eyebrows and the contents, with the same hairline between number and title. The row still scrolls
+  as one snap row on a phone; the numbers give it an order a thumb can follow.
+- **The two ways cards are smaller on a phone**: `padding-inline` 28→20, the answers' gap 20→14, and
+  the one action is full width. The pricing page's plans start 76px higher.
+- **The comparison table says it scrolls** (`Swipe the table sideways…`, where it really scrolls, at
+  `max-width: 719px`), is 660px instead of 720, and its cells are 12/14 instead of 14/18. At 768 it
+  no longer scrolls at all (705px box, 705px table; it was 720 in a 705 box), so the hint is not
+  shown there: a reader is not told to swipe a table that fits.
+- **The docs pages' empty state** no longer leaves the map's box behind: a filter that matches nothing
+  collapses `.doc-grid` (measured 0×0; it used to keep a 56px top margin under the empty panel).
+- **The graph in "How a mission goes"** gained the "Full size" link every other capture has; it was
+  the only 1139px capture with no way to its text on a phone. `tests/build/site.test.ts` now counts
+  ten such links, not nine.
+- **Rows that scroll sideways contain the gesture** (`overscroll-behavior-x: contain` on the six
+  views, the plans, the On-this-page row, the tables and terminal blocks), so a swipe at the end of a
+  row no longer turns the page back.
+- **Print** lays the rows out instead of scrolling them, fits the comparison table to the page, hides
+  the swipe hints, and prints both the monthly and the annual price of a plan because the switch is
+  not printed (`.price-monthly` was `display: none` under the checked Annual radio; measured block in
+  print now).
+- **High Contrast** keeps the dot that marks the On-this-page chip being read.
+
+### Measurements after this pass
+
+| Page | 360 before / after | 768 before / after | 1440 before / after |
+|---|---|---|---|
+| Home | 13,780 / **13,648** | 13,083 / 13,108 | 12,214 / 12,258 |
+| Pricing | 12,626 / **12,632** | 10,732 / **10,613** | 9,125 / 9,125 |
+| Docs | 9,208 / 9,208 | 6,171 / 6,171 | 4,696 / 4,696 |
+| Security | 11,844 / 11,844 | 8,327 / 8,327 | 7,620 / 7,620 |
+| Contact | 4,815 / 4,815 | 3,871 / 3,871 | 2,815 / 2,815 |
+| Legal | 5,292 / 5,292 | 3,863 / 3,863 | 3,317 / 3,317 |
+| 404 | 2,348 / 2,348 | 1,911 / 1,911 | 1,524 / 1,524 |
+
+Home at 360: the primary action at **y=500** (was 532), the tab row at **568** (721), the product
+frame at **634** (787), its first pixel at **675** (828), `#pricing` at **1,668** (1,720), the first
+plan at **2,007** (2,059), the console at **6,936** (7,068), the views at **7,265** (7,397), the
+steps at **5,719** (5,895), the questions at **11,189** (11,321), the closing band at **12,155**
+(12,287). The page is 132px shorter at 360 and 25–44px taller at 768/1440, which is the graph's new
+44px link.
+
+Pricing at 360: the two ways are 1,257px (was 1,333), the plans start at **1,794** (1,870) and the
+first card at **1,924** (2,000); the compare box is 660×674 inside a 326px window (was 720×682). At
+768 the two comparison tables fill their box exactly, and the page is 10,613px (was 10,732). The two
+hints appear at 719 and below, where the tables scroll, and print nowhere.
+
+No page overflows horizontally at 360, 768 or 1440 in either theme, or at 320 in light; the probe
+reports no console errors. At 320 the home page is 14,401px and pricing 13,523px, and the first screen
+still shows the tabs and the top of the capture.
+
+Type is unchanged: the smallest text is still 12px (the new numbers), body 16, terminal 13, and no new
+colour, radius or size was added. At 360 with a coarse pointer, the only controls under 44px are the
+hidden 1×1 billing radios, the 24×24 checkbox whose label is 44px, and inline links in sentences.
+
+### What this pass deliberately left
+
+- **The pricing page still opens with "Do you run it, or do we?"** before the licence plans. That order
+  is the previous pass's documented choice (the page opens with the same two ways the home page
+  offers); the cards are 76px shorter, and the first card is still below the first screen at 360. A
+  later pass could move `#plans` above `#ways`, but that changes what the page opens with, not its
+  craft.
+- **The comparison table still scrolls at 360.** A per-plan stacked table needs per-row plan labels
+  the pricing exporter does not write; it fits at 768 now and states what it does below 720.
+- **The captures were not retaken** (the console is being redesigned in parallel). The alt texts and
+  captions still describe the pictures that are there; they will need reading again with new shots.
+- **Curule Cloud's prices** are still not on the site: they live in the app.
+- 200% zoom and a large-text profile were not run; the surfaces were checked at 320/360/768/1440,
+  print, no-JS, dark and forced colours.
+
