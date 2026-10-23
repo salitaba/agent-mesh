@@ -52,7 +52,34 @@
   <h2>Where they stand now</h2>
   <div class="pair three"><a class="shot" href="shots/landing-now.png"><img src="shots/landing-now.png" alt="the landing page" loading="lazy"><span>the landing page</span></a><a class="shot" href="shots/account-now.png"><img src="shots/account-now.png" alt="the account pages" loading="lazy"><span>the account pages</span></a><a class="shot" href="shots/console-now.png"><img src="shots/console-now.png" alt="the console" loading="lazy"><span>the console</span></a></div>
 </section>
-<p class="stat"><span><b>12</b> passes</span><span><b>11</b> merged</span><span><b>4</b> surfaces</span><span>updated 23 Oct 2026 14:15</span></p>
+<p class="stat"><span><b>15</b> passes</span><span><b>14</b> merged</span><span><b>4</b> surfaces</span><span>updated 24 Oct 2026 00:16</span></p>
+<article class="pass">
+  <header>
+    <h2>the pricing page</h2>
+    <p class="when">24 Oct 2026 · 00:10</p>
+  </header>
+  <div class="pair"><a class="shot" href="shots/20261024-0010-before.png"><img src="shots/20261024-0010-before.png" alt="before this pass" loading="lazy"><span>before this pass</span></a><a class="shot" href="shots/20261024-0010-after.png"><img src="shots/20261024-0010-after.png" alt="after" loading="lazy"><span>after</span></a></div>
+  <ul class="did"><li>The price comes first. On a phone the licence plans now open the page: the first plan card is at <b>y=737</b> (was 1,924) and its amount at <b>886</b> (was 2,074), so a buyer meets a figure 63 px inside the first screen instead of 1,124 px below it; the section itself is at <b>537</b> (was 1,794). The Cloud-only &ldquo;do you run it, or do we?&rdquo; choice follows the plans, where it answers a question the plans raise.</li><li>One billing period per plan. The phone comparison follows the Annual/Monthly switch above it: four repeated price rows removed, the stack <b>1,558 → 1,411 px</b> and the page <b>13,944 → 13,835 px</b> at 360 (Monthly 13,771). The surviving row still names its period.</li><li>The On this page bar marks the section the page opens with: at scroll y=560 it finds &ldquo;The plans&rdquo; (before, the first 1,257 px had no chip). The plans heading is visible text, not screen-reader-only, and the licence card now says &ldquo;the plans above&rdquo;.</li><li>The 12 px type floor is now true: the smallest computed text on the site was the Designer caption's inline code at <b>11.375 px</b>, now <b>12 px</b>; the sub-12 px census is empty on home and pricing at 320 and 360. No page scrolls sideways at 320/360/768/1440, print keeps the comparison, and there are no console errors.</li></ul>
+  <p class="meta">12 files changed · <code>78295a2</code> · suite green, merged</p>
+</article>
+<article class="pass">
+  <header>
+    <h2>the account pages</h2>
+    <p class="when">24 Oct 2026 · 00:12</p>
+  </header>
+  <div class="pair"><a class="shot" href="shots/20261024-0012-before.png"><img src="shots/20261024-0012-before.png" alt="before this pass" loading="lazy"><span>before this pass</span></a><a class="shot" href="shots/20261024-0012-after.png"><img src="shots/20261024-0012-after.png" alt="after" loading="lazy"><span>after</span></a></div>
+  <ul class="did"><li>The way in fits one phone screen. At 360 × 800 the sign-up action ends at <b>729</b> (was 753) and the &ldquo;Already have an account? Sign in&rdquo; line at <b>794</b> (was 818); the page is <b>1,480 → 1,440 px</b> (320 <b>1,627 → 1,587</b>, 768 <b>1,439 → 1,399</b>, 1440 <b>963 → 923</b>), with no sideways scroll at any of the four.</li><li>A refusal belongs to its field. After an empty submit the email field carries the message (<code>aria-describedby</code> <b>null → &ldquo;status&rdquo;</b>), and the action still ends at <b>795</b>, inside the screen; the refused sign-in's resend block is <b>807 → 787</b>.</li><li>A refusal no longer outlives its value: typing in the field clears the sentence and its described-by, returning the page from <b>1,506 → 1,440 px</b>; the password's own hint stays.</li><li>Nothing regressed: the plan-less account is <b>1,627 px</b> with the first price at y=708, no text under 12 px and no target under 44 px.</li></ul>
+  <p class="meta">3 files changed · <code>b146048</code> · suite green, merged</p>
+</article>
+<article class="pass">
+  <header>
+    <h2>the console</h2>
+    <p class="when">24 Oct 2026 · 00:14</p>
+  </header>
+  <div class="pair"><a class="shot" href="shots/20261024-0014-before.png"><img src="shots/20261024-0014-before.png" alt="before this pass" loading="lazy"><span>before this pass</span></a><a class="shot" href="shots/20261024-0014-after.png"><img src="shots/20261024-0014-after.png" alt="after" loading="lazy"><span>after</span></a></div>
+  <ul class="did"><li>A parked mission reads as a briefing, not a roster. <code>agent.created</code> now folds like <code>agent.completed</code>, so the eight seats joining are one row: Just happened <b>8 rows → 3</b>, the panel <b>423 → 233 px</b> at 1440 and <b>727 → 351 px</b> at 390. The goal it was created for is now on the panel.</li><li>The empty Latest work card has a way forward: &ldquo;No work yet.&rdquo; is a sentence plus <b>&ldquo;Wake an agent&rdquo;</b>, a real route (<b>151 × 44 px</b> at 390); the card is <b>108 → 129 px</b> at 1440 and <b>124 → 197 px</b> at 390.</li><li>The mission outranks the page name on a phone: &ldquo;Overview&rdquo; and &ldquo;Parked.&rdquo; both measured 24 px at 390; the state takes the 30 px display step (long states still step to 20), and the hero grows 7 px.</li><li>The Overview is shorter and still clean: <b>2,092 → 1,795 px</b> at 390 (<b>1,816</b> at 360) and <b>985 → 861 px</b> at 1440; no page scroll at 360/390/1440 in light or dark, no control under 44 × 44, and the smallest text pair is unchanged at <b>5.61:1</b>.</li></ul>
+  <p class="meta">5 files changed · <code>f165f03</code> · suite green, merged</p>
+</article>
 <article class="pass">
   <header>
     <h2>the landing page</h2>
