@@ -19,6 +19,7 @@ body { background: var(--bg); }
 }
 @media (max-width: 620px) {
   .gal-title { display: none; }
+  .gal-main { padding-left: var(--s4); padding-right: var(--s4); }
 }
 .gal-sec > h2 { margin: 0 0 var(--s1); font: var(--tx-page); letter-spacing: var(--k-track-title); }
 .gal-lede { margin: 0 0 var(--s5); max-width: 72ch; color: var(--muted); }
@@ -89,7 +90,10 @@ body { background: var(--bg); }
 .gal-stage .drawer { position: absolute; top: 0; right: 0; height: 100%; width: min(460px, 100%); animation: none; }
 .gal-toasts { display: flex; flex-direction: column; gap: var(--s2); max-width: 420px; }
 .gal-toasts .toast { animation: none; }
+/* A specimen that is wider than its card draws over the card's margin, not over the page: the menu at 390 is 356 px wide and the
+   gallery's 16 px phone margin leaves it 1 px of room. Below 380 it scrolls in its own stage instead. */
 .gal-menu-stage { min-height: 220px; }
+@media (max-width: 380px) { .gal-menu-stage { overflow-x: auto; } }
 
 /* the shell's parts */
 .gal-side { display: flex; flex-direction: column; gap: var(--s1); max-width: 232px; padding: var(--s3); background: var(--bg-2); border: 1px solid var(--line); border-radius: var(--r); }
