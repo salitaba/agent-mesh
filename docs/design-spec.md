@@ -405,6 +405,69 @@ Known debt, so it is not rediscovered:
 - **The Designer on a dense mesh** is still a web of wires: a fully connected mesh of seven is 36 of them. Styling made them
   quiet until selected; the real fix changes what the page shows (one statement for a fully connected mesh and only the
   selected seat's wires), which is a decision about the page.
-- **The Graph on a phone** is a canvas that scrolls sideways; a list of seats with their links would serve a phone better.
+- **The Graph on a phone** was a canvas that scrolled sideways; it is a list of seats with their links now, and the desktop
+  ring is unchanged.
 - Sign-in is composed but still a small card on a mostly empty ground, and Host settings is a long form that leaves the right
   third of a wide screen empty.
+
+---
+
+## 9. Measured passes
+
+The changes to the console that were measured against rendered screens, newest first. A pass is only in this list with the run
+that produced it, the before and the after, and what it deliberately did not change.
+
+### 2026-10-23 — names a person can say, and a hero that ends in two rows
+
+Run against `examples/demo-stub/mesh.yaml` at **Delivered** (the scripted demo, no model calls): 13 views × 390 / 768 / 1440 ×
+light / dark, Chromium 156 through the shared CDP browser, axe-core injected into the signed-in page, reduced motion on, plus all
+13 views at 320 in both themes. The console served the production build.
+
+**What changed.**
+
+- **Label in Name (WCAG 2.5.3).** A control named itself in an `aria-label` shorter than the words drawn inside it: the
+  designer's dock button ("Ask the designer" over "Ask designer"), a Graph seat ("pm, done" over "PM pm done") and a Designer
+  seat (`"pm, product-manager"` over the initial, name and role the card draws). axe called it
+  `label-content-name-mismatch` on **166 nodes in 50 of the 78 view/width/theme pairs**. The three now take their name from
+  their visible text (`aria-labelledby` for the two drawings) and the initial is part of the name because it is part of the
+  picture. The phone Graph row and the ranked link's "See messages" do the same. No visible copy changed; the SVG and the two
+  spans gained the space the text already read with. `tests/dashboard/label-in-name.test.ts` holds the rule, and
+  `graph-phone.test.ts` no longer pins a name that overrides the row.
+- **The Overview's actions.** At 1440 the action column (440 px) could not hold the primary and "Reopen with feedback" side by
+  side, so the primary sat alone over a ragged row, beside a 93 px lead in a 140 px column. From 1280 the
+  column is 520 px: the primary and the soft action share the first row, the three quiet actions share the second. On a phone
+  the quiet actions lose the decorative icon and go one size down, so all three fit one row at 390; the goal is allowed three
+  lines, which is the whole one-sentence goal the two-line clamp cut at 390 and 320.
+- **Events folds.** A fold whose events all fell in one clock second printed "09:43:26 to 09:43:26" in the row's third column.
+  The range is printed once when it is one time. The delivered demo has 18 folds; each range went from 127 px to 54 px, some
+  1.3k px of repeated clock across the list.
+- **The kit gallery.** It had no `h1` (axe `page-has-heading-one`) and the open-menu specimen gave the page 3 px of horizontal
+  scroll at 390. An `sr-only` heading anchors the outline; the gallery's phone margin is 16 px, which leaves the 356 px menu
+  1 px of room at 390, and below 380 it scrolls inside its own stage. The menu is complete at 390.
+
+**Measured.**
+
+| | Before | After |
+|---|---|---|
+| Overview hero, 1440 | 372 px; actions 3 rows, 140 px | 325 px; 2 rows, 88 px |
+| Overview hero, 390 | 760 px; actions 4 rows, 200 px; goal cut after two lines | 727 px; 3 rows, 144 px; goal whole |
+| Overview actions, 320 | 5 rows | 4 rows |
+| axe `label-content-name-mismatch` | 166 nodes, 50 pairs | 0 nodes, 0 pairs |
+| Gallery, 390 | no `h1`, 3 px page scroll | `h1`, no page scroll |
+| Horizontal page scroll, 78 pairs | none | none (also all 13 views at 320) |
+
+Tab order is unchanged in the views touched: no control was added, removed or reordered. Overview at 390 is 18 stops with a
+visible ring on each; the Events stream keeps one roving row and the arrows walk the rest. The type ramp, the palette and the
+brand tokens are untouched; the new quiet-action rule uses 13 px, an existing step.
+
+**Left.**
+
+- *Just happened* still shows seven identical "is done with the mission" rows on a delivered run. The Events page folds
+  routine runs; the Overview's eight-row summary does not. Which of the eight to drop is a reading decision, not a style one.
+- The 320 Overview still puts "Replay" on a fourth row. Squeezing a fourth label into the 264 px row would take the quiet
+  actions below 13 px.
+- The Designer's dense mesh still draws 36 wires (the known debt above), and Host settings still leaves a wide screen's right
+  third empty. The graph phone debt is closed; its line above records that.
+- `npm run qa:console` could not launch this machine's Chrome (no libatk); the same pairs were read through the shared Chrome
+  over CDP with axe-core injected. That is the browser §7 names, but it is not the script's own launch path.
+
