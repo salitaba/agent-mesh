@@ -282,7 +282,7 @@ td, th, dd, .price, .num, .badge, .auth-points li::before { font-variant-numeric
 .btn-quiet[aria-expanded="true"]::after, details[open] > summary::after { transform: rotate(180deg); }
 
 /* ---- fields */
-.field { display: grid; gap: 6px; margin-bottom: 16px; }
+.field { display: grid; gap: 8px; margin-bottom: 20px; }
 .field label { font-size: .875rem; font-weight: 600; }
 .field .hint { color: var(--k-muted); font-size: .8125rem; }
 input:not([type="checkbox"]), select {
@@ -479,6 +479,11 @@ meter::-moz-meter-bar { border-radius: var(--k-r-pill); background: currentColor
 .causes { display: grid; gap: 6px; padding-left: 1.25rem; margin: 0; }
 #again form { display: grid; gap: 14px; margin-top: 4px; }
 #again form .field, #again form p, #again form .note { margin: 0; }
+/* On a wide screen the rail is a rail. */
+@media (min-width: 1000px) {
+  .auth { display: grid; grid-template-columns: 28rem 20rem; column-gap: clamp(48px, 7vw, 96px); justify-content: center; align-items: start; }
+  .auth-side { margin-top: 0; }
+}
 
 /* ---- the front page: a short argument, then the price, then the terms */
 body[data-page="home"] main { background: var(--k-glow) top / 100% 520px no-repeat; }
