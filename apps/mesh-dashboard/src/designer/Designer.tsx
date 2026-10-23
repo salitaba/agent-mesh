@@ -50,6 +50,9 @@ const LOAD_RETRY_MS = 3000;
 /** The Designer's own collapse points, the same values as the CSS media queries (the breakpoint ladder: 1280 and 760). */
 const COMPACT = "(max-width: 1280px)";
 const PHONE = "(max-width: 760px)";
+/** One sentence for every state of the page: what this is, and that the file is the person's own act. The old ready state named
+ * the project here and the loading state described the job; one voice reads as one product. */
+const LEDE = "Draw the team: seats, who may message whom, tools and policy. Nothing is written until you save.";
 
 /** The size the stage is assumed to be when a new seat is placed before the canvas has said what size it really is. */
 const NOMINAL_STAGE = { w: 760, h: stageHeight(760) };
@@ -135,9 +138,10 @@ export default function Designer(): React.JSX.Element {
     window.addEventListener("resize", place);
     return () => window.removeEventListener("resize", place);
   }, [checksOpen, popRef]);
-  const inspRef = useRef<HTMLDivElement | null>(null);
-  const inspReturn = useRef<HTMLElement | null>(null);
-  const inspWasOpen = useRef(false);
+  // The inspector is a column on a wide screen and a full layer below 1280px. As a layer it takes focus on its heading (not the
+  // seat id field, which would summon the keyboard), traps Tab, and Escape goes through the drawer's own handler so a field that
+  // reverts on Escape keeps its meaning (escape.ts).
+  const layerRef = useDismissable<HTMLDivElement>(compact && ctxOpen, () => setCtxOpen(false), { escape: false, initialFocus: "root" });
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const validateSeq = useRef(0);
   // The draft as it was before the current edit: what an undo step restores, since the panels change the model and then say so.
@@ -147,24 +151,9 @@ export default function Designer(): React.JSX.Element {
 
   /* ---------------- the inspector: a column on a wide screen, a drawer below it ---------------- */
 
-  const openInspector = useCallback(() => {
-    setCtxOpen(true);
-    if (!compact) return;
-    const opener = document.activeElement;
-    // Never record an opener inside the drawer: links in the panels switch the selection and would strand focus on a hidden element on close.
-    if (opener instanceof HTMLElement && opener !== document.body && !inspRef.current?.contains(opener)) inspReturn.current = opener;
-  }, [compact]);
-  useEffect(() => {
-    if (!compact) return;
-    if (ctxOpen && !inspWasOpen.current) {
-      const panel = inspRef.current?.querySelector<HTMLElement>(".ms-insp") ?? inspRef.current;
-      (panel?.querySelector<HTMLElement>("input:not([type=hidden]), select, textarea, button, a[href]") ?? panel)?.focus();
-    } else if (!ctxOpen && inspWasOpen.current) {
-      inspReturn.current?.focus();
-      inspReturn.current = null;
-    }
-    inspWasOpen.current = ctxOpen;
-  }, [ctxOpen, compact]);
+  // Focus in, Tab and focus back out are the layer's (useDismissable); a link inside a panel that opens another seat does not
+  // re-open the layer, so the opener it remembers is the control that first opened it.
+  const openInspector = useCallback(() => setCtxOpen(true), []);
 
   // Entering focus mode hides the inspector. If focus was inside it, rehome it on the toggle instead of stranding it in a hidden subtree.
   useEffect(() => {
@@ -711,7 +700,7 @@ export default function Designer(): React.JSX.Element {
   if (loadError) {
     return (
       <div className="ms">
-        <PageHeader title="Designer" lede="Design the team: seats, who may message whom, tools, budgets and policy." />
+        <PageHeader title="Designer" lede={LEDE} />
         <ErrorState
           what="mesh.yaml"
           detail={`${loadError.text}${loadError.waiting ? " This page reads it as soon as the project is running." : ""} Your unsaved draft, if you had one, is kept in this browser.`}
@@ -723,7 +712,7 @@ export default function Designer(): React.JSX.Element {
   if (!ready || !m) {
     return (
       <div className="ms">
-        <PageHeader title="Designer" lede="Design the team: seats, who may message whom, tools, budgets and policy." />
+        <PageHeader title="Designer" lede={LEDE} />
         <div className="empty" role="status"><b className="empty-title">Reading mesh.yaml</b></div>
       </div>
     );
@@ -732,7 +721,6 @@ export default function Designer(): React.JSX.Element {
   /* ---------------- the page ---------------- */
 
   const ints = [...new Set([...(vocab?.eventTypes || ["patch.ready", "architecture.approved", "goal.escalated"]), ...(vocab?.eventTypes || []).map((t: string) => `${t.split(".")[0]}.*`)])];
-  const meshName = String(m.mesh?.name || "").trim() || String(m.mesh?.id || "").trim() || "this mesh";
   const showGuide = !guideOff && needsGuide(m.mesh?.goal, ids.length, wires.length);
   const hasFile = !!runningRaw;
   const labelsNow = historyLabels(history);
@@ -742,6 +730,10 @@ export default function Designer(): React.JSX.Element {
     deleteSeat: doDeleteSeat, renameSeat: doRenameSeat, toggleContact: doToggleContact, toggleGrant: doToggleGrant, openSeat, wires, reveal,
   };
 
+  // The drawer says what it is editing, not just "Inspector": on a phone it is the whole screen, and its first line is the only
+  // context a person has for what they opened.
+  const sideTitle = tab === "crew" ? (current ? `Seat: ${current}` : "No seat selected") : tab === "mesh" ? "Mesh settings" : "Policy settings";
+
   const moreItems: MenuItem[] = [
     { id: "ms-mi-yaml", icon: "files", label: "View YAML", title: "The file Save changes would write", onClick: openYaml },
     { id: "ms-mi-templates", icon: "agents", label: "Start from a template…", title: "Replace the draft with a small team to edit", onClick: () => setTemplatesOpen(true) },
@@ -750,12 +742,14 @@ export default function Designer(): React.JSX.Element {
     ...(runningPath ? [{ id: "ms-mi-reload", icon: "refresh" as const, label: "Discard the draft and reload mesh.yaml", title: "Replace the draft with the file as it is on disk", danger: true, separated: true, onClick: () => void reloadFromFile() }] : []),
   ];
 
+  // When the first-run guide is showing, it is the brief: a second sentence above it pushed the team's first seat below the
+  // 844px screen at 360 (measured y=874). With the guide hidden, the header says what the page is.
   return (
     <div className={`ms${focusMode ? " focus" : ""}`}>
       <PageHeader
         title="Designer"
         status={<DraftChip status={status} />}
-        lede={<>The seats, wires, tools and budgets of <b>{meshName}</b>. Nothing is saved until you save.</>}
+        lede={showGuide ? undefined : LEDE}
         actions={(
           <>
             <div className="ms-toolgroup" role="group" aria-label="History">
@@ -815,6 +809,10 @@ export default function Designer(): React.JSX.Element {
         />
       ) : null}
 
+      {/* A full-screen inspector is a layer, so the page behind it is dimmed and no longer a target. The scrim is not focusable: the
+          drawer's close button and Escape are the way out, and its own trap keeps Tab inside. */}
+      {compact && ctxOpen ? <div className="ms-scrim" aria-hidden="true" onClick={() => setCtxOpen(false)} /> : null}
+
       <div className="ms-body">
         {listMode ? (
           <SeatList seats={m.agents} ids={ids} current={current} starts={starts} problems={problems} wires={wires} onSelect={selectSeat} onAddSeat={doAddSeat} onTemplate={(t) => void startFromTemplate(t)} onAsk={askDesigner} />
@@ -826,7 +824,11 @@ export default function Designer(): React.JSX.Element {
           />
         )}
         <div
-          id="ms-inspector" className={`ms-side${ctxOpen ? " open" : ""}`} ref={inspRef}
+          id="ms-inspector" className={`ms-side${ctxOpen ? " open" : ""}`} ref={layerRef} tabIndex={-1}
+          role={compact ? "dialog" : "region"}
+          aria-modal={compact ? "true" : undefined}
+          aria-labelledby={compact ? "ms-side-title" : undefined}
+          aria-label={compact ? undefined : "Inspector"}
           onKeyDown={(e) => {
             // The shell's window handler blurs a focused field on Escape before view handlers run, which left this full-screen
             // drawer open with focus on <body>. Here the field's own handler has already run; a key it did not use closes the drawer.
@@ -838,7 +840,7 @@ export default function Designer(): React.JSX.Element {
         >
           {compact ? (
             <div className="ms-side-head">
-              <b>Inspector</b>
+              <b id="ms-side-title">{sideTitle}</b>
               <CloseButton label="Close the inspector" onClick={() => setCtxOpen(false)} />
             </div>
           ) : null}

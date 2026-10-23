@@ -65,17 +65,33 @@
 .ms.focus .ms-body { grid-template-columns: minmax(0, 1fr); }
 .ms.focus .ms-side, .ms.focus .ms-bar, .ms.focus .ms-guide { display: none; }
 .ms-side-head { display: none; }
+/* A layer's scrim, shared by the inspector drawer and the YAML slide: the page behind is dimmed, not a target. The two layers sit
+   above the shell's topbar, and the page underneath does not scroll while either is open. */
+.ms-scrim { position: fixed; inset: 0; z-index: calc(var(--z-overlay) - 1); background: var(--scrim); -webkit-backdrop-filter: blur(4px); backdrop-filter: blur(4px); animation: fade-in var(--k-dur-2) var(--k-ease); }
+#app:has(.ms-scrim) #view, body:has(.ms-scrim) { overflow: hidden; }
+/* The drawer takes focus on its heading when it opens; the layer itself is not a control and does not draw a ring. */
+.ms-side:focus, .ms-side:focus-visible { outline: none; }
+.ms-side-head b { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 600 15px var(--sans); letter-spacing: var(--k-track-tight); }
 
 /* ---------- the first-run guide ---------- */
-.ms-guide { display: flex; flex-direction: column; gap: var(--s3-5); }
+.ms-guide { display: flex; flex-direction: column; gap: var(--s3); }
 .ms-guide-head { display: flex; align-items: center; justify-content: space-between; gap: var(--s2); }
-.ms-steps { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--s3-5) var(--s5); margin: 0; padding: 0; list-style: none; }
-.ms-steps li { display: grid; grid-template-columns: 26px minmax(0, 1fr); gap: var(--s3); align-items: start; }
+.ms-guide-title { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.ms-guide-where { margin: 0; font: var(--tx-meta); color: var(--muted); font-variant-numeric: tabular-nums; }
+/* One list, one open step: the four steps were a two-column grid with every body showing, which read as a wall and hid the team. */
+.ms-steps { display: flex; flex-direction: column; margin: 0; padding: 0; list-style: none; }
+.ms-steps li { display: grid; grid-template-columns: 26px minmax(0, 1fr); gap: var(--s3); align-items: start; padding: var(--s3) 0; border-top: 1px solid var(--line); }
+.ms-steps li:first-child { padding-top: 0; border-top: 0; }
+.ms-steps li:last-child { padding-bottom: 0; }
+.ms-step-toggle { display: flex; align-items: center; justify-content: space-between; gap: var(--s2); width: 100%; min-height: 32px; padding: 0; border: 0; border-radius: var(--r-sm); background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.ms-step-toggle b { font: 600 14px var(--sans); letter-spacing: var(--k-track-tight); }
+.ms-step-caret { flex: none; color: var(--muted); transition: transform var(--k-dur-1) var(--k-ease); }
+.ms-step-caret.open { transform: rotate(90deg); }
 .ms-step-mark { display: grid; place-items: center; width: 26px; height: 26px; border: 1px solid var(--line-control); border-radius: 50%; font: 600 12px var(--sans); color: var(--text-dim); background: var(--panel); }
 .ms-steps li.done .ms-step-mark { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 40%, transparent); background: color-mix(in srgb, var(--ok) 14%, transparent); }
 /* Where the person is: a filled number (done is a tick, next is an outline), so the step to do now is not told by colour alone. */
 .ms-steps li.now .ms-step-mark { color: var(--k-on-accent); border-color: var(--k-accent); background: var(--k-accent); box-shadow: var(--k-ring); }
-.ms-steps li.next .ms-step-body > b { color: var(--text-dim); }
+.ms-steps li.next .ms-step-body > b, .ms-steps li.next .ms-step-toggle b { color: var(--text-dim); }
 .ms-step-body { display: flex; flex-direction: column; gap: var(--s1-5); min-width: 0; }
 .ms-step-body > b { font: 600 14px var(--sans); letter-spacing: var(--k-track-tight); }
 .ms-step-text { font: var(--tx-meta); color: var(--text-dim); max-width: 60ch; }
@@ -145,13 +161,10 @@ body:has(.ms-bar) #toasts { bottom: calc(var(--dock-clear) + var(--ms-bar-h, 0px
 /* ---------- the inspector as a drawer, and the bar on narrower screens ---------- */
 @media (max-width: 1280px) {
   .ms-body { grid-template-columns: minmax(0, 1fr); }
-  .ms-side { display: none; position: fixed; top: 0; right: 0; z-index: var(--z-ctx); width: min(400px, 92%); height: 100dvh; flex-direction: column; background: var(--drawer); border-left: 1px solid var(--line-strong); box-shadow: var(--k-hl), var(--k-shadow-4); }
+  .ms-side { display: none; position: fixed; top: 0; right: 0; z-index: var(--z-overlay); width: min(400px, 92%); height: 100dvh; flex-direction: column; background: var(--drawer); border-left: 1px solid var(--line-strong); box-shadow: var(--k-hl), var(--k-shadow-4); }
   .ms-side.open { display: flex; }
   .ms-side-head { display: flex; align-items: center; justify-content: space-between; gap: var(--s2); padding: var(--s2-5) var(--s3-5); border-bottom: 1px solid var(--line); }
   .ms-side .ms-insp { flex: 1 1 auto; min-height: 0; border: 0; border-radius: 0; background: transparent; box-shadow: none; }
-}
-@media (max-width: 900px) {
-  .ms-steps { grid-template-columns: minmax(0, 1fr); }
 }
 @media (max-width: 800px) {
   .ms-bar { margin: auto calc(var(--s3) * -1) 0; padding: var(--s2-5) var(--s3); }
@@ -160,9 +173,10 @@ body:has(.ms-bar) #toasts { bottom: calc(var(--dock-clear) + var(--ms-bar-h, 0px
   .ms-checks-anchor { position: static; }
   .ms-pop.ms-checks { position: fixed; left: var(--s3); right: var(--s3); width: auto; top: var(--ms-pop-top, 9rem); }
 }
-@media (max-width: 560px) {
+@media (max-width: 760px) {
   /* The first minute here is thumbs on the guide and the save bar: the steps' buttons and Save are 44px tall (the canvas and the
-     header's tools stay the editor's own density). */
+     header's tools stay the editor's own density). 760 is the console's phone layout, not the 560 at which the guide's own text is
+     set: a tablet is still a thumb. */
   .ms-guide button, .ms-bar-acts > button { min-height: 44px; }
 }
 @media (max-width: 760px) {

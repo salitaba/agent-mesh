@@ -80,9 +80,18 @@ ul.diff-list { margin: var(--s1) 0; padding-left: var(--s4); font-size: 13px; co
 .ms-dock .ms-chat-compose { flex: none; }
 .ms-slide-close { position: absolute; top: calc(var(--s0) * -1); right: calc(var(--s1) * -1); z-index: var(--z-raise); }
 
+/* At 560px and below the dock is the whole screen, so it is a layer: a ground behind it, the page under it held still, and its
+   own z above any page furniture. Above 560 it stays beside the work and none of this applies. */
+.ms-dock-scrim {
+  position: fixed; inset: 0; z-index: calc(var(--z-overlay) - 1);
+  background: var(--scrim); -webkit-backdrop-filter: blur(4px); backdrop-filter: blur(4px);
+  animation: fade-in var(--k-dur-2) var(--k-ease);
+}
+#app:has(.ms-dock-scrim) #view, body:has(.ms-dock-scrim) { overflow: hidden; }
+
 @media (max-width: 560px) {
   .ms-starter, .ms-chat-actions button { min-height: 44px; }
-  .ms-dock { width: 100vw; }
+  .ms-dock { width: 100vw; z-index: var(--z-overlay); }
   /* The close button grows to the same size, and the title gives it the room. */
   .ms-dock-head { padding-right: 48px; }
   .ms-slide-close { top: -6px; right: -6px; }

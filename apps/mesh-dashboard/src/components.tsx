@@ -82,8 +82,25 @@ export const isTopTrap = (el: HTMLElement | null): boolean => !!el && trapStack[
  * the single-layer case, for dialogs that are simply open or closed.
  *
  * Attach the returned ref to the dialog root.
+ *
+ * Two layers need a variation on the default:
+ *  - a drawer whose own fields give Escape a meaning (a seat id that reverts on
+ *    Escape) passes `escape: false`, so its container's handler sees the key
+ *    first and the drawer is not closed out from under the field;
+ *  - a layer that opens on its heading rather than a control passes
+ *    `initialFocus: "root"`. Opening a phone inspector on its first text field
+ *    put the field in the thumb's way and asked the keyboard to cover the panel
+ *    before the person had read it.
  */
-export function useDismissable<T extends HTMLElement>(open: boolean, onClose: () => void): RefObject<T | null> {
+export interface DismissableOptions {
+  /** Close on Escape (default true). False leaves Escape to the layer's own handler. */
+  escape?: boolean;
+  /** Where focus lands: the first control (default), or the root, which must be focusable (`tabIndex={-1}`). */
+  initialFocus?: "first" | "root";
+}
+
+export function useDismissable<T extends HTMLElement>(open: boolean, onClose: () => void, options: DismissableOptions = {}): RefObject<T | null> {
+  const { escape = true, initialFocus = "first" } = options;
   const ref = useRef<T | null>(null);
   const opener = useRef<HTMLElement | null>(null);
   // Callers write `onClose={() => setOpen(false)}`, a fresh identity every
@@ -109,13 +126,14 @@ export function useDismissable<T extends HTMLElement>(open: boolean, onClose: ()
     const from = document.activeElement;
     opener.current = from instanceof HTMLElement && from !== document.body ? from : null;
     const root = ref.current;
-    if (root) (focusables(root)[0] ?? root).focus();
+    if (root) (initialFocus === "root" ? root : focusables(root)[0] ?? root).focus();
     const pop = root ? pushTrap(root) : () => {};
     const onKey = (ev: KeyboardEvent) => {
       // Last interaction wins: a stray earlier click must not disarm the
       // restore for a close the user then drives from the keyboard.
       viaPointer.current = false;
       if (ev.key === "Escape") {
+        if (!escape) return;
         // Only the innermost layer closes. Every open dialog has its own listener on the document, and with one opened over
         // another (a picker over a form) they all ran, so one Escape closed both and lost whatever the outer one held.
         const top = ref.current;
@@ -142,6 +160,11 @@ export function useDismissable<T extends HTMLElement>(open: boolean, onClose: ()
       if (!(act instanceof HTMLElement) || !el.contains(act)) {
         ev.preventDefault();
         (ev.shiftKey ? last : first).focus();
+      } else if (act === el) {
+        // The layer itself took focus on open (a drawer opening on its heading). The browser would move to the control before
+        // the root in document order on Shift+Tab, which is outside the layer; keep both directions inside it.
+        ev.preventDefault();
+        (ev.shiftKey ? last : first).focus();
       } else if (ev.shiftKey && act === first) {
         ev.preventDefault();
         last.focus();
@@ -165,7 +188,7 @@ export function useDismissable<T extends HTMLElement>(open: boolean, onClose: ()
       const back = opener.current;
       if (!viaPointer.current && back && back.isConnected) back.focus();
     };
-  }, [open]);
+  }, [open, escape, initialFocus]);
   return ref;
 }
 

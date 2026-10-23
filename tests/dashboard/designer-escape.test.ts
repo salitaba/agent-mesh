@@ -32,7 +32,7 @@ test("the inspector is not a layer on a wide screen, and a closed drawer owns no
 test("the drawer claims Escape on its own container, before the shell's window handler", () => {
   const start = designer.indexOf('id="ms-inspector"');
   assert.ok(start >= 0, "the drawer is in the page");
-  const drawer = designer.slice(start, start + 500);
+  const drawer = designer.slice(start, start + 900);
   assert.match(drawer, /onKeyDown=/, "the drawer handles the key where the field handlers have already run");
   assert.match(drawer, /drawerTakesEscape\(/, "the rule is the tested one");
   assert.match(drawer, /setCtxOpen\(false\)/, "it closes the drawer");

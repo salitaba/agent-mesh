@@ -106,7 +106,13 @@ export interface SetupGuideProps {
 
 export function SetupGuide({ goal, onGoal, seats, wires, list, onAddSeat, onAsk, onHide }: SetupGuideProps): React.JSX.Element {
   const progress = guideProgress({ goal, seats, wires });
+  // Only the step that is now is open. The old guide opened all four at once: 553px at 360px, which pushed the team's first
+  // seat to y=881, below an 844px screen, so a new person saw instructions and never the thing the instructions were about.
+  const [extra, setExtra] = useState<string[]>([]);
   const stateOf = (key: string) => progress.steps.find((s) => s.key === key)?.state ?? "next";
+  const isOpen = (key: string): boolean => stateOf(key) === "now" || extra.includes(key);
+  const toggle = (key: string): void => setExtra((v) => (v.includes(key) ? v.filter((k) => k !== key) : [...v, key]));
+  const nowIndex = progress.steps.findIndex((s) => s.state === "now");
   const steps: Array<{ key: string; title: string; body: React.ReactNode }> = [
     {
       key: "goal", title: "Describe the goal",
@@ -147,18 +153,30 @@ export function SetupGuide({ goal, onGoal, seats, wires, list, onAddSeat, onAsk,
   return (
     <section className="card ms-guide" aria-labelledby="ms-guide-title">
       <div className="ms-guide-head">
-        <h3 id="ms-guide-title">Set up your team</h3>
+        <div className="ms-guide-title">
+          <h3 id="ms-guide-title">Set up your team</h3>
+          <p className="ms-guide-where">Step {nowIndex + 1} of {steps.length}</p>
+        </div>
         <Button variant="ghost" onClick={onHide}>Hide the guide</Button>
       </div>
       <ol className="ms-steps">
         {steps.map((s, i) => {
           const state = stateOf(s.key);
+          const open = isOpen(s.key);
+          const label = state === "done" ? <span className="sr-only"> (done)</span> : state === "now" ? <span className="sr-only"> (to do now)</span> : null;
           return (
             <li key={s.key} className={state} aria-current={state === "now" ? "step" : undefined}>
               <span className="ms-step-mark" aria-hidden="true">{state === "done" ? <Icon name="check" size={14} /> : i + 1}</span>
               <div className="ms-step-body">
-                <b>{s.title}{state === "done" ? <span className="sr-only"> (done)</span> : state === "now" ? <span className="sr-only"> (to do now)</span> : null}</b>
-                {s.body}
+                {state === "now" ? (
+                  <b>{s.title}{label}</b>
+                ) : (
+                  <button type="button" className="ms-step-toggle" aria-expanded={open} onClick={() => toggle(s.key)}>
+                    <b>{s.title}{label}</b>
+                    <Icon name="chevron-right" size={14} className={`ms-step-caret${open ? " open" : ""}`} />
+                  </button>
+                )}
+                {open ? s.body : null}
               </div>
             </li>
           );

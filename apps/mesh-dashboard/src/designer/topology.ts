@@ -12,11 +12,13 @@ import type { Pos } from "./types";
 
 export interface Size { w: number; h: number }
 
-/** A card, in CSS pixels. The compact one is for a crowded or a narrow stage. */
+/** A card, in CSS pixels. The compact one is for a crowded or a narrow stage. Both are two lines tall: a seat's name wraps rather
+ * than being cut ("frontend-developer" needed 140px and had 78 at 1440px), so the compact card keeps the regular card's height. */
 export const CARD_REGULAR: Size = { w: 168, h: 56 };
-export const CARD_COMPACT: Size = { w: 140, h: 48 };
-/** The most seats that still read well as full cards on a stage of ordinary width. */
-export const REGULAR_UP_TO = 8;
+export const CARD_COMPACT: Size = { w: 140, h: 56 };
+/** The most seats that still read well as full cards on a stage of ordinary width: at nine, the top pair of a 40° ring is 174px
+ * apart on the demo's 714px stage, which holds a 168px card. */
+export const REGULAR_UP_TO = 9;
 /** Below this stage width the cards go compact whatever the count. */
 export const NARROW_STAGE = 700;
 

@@ -57,7 +57,7 @@ function IssueList({ items, kind, seats, onGo }: { items: string[]; kind: "error
             <span className="ms-issue-text">{text}</span>
             {where.editable
               ? <Button variant="small" onClick={() => onGo(where)}>{whereLabel(where)}</Button>
-              : <span className="ms-issue-note">Edit mesh.yaml directly. The Designer has no field for this.</span>}
+              : <span className="ms-issue-note">No field here. Edit it in mesh.yaml, then use More → Discard the draft and reload mesh.yaml.</span>}
           </li>
         );
       })}
@@ -131,23 +131,26 @@ export interface YamlSlideProps {
 export function YamlSlide({ yaml, path, invalid, stale, onCopy, onClose }: YamlSlideProps): React.JSX.Element {
   const ref = useDismissable<HTMLDivElement>(true, onClose);
   return (
-    <div className="ms-slide" role="dialog" aria-label="YAML preview" ref={ref} tabIndex={-1}>
-      <div className="ms-slide-head">
-        <h3>YAML</h3>
-        <CloseButton label="Close the YAML preview" onClick={onClose} />
+    <>
+      <div className="ms-scrim" aria-hidden="true" onClick={onClose} />
+      <div className="ms-slide" role="dialog" aria-modal="true" aria-label="YAML preview" ref={ref} tabIndex={-1}>
+        <div className="ms-slide-head">
+          <h3>YAML</h3>
+          <CloseButton label="Close the YAML preview" onClick={onClose} />
+        </div>
+        <div className="ms-slide-meta">
+          {path ? <PathLabel path={path} /> : null}
+          <Button variant="small" icon="copy" onClick={onCopy}>Copy</Button>
+        </div>
+        <p className="ms-hint">This is the file Save changes writes. Comments in the existing file are not kept; the old file is kept in .mesh-versions first.</p>
+        {invalid || stale ? (
+          <Banner tone="warn" title={invalid ? "The draft has errors." : "Could not re-check."}>
+            {invalid ? "Showing the last version that passed." : "This may be out of date."}
+          </Banner>
+        ) : null}
+        <pre className="yaml-pane" tabIndex={0} aria-label="YAML text">{yaml ?? "Waiting for the first check."}</pre>
       </div>
-      <div className="ms-slide-meta">
-        {path ? <PathLabel path={path} /> : null}
-        <Button variant="small" icon="copy" onClick={onCopy}>Copy</Button>
-      </div>
-      <p className="ms-hint">This is the file Save changes writes. Comments in the existing file are not kept; the old file is kept in .mesh-versions first.</p>
-      {invalid || stale ? (
-        <Banner tone="warn" title={invalid ? "The draft has errors." : "Could not re-check."}>
-          {invalid ? "Showing the last version that passed." : "This may be out of date."}
-        </Banner>
-      ) : null}
-      <pre className="yaml-pane" tabIndex={0} aria-label="YAML text">{yaml ?? "Waiting for the first check."}</pre>
-    </div>
+    </>
   );
 }
 

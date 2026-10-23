@@ -66,11 +66,16 @@
 .ms-node.from .ms-seat { border-color: var(--k-accent); border-style: dashed; }
 .ms-node.drop .ms-seat { border-color: var(--k-accent); box-shadow: var(--k-hl), 0 0 0 4px color-mix(in srgb, var(--k-accent) 35%, transparent); }
 .ms-seat .avatar { flex: none; margin-left: var(--s1); }
-.ms-seat-text { display: flex; flex-direction: column; min-width: 0; line-height: 1.25; }
-.ms-seat-top { display: flex; align-items: center; gap: var(--s1-5); min-width: 0; }
-.ms-seat .nm { display: block; min-width: 0; font: 600 13px var(--sans); letter-spacing: var(--k-track-tight); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ms-seat-face { position: relative; display: flex; align-items: center; }
+/* The state marks ride the face, not the text: a green play for a seat that starts with the mission, a red alert for a problem. */
+.ms-seat-dot { position: absolute; right: -4px; display: grid; place-items: center; width: 14px; height: 14px; border-radius: 50%; border: 1px solid var(--panel); box-shadow: var(--k-shadow-1); }
+.ms-seat-dot.start { bottom: -4px; color: var(--ok); background: color-mix(in srgb, var(--ok) 22%, var(--panel)); }
+.ms-seat-dot.bad { top: -4px; color: var(--bad); background: color-mix(in srgb, var(--bad) 20%, var(--panel)); }
+.ms-seat-text { display: flex; flex-direction: column; justify-content: center; gap: 1px; min-width: 0; line-height: 1.25; }
+/* A seat's name is not cut: it wraps at its hyphens and continues on a second line. The old one line ellipsis read
+   "frontend-…", "backend-…", "ux-desig…" on six of nine cards measured at 1440px. */
+.ms-seat .nm { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; min-width: 0; overflow: hidden; overflow-wrap: anywhere; font: 600 13px/1.25 var(--sans); letter-spacing: var(--k-track-tight); }
 .ms-seat .rl { display: block; font: 12px var(--sans); color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.ms-seat-flags { display: inline-flex; flex: none; align-items: center; gap: var(--s1); }
 .flag-bad { color: var(--bad); }
 /* "Starts with the mission": a small play mark in a green tile, so it is a badge and not a stray triangle. */
 .flag-start { display: inline-grid; place-items: center; width: 16px; height: 16px; border-radius: 50%; color: var(--ok); background: color-mix(in srgb, var(--ok) 16%, transparent); }
@@ -110,22 +115,26 @@
 /* ---------- the phone's seat list ---------- */
 .ms-seats { display: flex; flex-direction: column; gap: var(--s3); }
 .ms-seats-head { display: flex; align-items: center; justify-content: space-between; gap: var(--s2); }
-.ms-seats-head h3 { margin: 0; }
+.ms-seats-title { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.ms-seats-head h3 { margin: 0; font: 650 16px/1.3 var(--sans); letter-spacing: var(--k-track-title); color: var(--text); }
+.ms-seats-count { margin: 0; font: var(--tx-meta); color: var(--muted); font-variant-numeric: tabular-nums; }
+.ms-seats-count b { color: var(--text-dim); font-weight: 600; }
 .ms-seatlist { display: flex; flex-direction: column; gap: var(--s2); margin: 0; padding: 0; list-style: none; }
 .ms-seatrow {
   --tint: var(--accent);
-  position: relative; display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto; align-items: center; gap: var(--s3);
+  position: relative; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: var(--s3);
   width: 100%; min-height: 60px; padding: var(--s2-5) var(--s3) var(--s2-5) var(--s4); overflow: hidden; text-align: left; cursor: pointer;
   background: var(--panel); color: var(--text); border: 1px solid var(--line-strong); border-radius: var(--r); box-shadow: var(--k-hl), var(--k-shadow-1); font: inherit;
 }
 .ms-seatrow:hover { border-color: var(--line-control); }
 .ms-seatrow.sel { border-color: var(--k-accent); background: color-mix(in srgb, var(--k-accent) 6%, var(--panel)); }
 .ms-seatrow.err { border-color: var(--bad); }
-.ms-seatrow-text { display: flex; flex-direction: column; gap: var(--s0); min-width: 0; }
-.ms-seatrow-top { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s1) var(--s2); min-width: 0; }
-.ms-seatrow .nm { min-width: 0; font: 600 14px var(--sans); letter-spacing: var(--k-track-tight); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.ms-seatrow .rl { font: var(--tx-meta); color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.ms-seatrow-meta { font: var(--tx-meta); color: var(--muted); white-space: nowrap; }
+.ms-seatrow-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+/* The roster's one rule: a seat is never a cut-off name. The line wraps instead of ellipsizing; the flags and counts are below it. */
+.ms-seatrow .nm { min-width: 0; font: 600 14px/1.25 var(--sans); letter-spacing: var(--k-track-tight); overflow-wrap: anywhere; }
+.ms-seatrow-sub { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s1) var(--s2); min-width: 0; }
+.ms-seatrow .rl { font: var(--tx-meta); color: var(--muted); overflow-wrap: anywhere; }
+.ms-seatrow-meta { font: var(--tx-meta); color: var(--muted); overflow-wrap: anywhere; }
 .ms-flag { display: inline-flex; align-items: center; gap: var(--s1); padding: 1px var(--s2); border-radius: var(--k-r-pill); font: 600 11px var(--sans); color: var(--text-dim); background: var(--panel-2); border: 1px solid var(--line); }
 .ms-flag.bad { color: var(--bad); background: color-mix(in srgb, var(--bad) 14%, transparent); border-color: color-mix(in srgb, var(--bad) 24%, transparent); }
 .ms-seatrow-go { color: var(--muted); }

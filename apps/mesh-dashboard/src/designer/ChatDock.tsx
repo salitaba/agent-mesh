@@ -11,7 +11,8 @@ import { useCallback, useEffect, useRef } from "react";
 import ChatPanel from "./panels/ChatPanel";
 import { markSeen, useChatSelector } from "./chatStore";
 import { Icon } from "../icons";
-import { IconButton } from "../components";
+import { IconButton, useDismissable } from "../components";
+import { useMedia } from "../useMedia";
 // Imported here rather than in the lazy Designer view: ChatDock is eager (it
 // renders on every shell view), so the shared ms-* styles must ride the eager
 // chunk or the button and panel are unstyled until Designer first loads.
@@ -51,22 +52,29 @@ export default function ChatDock({ open, onClose }: {
   const panelRef = useRef<HTMLDivElement | null>(null);
   const wasOpen = useRef(false);
 
-  useEffect(() => {
-    if (open) {
-      markSeen();
-      panelRef.current?.querySelector<HTMLTextAreaElement>("textarea")?.focus();
-    } else if (wasOpen.current) {
-      // On a phone the button lives in the overflow menu, so its trigger takes the focus instead.
-      (document.getElementById(DOCK_BUTTON_ID) ?? document.getElementById("btn-more"))?.focus();
-    }
-    wasOpen.current = open;
-  }, [open]);
-
   // The shell may hand a fresh onClose each render; keep the key listener
   // subscribed to a stable wrapper instead of re-binding on every render.
   const onCloseRef = useRef(onClose);
   useEffect(() => { onCloseRef.current = onClose; });
   const close = useCallback(() => onCloseRef.current(), []);
+
+  // Wide screens keep it beside the work, so it is not modal there. At 560px and below it covers the whole screen, so it is a
+  // layer: a scrim, a named dialog, Tab stays inside and focus goes back to the button that opened it.
+  const phone = useMedia("(max-width: 560px)");
+  // On the phone focus starts on the layer itself, not the composer: a text area taking focus opens the on-screen
+  // keyboard over the transcript before the person has read it. A thumb reaches the box in one tap.
+  const layerRef = useDismissable<HTMLDivElement>(open && phone, close, { initialFocus: "root" });
+
+  useEffect(() => {
+    if (open) {
+      markSeen();
+      if (!phone) panelRef.current?.querySelector<HTMLTextAreaElement>("textarea")?.focus();
+    } else if (wasOpen.current) {
+      // On a phone the button lives in the overflow menu, so its trigger takes the focus instead.
+      (document.getElementById(DOCK_BUTTON_ID) ?? document.getElementById("btn-more"))?.focus();
+    }
+    wasOpen.current = open;
+  }, [open, phone]);
 
   // The shell's key router unwinds its own layers first; Esc reaches here only
   // when nothing else claimed it, so the dock is the innermost floating layer.
@@ -84,18 +92,22 @@ export default function ChatDock({ open, onClose }: {
 
   if (!open) return null;
   return (
-    <div
-      id="ms-dock" className="ms-dock" role="dialog" aria-label="Designer assistant" ref={panelRef} tabIndex={-1}
+    <>
+      {phone ? <div className="ms-dock-scrim" aria-hidden="true" onClick={close} /> : null}
+      <div
+        id="ms-dock" className="ms-dock" role="dialog" aria-label="Designer assistant" aria-modal={phone ? "true" : undefined}
+        ref={(el) => { panelRef.current = el; layerRef.current = el; }} tabIndex={-1}
       // From inside the panel Esc closes it at once. The shell's own Esc handler first takes focus out of a text box and leaves the panel open, which
       // made a keyboard user press it twice; the unsent message is kept (ChatPanel), so closing loses nothing.
       onKeyDown={(e) => { if (e.key === "Escape" && !e.defaultPrevented) { e.preventDefault(); e.stopPropagation(); close(); } }}
     >
-      <div className="ms-dock-head">
-        <b>Designer assistant</b>
-        <span className="muted">It proposes; you apply to your draft and save</span>
-        <IconButton icon="x" label="Close the designer assistant" size="sm" extra="ms-slide-close" onClick={onClose} />
+        <div className="ms-dock-head">
+          <b>Designer assistant</b>
+          <span className="muted">It proposes; you apply to your draft and save</span>
+          <IconButton icon="x" label="Close the designer assistant" size="sm" extra="ms-slide-close" onClick={onClose} />
+        </div>
+        <ChatPanel />
       </div>
-      <ChatPanel />
-    </div>
+    </>
   );
 }

@@ -36,10 +36,10 @@ test("units and pixels convert both ways", () => {
   assert.ok(Math.abs(back.x - 500) < 1e-9 && Math.abs(back.y - 310) < 1e-9);
 });
 
-test("cards are full size up to eight seats on a stage of ordinary width, and compact beyond or when narrow", () => {
+test("cards are full size up to nine seats on a stage of ordinary width, and compact beyond or when narrow", () => {
   assert.equal(cardFor(2, 900), CARD_REGULAR);
-  assert.equal(cardFor(8, 900), CARD_REGULAR);
-  assert.equal(cardFor(9, 900), CARD_COMPACT);
+  assert.equal(cardFor(9, 900), CARD_REGULAR);
+  assert.equal(cardFor(10, 900), CARD_COMPACT);
   assert.equal(cardFor(3, 600), CARD_COMPACT);
 });
 

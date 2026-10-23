@@ -381,6 +381,8 @@ export default function Topology(props: TopologyProps): React.JSX.Element {
                 const bad = problems(id);
                 const out = outgoing.get(id) ?? 0;
                 const role = String(ag.role || "").trim();
+                // The role is a second line only when it adds something to the name; "pm / pm" was half the demo's cards.
+                const roleLine = [role === id ? "" : role || "no role", ag.mode === "service" ? "service" : ""].filter(Boolean).join(" · ");
                 const label = `${id}, ${role || "no role"}.${starting ? " Starts with the mission." : ""}${ag.mode === "service" ? " Service seat." : ""}${bad ? " Has a problem." : ""} May message ${out} ${out === 1 ? "seat" : "seats"}.`;
                 return (
                   <div
@@ -400,18 +402,16 @@ export default function Topology(props: TopologyProps): React.JSX.Element {
                       onPointerDown={(e) => onSeatDown(e, id)} onPointerMove={onSeatMove} onPointerUp={onSeatUp} onPointerCancel={onSeatUp}
                       onKeyDown={(e) => onSeatKey(e, id)}
                     >
-                      <AgentAvatar id={id} color={agentColor(role)} size="sm" />
+                      <span className="ms-seat-face">
+                        <AgentAvatar id={id} color={agentColor(role)} size="sm" />
+                        {/* The state marks sit on the face, where they do not take a pixel from the name: a green play for a
+                            seat that starts with the mission, a red alert for one the checks are complaining about. */}
+                        {starting ? <span className="ms-seat-dot start" aria-hidden="true"><Icon name="play" size={9} /></span> : null}
+                        {bad ? <span className="ms-seat-dot bad" aria-hidden="true"><Icon name="alert" size={10} /></span> : null}
+                      </span>
                       <span className="ms-seat-text">
-                        <span className="ms-seat-top">
-                          <span className="nm">{id}</span>
-                          {bad || starting ? (
-                            <span className="ms-seat-flags" aria-hidden="true">
-                              {bad ? <Icon name="alert" size={14} className="flag-bad" /> : null}
-                              {starting ? <span className="flag-start"><Icon name="play" size={10} /></span> : null}
-                            </span>
-                          ) : null}
-                        </span>
-                        <span className="rl">{role || "no role"}{ag.mode === "service" ? " · service" : ""}</span>
+                        <span className="nm">{id}</span>
+                        {roleLine ? <span className="rl">{roleLine}</span> : null}
                       </span>
                     </button>
                     <button
@@ -435,6 +435,7 @@ export default function Topology(props: TopologyProps): React.JSX.Element {
       <p className="ms-stage-foot">
         <span><b>{ids.length}</b> {ids.length === 1 ? "seat" : "seats"} and <b>{wires.length}</b> {wires.length === 1 ? "wire" : "wires"}.</span>
         <span className="ms-legend"><Icon name="play" size={12} className="flag-start" /> starts with the mission</span>
+        <span className="ms-legend"><Icon name="alert" size={12} className="flag-bad" /> needs attention</span>
         <span className="ms-legend"><Icon name="arrow-right" size={12} /> a wire: the arrow points at the seat that may be messaged</span>
       </p>
 
