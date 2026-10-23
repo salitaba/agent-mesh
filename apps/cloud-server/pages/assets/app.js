@@ -1013,7 +1013,13 @@
   const SIGN_IN = "/login?next=/account";
 
   /** The shape of the page while its first read is out, so that what arrives does not move what is already there. */
-  const skeleton = (on) => ($("skeleton").hidden = !on);
+  const skeleton = (on) => {
+    $("skeleton").hidden = !on;
+    // Said to a reader of the page, not shown: the shape is for the eye, and the account is what it is waiting for.
+    const live = $("stage-live");
+    if (on) live.textContent = "Loading your account.";
+    else if (live.textContent === "Loading your account.") live.textContent = "";
+  };
 
   async function accountPage(signedIn) {
     if (!signedIn) {
