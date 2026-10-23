@@ -51,7 +51,7 @@ const HEIGHT = [
   ".chip-toggle", "button.chip", "button.linklike", "summary", ".icon-btn",
   // The frame's own close controls and the layers they close: the drawer's X measured 32x32 at 360, the palette had none,
   // and the project switcher's rows and the palette's rows were 40 or less on a phone.
-  ".close-x", ".palette-x", ".palette-item", ".pj-opt", ".toast-x",
+  ".close-x", ".palette-x", ".palette-item", ".pj-opt", ".toast-x", ".copy-btn.compact", ".srch-clear",
   "input.search", "input.txt", "select.sel", "textarea.txt",
 ];
 
@@ -66,7 +66,7 @@ test("the phone floor names every control family that was measured under 44 px",
 test("glyph-only controls get a 44 px square, not only a tall strip", () => {
   const selector = selectorsFor(/min-width:\s*44px/);
   assert.ok(selector, "a phone rule sets a 44 px minimum width");
-  for (const s of [".pj-home", ".ptab-x", ".ptab-add", ".agent-open", ".icon-btn", ".close-x", ".palette-x", ".toast-x"]) {
+  for (const s of [".pj-home", ".ptab-x", ".ptab-add", ".agent-open", ".icon-btn", ".close-x", ".palette-x", ".toast-x", ".copy-btn.compact", ".srch-clear"]) {
     assert.ok(selector.includes(s), `the 44 px minimum width covers ${s}`);
   }
 });

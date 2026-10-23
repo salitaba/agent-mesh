@@ -42,7 +42,8 @@ i.sev-mark.routine { box-sizing: border-box; border: 1.5px solid var(--muted); }
 .srch-clear:active { background: var(--wash-2); }
 @media (pointer: coarse), (max-width: 620px) {
   .srch > input.search { min-height: 44px; }
-  .srch-clear { width: 40px; height: 40px; }
+  /* The clear control is the one thing in the field a thumb presses. It was 40 px, the last compact target on the page. */
+  .srch-clear { width: 44px; height: 44px; }
 }
 
 /* A dialog that holds a text area or a grid of choices (the Designer's import and templates) is wider than a question. */

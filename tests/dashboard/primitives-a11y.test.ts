@@ -48,7 +48,7 @@ test("a search box is one search field named for what it searches, with a clear 
   assert.match(search, /aria-hidden="true"><Kbd>/, "the key is drawn, not read: the field's name already says what it is");
   assert.match(components, /export \{ SearchField \} from "\.\/ui\/search";/);
   assert.match(live, /\.srch:focus-within \.srch-hint \{ opacity: 0; \}/, "the key leaves while the person types");
-  assert.match(live, /\.srch-clear \{ width: 40px; height: 40px; \}/, "the clear button is a thumb's target on a phone");
+  assert.match(live, /\.srch-clear \{ width: 44px; height: 44px; \}/, "the clear button is a thumb's target on a phone");
 });
 
 test("the title row of a panel is not a second banner: the page has one, the top bar", () => {
