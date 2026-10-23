@@ -126,7 +126,7 @@ a:hover { text-decoration-color: currentColor; }
 .skip:focus { top: 12px; }
 main:focus { outline: none; }
 fieldset { min-width: 0; margin: 0; padding: 0; border: 0; }
-h1, h2, h3, h4 { margin: 0; font-weight: 650; text-wrap: balance; }
+h1, h2, h3, h4 { margin: 0; font-weight: 650; text-wrap: balance; overflow-wrap: break-word; }
 h1 { font-size: clamp(2.5rem, 1.2rem + 5.4vw, 4.75rem); line-height: 1.02; letter-spacing: var(--k-track-display); }
 h2 { font-size: clamp(1.75rem, 1.1rem + 2.5vw, 3rem); line-height: 1.08; letter-spacing: -.032em; }
 h3 { font-size: 1.1875rem; line-height: 1.3; letter-spacing: var(--k-track-title); }
@@ -176,11 +176,11 @@ main:has(.hero) .section-head .eyebrow::before { counter-increment: sec; content
 .logo .ink, .nf-mark .ink { stroke: var(--ink); }
 .logo .seat, .nf-mark .seat { fill: var(--accent); }
 .nav-main { display: none; gap: 2px; margin-left: 20px; }
-.nav-main a, .signin { display: inline-flex; align-items: center; min-height: 36px; padding: 0 12px; border-radius: var(--k-r-pill); color: var(--ink2); font-size: .9063rem; font-weight: 500; text-decoration: none; white-space: nowrap; }
+.nav-main a, .signin { display: inline-flex; align-items: center; min-height: 36px; padding: 0 12px; border-radius: var(--k-r-pill); color: var(--ink2); font-size: 14.5px; font-weight: 500; text-decoration: none; white-space: nowrap; }
 .nav-main a:hover, .signin:hover { background: color-mix(in srgb, var(--ink) 6%, transparent); color: var(--ink); }
 .nav-main a[aria-current="page"], .menu-panel a[aria-current="page"] { background: var(--soft); color: var(--link); }
 .bar-actions { display: flex; align-items: center; gap: 8px; margin-left: auto; }
-.menu summary { gap: 8px; min-height: 40px; padding: 0 14px; border-radius: var(--k-r-md); font-size: .875rem; list-style: none; user-select: none; }
+.menu summary { gap: 8px; min-height: 40px; padding: 0 14px; border-radius: var(--k-r-md); font-size: 14px; list-style: none; user-select: none; }
 .menu summary:hover { background: var(--panel2); }
 .menu summary::-webkit-details-marker { display: none; }
 .menu-icon { position: relative; width: 16px; height: 12px; }
@@ -199,7 +199,7 @@ main:has(.hero) .section-head .eyebrow::before { counter-increment: sec; content
 
 /* buttons and links */
 .btn, .menu summary, .copy, .toc a { display: inline-flex; align-items: center; border: 1px solid var(--line2); background: var(--panel); box-shadow: var(--lift); font-weight: 600; cursor: pointer; }
-.btn { justify-content: center; gap: 8px; min-height: 40px; padding: 0 16px; border-radius: var(--k-r-md); color: var(--ink); font: 600 .875rem/1.2 var(--font); text-align: center; text-decoration: none; }
+.btn { justify-content: center; gap: 8px; min-height: 40px; padding: 0 16px; border-radius: var(--k-r-md); color: var(--ink); font: 600 14px/1.2 var(--font); text-align: center; text-decoration: none; }
 .btn:hover { border-color: var(--k-line-control); background-color: var(--panel2); }
 .btn:active { background-color: var(--k-sunken); box-shadow: none; transform: translateY(.5px); }
 .btn-primary { border-color: var(--accent); background: var(--accent) linear-gradient(color-mix(in srgb, white 10%, transparent), transparent); color: var(--k-on-accent); }
@@ -279,8 +279,8 @@ main:has(.hero) .section-head .eyebrow::before { counter-increment: sec; content
 .tabs, .billing { --n: 3; position: relative; display: inline-grid; grid-auto-flow: column; grid-auto-columns: 1fr; max-width: 100%; margin-bottom: 16px; padding: 3px; border-radius: var(--k-r-md); background: var(--k-sunken); box-shadow: inset 0 0 0 1px var(--line); }
 .billing { --n: 2; margin-bottom: 24px; }
 .tabs::before, .billing::before { content: ""; position: absolute; top: 3px; bottom: 3px; left: 3px; width: calc((100% - 6px) / var(--n)); border-radius: var(--k-r-sm); background: var(--panel); box-shadow: var(--lift), 0 0 0 1px var(--line2); }
-.tabs label, .billing label { position: relative; display: flex; align-items: center; justify-content: center; gap: 8px; min-height: 36px; padding: 0 clamp(8px, 3vw, 20px); color: var(--ink2); font-size: .875rem; font-weight: 600; white-space: nowrap; cursor: pointer; user-select: none; }
-.billing label small { color: var(--muted); font-size: .8125rem; font-weight: 500; }
+.tabs label, .billing label { position: relative; display: flex; align-items: center; justify-content: center; gap: 8px; min-height: 36px; padding: 0 clamp(8px, 3vw, 20px); color: var(--ink2); font-size: 14px; font-weight: 600; white-space: nowrap; cursor: pointer; user-select: none; }
+.billing label small { color: var(--muted); font-size: 13px; font-weight: 500; }
 @media (max-width: 719px), (pointer: coarse) { .tabs label, .billing label { min-height: 44px; } }
 @media (max-width: 420px) { .billing label { flex-direction: column; gap: 0; padding: 0 12px; line-height: 1.25; } .billing label small { font-size: .75rem; } }
 .tab-input:nth-of-type(2):checked ~ .tabs::before, .billing-input:nth-of-type(2):checked ~ .billing::before { transform: translateX(100%); }
@@ -370,6 +370,16 @@ main:has(.hero) .section-head .eyebrow::before { counter-increment: sec; content
 
 /* what you see: every view in a frame of one size, so a retaken picture drops in. On a phone the
    six views are one snap row with the next one showing, not six screens of scroll. */
+/* The six views are one snap row on a phone; this is its page index: six 44px tabs that also
+   jump to a card, so a reader can reach the last view without five swipes. It is not shown where
+   the cards are a grid and every one is already on screen. */
+.row-index { display: none; }
+@media (max-width: 719px) {
+  .row-index { display: block; margin: -4px 0 12px; }
+  .row-index ol { display: flex; gap: 4px; list-style: none; }
+  .row-index a { display: inline-flex; align-items: center; justify-content: center; min-width: 44px; min-height: 44px; padding: 0 8px; border: 1px solid var(--line); border-radius: var(--k-r-sm); background: var(--panel); color: var(--ink2); font-size: .75rem; font-weight: 600; text-decoration: none; font-variant-numeric: tabular-nums; }
+  .row-index a:hover { border-color: var(--k-line-control); color: var(--link); }
+}
 .tiles { gap: 20px; }
 @media (min-width: 720px) { .tiles { grid-template-columns: var(--c2); gap: 24px; } }
 .tiles-hint { display: none; }
@@ -446,7 +456,7 @@ main:has(.hero) .section-head .eyebrow::before { counter-increment: sec; content
 @media (min-width: 900px) { .cta .wrap { grid-template-columns: minmax(0, 1fr) auto; align-items: center; } .cta .btn-row { grid-column: 2; grid-row: 1 / span 2; margin-top: 0; } }
 
 /* footer */
-.site-footer { padding: clamp(48px, 7vw, 80px) 0 40px; border-top: 1px solid var(--line); background: var(--k-sunken); color: var(--muted); font-size: .9375rem; }
+.site-footer { padding: clamp(48px, 7vw, 80px) 0 40px; border-top: 1px solid var(--line); background: var(--k-sunken); color: var(--muted); font-size: 15px; }
 .foot-grid { display: grid; gap: 40px 24px; grid-template-columns: var(--c2); }
 .foot-brand { grid-column: 1 / -1; max-width: 22rem; }
 .foot-brand p { margin: 14px 0 0; color: var(--ink2); }
@@ -584,8 +594,26 @@ main:has(.hero) .section-head .eyebrow::before { counter-increment: sec; content
 .table-wrap { position: relative; overflow-x: auto; border: 1px solid var(--line); border-radius: var(--k-r-lg); box-shadow: var(--lift); background: linear-gradient(to left, var(--panel) 30%, transparent) right / 48px 100% no-repeat local, linear-gradient(to left, var(--edge), transparent) right / 12px 100% no-repeat scroll, var(--panel); }
 /* A row that scrolls sideways keeps the gesture in the row: no page history swipe, no bounce of the page behind it. */
 .tiles, .plans, .toc, .table-wrap, .code pre { overscroll-behavior-x: contain; }
-/* On a phone a comparison table scrolls, and says so: a silent sideways table looks like a cut-off one. */
-.table-hint { display: none; }
+/* On a phone each comparison is one plan (or one model) at a time: the same rows, with their
+   labels beside the values, instead of a 660px table that is read through a letterbox. The
+   table is kept for the widths where it fits, and for print. */
+.stack-table { display: none; }
+@media (max-width: 719px) {
+  .stack-table { display: grid; }
+  .stack-plan { padding: 16px 0 8px; border-top: 1px solid var(--line2); }
+  .stack-plan:first-child { padding-top: 0; border-top: 0; }
+  .stack-plan h3 { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; font-size: 1.125rem; }
+  .stack-plan dl { margin: 10px 0 0; }
+  .stack-plan dl > div { display: grid; grid-template-columns: minmax(0, 160px) minmax(0, 1fr); gap: 4px 12px; padding: 7px 0; border-bottom: 1px solid var(--line); }
+  .stack-plan dl > div:last-child { border-bottom: 0; }
+  .stack-plan dt { color: var(--muted); font-size: .75rem; line-height: 1.4; }
+  .stack-plan dd { margin: 0; font-size: .9375rem; line-height: 1.45; font-variant-numeric: tabular-nums; }
+  .stack-plan h3, .stack-plan dt, .stack-plan dd { overflow-wrap: anywhere; }
+  #compare .table-wrap, #calculator .table-wrap { display: none; }
+}
+.compare .yes, .compare .no, .stack-plan .yes, .stack-plan .no { white-space: nowrap; }
+.compare .yes, .stack-plan .yes { color: var(--k-ok); font-weight: 600; }
+.compare .no, .stack-plan .no { color: var(--muted); }
 .compare { width: 100%; min-width: 720px; table-layout: fixed; border-collapse: separate; border-spacing: 0; font-size: .9375rem; font-variant-numeric: tabular-nums; }
 .compare th, .compare td { padding: 14px 18px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
 .compare thead th { background: var(--panel2); color: var(--ink); }
@@ -595,19 +623,10 @@ main:has(.hero) .section-head .eyebrow::before { counter-increment: sec; content
 .compare thead th:first-child { position: sticky; left: 0; z-index: 2; }
 @media (max-width: 799px) { .compare tbody th, .compare thead th:first-child { box-shadow: inset -1px 0 0 var(--line); } }
 .compare tbody tr:last-child th, .compare tbody tr:last-child td { border-bottom: 0; }
-.compare .yes, .compare .no { white-space: nowrap; }
-.compare .yes { color: var(--k-ok); font-weight: 600; }
-.compare .no { color: var(--muted); }
-/* On a phone the table scrolls inside its box, and says so above it; it is narrower because the
-   first column stays and a phone should not have to swipe a screen and a half to reach Enterprise. */
+/* Below 720 the table is one plan at a time (above); at 720 and up it fits its box. */
 @media (max-width: 799px) {
   .compare { min-width: 660px; }
   .compare th, .compare td { padding: 12px 14px; }
-}
-/* The hint is only where the table really scrolls: at 720 and up a 660px table fits its 660px box,
-   and a phone told to swipe a table that fits is a phone being made to look for a defect. */
-@media (max-width: 719px) {
-  .table-hint { display: block; margin: 0 0 10px; }
 }
 .calc { gap: 24px; }
 @media (min-width: 860px) { .calc { grid-template-columns: var(--c2); gap: 48px; align-items: start; } }
@@ -622,10 +641,10 @@ main:has(.hero) .section-head .eyebrow::before { counter-increment: sec; content
 .field-check label { display: flex; flex: 1; align-items: center; min-height: 44px; margin: 0; font-weight: 500; cursor: pointer; }
 /* The estimate is a ledger: a double rule above the total. */
 .result { padding: 24px; }
-.result .row { display: flex; justify-content: space-between; gap: 16px; padding: 12px 0; border-bottom: 1px solid var(--line); font-variant-numeric: tabular-nums; }
+.result .row { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 16px; padding: 12px 0; border-bottom: 1px solid var(--line); font-variant-numeric: tabular-nums; }
 .result .row:has(.total) { margin-top: 4px; padding-top: 16px; border-top: 3px double var(--line2); border-bottom: 0; }
 .result .who { color: var(--muted); font-size: .8125rem; font-weight: 400; }
-.result .total { font-size: 1.5rem; font-weight: 650; letter-spacing: var(--k-track-title); }
+.result .total { min-width: 0; font-size: 1.5rem; font-weight: 650; letter-spacing: var(--k-track-title); overflow-wrap: anywhere; }
 .result .fine { margin-top: 12px; color: var(--muted); font-size: .875rem; }
 /* The home page's plans: a rate card ruled between its cells. */
 .teaser { gap: 1px; overflow: hidden; background: var(--line); }
@@ -719,7 +738,8 @@ main:has(.hero) .section-head .eyebrow::before { counter-increment: sec; content
 }
 @media print {
   .site-header, .skip, .tabs, .billing, .copy, .foot-grid, .hero::before, .hero::after, .cta::after, .to-top-dock { display: none; }
-  .table-hint { display: none; }
+  .stack-table { display: none !important; }
+  #compare .table-wrap, #calculator .table-wrap { display: block !important; }
   .toc-bar.is-live { position: static; }
   .rv { opacity: 1 !important; transform: none !important; }
   body { background: #fff; color: #000; }

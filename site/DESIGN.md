@@ -222,3 +222,82 @@ hidden 1×1 billing radios, the 24×24 checkbox whose label is 44px, and inline 
 - 200% zoom and a large-text profile were not run; the surfaces were checked at 320/360/768/1440,
   print, no-JS, dark and forced colours.
 
+## 2026-10-23, second pass: the phone's comparisons, the row's index, and large text
+
+Measured with the same probe (Chrome 156 over CDP, reduced motion, touch, light and dark unless
+said). The before column is today's site before this pass, re-measured; no earlier number is reused.
+
+### What changed
+
+- **The pricing page's two wide tables are one plan (or one model) at a time below 720px.** The plan
+  table is 660px wide in a 326px window at 360 (334px hidden) and in a 288px window at 320 (372px
+  hidden). The two comparisons are now generated twice from the same plan table: the existing
+  `plan-table` and `run-costs` for the widths where they fit, and `plan-stack` / `run-stack`
+  (`scripts/pricing-html.mjs`, fenced by `scripts/export-pricing.mjs`) for a phone. The stack is the
+  table's own lines with each label beside its value; the table is hidden below 720 and kept for
+  720, 768, 1440 and print. No number is typed by hand, and the page reads without a script.
+- **The six console views have a page index on a phone.** Six 44px tabs (`01`–`06`, `aria-label`
+  "Jump to a view") sit under the hint and jump to the card they name, so the sixth view is one press
+  from the first instead of five swipes. The tabs are hidden at 720px and up, where the cards are a
+  grid and every one is already on screen. Each tab is 44×44 and its target is the card's new
+  `id`; the row's own snap scrolling and `position: relative` are unchanged.
+- **Large text no longer widens the page.** At a 24px user default (150% of 16px) every page was
+  **76px wider than a 360px viewport**; pricing was 132px wider at 320. The causes were the header's
+  Menu label and pills (76px), the 60px `organization.` in the home `h1` (75px), the hero's tab
+  labels (35px), the footer's "Documentation" (10px), and the calculator's total at 320 (27px). The
+  header buttons, menu label, hero tabs, billing labels and footer now keep their 14–15px layout
+  size instead of growing with the user's rem; headings break a word that cannot fit; the stacked
+  labels keep a 160px column and break long words; the result total wraps. At 360 and 320 the page
+  is now 0px over.
+- The plan-card hint says "the comparison below lists every line" rather than naming a table that a
+  phone no longer gets. The `table-hint` paragraphs and their CSS are gone: neither table is
+  presented to a phone to swipe.
+
+### Measurements after this pass
+
+| Page | 360 before / after | 320 before / after | 768 / 1440 |
+|---|---|---|---|
+| Home | 13,648 / **13,700** | 14,400 / **14,452** | 13,108 / 12,282 (unchanged) |
+| Pricing | 12,676 / **13,944** | 13,574 / **14,972** | 10,682 / 9,174 |
+| Docs | 9,232 / 9,232 | 9,842 / 9,842 | 6,146 / 4,678 (unchanged) |
+| Security | 11,916 / 11,916 | 12,823 / 12,823 | 8,327 / 7,668 (unchanged) |
+| Contact | 4,815 / 4,815 | 5,110 / 5,110 | 3,871 / 2,815 (unchanged) |
+| Legal | 5,267 / 5,267 | 5,741 / 5,741 | 3,863 / 3,317 (unchanged) |
+| 404 | 2,348 / 2,348 | 2,443 / 2,443 | 1,911 / 1,524 (unchanged) |
+
+- **Pricing at 360:** the plan table was 660×676 in a 326px window; the stack is four plans and
+  1,558px tall, the run stack 803px. The page is 1,268px taller because all four plans are now read,
+  not swiped. At 320 the stack is 1,666px and the page 1,398px taller. At 720 (the 200% stand-in) the
+  table is 662×676 in a 662px box and the stack is hidden; the page is 11,152px, unchanged. At 768
+  the table is 707×628, the stack is hidden, and one extra line in the mission's paragraph makes the
+  page 10,682px (was 10,662).
+- **The six-view index** is 328×44 at 360 and 288×44 at 320. Home is 52px taller at both (the index
+  only); 768 and 1440 are unchanged. Pressing `06` put the Approvals card at **left 34, top 88**
+  with the row at `scrollLeft 1,590`.
+- **Large text (24px root), 360:** home 21,497→21,562, pricing 21,378→23,189; every page **0px
+  over** (was 76). At 320: home 23,533→23,554 and pricing 25,255→25,417, both **0px over** (was 115
+  and 132).
+- **200% zoom (720px viewport):** 0px overflow on all seven pages, before and after. The smallest
+  computed text is 12px and no page has text under 12px at any tested width.
+- No page overflows at 320/360/768/1440 in light or dark, or at 720. The probe reports no console
+  errors. Print at A4 width (794px) shows the tables, not the stacks, and is 0px over.
+
+### What this pass deliberately left
+
+- **The phone reads four full plans to compare them.** The stack is honest and needs no gesture, but
+  it repeats both billing periods for every plan; the Annual/Monthly radios live in `#plans` and CSS
+  cannot reach across sections, so the stack does not hide the period not chosen. Moving the switch
+  into `#compare` (or a scoped `:has`) is the next step.
+- **The index is a destination, not a position.** It tells a reader there are six views and takes
+  them to one; it does not mark the view currently on screen. A live indicator would need the
+  script, and the row already works without it.
+- **The hero's three captures are still 1440px.** The console's six tiles are 720×450; the hero's
+  three are the whole window. A 720 crop per hero view would read better on a phone, but the console
+  is being redesigned in parallel and the pictures would be retaken twice.
+- **Curule Cloud's prices** are still not on the site: they live in the app, and no stable Cloud
+  price can be generated from `packages/licensing/src/plans.ts`.
+- **The body's px ramp does not follow a user's default font size.** The 24px root test scales the
+  rem-based headings and leaves 16px body text; a rem conversion of the whole ramp is a larger
+  change than this pass, and the 200% zoom path (the WCAG reflow case) is clean.
+- `npm run site:check` still fails on the owner's `TODO(owner)` for the terms in
+  `site/legal/index.html:133`; that is the pre-existing publishing gate, not this pass.

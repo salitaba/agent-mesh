@@ -164,7 +164,7 @@ test("the home page says what it is, and the 'Try it' commands are the ones that
   assert.equal((home.html.match(/<details(?: data-(?:selfhost|cloud)-only(?: hidden)?)?>/g) ?? []).length, 12, "the questions are native <details>, and the home page answers the ten it lists in each state");
   assert.equal((home.html.match(/<details data-cloud-only(?: hidden)?>/g) ?? []).length, 2, "and the two that say Curule is not hosted and has no checkout have the answers that say otherwise, for the day Curule Cloud is open");
   assert.equal((home.html.match(/<details data-selfhost-only(?: hidden)?>/g) ?? []).length, 2, "and each of those two has its answer for a site that is not");
-  assert.equal((home.html.match(/<li class="tile">/g) ?? []).length, 6, "six views of the console");
+  assert.equal((home.html.match(/<li class="tile" id="view-[a-z]+">/g) ?? []).length, 6, "six views of the console, each with the address its tab points at");
   assert.equal((home.html.match(/class="tab-input"/g) ?? []).length, 3, "three views in the product frame");
   for (const heading of ["Mission control", "Live events", "Per-turn ledger", "Team designer", "Cost and budgets", "Approvals"]) assert.ok(home.copy.includes(heading), heading);
   for (const heading of ["Enforced, not asked", "Recorded and replayable", "Bounded", "Yours"]) assert.ok(home.copy.includes(heading), heading);

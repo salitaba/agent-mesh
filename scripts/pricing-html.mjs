@@ -111,6 +111,36 @@ ${row("Support", (p) => ({ html: esc(p.support) }))}
 </div>`;
 }
 
+/**
+ * The same comparison, one plan at a time, for a phone. The table is 660px wide and has to be
+ * swiped under a sticky first column; a reader on a 320px screen sees less than half of it at
+ * once. This block is the table's rows, per plan, with the label written beside each value, and
+ * is the one shown below 720px. It is generated from the same data and hidden where the table fits.
+ */
+export function renderPlanStack(out) {
+  const price = (p, annual) => {
+    if (p.pricing === "free") return "Free";
+    if (p.pricing === "contact") return "Quoted";
+    return annual ? `${usd(p.priceMonthlyAnnualUsd)} a month (${usd(p.priceAnnualTotalUsd)} a year)` : `${usd(p.priceMonthlyUsd)} a month`;
+  };
+  const hasReports = (p) => p.features.includes("usage-export") && p.features.includes("prometheus-metrics");
+  const cards = out.plans.map((p) => `    <article class="stack-plan" aria-labelledby="stack-${esc(p.id)}-name">
+      <h3 id="stack-${esc(p.id)}-name">${esc(p.name)}</h3>
+      <dl>
+        <div><dt>Per month, billed annually</dt><dd>${price(p, true)}</dd></div>
+        <div><dt>Per month, billed monthly</dt><dd>${price(p, false)}</dd></div>
+        <div><dt>Projects open at once per host</dt><dd>${shown(p.limits.maxProjects)}</dd></div>
+        <div><dt>Agents (seats) per mesh</dt><dd>${shown(p.limits.maxSeatsPerMesh)}</dd></div>
+        <div><dt>Concurrent agent turns per host</dt><dd>${shown(p.limits.maxConcurrentTurns)}</dd></div>
+        <div><dt>Usage export and Prometheus metrics</dt><dd class="${hasReports(p) ? "yes" : "no"}">${hasReports(p) ? "Yes" : "No"}</dd></div>
+        <div><dt>Support</dt><dd>${esc(p.support)}</dd></div>
+      </dl>
+    </article>`);
+  return `<div class="stack-table plan-stack" role="group" aria-label="The plans compared, one at a time">
+${cards.join("\n")}
+</div>`;
+}
+
 /** What the measured mission costs at each model's list price, and a month of such missions. */
 export function renderRunCosts(out) {
   const run = out.measuredRuns[0];
@@ -133,6 +163,29 @@ ${rows}
   </table>
 </div>
 <p class="small muted mt-s">Each model&rsquo;s list price on ${esc(out.modelPrices.asOf)}. The product&rsquo;s own estimate of spend is a backstop and not an invoice: your provider&rsquo;s bill is the one that counts.</p>`;
+}
+
+/** The same model costs, one model at a time, for a phone: the table's rows with their labels. */
+export function renderRunStack(out) {
+  const run = out.measuredRuns[0];
+  if (!run) return "";
+  const models = Object.keys(out.modelPrices.perMtokUsd);
+  const cards = models.map((m) => {
+    const one = run.costUsdByModel[m];
+    const own = m === run.model ? ' <span class="tag">what it ran on</span>' : "";
+    return `    <article class="stack-plan">
+      <h3>${esc(modelName(m))}${own}</h3>
+      <dl>
+        <div><dt>This mission</dt><dd>${usdc(one)}</dd></div>
+        <div><dt>10 a month</dt><dd>${usdc(cents(one * 10))}</dd></div>
+        <div><dt>25 a month</dt><dd>${usdc(cents(one * 25))}</dd></div>
+        <div><dt>100 a month</dt><dd>${usdc(cents(one * 100))}</dd></div>
+      </dl>
+    </article>`;
+  });
+  return `<div class="stack-table run-stack" role="group" aria-label="What the measured mission costs at each model's list price, one at a time">
+${cards.join("\n")}
+</div>`;
 }
 
 /** The four plans in a line, for the home page: a price and what it allows, and nothing else. */
