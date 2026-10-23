@@ -356,6 +356,11 @@ export default function Events(): React.JSX.Element {
                   const isOpen = openFolds.has(r.key);
                   const newestItem = r.items[0]!;
                   const oldestItem = r.items[r.items.length - 1]!;
+                  // A run that fell inside one clock second used to say "09:43:26 to 09:43:26" in the third column of every fold:
+                  // the same fact twice in the row a reader scans past. Say the time once when it is one time.
+                  const oldestText = localTime(oldestItem.timestamp);
+                  const newestText = localTime(newestItem.timestamp);
+                  const range = oldestText === newestText ? oldestText : `${oldestText} to ${newestText}`;
                   return (
                     <div key={r.key} className={`evc-fold${isOpen ? " open" : ""}`}>
                       <button
@@ -374,7 +379,7 @@ export default function Events(): React.JSX.Element {
                       >
                         <Icon name="chevron-right" size={12} className={isOpen ? "caret turned" : "caret"} />
                         <span className="evc-fold-what"><b>{r.items.length}</b> routine {r.items.length === 1 ? "event" : "events"}</span>
-                        <span className="evc-fold-range">{localTime(oldestItem.timestamp)} to {localTime(newestItem.timestamp)}</span>
+                        <span className="evc-fold-range">{range}</span>
                         {/* The caret turns, but a caret is a shape: the row says in words what pressing it does. */}
                         <span className="evc-fold-do">{isOpen ? "Hide" : "Show"}</span>
                       </button>
