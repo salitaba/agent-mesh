@@ -301,3 +301,64 @@ said). The before column is today's site before this pass, re-measured; no earli
   change than this pass, and the 200% zoom path (the WCAG reflow case) is clean.
 - `npm run site:check` still fails on the owner's `TODO(owner)` for the terms in
   `site/legal/index.html:133`; that is the pre-existing publishing gate, not this pass.
+
+## 2026-10-23, third pass: the pricing page's first screen, and the period a phone reads
+
+Measured with the same probe (Chrome 156 over CDP, reduced motion, touch, light and dark unless
+said). The before column is the site at the commit this pass started from, checked out again and
+measured today; no number is copied from an earlier pass.
+
+### What changed
+
+- **The pricing page opens with the licence plans.** `#plans` now comes directly under the On this
+  page bar and the Cloud-only choice between the two ways (`#ways`) follows it. The section the
+  plans opened with was `sr`-only; it is now the visible "The licence plans.", so the four cards
+  are named at the point where a reader meets them and are not read as Curule Cloud's. The licence
+  card in `#ways` says "The plans above are licences…" because that is now where they are. The
+  bar's first chip is the section the page opens with, so its mark is right from the first section:
+  at 360 the first 1,257px, the whole of `#ways`, used to mark no chip at all.
+- **The phone's plan comparison reads the billing period chosen above the cards.** The rows the
+  exporter writes into the phone's stack carry `period-annual` and `period-monthly`; below 720 a
+  `body:has()` rule hides the period that is not chosen, in `#compare` only. The surviving row still
+  names its period, so the stack says which one it shows. The table keeps both rows at 720 and up
+  and in print, where both are wanted. The `#calculator`'s model stack is untouched.
+- **A capture's caption is no longer below the type floor.** The generic `code` rule made the
+  `curule validate` in the Designer caption 11.375px (13 × .875); a `.frame figcaption code` rule
+  keeps it at the caption's 13px.
+
+### Measurements after this pass
+
+| Pricing at | Before | After |
+|---|---|---|
+| 320 | 14,972 | **14,862** (monthly: 14,755) |
+| 360 | 13,944 | **13,835** (monthly: 13,771) |
+| 768 | 10,682 | **10,700** |
+| 1440 | 9,174 | **9,212** |
+
+- At 360 the first plan card is at **y=737** (was **1,924**, below the first screen by 1,124px);
+  its amount is at **y=886** (was 2,074). The visible "The licence plans." heading is at y=569, the
+  Annual/Monthly switch at 663.
+- The phone's plan stack is **1,411px** (was 1,558) and shows **one** price row per plan instead of
+  two (4 rows removed in total); the page is 109px shorter at 360. With Monthly chosen the stack is
+  1,367px.
+- At scroll y=560 the On this page bar marks **"The plans"**; before, its two chips were all past
+  the reading line and it marked nothing.
+- Home: the smallest computed text is **12px** (was **11.375px**); every page's census is empty
+  below 12px at 320 and 360.
+- No page overflows at 320/360/768/1440 in light or dark (pricing measured after switching to
+  Monthly too). Print at A4 width keeps the table and hides the stack; the hidden rows are
+  `display:none`, so nothing is read that is not shown. No new console errors.
+
+### What this pass deliberately left
+
+- **`#ways` still has no chip.** It is Cloud-only, and the bar's test forbids a chip whose section
+  the Cloud switch can hide. Now that the bar starts with the plans, the unmarked section is below
+  the first section rather than at the top of the page; while it is read the nearest chip above it
+  ("The plans") stays marked.
+- **The stack still repeats the limits and support for all four plans.** Only the price row was made
+  to follow the switch. A per-plan summary that did not repeat the lines is a larger change to the
+  generated stack.
+- **The first plan's price is still 86px below an 800px first screen**, because the section's own
+  heading, the phone hint and the switch take the first 200px. The card is on the screen; the
+  figure needs one small scroll.
+- **Curule Cloud's prices** are still in the app, not on the site.
