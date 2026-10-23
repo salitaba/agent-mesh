@@ -1,6 +1,8 @@
 version: 1
 
-# The full squad: a crew that can take a product from a goal to a delivered, measured interface.
+# The full squad: a crew that can take a product from a goal to a delivered, measured interface, and
+# then say what was delivered. Ten seats; the ninth (security) and tenth (marketing) are the ones a
+# smaller product can trim, and both designers are optional for a product with no user-facing surface.
 #
 # Every seat's `role` names a prompt file the platform ships as roles/<role>.md, and copying this
 # example into a project materialises those files into it. That detail matters more than it reads: a
@@ -11,7 +13,7 @@ version: 1
 # the product.
 #
 # Trim it freely: the seats marked optional below are the ones a smaller product does not need.
-# A nine-seat crew costs roughly ten to twenty million tokens for a substantial pass, so the mission
+# A ten-seat crew costs roughly ten to twenty million tokens for a substantial pass, so the mission
 # budget here is declared at 20M with auto_raise anchored to it.
 
 project:
@@ -201,12 +203,29 @@ agents:
     session:
       persistent: true
 
+  # ---- launch (optional for a product nobody outside the team uses) -----------------
+  marketing:
+    role: marketing
+    runtime: claude
+    capabilities:
+      - repository.read
+      - architecture.write   # launch copy and release notes are documents, never product code
+    authority: []
+    interests:
+      - requirements.created
+      - release.candidate
+      - implementation.completed
+      - design.question
+    session:
+      persistent: true
+
 policies:
   communication:
     # Who may write to whom. A seat absent from this list may still be reached by an ask it owes an
-    # answer to; the matrix bounds the cold approach, which is what keeps nine seats from talking past
+    # answer to; the matrix bounds the cold approach, which is what keeps ten seats from talking past
     # each other. The designers sit beside the developers because a developer building a surface must
-    # be able to ask for its design.
+    # be able to ask for its design, and marketing sits beside the designers and the frontend because
+    # the words a person reads are part of that surface.
     pm:
       may_contact:
         - architect
@@ -217,6 +236,7 @@ policies:
         - security
         - ui-designer
         - ux-designer
+        - marketing
     architect:
       may_contact:
         - pm
@@ -225,6 +245,7 @@ policies:
         - backend-developer
         - ui-designer
         - ux-designer
+        - security
     tech-lead:
       may_contact:
         - pm
@@ -240,6 +261,7 @@ policies:
         - qa
         - ui-designer
         - ux-designer
+        - marketing
     backend-developer:
       may_contact:
         - architect
@@ -260,15 +282,26 @@ policies:
         - backend-developer
         - tech-lead
         - qa
+        - architect
         - pm
     ui-designer:
       may_contact:
         - pm
         - frontend-developer
+        - marketing
     ux-designer:
       may_contact:
         - pm
         - frontend-developer
+        - marketing
+    marketing:
+      may_contact:
+        - pm
+        - architect
+        - tech-lead
+        - frontend-developer
+        - ui-designer
+        - ux-designer
 
   transitions:
     # The gates that make an approval mean something. Each requirement names an actor and a kind, and
@@ -299,7 +332,7 @@ policies:
 budgets:
   mission:
     # Declared intent, not a spend: auto_raise multiplies this up to max_multiple, and the ceiling is
-    # anchored to what is written here. A nine-seat crew needs room — a substantial pass costs ten to
+    # anchored to what is written here. A ten-seat crew needs room — a substantial pass costs ten to
     # twenty million tokens — and a ceiling reached is the platform asking a person, which is the point.
     tokens: 20000000
     wall_clock_minutes: 1200

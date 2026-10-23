@@ -40,7 +40,7 @@ infrastructure, under rules the runtime enforces.
 runtime refuses what a role may not do; every action is recorded in an append-only log that can be replayed and audited.
 It runs on your own infrastructure with your own model credentials, and nothing phones home.
 
-**With the terms.** The Community plan is free for one open project with up to eight agents; the paid plans lift the
+**With the terms.** The Community plan is free for one open project with up to ten agents; the paid plans lift the
 limits ([pricing](commercial/pricing.md)). The source is available under the Business Source License 1.1, which is not an
 open source licence, and each version becomes Apache 2.0 four years after it is published
 ([licensing](commercial/licensing.md)).

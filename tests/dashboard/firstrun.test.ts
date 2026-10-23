@@ -79,7 +79,8 @@ test("the demo is the shipped team that needs no model, whatever it is called; t
 test("what a starting point is, says its seats and its goal from the facts, and the default team is a blank", () => {
   assert.equal(whatItIs(offer()), "A scripted team of 7 seats works on this goal: Build and ship a small idempotent payment endpoint.");
   assert.equal(whatItIs(offer({ seats: 1, goal: null })), "A scripted team of 1 seat.");
-  assert.match(whatItIs(claude()), /^The default team: one architect seat and a goal for you to write/);
+  assert.match(whatItIs(claude()), /^The default team: 1 seat and a goal for you to write/);
+  assert.match(whatItIs(claude({ seats: 10 })), /^The default team: 10 seats and a goal for you to write/, "the crew it is born with, not a sentence typed here");
 });
 
 test("what it writes is said with the counts it was given", () => {

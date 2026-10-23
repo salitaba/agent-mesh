@@ -184,7 +184,7 @@ test("the home page's way in is two cards while Curule Cloud is open and one whi
   assert.match(open[0]!.textContent, /the same dashboard and agents as the product you run yourself, on servers we operate/, "the account service's own words for what it is");
   assert.match(open[0]!.textContent, /A flat monthly plan for the hosting\. You bring your own model key and pay your model provider directly: we do not resell model usage\./);
   assert.match(open[1]!.textContent, /Nothing phones home: no telemetry, no update check, no licence server\./);
-  assert.match(open[1]!.textContent, /Nothing for the Community plan: one open project, up to eight agents, no licence key\. A paid licence lifts the limits\./);
+  assert.match(open[1]!.textContent, /Nothing for the Community plan: one open project, up to ten agents, no licence key\. A paid licence lifts the limits\./);
 });
 
 test("when it is open, the pricing page's estimate says it is for a licence, so a visitor to Curule Cloud does not read it as the price of a workspace", () => {

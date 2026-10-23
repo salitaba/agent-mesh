@@ -48,7 +48,7 @@ test("no licence is the Community plan, with no warnings", () => {
   assert.equal(ent.plan, "community");
   assert.deepEqual(ent.limits, COMMUNITY.limits);
   assert.deepEqual(ent.warnings, []);
-  assert.match(ent.summary, /^Community plan: 8 seats per mesh, 1 project\(s\), 4 concurrent turns\.$/);
+  assert.match(ent.summary, /^Community plan: 10 seats per mesh, 1 project\(s\), 4 concurrent turns\.$/);
 });
 
 test("a valid licence gives its plan's limits and features, and names its holder", () => {
@@ -113,11 +113,11 @@ test("a licence that does not verify is Community, with the reason, and never th
 
 test("seat, project and feature checks: the boundary, and what each message says", () => {
   const community = resolve(undefined);
-  assert.deepEqual(checkSeats(community, 8), { ok: true, blocked: false });
-  const over = checkSeats(community, 9);
+  assert.deepEqual(checkSeats(community, 10), { ok: true, blocked: false });
+  const over = checkSeats(community, 11);
   assert.equal(over.ok, false);
   assert.equal(over.blocked, true);
-  assert.match(over.message!, /^This mesh has 9 seats; the Community plan allows 8 per mesh\. Install a licence with 'curule license install <key>'/);
+  assert.match(over.message!, /^This mesh has 11 seats; the Community plan allows 10 per mesh\. Install a licence with 'curule license install <key>'/);
 
   assert.deepEqual(checkProjects(community, 1), { ok: true, blocked: false });
   assert.match(checkProjects(community, 2).message!, /Opening this project would make 2 open; the Community plan allows 1\./);

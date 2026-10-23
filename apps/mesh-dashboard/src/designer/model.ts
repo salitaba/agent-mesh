@@ -225,19 +225,22 @@ function tplTriad(): any {
 }
 
 function tplSquad(): any {
-  const m = baseMesh("full-squad", "Full Squad", "Build and ship a feature: requirements → architecture → implementation → QA → security → release.", "stub");
+  const m = baseMesh("full-squad", "Full Squad", "Build and ship a feature: requirements → architecture → implementation → design → QA → security → launch.", "stub");
   m.budgets.mission = { tokens: 2000000, wall_clock_minutes: 60, max_events: 10000 };
   m.budgets.thread = { tokens: 100000 };
   m.scheduling.concurrency = { max_active_agents: 4 };
   m.scheduling.timeouts = { turn_timeout_ms: 300000, wait_wakeup_ms: 3000 };
   const A: Record<string, any> = {
-    pm: { role: "product-manager", capabilities: ["repository.read"], authority: ["requirements.accept"], interests: ["requirement.blocked", "goal.progress", "release.candidate", "implementation.completed"] },
+    pm: { role: "pm", capabilities: ["repository.read"], authority: ["requirements.accept"], interests: ["requirement.blocked", "goal.progress", "release.candidate", "implementation.completed"] },
     architect: { role: "architect", capabilities: ["repository.read", "architecture.write", "review.design"], authority: ["architecture.approve"], interests: ["architecture.*", "design.question", "requirements.created"] },
-    "tech-lead": { role: "tech-lead", capabilities: ["repository.read", "code.review", "review.design", "task.assign", "git.merge"], authority: ["implementation.approve"], interests: ["patch.ready", "review.requested"] },
-    developer: { role: "developer", capabilities: ["repository.read", "repository.write", "test.execute", "git.commit"], interests: ["architecture.approved", "review.rejected"] },
-    qa: { role: "qa", capabilities: ["test.execute", "test.write"], authority: ["quality.block"], interests: ["patch.ready", "release.candidate"] },
-    security: { role: "security", capabilities: ["security.scan", "security.review"], authority: ["security.block"], interests: ["release.candidate", "authentication.changed", "dependency.changed"] },
-    explorer: { role: "explorer", mode: "service", capabilities: ["repository.read"], interests: ["research.requested"] },
+    "tech-lead": { role: "tech-lead", capabilities: ["repository.read", "code.review", "review.design", "task.assign"], authority: ["implementation.approve"], interests: ["patch.ready", "review.requested"] },
+    "frontend-developer": { role: "developer", capabilities: ["repository.read", "repository.write", "test.execute", "git.commit", "git.merge"], interests: ["architecture.approved", "review.rejected", "design.question"] },
+    "backend-developer": { role: "developer", capabilities: ["repository.read", "repository.write", "test.execute", "git.commit", "git.merge"], interests: ["architecture.approved", "review.rejected"] },
+    "ui-designer": { role: "ui-designer", capabilities: ["repository.read", "architecture.write", "review.design"], authority: [], interests: ["requirements.created", "architecture.approved", "design.question", "review.rejected", "implementation.completed"] },
+    "ux-designer": { role: "ux-designer", capabilities: ["repository.read", "architecture.write", "review.design"], authority: [], interests: ["requirements.created", "design.question", "review.rejected", "implementation.completed"] },
+    qa: { role: "qa", capabilities: ["test.execute", "test.write"], authority: ["quality.block", "quality.pass"], interests: ["patch.ready", "release.candidate"] },
+    security: { role: "security", capabilities: ["security.scan", "security.review"], authority: ["security.block", "security.pass"], interests: ["release.candidate", "authentication.changed", "dependency.changed"] },
+    marketing: { role: "marketing", capabilities: ["repository.read", "architecture.write"], authority: [], interests: ["requirements.created", "release.candidate", "implementation.completed", "design.question"] },
   };
   for (const [id, a] of Object.entries(A)) {
     a.session = { persistent: true };
@@ -245,16 +248,17 @@ function tplSquad(): any {
     m.agents[id] = a;
   }
   const C = (list: string[]) => ({ may_contact: list });
-  const all = (id: string, others: string[]) => C(others.filter((x) => x !== id));
-  const names = Object.keys(A);
   m.policies.communication = {
-    pm: all("pm", ["architect", "tech-lead", "developer", "qa", "security"]),
-    architect: all("architect", ["developer", "tech-lead", "explorer", "pm"]),
-    "tech-lead": all("tech-lead", names),
-    developer: all("developer", ["architect", "tech-lead", "explorer", "qa"]),
-    qa: all("qa", ["developer", "tech-lead", "architect", "security", "pm"]),
-    security: all("security", ["developer", "tech-lead", "qa", "pm"]),
-    explorer: { may_contact: [] },
+    pm: C(["architect", "tech-lead", "frontend-developer", "backend-developer", "qa", "security", "ui-designer", "ux-designer", "marketing"]),
+    architect: C(["pm", "tech-lead", "frontend-developer", "backend-developer", "ui-designer", "ux-designer", "security"]),
+    "tech-lead": C(["pm", "architect", "frontend-developer", "backend-developer", "qa", "security"]),
+    "frontend-developer": C(["architect", "tech-lead", "qa", "ui-designer", "ux-designer", "marketing"]),
+    "backend-developer": C(["architect", "tech-lead", "qa", "security"]),
+    qa: C(["frontend-developer", "backend-developer", "tech-lead", "architect", "security", "pm"]),
+    security: C(["frontend-developer", "backend-developer", "tech-lead", "qa", "architect", "pm"]),
+    "ui-designer": C(["pm", "frontend-developer", "marketing"]),
+    "ux-designer": C(["pm", "frontend-developer", "marketing"]),
+    marketing: C(["pm", "architect", "tech-lead", "frontend-developer", "ui-designer", "ux-designer"]),
   };
   m.policies.transitions = {
     "patch.merge": { requires: ["tech-lead.approve"] },
@@ -268,7 +272,7 @@ function tplSquad(): any {
 export const TEMPLATES: Template[] = [
   { key: "solo", name: "Solo builder", desc: "One seat that designs, builds and tests. No gates.", seats: 1, make: tplSolo },
   { key: "triad", name: "Triad", desc: "An architect, a developer and a tester, with a merge gate.", seats: 3, make: tplTriad },
-  { key: "squad", name: "Full squad", desc: "Seven roles with review and release gates.", seats: 7, make: tplSquad },
+  { key: "squad", name: "Full squad", desc: "Ten roles with review, design, security and launch gates.", seats: 10, make: tplSquad },
 ];
 
 /* ---------------- the goal a scaffold starts with ---------------- */

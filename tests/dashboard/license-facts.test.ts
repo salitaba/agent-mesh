@@ -243,7 +243,7 @@ test("the limits table reads against what is in use, and says what each number c
   assert.equal(over[0]!.ratio, 1, "a bar never runs past its track");
   // Seats over is something to do, but not a banner: the host checks it when a mesh starts. Turns come and go.
   assert.deepEqual(problemsOf(COMMUNITY, use({ seats: 12, turns: 6 }), NOW), []);
-  assert.match(nextSteps(COMMUNITY, use({ seats: 12 }), NOW)[0]!.text, /^This mesh has 12 seats and the Community plan allows 8 per mesh\. Remove seats from mesh\.yaml, or install a licence for a plan with more\. Nothing is refused while enforcement is warn\.$/);
+  assert.match(nextSteps(COMMUNITY, use({ seats: 12 }), NOW)[0]!.text, /^This mesh has 12 seats and the Community plan allows 10 per mesh\. Remove seats from mesh\.yaml, or install a licence for a plan with more\. Nothing is refused while enforcement is warn\.$/);
   assert.deepEqual(nextSteps(COMMUNITY, use({ turns: 6 }), NOW), nextSteps(COMMUNITY, use(), NOW), "a burst of turns is not advice");
   assert.match(nextSteps(view(undefined, "enforce"), use({ seats: 12 }), NOW)[0]!.text, /A mesh beyond the limit will not start\.$/);
   assert.doesNotMatch(nextSteps(view(undefined, "off"), use({ seats: 12 }), NOW)[0]!.text, /Nothing is refused|will not start/, "with enforcement off there is no consequence to state");

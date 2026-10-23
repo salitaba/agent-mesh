@@ -254,7 +254,7 @@ test("a lock left by a process that is gone is a warning that says the next star
 test("plan limits: more seats or projects than the plan allows is a warning, and a larger plan clears it", async () => {
   const f = fixture();
   const root = f.project("big");
-  const agents = Array.from({ length: 10 }, (_, i) => ({ id: `s${i}`, role: "developer", interests: [] as string[] }));
+  const agents = Array.from({ length: 11 }, (_, i) => ({ id: `s${i}`, role: "developer", interests: [] as string[] }));
   fs.writeFileSync(path.join(root, "mesh.yaml"), testConfigYaml({ agents, mayContact: {} } as never), "utf8");
   fs.mkdirSync(path.join(root, "roles"), { recursive: true });
   f.project("second");
@@ -262,11 +262,11 @@ test("plan limits: more seats or projects than the plan allows is a warning, and
   const community = await run(f);
   assert.equal(community.code, 0);
   assert.match(community.text, /WARN\s+2 projects are registered; Opening this project would make 2 open; the Community plan allows 1/);
-  assert.match(community.text, /WARN\s+Project big: This mesh has 10 seats; the Community plan allows 8 per mesh/);
+  assert.match(community.text, /WARN\s+Project big: This mesh has 11 seats; the Community plan allows 10 per mesh/);
 
   const team = await run(f, { env: { MESH_LICENSE: licence("team") } });
   assert.doesNotMatch(team.text, /projects are registered/);
-  assert.doesNotMatch(team.text, /This mesh has 10 seats/, "Team allows 12 seats and 5 projects");
+  assert.doesNotMatch(team.text, /This mesh has 11 seats/, "Team allows 12 seats and 5 projects");
   assert.match(team.text, /licence\s+lic_doc: valid, names the team plan, expires 2027-07-28/);
 });
 

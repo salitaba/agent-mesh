@@ -41,7 +41,7 @@ rate limits apply, and their code and prompts go to their provider and nowhere e
 | Per month, billed monthly | Free | $149 | $599 | Contact us |
 | Per month, billed annually | Free | $124 ($1,488 a year) | $499 ($5,988 a year) | Contact us |
 | Projects open at once per host | 1 | 5 | 25 | Unlimited |
-| Seats (agents) per mesh | 8 | 12 | 30 | Unlimited |
+| Seats (agents) per mesh | 10 | 12 | 30 | Unlimited |
 | Concurrent agent turns per host | 4 | 8 | 24 | Unlimited |
 | Usage export and Prometheus metrics | No | Yes | Yes | Yes |
 | Support | Community (issues and documentation) | Email, next business day | Priority email, 4 business hours first response | Named contact and a support agreement |
@@ -66,7 +66,7 @@ other workspaces as they are.
 What a limit does depends on the instance's enforcement mode ([licensing.md](licensing.md)): by default a
 limit is **reported and never refused**; under `enforce`, what the plan does not allow does not *start*, and
 nothing that is running is ever stopped. The Community plan is real and unlimited in time: one open project,
-eight seats, no licence needed, nothing expires. Those limits are also what the source licence lets anyone run in
+ten seats, no licence needed, nothing expires. Those limits are also what the source licence lets anyone run in
 production for free, whatever the enforcement mode ([licensing.md](licensing.md#the-source-licence)).
 
 What each plan includes beyond the table is in `plans.ts` (`includes`) and on the website. Roadmap items

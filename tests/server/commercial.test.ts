@@ -233,11 +233,11 @@ function meshFile(seats: number): { dir: string; configPath: string } {
 }
 
 test("a mesh over the plan's seats does not START under enforce, before it opens a port or takes a lock", async () => {
-  const { dir, configPath } = meshFile(9); // Community allows 8
+  const { dir, configPath } = meshFile(11); // Community allows 10
   try {
     await assert.rejects(
       startServer({ configPath, gitMode: "off", host: "127.0.0.1", port: 0, mode: "parked", licenses: provider({ enforcement: "enforce" }) }),
-      (err: unknown) => err instanceof LicenseLimitError && /9 seats; the Community plan allows 8 per mesh/.test((err as Error).message) && /curule license install/.test((err as Error).message),
+      (err: unknown) => err instanceof LicenseLimitError && /11 seats; the Community plan allows 10 per mesh/.test((err as Error).message) && /curule license install/.test((err as Error).message),
     );
     assert.equal(fs.existsSync(path.join(dir, "workspace")), false, "nothing was created: the refusal came before the boot");
   } finally {
@@ -246,14 +246,14 @@ test("a mesh over the plan's seats does not START under enforce, before it opens
 });
 
 test("the same mesh starts under warn, with the breach said once, and under a plan that allows it", async () => {
-  const { dir, configPath } = meshFile(9);
+  const { dir, configPath } = meshFile(11);
   const warnings: string[] = [];
   const realWarn = console.warn;
   console.warn = (...a: unknown[]) => void warnings.push(a.join(" "));
   const handles: Awaited<ReturnType<typeof startServer>>[] = [];
   try {
     handles.push(await startServer({ configPath, inMemory: true, gitMode: "off", host: "127.0.0.1", port: 0, mode: "parked", licenses: provider({ enforcement: "warn" }) }));
-    assert.equal(warnings.filter((w) => /9 seats; the Community plan allows 8/.test(w)).length, 1, JSON.stringify(warnings));
+    assert.equal(warnings.filter((w) => /11 seats; the Community plan allows 10/.test(w)).length, 1, JSON.stringify(warnings));
     warnings.length = 0;
     handles.push(await startServer({ configPath, inMemory: true, gitMode: "off", host: "127.0.0.1", port: 0, mode: "parked", licenses: provider({ token: licence("team"), enforcement: "enforce" }) }));
     assert.deepEqual(warnings.filter((w) => /seats/.test(w)), [], "Team allows 12");

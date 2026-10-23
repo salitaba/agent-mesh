@@ -23,7 +23,7 @@ and the mesh converges — or escalates on conflict, budget exhaustion, or
 stalemate.
 
 It runs on your own infrastructure with your own model credentials, and nothing
-phones home. The Community plan (one open project, up to eight agents) needs no
+phones home. The Community plan (one open project, up to ten agents) needs no
 licence key; the paid plans lift the limits (see [pricing](docs/commercial/pricing.md)).
 The source is public under the Business Source License 1.1: see [Licence](#licence).
 

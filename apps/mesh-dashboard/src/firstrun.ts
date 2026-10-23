@@ -119,7 +119,7 @@ const plural = (n: number, one: string, many = `${one}s`): string => `${n} ${n =
 
 /** What a starting point is, in a sentence, from the facts the host read out of its files. */
 export function whatItIs(o: TemplateOffer): string {
-  if (o.kind === "default") return "The default team: one architect seat and a goal for you to write. You add the rest of the team in the Designer.";
+  if (o.kind === "default") return `The default team: ${plural(o.seats, "seat")} and a goal for you to write. Change any of it in the Designer.`;
   const team = `A scripted team of ${plural(o.seats, "seat")}`;
   return o.goal ? `${team} works on this goal: ${o.goal}` : `${team}.`;
 }

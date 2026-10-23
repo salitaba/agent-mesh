@@ -3007,21 +3007,24 @@ startup:
   activate:
     - pm
 
-# The full squad, as a default rather than a discovery. A new mesh is born with the crew that can take
-# a goal to a delivered, measured product — including the two seats whose absence produced a live
-# product with four approved design documents behind it and an interface its owner called ugly.
+# The full squad as a default rather than a discovery: the crew that can take a goal to a delivered,
+# measured product, and then tell people what was delivered. It includes the two seats (ui-designer,
+# ux-designer) whose absence produced a live product with four approved design documents behind it and
+# an interface its owner called ugly, the security seat that reviews what is about to be released, and
+# the marketing seat that writes the launch from what the product can actually do.
 #
-# Every seat's 'role'names a prompt file the platform ships as roles/<role>.md; copying this mesh
+# Every seat's 'role' names a prompt file the platform ships as roles/<role>.md; copying this mesh
 # into a project materialises those files into it. A seat whose role has no such file runs on a
 # one-line synthesized default ("You are the <role> agent in mesh …") and answers competently without
-# knowing who it is — so 'pm'here, not 'product-manager': one word, and the difference is a seat that
+# knowing who it is — so 'pm' here, not 'product-manager': one word, and the difference is a seat that
 # knows how to author acceptance criteria against a person rather than a schema.
 #
-# Eight seats, because that is what the licence a new host actually has allows (Community: 8 seats per
+# Ten seats, because that is what the licence a new host actually has allows (Community: 10 seats per
 # mesh, 1 project, 4 concurrent turns) — a default that cannot boot under the default licence is not a
-# default. examples/full-squad/mesh.yaml ships the ninth seat (security) for anyone on a larger plan,
-# and both designers are optional for a product with no user-facing surface. A crew this size costs ten
-# to twenty million tokens for a substantial pass, which is why the mission budget is declared in that range.
+# default. examples/full-squad/mesh.yaml is the same crew, with its seats marked optional in comments; a
+# product that is not launched to anyone can drop marketing, and one with no user-facing surface can
+# drop both designers. A crew this size costs ten to twenty million tokens for a substantial pass,
+# which is why the mission budget is declared in that range.
 agents:
   pm:
     role: pm
@@ -3141,13 +3144,46 @@ agents:
       - release.candidate
     session:
       persistent: true
+  security:
+    role: security
+    runtime: ${defaultRuntime}
+    capabilities:
+      - security.scan
+      - security.review
+    authority:
+      - security.block
+      - security.pass
+    interests:
+      - release.candidate
+      - authentication.changed
+      - dependency.changed
+    session:
+      persistent: true
+  marketing:
+    role: marketing
+    runtime: ${defaultRuntime}
+    capabilities:
+      - repository.read
+      # A document capability, not a code one: the launch brief and the product's outward words are
+      # written into docs/, never into the product. Marketing does not write code, and this seat must
+      # not be the one that does.
+      - architecture.write
+    authority: []
+    interests:
+      - requirements.created
+      - release.candidate
+      - implementation.completed
+      - design.question
+    session:
+      persistent: true
 
 policies:
   communication:
     # Who may cold-approach whom. A seat absent from this list can still be reached by an ask it owes an
-    # answer to; the matrix bounds the approach, which is what keeps nine seats from talking past each
+    # answer to; the matrix bounds the approach, which is what keeps ten seats from talking past each
     # other. The designers sit beside the developers because a developer building a surface must be able
-    # to ask for its design.
+    # to ask for its design, and marketing sits beside the designers and the frontend because the words a
+    # person reads are part of that surface.
     pm:
       may_contact:
         - architect
@@ -3155,8 +3191,10 @@ policies:
         - frontend-developer
         - backend-developer
         - qa
+        - security
         - ui-designer
         - ux-designer
+        - marketing
     architect:
       may_contact:
         - pm
@@ -3165,6 +3203,7 @@ policies:
         - backend-developer
         - ui-designer
         - ux-designer
+        - security
     tech-lead:
       may_contact:
         - pm
@@ -3172,6 +3211,7 @@ policies:
         - frontend-developer
         - backend-developer
         - qa
+        - security
     frontend-developer:
       may_contact:
         - architect
@@ -3179,17 +3219,20 @@ policies:
         - qa
         - ui-designer
         - ux-designer
+        - marketing
     backend-developer:
       may_contact:
         - architect
         - tech-lead
         - qa
+        - security
     qa:
       may_contact:
         - frontend-developer
         - backend-developer
         - tech-lead
         - architect
+        - security
         - pm
     security:
       may_contact:
@@ -3197,15 +3240,26 @@ policies:
         - backend-developer
         - tech-lead
         - qa
+        - architect
         - pm
     ui-designer:
       may_contact:
         - pm
         - frontend-developer
+        - marketing
     ux-designer:
       may_contact:
         - pm
         - frontend-developer
+        - marketing
+    marketing:
+      may_contact:
+        - pm
+        - architect
+        - tech-lead
+        - frontend-developer
+        - ui-designer
+        - ux-designer
   transitions:
     # Each requirement names an actor and a kind and resolves to an approval record by that actor: no
     # record, no transition. These are the gates that make an approval mean something.
@@ -3234,7 +3288,7 @@ policies:
 budgets:
   mission:
     # Declared intent, not a spend: auto_raise multiplies this up to max_multiple, and the ceiling is
-    # anchored to what is written here. A nine-seat crew needs room; a ceiling reached is the platform
+    # anchored to what is written here. A ten-seat crew needs room; a ceiling reached is the platform
     # asking a person, which is the point.
     tokens: ${DEFAULT_SCAFFOLD_MISSION_TOKENS}
     wall_clock_minutes: 1200

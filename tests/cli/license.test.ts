@@ -182,19 +182,19 @@ test("status against a mesh.yaml counts its seats against the plan and says when
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "mesh-license-yaml-"));
   fs.mkdirSync(path.join(dir, "roles"), { recursive: true });
   fs.mkdirSync(path.join(dir, "workspace"), { recursive: true });
-  const agents = Array.from({ length: 10 }, (_, i) => ({ id: `s${i}`, role: "developer", interests: [] as string[] }));
+  const agents = Array.from({ length: 11 }, (_, i) => ({ id: `s${i}`, role: "developer", interests: [] as string[] }));
   fs.writeFileSync(path.join(dir, "mesh.yaml"), testConfigYaml({ agents, mayContact: {} } as never), "utf8");
 
   const community = await run(["status", path.join(dir, "mesh.yaml")]);
   assert.equal(community.code, 0, community.err.join("\n"));
-  assert.match(community.out.join("\n"), /10 seat\(s\) in .*mesh\.yaml — This mesh has 10 seats; the Community plan allows 8 per mesh/);
+  assert.match(community.out.join("\n"), /11 seat\(s\) in .*mesh\.yaml — This mesh has 11 seats; the Community plan allows 10 per mesh/);
 
   const team = await run(["status", path.join(dir, "mesh.yaml")], { env: { MESH_LICENSE: licence("team") } });
-  assert.doesNotMatch(team.out.join("\n"), /This mesh has 10 seats/, "Team allows 12");
-  assert.match(team.out.join("\n"), /10 seat\(s\) in .*mesh\.yaml/);
+  assert.doesNotMatch(team.out.join("\n"), /This mesh has 11 seats/, "Team allows 12");
+  assert.match(team.out.join("\n"), /11 seat\(s\) in .*mesh\.yaml/);
 
   const json = await run(["status", path.join(dir, "mesh.yaml")], { flags: { json: true } });
-  assert.equal(JSON.parse(json.out.join("\n")).usage.seats, 10);
+  assert.equal(JSON.parse(json.out.join("\n")).usage.seats, 11);
 });
 
 test("missing arguments and unknown subcommands are the caller's mistake: exit 2 with the usage", async () => {
