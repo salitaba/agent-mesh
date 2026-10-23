@@ -179,6 +179,81 @@ it was changed, and each figure is from the page after the change.
   chrome and the mark's second drawing (a 280px watermark) paid for the additions; the
   header already carries the mark once.
 
+## What this pass changed (2026-10-23)
+
+Same harness: Chromium 156 over CDP against the trial service (`trial --port 7513`, whose
+plans are the trial's own fixtures), `prefers-reduced-motion: reduce`, at 320 / 360 / 768 /
+1000 / 1440 in light and dark, plus forced colours and a 720px viewport (what a 1440 window
+has at 200% zoom). Figures are `scrollHeight`, `getBoundingClientRect` and `getComputedStyle`.
+
+- **The first screen says who keeps the ledger.** A 15px line under the price names the
+  operator the terms already name: "Run by Ali Tabatabaei, an individual." It is at y = 517
+  on a 360 phone, one line, and the price stays at y = 485. The byline is the 30px the home
+  page is taller at 1440 than before; nothing else on the first screen moved.
+- **The home page is one ledger.** The four facts are three columns at 1000px and wider
+  (each about 340px, from four of about 250), the four steps are a 2×2 grid at the same
+  width, and both lists end on a rule. Every entry has the same 14px rhythm (the facts were
+  20px) and the same 8px between a section heading and its first line. At 1440 "How it
+  works" is 490px tall before and 341 after, and the facts 329 before and 402 after, which
+  is the one cost of the wider measure. Total: **4,364 → 4,311** at 360, 3,078 → 3,072 at 768,
+  2,671 → 2,701 at 1440 (the byline); 4,622 at 320.
+- **A sign-in page is a form and a rail on a wide screen.** The rail sat under the form at
+  every width after the 2026-10-22 pass, so at 1440 the form was a lone 448px column and
+  the rail began at y = 820 (signup was 1,444px tall). At 1000 and wider they are two
+  columns of one centred grid (form 448, rail 320, gap 48–96), still in that DOM order and
+  still drawn at every width: signup **1,444 → 975** at 1440, the rail at x = 832, y = 115,
+  level with the eyebrow it answers; login, forgot, reset and verify are 900 or shorter.
+- **Fields breathe at the record's 20px.** `.field` gap 6 → 8 and margin 16 → 20. Signup
+  pays 16px for it at 360 (1,464 → 1,480) and reads as two thoughts rather than a form of
+  four.
+- **The rail marks where the reader is, not only where the job starts.** The markup keeps
+  exactly one step marked, as `pages.test.ts` requires; the script now moves that mark when
+  the page's job moves: forgot, once the link is sent, marks "Open the link" (it marked
+  "Enter your email"); reset with a dead or missing link marks "The link"; a changed
+  password marks "Sign in again". Measured: forgot `[0] → [1]`, reset `[0]`.
+- **A workspace's name is the first thing on its card.** 18 → 20px at weight 650, the state
+  badge taken to the card's right edge, the sentence and the actions under them: the head
+  row is 26px tall at 360 and at 1440, and `Running` no longer trails the name by a variable
+  gap. Keyboard focus after an action was re-verified: Pause → the cursor is on Resume,
+  Enter resumes it → the cursor is on Open.
+- **The account's three figures are three ruled entries on a phone.** At 720 and narrower
+  the glance drops its card chrome for a 10px ruled row: the block 220 → 190px and the page
+  **2,944 → 2,910** at 360, while 768 keeps the cards (2,141 → 2,138) and 1440 does (2,178 →
+  2,174). The section strip, not the cards, is the phone's way around the page.
+- **The skeleton has the shape of the phone's page.** Below 720 its three tiles stack as the
+  three stats do (3 × 60 + 12 gaps against the glance's 190 + 16 margin), so what arrives
+  moves nothing. The account also now says "Loading your account." in its live region while
+  the shape is up — the row the design table promised and the page did not have — and the
+  line is cleared when the account, a failure or the sign-in redirect arrives, or when the
+  stage announces a change of its own.
+- **States, walked in the browser.** Loading (held `/api/me`): the skeleton, and the live
+  line; failed (503): "The account could not be read just now. Reload the page to try again."
+  and no skeleton; refused (signed out): `/login?next=/account`; empty (the only workspace
+  deleted): "Make your first workspace", the create form in the card, and the strip down to
+  Plan, Balance and Settings; sign-in validation ("Enter your email address.", cursor in the
+  field, `aria-invalid`); sign-in refusal ("That email and password do not match an
+  account.", password cleared and focused, the confirmation link behind it); and the sent
+  state ("Check your email").
+- **Widths and schemes.** 320, 360, 768, 1000 and 1440, light and dark; forced colours on the
+  home, signup and account; 720 as the 200% zoom stand-in. No page scrolls sideways; nothing
+  computes below 12px; no interactive target is under 44px at 320 or 360 (the 20px tick box
+  is ticked by its 44px sentence).
+- **The budget.** `app.css` is **40,871 bytes** of 40,960 (was 39,971). The byline, the
+  wide-screen grid, the ruled phone figures and the skeleton's phone shape cost about 900
+  bytes; the second `.section .facts` margin rule and the auth grid's redundant width rule
+  paid for part of it. There are 89 bytes left, so the next pass should remove before it
+  adds.
+
+## What this pass leaves
+
+- **The rail on a tablet sits under the form.** Two columns of 448 and 320 need about 800px,
+  so at 768 the page still stacks (signup 1,451px). A 768-wide split of 60/40 would fit, but
+  the form would lose its 30-character measure.
+- **The section strip is 32px tall for a pointer.** WCAG 2.2 asks 24px and a phone gets 44px;
+  raising it to 40 on a wide screen would move every panel 8px and was not worth it.
+- **The consent links are 18px between 721 and 1000px.** They are 44px at 720 and narrower,
+  where a finger is likely; the inline-link exception covers the rest.
+
 ## What is still wrong
 
 - **A dead reset link is only refused on submit.** The reset page cannot ask the API
