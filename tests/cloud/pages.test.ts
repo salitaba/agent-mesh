@@ -440,15 +440,35 @@ test("a name a person typed cannot widen the page: the cards that show one break
   };
   // A workspace is named by its owner and nothing says where the name may break: without this a card is as wide as its name and the page scrolls sideways.
   for (const selector of [".row", ".stage", ".confirm"]) assert.equal(own(selector, "overflow-wrap"), "anywhere", selector);
-  // The header's three links stay on one line, and on a phone as small as 320 px they and the mark are made smaller before anything is allowed to wrap or overflow.
-  // Signed in, the bar holds the mark and three links: measured at 320 px it came to 325 px (327 on the account), so the bar gives way in four places rather than the page.
+  // The header's three links stay on one line at normal text, and on a phone as small as 320 px they and the mark are made smaller before the bar is allowed to wrap.
+  // Signed in, the bar holds the mark and three links: measured at 320 px it came to 325 px (327 on the account), so the bar gives way rather than widen the page.
   assert.equal(own(".bar nav a", "white-space"), "nowrap", "a link is a word, not two");
-  assert.equal(own(".site-header .wrap", "padding-inline", "max-width: 380px"), "14px", "the header's gutter narrows before the page scrolls");
+  assert.equal(own(".site-header .wrap", "padding-inline", "max-width: 380px"), "0", "the header's gutter is the page's, not a second inset; the bar wraps rather than pass the edge");
+  assert.equal(own(".bar", "flex-wrap", "max-width: 720px"), "wrap", "a bar with more text than its line wraps");
+  assert.equal(own(".figures > div", "min-width", "max-width: 720px"), "0", "and an amount in a narrow column may set its own width");
   assert.equal(own(".bar", "gap", "max-width: 380px"), "8px");
   assert.equal(own(".bar nav", "gap", "max-width: 380px"), "0");
   assert.equal(own(".bar nav a", "padding", "max-width: 380px"), "0 7px");
   assert.equal(own(".bar nav a", "font-size", "max-width: 380px"), ".875rem");
   assert.equal(own(".logo", "height", "max-width: 380px"), "20px");
+});
+
+test("a long table keeps the name of its row at the edge while its figures scroll, and the account's sections carry the ledger's numbers without changing their names", () => {
+  const css = read(path.join(ASSETS, "app.css"));
+  const rule = cssRules(css).find((r) => r.selectors.includes(".table-wrap th:first-child"));
+  assert.ok(rule, "the first cell of a table is held at the left edge");
+  assert.equal(declared(rule!, "position"), "sticky");
+  assert.equal(declared(rule!, "left"), "0");
+  assert.ok(
+    cssRules(css).some((r) => r.selectors.includes(".table-wrap tbody th") && declared(r, "background") === "var(--k-surface)"),
+    "and it is drawn over what scrolls under it",
+  );
+  const numbered = cssRules(css).find((r) => r.selectors.includes(".panel > h2::before"));
+  assert.ok(numbered, "the account's headings are numbered");
+  assert.match(declared(numbered!, "content") ?? "", /^attr\(data-entry\) \/ ""$/, "the number is drawn, and not said: the heading's name stays the word");
+  const account = pages().find((p) => p.name === "account")!;
+  const entries = account.all.filter((n) => n.tag === "h2" && n.attrs.has("data-entry")).map((n) => [attr(n, "data-entry"), n.textContent]);
+  assert.deepEqual(entries, [["01", "Workspaces"], ["02", "Plan"], ["03", "Balance"], ["04", "Usage"], ["05", "Settings"]]);
 });
 
 test("the stylesheet is held to its budget, and whatever it moves it stills for a person who asked for stillness", () => {

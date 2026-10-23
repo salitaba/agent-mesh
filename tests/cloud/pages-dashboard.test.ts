@@ -116,7 +116,7 @@ test("the list marks the section a reader is in: the last of those in the band t
 
 test("Settings is closed until it is asked for, and the list's link to it asks", async () => {
   const html = fs.readFileSync(`${PAGES_DIR}/account.html`, "utf8");
-  assert.match(html, /<details>\s*<summary><h2 id="security-h">Settings<\/h2><\/summary>/, "a disclosure that no script is needed to open, with the heading in its summary");
+  assert.match(html, /<details>\s*<summary><h2 id="security-h"[^>]*>Settings<\/h2><\/summary>/, "a disclosure that no script is needed to open, with the heading in its summary");
   assert.doesNotMatch(html, /<details[^>]* open/, "and it is closed");
   const v = await visit("account", { routes: world((x) => { paid(x); x.workspaces = [workspace()]; }).routes });
   const details = v.$("settings-panel").querySelector("details")!;
@@ -127,6 +127,18 @@ test("Settings is closed until it is asked for, and the list's link to it asks",
 });
 
 // ---- the shape of the page while it is read ----
+
+test("following the list gives the cursor to the section it names: the heading, or the control that opens it", async () => {
+  const v = await visit("account", { routes: world((x) => { paid(x); x.workspaces = [workspace()]; }).routes });
+  v.click(v.link("subnav", "Usage"));
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  assert.equal(v.doc.activeElement, v.$("usage-h"), "the heading Usage has the cursor");
+  assert.equal(v.$("usage-h").getAttribute("tabindex"), "-1", "and is reachable by a link, not by the tab key");
+  v.click(v.link("subnav", "Settings"));
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  assert.equal(v.doc.activeElement, v.$("settings-panel").querySelector("summary"), "the Settings disclosure has the cursor, so the next tab enters it");
+  assert.equal(v.$("settings-panel").querySelector("details")!.hasAttribute("open"), true);
+});
 
 test("the page has a shape while it is read, and loses it when it has something to show, or something to say", async () => {
   assert.match(fs.readFileSync(`${PAGES_DIR}/account.html`, "utf8"), /id="skeleton" aria-hidden="true" hidden>/, "with no script it is not there: a page that says it needs one is not waiting for anything");

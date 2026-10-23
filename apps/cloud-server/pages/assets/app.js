@@ -2171,6 +2171,23 @@
     doc.addEventListener("input", (event) => {
       if (event.target && event.target.removeAttribute) event.target.removeAttribute("aria-invalid");
     });
+    // A link to a place on this page gives the cursor to what it names, so a reader who follows it hears the heading they arrived at
+    // and the tab key goes on from there. The browser's own jump takes the cursor back to the page: the second focus comes after it.
+    for (const a of doc.querySelectorAll("a[href]")) {
+      if (!a.getAttribute("href").startsWith("#")) continue;
+      a.addEventListener("click", (event) => {
+        if (event.defaultPrevented || event.button > 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+        const target = doc.getElementById(a.getAttribute("href").slice(1));
+        if (!target) return;
+        // The disclosure a section owns, and not one merely somewhere inside it: a skip to the content must not land on Settings.
+        const details = [...target.children].find((c) => c.tag === "details" || c.tagName === "DETAILS");
+        const heading = /^H[123]$/.test(target.tagName) ? target : target.querySelector("h1, h2, h3");
+        const to = target.tagName === "MAIN" ? target : (details && details.querySelector("summary")) || heading || target;
+        if (!to.hasAttribute("tabindex")) to.setAttribute("tabindex", "-1");
+        to.focus({ preventScroll: true });
+        setTimeout(() => to.focus({ preventScroll: true }), 0);
+      });
+    }
     for (const button of doc.querySelectorAll("[data-reveal]")) wireSecret(button);
     for (const meter of doc.querySelectorAll("[data-len]")) wireLength(meter);
     const asked = call("GET", "/api/session");

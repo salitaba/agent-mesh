@@ -1,5 +1,5 @@
 /* One stylesheet for the public pages. The generated block is the kit's tokens; the visitor's colour scheme is the only switch.
-   Nothing is loaded from elsewhere or written inline: the policy allows this file, its script, and images as data:, which is how icons are drawn. */
+   Nothing is loaded from elsewhere or written inline: the policy allows this file and its script. */
 /* Icons: nine, 20 units, masks that take the colour of their text. --n picks one (0 check 1 alert 2 refused 3 info 4 eye 5 eye off 6 bars 7 chevron 8 mail), --s sizes it. */
 :root {
   color-scheme: light dark;
@@ -151,7 +151,7 @@ code {
 }
 .muted { color: var(--k-muted); }
 .small { font-size: .875rem; }
-/* Figures line up; prose keeps its own face, whose hyphens tabular numerals would space out. */
+/* Figures line up: tabular numerals on figures, not prose. */
 td, th, dd, .price, .num, .badge, .auth-points li::before { font-variant-numeric: tabular-nums; }
 .stat dt, .figures dt, thead th, .toc-h {
   color: var(--k-muted);
@@ -479,7 +479,6 @@ meter::-moz-meter-bar { border-radius: var(--k-r-pill); background: currentColor
 .causes { display: grid; gap: 6px; padding-left: 1.25rem; margin: 0; }
 #again form { display: grid; gap: 14px; margin-top: 4px; }
 #again form .field, #again form p, #again form .note { margin: 0; }
-/* On a wide screen the rail is a rail. */
 @media (min-width: 1000px) {
   .auth { display: grid; grid-template-columns: 28rem 20rem; column-gap: clamp(48px, 7vw, 96px); justify-content: center; align-items: start; }
   .auth-side { margin-top: 0; }
@@ -489,20 +488,18 @@ meter::-moz-meter-bar { border-radius: var(--k-r-pill); background: currentColor
 body[data-page="home"] main { background: var(--k-glow) top / 100% 520px no-repeat; }
 .home { padding-top: clamp(24px, 5vw, 56px); }
 .hero { display: grid; gap: 40px; }
-@media (min-width: 960px) {
-  .hero { grid-template-columns: minmax(0, 1.3fr) minmax(0, .7fr); gap: 64px; align-items: center; }
-}
 .eyebrow { margin: 0 0 12px; color: var(--k-accent-ink); font-size: .75rem; font-weight: 650; letter-spacing: var(--k-track-caps); text-transform: uppercase; }
 .hero h1 { max-width: 17ch; font-size: clamp(2.25rem, 1.4rem + 3.4vw, 3.75rem); line-height: 1.04; }
 .hero .lede { max-width: 36rem; margin: 16px 0 24px; color: var(--k-ink-2); font-size: clamp(1rem, .95rem + .3vw, 1.1875rem); }
 .hero .btn, .stage .btn { min-height: 48px; padding-inline: 24px; font-size: 1rem; }
 .price-line { margin: 16px 0 0; color: var(--k-ink); font-size: .9375rem; font-weight: 600; }
-/* A price is said only when one was read: an empty line is not drawn, and none is promised before there is one. */
+/* No price read, no line said. */
 .price-line:has([data-from-price]:empty) { display: none; }
 .byline { margin: 8px 0 0; color: var(--k-muted); font-size: .9375rem; }
-/* The record is what the product makes, so it is drawn at every width: on a phone it is the product a stranger can see before paying. */
+/* The record is drawn at every width: on a phone it is the product a stranger sees before paying. */
 .record { margin: 0; padding: 16px; border: 1px solid var(--k-line); border-radius: var(--k-r-lg); background: var(--k-surface); box-shadow: var(--k-hl), var(--k-shadow-1); }
 @media (min-width: 960px) {
+  .hero { grid-template-columns: minmax(0, 1.3fr) minmax(0, .7fr); gap: 64px; align-items: center; }
   .record { padding: 24px; border-radius: var(--k-r-xl); }
 }
 .record-h { margin: 0 0 12px; color: var(--k-muted); font-size: .75rem; font-weight: 650; letter-spacing: var(--k-track-caps); text-transform: uppercase; }
@@ -564,7 +561,7 @@ body[data-page="home"] main { background: var(--k-glow) top / 100% 520px no-repe
 #who:empty { display: none; }
 #create-note:not(:empty) { margin-top: 12px; }
 #create-slot #create { margin-top: 16px; }
-/* The one focal card: what the account waits for, and where in getting started. */
+/* The one focal card: what the account waits for. */
 .stage {
   display: flex;
   flex-wrap: wrap;
@@ -616,7 +613,7 @@ body[data-page="home"] main { background: var(--k-glow) top / 100% 520px no-repe
 .stat .n { font-size: 1.625rem; font-weight: 650; letter-spacing: var(--k-track-title); line-height: 1.15; }
 .stat .u, .stat-n { color: var(--k-muted); font-size: .875rem; }
 .stat-n { margin-top: 2px !important; font-size: .8125rem; }
-/* The page's sections: sticks under the header, marks the one in view. */
+/* The page's sections: sticky, marking the one in view. */
 .subnav {
   position: sticky;
   top: 61px;
@@ -646,8 +643,9 @@ body[data-page="home"] main { background: var(--k-glow) top / 100% 520px no-repe
 .subnav a:focus-visible { outline-offset: -2px; }
 .panel { margin-top: 40px; scroll-margin-top: 124px; }
 .panel > h2 { scroll-margin-top: 124px; }
-/* A section is a heading and a ruled line, as a ledger's is. */
+/* A section is a heading and a rule; the number is drawn, not named. */
 .panel > h2, .section > h2, .panel summary h2 { display: flex; align-items: center; gap: 16px; margin-bottom: 16px; font-size: 1.125rem; }
+.panel > h2::before, .panel summary h2::before { content: attr(data-entry) / ""; margin-right: -4px; color: var(--k-accent-ink); font: 650 .75rem var(--k-mono); letter-spacing: var(--k-track-caps); }
 .panel > h2::after, .section > h2::after { content: ""; flex: 1; height: 1px; background: var(--k-line); }
 .panel > p { max-width: 42rem; margin-bottom: 16px; }
 .panel h3 { margin: 22px 0 12px; }
@@ -687,7 +685,7 @@ body[data-page="home"] main { background: var(--k-glow) top / 100% 520px no-repe
 .ws-key { display: grid; gap: 10px; padding: 16px 0 0; border-top: 1px solid var(--k-line); }
 .ws-key > p, .ws-key form .field, .ws-key form > p { margin: 0; }
 .ws-key form { display: grid; gap: 14px; max-width: 34rem; }
-/* The plan one workspace is on, and the offer to move it: quiet, on its own line, so the row's actions stay the row's. */
+/* A workspace's plan and the offer to move it: quiet, on its own line. */
 .ws-plan { display: grid; gap: 10px; }
 .ws-plan > p { margin: 0; }
 .inline-form .hint { display: block; }
@@ -698,13 +696,13 @@ body[data-page="home"] main { background: var(--k-glow) top / 100% 520px no-repe
 .confirm .btn-danger[disabled] { background: var(--k-bad); }
 .inline-form { display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-end; max-width: 30rem; }
 .inline-form .field { flex: 1 1 14rem; margin: 0; }
-/* Plans: the price first, what it includes, the action at the foot of cards of one height. */
+/* Plans: the price first, the action at the foot of cards of one height. */
 .plans { display: grid; gap: 16px; }
 @media (min-width: 720px) {
   .plans { grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); }
 }
 .plan { display: flex; flex-direction: column; gap: 14px; padding: 24px; }
-/* The plan the account is on, and the one picked on the way in: an edge and a badge that says which in words. */
+/* The plan the account is on, or picked on the way in: an edge and a badge. */
 .plan.current, .plan.picked { border-color: var(--k-accent); box-shadow: var(--k-hl), 0 0 0 1px var(--k-accent); }
 .plan h3 { display: flex; align-items: center; gap: 8px; margin: 0; }
 .plan .price { font-size: 2.25rem; font-weight: 650; letter-spacing: var(--k-track-display); line-height: 1.1; }
@@ -725,7 +723,7 @@ body[data-page="home"] main { background: var(--k-glow) top / 100% 520px no-repe
 .plan:only-child { max-width: 28rem; }
 .plans + p { margin-top: 16px; }
 .plan .btn { width: 100%; min-height: 44px; margin-top: auto; }
-/* The balance: the figure spent from, large, and what it is made of. */
+/* The balance: the figure spent from, large, and what makes it. */
 .figures {
   display: grid;
   grid-template-columns: 1.3fr 1fr 1fr;
@@ -737,7 +735,7 @@ body[data-page="home"] main { background: var(--k-glow) top / 100% 520px no-repe
 .figures dd { margin: 4px 0 0; font-size: 1.375rem; font-weight: 650; letter-spacing: var(--k-track-title); }
 .figures > div:first-child dd { font-size: 2.25rem; letter-spacing: var(--k-track-display); }
 .figures .of { display: grid; gap: 6px; margin-top: 8px; color: var(--k-muted); font-size: .8125rem; font-weight: 500; letter-spacing: 0; }
-/* Amounts to add at a stroke: one trough, a raised segment under the pointer. */
+/* Amounts to add: one trough, a raised segment under the pointer. */
 .topup-options {
   display: flex;
   gap: 2px;
@@ -749,13 +747,16 @@ body[data-page="home"] main { background: var(--k-glow) top / 100% 520px no-repe
 }
 .topup-options .btn { flex: 1 1 0; padding-inline: 6px; border-color: transparent; background: none; box-shadow: none; white-space: nowrap; }
 .topup-options .btn:hover { border-color: var(--k-line); background: var(--k-surface); box-shadow: var(--k-shadow-1); }
-/* Tables read down; an edge shows where one scrolls. */
+/* Tables read down; an edge shows the scroll. */
 .table-wrap {
   overflow-x: auto;
   scrollbar-width: thin;
   background: linear-gradient(to right, var(--k-surface), transparent) 0 0 / 24px 100% no-repeat local, linear-gradient(to left, var(--k-surface), transparent) 100% 0 / 24px 100% no-repeat local, linear-gradient(to right, color-mix(in srgb, var(--k-ink) 12%, transparent), transparent) 0 0 / 10px 100% no-repeat, linear-gradient(to left, color-mix(in srgb, var(--k-ink) 12%, transparent), transparent) 100% 0 / 10px 100% no-repeat, var(--k-surface);
 }
 .table-wrap + .table-wrap { margin-top: 20px; }
+/* On a phone the money is off to the right: the row's name stays at its edge. */
+.table-wrap th:first-child { position: sticky; left: 0; }
+.table-wrap tbody th { background: var(--k-surface); }
 table { width: 100%; border-collapse: collapse; font-size: .875rem; }
 caption { padding: 14px 16px; color: var(--k-ink); font-weight: 600; text-align: left; }
 th, td { height: 48px; padding: 0 16px; border-top: 1px solid var(--k-line); text-align: left; white-space: nowrap; }
@@ -794,7 +795,7 @@ tfoot > tr > * { background: var(--k-surface-2); font-weight: 650; }
 .panel-quiet summary:focus-visible { outline-offset: -2px; }
 .panel-quiet form { max-width: 28rem; padding: 20px; }
 .panel-quiet h3 { margin: 0 0 16px; font-size: .9375rem; }
-/* The page's shape while it is read, so that what arrives moves nothing. */
+/* The page's shape while it reads, so what arrives moves nothing. */
 .sk {
   border-radius: var(--k-r-lg);
   background: linear-gradient(90deg, var(--k-sunken) 30%, var(--k-surface-2) 50%, var(--k-sunken) 70%) 0 0 / 300% 100%;
@@ -810,8 +811,7 @@ tfoot > tr > * { background: var(--k-surface-2); font-weight: 650; }
 .doc { display: grid; gap: 32px; padding-top: clamp(32px, 6vh, 64px); }
 .doc-end { margin-top: 48px; padding-top: 24px; border-top: 1px solid var(--k-line); }
 .doc-end p { margin-bottom: 12px; }
-.toc { display: none; }
-.toc-phone { display: none; }
+.toc, .toc-phone { display: none; }
 @media (max-width: 999px) {
   .toc-phone { display: block; margin: 20px 0 28px; border: 1px solid var(--k-line); border-radius: var(--k-r-md); background: var(--k-surface); }
   .toc-phone summary { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 44px; padding: 0 14px; cursor: pointer; list-style: none; }
@@ -854,7 +854,7 @@ tfoot > tr > * { background: var(--k-surface-2); font-weight: 650; }
   .stat dt { grid-area: l; }
   .stat-v { grid-area: v; justify-content: flex-end; margin: 0 !important; }
   .stat-n { grid-area: n; }
-  /* Three ruled entries, not cards. */
+  /* Ruled entries, not cards. */
   .glance dl { gap: 0; border-bottom: 1px solid var(--k-line); }
   .sk-tiles { grid-template-columns: 1fr; }
   .sk-tiles .sk { height: 60px; }
@@ -864,14 +864,18 @@ tfoot > tr > * { background: var(--k-surface-2); font-weight: 650; }
   .subnav a { min-height: 44px; }
   .check label { line-height: 44px; }
   .check label a { display: inline-block; min-height: 44px; }
+  /* A bar with too much text for one line wraps: the mark, then the links, rather than past the edge of the page. */
+  .bar, .bar nav { flex-wrap: wrap; }
+  .figures > div { min-width: 0; }
+  .figures dd { font-size: min(1.375rem, 9vw); }
 }
 @media (max-width: 720px), (pointer: coarse) {
   .btn, .btn-small, .bar nav a, .bar nav button, input:not([type="checkbox"]), select { min-height: 44px; }
 }
 
 @media (max-width: 380px) {
-  /* Signed in, the bar is the mark and three links: at 320 px it was 5 px too wide, so its gutter, gap and padding give way. */
-  .site-header .wrap { padding-inline: 14px; }
+  /* Signed in, the bar gives way at 320 px. */
+  .site-header .wrap { padding-inline: 0; }
   .bar { gap: 8px; }
   .bar nav { gap: 0; }
   .bar nav a, .bar nav button { padding: 0 7px; font-size: .875rem; }
