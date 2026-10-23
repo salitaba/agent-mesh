@@ -52,7 +52,7 @@
   <h2>Where they stand now</h2>
   <div class="pair three"><a class="shot" href="shots/landing-now.png"><img src="shots/landing-now.png" alt="the landing page" loading="lazy"><span>the landing page</span></a><a class="shot" href="shots/account-now.png"><img src="shots/account-now.png" alt="the account pages" loading="lazy"><span>the account pages</span></a><a class="shot" href="shots/console-now.png"><img src="shots/console-now.png" alt="the console" loading="lazy"><span>the console</span></a></div>
 </section>
-<p class="stat"><span><b>9</b> passes</span><span><b>8</b> merged</span><span><b>4</b> surfaces</span><span>updated 23 Oct 2026 12:09</span></p>
+<p class="stat"><span><b>9</b> passes</span><span><b>8</b> merged</span><span><b>4</b> surfaces</span><span>updated 23 Oct 2026 12:12</span></p>
 <article class="pass">
   <header>
     <h2>the designer</h2>
@@ -61,7 +61,7 @@
   
   <ul class="did"><li>A name is content, not a label. The roster and the canvas now spend their width on the seat's name before anything else; role, flags and wire counts are subordinate lines. At 360 the roster name gets 194 px and no longer cuts; at 1440 a long name wraps to two lines instead of reading frontend-….</li><li>A thing that covers the page is a layer. The inspector drawer, the YAML preview and the assistant dock now have a scrim, a named modal dialog, a held page, a Tab trap, a 44 px way out and focus returned to the opener. Before, the phone inspector had none of these while covering all 360 × 844 px.</li><li>One move is open at a time. The first-run guide was four open instructions (553 px) above a roster that started at y=881 on an 844 px screen. It now opens only the step that is *now*, states Step 1 of 4, and the first seat row begins at y=795 — on the screen.</li><li>One voice. Every Designer state uses the same lede; the drawer's heading says what it is editing (Seat: pm, Mesh settings) rather than Inspector; a checks error with no field now names the route out instead of ending at &quot;edit mesh.yaml&quot;.</li></ul>
   <details><summary>3 bugs found, proved and fixed</summary><ol class="bugs"><li><b>Read `.ms-seatrow .nm` at 360</b><br><span class="was">was:</span> Name box 88 px for 151 px of text; **6 of 9 names clipped** (`frontend-…`, `ux-desig…`); flags shared the line<br><span class="now">now:</span> Name its own line, flags/counts below. Measured **194/194 px, 0/9 cut**</li><li><b>Open a seat at 360; inspect drawer, Tab/Shift+Tab</b><br><span class="was">was:</span> 360 × 844 fixed box, `role=null`, `aria-modal=null`, no scrim, page scrolled behind, **Shift+Tab landed on a seat row behind it**<br><span class="now">now:</span> Scrim z 39 under drawer z 40, `role=dialog`, `aria-modal=true`, labelled by the seat heading, body/view locked, **16/16 Tabs inside**, Shift+Tab from root inside, close **44 × 44**, Escape returns focus to the row</li><li><b>Open the drawer on a phone</b><br><span class="was">was:</span> Focus went to the first input → on-screen keyboard over the panel<br><span class="now">now:</span> `initialFocus: &quot;root&quot;`; measured active element = `.ms-side`, not a field</li></ol></details>
-  <p class="meta">16 files changed · yes | tests 6289 pass 6287 fail 0</p>
+  <p class="meta">16 files changed · suite green, merged</p>
 </article>
 <article class="pass unmerged">
   <header>
@@ -71,7 +71,7 @@
   
   
   
-  <p class="meta">14 files changed · no | tests 6282 pass 6279 fail 1</p>
+  <p class="meta">14 files changed · suite not green, kept</p>
 </article>
 <article class="pass">
   <header>
@@ -81,7 +81,7 @@
   <div class="pair"><a class="shot" href="shots/account-before.png"><img src="shots/account-before.png" alt="before this pass" loading="lazy"><span>before this pass</span></a><a class="shot" href="shots/account-after.png"><img src="shots/account-after.png" alt="after" loading="lazy"><span>after</span></a></div>
   
   
-  <p class="meta">14 files changed · <code>6d23268</code> · yes | tests 6274 pass 6272 fail 0</p>
+  <p class="meta">14 files changed · <code>6d23268</code> · suite green, merged</p>
 </article>
 <article class="pass">
   <header>
@@ -91,7 +91,7 @@
   
   
   
-  <p class="meta">31 files changed · yes | tests 6271 pass 6269 fail 0</p>
+  <p class="meta">31 files changed · suite green, merged</p>
 </article>
 <article class="pass">
   <header>
@@ -101,7 +101,7 @@
   
   
   
-  <p class="meta">12 files changed · yes | tests 6260 pass 6258 fail 0</p>
+  <p class="meta">12 files changed · suite green, merged</p>
 </article>
 <article class="pass">
   <header>
@@ -111,7 +111,7 @@
   
   
   
-  <p class="meta">14 files changed · yes | tests 6241 pass 6239 fail 0</p>
+  <p class="meta">14 files changed · suite green, merged</p>
 </article>
 <article class="pass">
   <header>
@@ -121,7 +121,7 @@
   
   
   
-  <p class="meta">24 files changed · yes | tests 6239 pass 6237 fail 0</p>
+  <p class="meta">24 files changed · suite green, merged</p>
 </article>
 <article class="pass">
   <header>
@@ -131,7 +131,7 @@
   
   
   
-  <p class="meta">6 files changed · yes | tests 6220 pass 6218 fail 0</p>
+  <p class="meta">6 files changed · suite green, merged</p>
 </article>
 <article class="pass">
   <header>
@@ -141,7 +141,7 @@
   
   
   
-  <p class="meta">8 files changed · yes | tests 6214 pass 6212 fail 0</p>
+  <p class="meta">8 files changed · suite green, merged</p>
 </article>
 <footer>Generated from the pass reports and the git history by <code>ux-history.mjs</code>, on every deploy. Captures are rendered at 360 px with the workspace image's own Chromium; the console is a single-page app that needs a running mesh, so it is shown as it is now rather than as a "before" no checkout can serve.</footer>
 </div></body></html>
