@@ -494,6 +494,7 @@ body[data-page="home"] main { background: var(--k-glow) top / 100% 520px no-repe
 .price-line { margin: 16px 0 0; color: var(--k-ink); font-size: .9375rem; font-weight: 600; }
 /* A price is said only when one was read: an empty line is not drawn, and none is promised before there is one. */
 .price-line:has([data-from-price]:empty) { display: none; }
+.byline { margin: 8px 0 0; color: var(--k-muted); font-size: .9375rem; }
 /* The record is what the product makes, so it is drawn at every width: on a phone it is the product a stranger can see before paying. */
 .record { margin: 0; padding: 16px; border: 1px solid var(--k-line); border-radius: var(--k-r-lg); background: var(--k-surface); box-shadow: var(--k-hl), var(--k-shadow-1); }
 @media (min-width: 960px) {
@@ -514,7 +515,7 @@ body[data-page="home"] main { background: var(--k-glow) top / 100% 520px no-repe
   display: grid;
   grid-template-columns: 2rem minmax(0, 1fr);
   column-gap: 12px;
-  padding: 16px 0;
+  padding: 14px 0;
   border-top: 1px solid var(--k-line);
 }
 .how li::before {
@@ -528,10 +529,14 @@ body[data-page="home"] main { background: var(--k-glow) top / 100% 520px no-repe
 }
 .how strong, .facts strong { letter-spacing: var(--k-track-tight); }
 .how span, .facts span { color: var(--k-muted); font-size: .9375rem; }
-.facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr)); gap: 0 40px; margin: 56px 0 0; list-style: none; }
-.facts li { display: grid; align-content: start; gap: 6px; padding: 20px 0; border-top: 1px solid var(--k-line); }
+.facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr)); gap: 0 32px; margin: 56px 0 0; list-style: none; }
+.facts li { display: grid; align-content: start; gap: 6px; padding: 14px 0; border-top: 1px solid var(--k-line); }
 .section { margin-top: clamp(40px, 6vw, 64px); }
-.section .facts { margin-top: 0; }
+.section .facts, .section .how { margin-top: 8px; border-bottom: 1px solid var(--k-line); }
+@media (min-width: 1000px) {
+  .section .facts { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .section .how { grid-template-columns: 1fr 1fr; column-gap: 40px; max-width: none; }
+}
 
 /* ---- the account */
 .account-head {
