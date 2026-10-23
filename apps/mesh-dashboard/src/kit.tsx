@@ -207,6 +207,7 @@ function Gallery(): React.JSX.Element {
       </header>
 
       <main className="gal-main">
+        <h1 className="sr-only">Curule console kit</h1>
         <PageHeader
           title="Console kit"
           lede="Every primitive the console is built from, drawn by the real component, in every state it has. Hover and focus a control to see the rest. The page follows the theme above."

@@ -34,7 +34,7 @@ export function ChatDockButton({ open, onToggle }: { open: boolean; onToggle: ()
       className={`soft ms-dock-btn${busy ? " busy" : ""}`}
       aria-expanded={open}
       aria-controls="ms-dock"
-      aria-label={open ? "Close the designer assistant" : busy ? "Ask the designer (it is thinking)" : "Ask the designer"}
+      aria-label={busy ? "Thinking… (asking the designer)" : "Ask designer"}
       title={busy ? "The designer is thinking…" : "Ask the designer: describe a mesh or a change"}
       onClick={onToggle}
     >

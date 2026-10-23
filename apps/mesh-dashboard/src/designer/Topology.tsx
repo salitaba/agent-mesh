@@ -383,7 +383,6 @@ export default function Topology(props: TopologyProps): React.JSX.Element {
                 const role = String(ag.role || "").trim();
                 // The role is a second line only when it adds something to the name; "pm / pm" was half the demo's cards.
                 const roleLine = [role === id ? "" : role || "no role", ag.mode === "service" ? "service" : ""].filter(Boolean).join(" · ");
-                const label = `${id}, ${role || "no role"}.${starting ? " Starts with the mission." : ""}${ag.mode === "service" ? " Service seat." : ""}${bad ? " Has a problem." : ""} May message ${out} ${out === 1 ? "seat" : "seats"}.`;
                 return (
                   <div
                     key={id} className={`ms-node${sel ? " sel" : ""}${wireFrom === id ? " from" : ""}${dropOn === id ? " drop" : ""}`}
@@ -393,8 +392,9 @@ export default function Topology(props: TopologyProps): React.JSX.Element {
                       type="button" ref={(el) => { if (el) seatRefs.current.set(id, el); else seatRefs.current.delete(id); }}
                       className={`ms-seat${ag.mode === "service" ? " svc" : ""}${bad ? " err" : ""}`}
                       style={{ "--tint": agentColor(role) } as React.CSSProperties}
-                      data-seat={id} aria-pressed={sel} aria-label={label}
-                      aria-describedby={id === stop ? "ms-canvas-keys" : undefined}
+                      data-seat={id} aria-pressed={sel}
+                      aria-labelledby={[`ms-seat-face-${id}`, `ms-seat-nm-${id}`, roleLine ? `ms-seat-rl-${id}` : ""].filter(Boolean).join(" ")}
+                      aria-describedby={`ms-seat-desc-${id}${id === stop ? " ms-canvas-keys" : ""}`}
                       tabIndex={id === stop ? 0 : -1}
                       title={`${id}: ${role || "no role"}. ${(ag.capabilities || []).length} tools, ${(ag.interests || []).length} wake events, ${fmtNum(ag.budget?.tokens ?? 200000)} tokens.`}
                       onFocus={() => setTabStop(id)}
@@ -402,18 +402,19 @@ export default function Topology(props: TopologyProps): React.JSX.Element {
                       onPointerDown={(e) => onSeatDown(e, id)} onPointerMove={onSeatMove} onPointerUp={onSeatUp} onPointerCancel={onSeatUp}
                       onKeyDown={(e) => onSeatKey(e, id)}
                     >
-                      <span className="ms-seat-face">
-                        <AgentAvatar id={id} color={agentColor(role)} size="sm" />
+                      <span className="ms-seat-face" id={`ms-seat-face-${id}`}>
+                        <AgentAvatar id={id} color={agentColor(role)} size="sm" />{" "}
                         {/* The state marks sit on the face, where they do not take a pixel from the name: a green play for a
                             seat that starts with the mission, a red alert for one the checks are complaining about. */}
                         {starting ? <span className="ms-seat-dot start" aria-hidden="true"><Icon name="play" size={9} /></span> : null}
                         {bad ? <span className="ms-seat-dot bad" aria-hidden="true"><Icon name="alert" size={10} /></span> : null}
                       </span>
                       <span className="ms-seat-text">
-                        <span className="nm">{id}</span>
-                        {roleLine ? <span className="rl">{roleLine}</span> : null}
+                        <span className="nm" id={`ms-seat-nm-${id}`}>{id}</span>{" "}
+                        {roleLine ? <span className="rl" id={`ms-seat-rl-${id}`}>{roleLine}</span> : null}
                       </span>
                     </button>
+                    <span className="sr-only" id={`ms-seat-desc-${id}`}>{starting ? "Starts with the mission. " : ""}{ag.mode === "service" ? "Service seat. " : ""}{bad ? "Has a problem. " : ""}May message {out} {out === 1 ? "seat" : "seats"}.</span>
                     <button
                       type="button" className="ms-handle" tabIndex={-1}
                       aria-label={`Wire from ${id} to another seat`} title={`Drag to another seat to let ${id} message it`}
