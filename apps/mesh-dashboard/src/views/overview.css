@@ -30,6 +30,9 @@
 .ov-goal { margin: 0; max-width: 80ch; display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: baseline; gap: var(--s2); font-size: 15px; color: var(--text-dim); }
 .ov-goal-line { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden; }
 .ov-acts { flex: 0 1 auto; display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: var(--s2); max-width: 440px; }
+/* Four actions beside the headline read as two clean rows from 1280: the two that are not quiet side by side, the quiet three under
+   them, rather than a primary alone over a ragged row of five. 440 px could not hold the primary and "Reopen with feedback". */
+@media (min-width: 1280px) { .ov-acts { max-width: 520px; } }
 .ov-hero.stale .stat-v { color: var(--text-dim); font-weight: 500; }
 
 /* The figures, ruled off from what is above them and from each other (the hero here, the host's projects on their own page). Each
@@ -184,8 +187,15 @@ details.ov-note { display: block; }
   .ov-headline > b { font-size: 24px; }
   .ov-headline > b.long { font-size: 20px; }
   .ov-headline > span { font-size: 16px; }
-  .ov-acts { padding-left: 0; }
+  .ov-acts { padding-left: 0; gap: var(--s1-5); }
   .ov-acts > button.primary, .ov-acts > button.soft:not(.menu-btn) { flex: 1 1 auto; justify-content: center; }
+  /* A phone runs out of width before it runs out of actions. The three quiet ones are words with a picture beside them; the picture is
+     decoration, so it goes and the words share one row (they fitted 252 px at 320 with the tighter padding and one size down). Five
+     rows of buttons was 252 px of the first screen. */
+  .ov-acts > button.ghost > .icon { display: none; }
+  .ov-acts > button.ghost { padding-inline: var(--s2); font-size: 13px; }
+  /* The goal is what the mission is. A phone hid the last two words of a one-sentence goal behind an ellipsis; three lines fit it. */
+  .ov-goal-line { -webkit-line-clamp: 3; line-clamp: 3; }
   .stat-cell, .stat-cell:first-child, .stat-cell:nth-child(odd), .stat-cell:last-child { padding: var(--s3-5) var(--s4); }
   .stat-cell:nth-child(even) { border-left: 1px solid var(--line); }
   .ov-files { grid-template-columns: minmax(0, 1fr); }
