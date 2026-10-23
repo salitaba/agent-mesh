@@ -581,6 +581,14 @@
     doc.title = `${heading} – Curule Cloud`;
   }
 
+  /** The rail's step marks where the reader is now, which a refusal or a sent link can move. It is only ever one step. */
+  function atStep(index) {
+    [...doc.querySelectorAll(".auth-points li")].forEach((li, i) => {
+      if (i === index) li.setAttribute("aria-current", "step");
+      else li.removeAttribute("aria-current");
+    });
+  }
+
   /** Someone at a keyboard starts typing at once. A phone is left alone: a keyboard that opens by itself covers the page it was opened for. */
   function focusFirst(input) {
     const fine = typeof window.matchMedia === "function" && window.matchMedia("(hover: hover) and (pointer: fine)").matches;
@@ -920,6 +928,8 @@
       if (!email.value.trim()) return invalid(email, status, "Enter your email address.");
       const r = await call("POST", "/api/forgot", { email: email.value.trim() });
       say(status, r.ok ? "ok" : "bad", r.ok ? r.data.message : r.error.message);
+      // The link is what the reader waits for now, and the rail says so.
+      if (r.ok) atStep(1);
     });
   }
 
@@ -933,6 +943,8 @@
       retitle("That link did not work", "");
       say(status, "bad", text);
       $("form").hidden = true;
+      // The rail marks the link, which is where the trouble is, not the password the reader never reaches.
+      atStep(0);
       const again = askAgain();
       $("card").append(again);
       return again.querySelector("a");
@@ -956,6 +968,8 @@
       }
       history.replaceState(null, "", "/reset");
       retitle("Password changed", "");
+      // The next step is the sign-in, and the rail marks it.
+      atStep(2);
       const card = $("card");
       card.replaceChildren(el("div", { class: "note note-ok", role: "status" }, "Your password is changed. Every device is signed out."), el("p", null, el("a", { class: "btn btn-primary", href: "/login" }, "Sign in")));
       // The form that had the cursor is gone: the cursor goes to what happened, as it does when a link is sent.
@@ -999,7 +1013,13 @@
   const SIGN_IN = "/login?next=/account";
 
   /** The shape of the page while its first read is out, so that what arrives does not move what is already there. */
-  const skeleton = (on) => ($("skeleton").hidden = !on);
+  const skeleton = (on) => {
+    $("skeleton").hidden = !on;
+    // Said to a reader of the page, not shown: the shape is for the eye, and the account is what it is waiting for.
+    const live = $("stage-live");
+    if (on) live.textContent = "Loading your account.";
+    else if (live.textContent === "Loading your account.") live.textContent = "";
+  };
 
   async function accountPage(signedIn) {
     if (!signedIn) {
