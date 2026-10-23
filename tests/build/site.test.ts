@@ -616,7 +616,7 @@ test("the small standing targets are 44 pixels: the brand, the footer's address 
 test("every capture has a named way to its full size, in the same window, and the phone's six views are one snap row", () => {
   const home = page(pages, "index.html").html;
   const links = [...home.matchAll(/<a class="shot-open" href="([^"]+)"[^>]*aria-label="([^"]+)"[^>]*>Full size<\/a>/g)];
-  assert.equal(links.length, 9, "three in the hero and six in the console");
+  assert.equal(links.length, 10, "three in the hero, six in the console, and the graph in the steps");
   for (const [, href, label] of links) {
     assert.match(href!, /^assets\/shots\/shot-[a-z-]+\.jpg$/, `${href}: a capture on this site`);
     assert.match(label!, /^Open the .+ capture at full size$/, `${label}: the name says which capture`);
