@@ -940,9 +940,12 @@ export const MINI_FOLD_AT = 3;
  * The same kinds of run the Events page folds, said as the thing that happened rather than as the event type. Only a kind with
  * words here folds: an event nobody has phrased is shown one by one, because a summary that invented a sentence would be worse
  * than a longer list. `agent.completed` is the one that matters on a delivered mission: seven seats finishing is one fact, not
- * seven rows that push the mission's own completion off the panel.
+ * seven rows that push the mission's own completion off the panel. `agent.created` is the same fact at the other end: a parked
+ * mission's newest eight events were the eight seats joining, so the panel was the roster and the goal it was created for was
+ * never on it.
  */
 const MINI_FOLD_WORD: Record<string, string> = {
+  "agent.created": "joined the team",
   "agent.completed": "seats finished",
   "artifact.created": "files published",
   "artifact.versioned": "files updated",

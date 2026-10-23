@@ -185,6 +185,28 @@ Breakpoints: **1280 1100 900 800 760 620 560**. 800 is the sidebar drawer (JS
 
 ## Pass log
 
+### 2026-10-23 — the parked Overview is a briefing, not the roster
+
+Surface: `views/Overview.tsx`, `views/overview.css`, `eventmodel.ts` (the mini feed). Measured on `examples/demo-stub/mesh.yaml`
+at **Parked** (the scripted demo, no model calls), production build, Chromium at 1440, 390, 360 and 320, both themes.
+
+- **The first screen's log was the roster.** The newest eight events were the eight seats joining, so "Just happened" was eight
+  identical rows and the goal the mission was created for was not on the panel. `miniFeed` now folds a run of `agent.created`
+  as it already folded `agent.completed`: **8 rows → 3** (the fold, the thread, the goal), the panel **423 → 233 px at 1440**
+  and **727 → 351 px at 390**. A later restart that re-adds three seats folds the same way; two joins still show as two rows.
+- **"No work yet." was a dead end.** The empty Latest work card is a sentence naming what will appear and a **44 × 44 "Wake an
+  agent"** route to the page the hero's note already tells you about. Card **108 → 129 px at 1440** (sentence and button share
+  the row) and **124 → 197 px at 390**; the height is the route.
+- **On a phone the state and the page's name were both 24 px**, so "Overview" competed with "Parked.". A state whose first
+  sentence is short keeps the display step: **24 → 30 px** ("Parked."); a sentence-long state still steps to 20. Hero 608 → 615.
+- **The page is shorter and still clean.** Overview **2,092 → 1,795 px at 390** (1,816 at 360) and **985 → 861 px at 1440**;
+  no horizontal page scroll and 0 real controls under 44 px at 360/390; text contrast unchanged (the smallest pair on the page is
+  still 5.61:1); `dist/tests/dashboard` + `dist/tests/build` 1,315 tests pass, including the new mini-feed case.
+
+**Left.** The parked note still says "wake a single agent from Agents" in prose one screen above the button that now does it; a
+link inside the note is the next move. The delivered Overview's length (open problem 1) is untouched, and 768 was not re-measured
+for this pass.
+
 ### 2026-10-23 — the designer, drawn by one hand
 
 Surface: `apps/mesh-dashboard/src/designer` (canvas, roster, inspector, assistant dock, setup guide, checks/YAML chrome).

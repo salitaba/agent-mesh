@@ -336,7 +336,10 @@ export default function Overview(): React.JSX.Element {
           ) : steps.length ? (
             <WorkTimeline steps={steps.slice(0, 5)} roleOf={roleOf} onOpen={(t) => openDrawer(<StepDrawer turnId={t} steps={steps} />)} />
           ) : stepsLoaded ? (
-            <p className="ov-empty">No work yet.</p>
+            <div className="ov-empty-row">
+              <span>No steps yet. Each agent turn appears here, with what woke it and what it left.</span>
+              <Button variant="small" icon="agents" onClick={() => setView("agents")}>Wake an agent</Button>
+            </div>
           ) : <TimelineSkeleton label="Loading recent work." />}
         </Panel>
         <GoalChecks goal={goal} arts={arts} openArt={openArt} />
