@@ -27,6 +27,7 @@ npm run clean         # rm -rf dist
 npm run qa:console -- --base <url> --token <t>   # visual pass over every view (needs playwright-core, axe-core, Chrome)
 npm run qa:walk -- --base <url> --token <t> --project <id>   # a person's session on the scripted demo (needs playwright-core, Chrome)
 npm run cloud -- trial [--port 7500] [--dir <folder>]   # the hosted service on this machine, with stand-ins for what costs money
+npm run deploy:cloud [-- --ref <sha>]   # full deploy of the hosted cloud: release, control restart, workspace image, containers, verify
 npm run cloud -- mail-check --config <control.yaml> --to <address>   # send one message through the configured SMTP server and say what it answered
 npm run cloud -- preflight --config <control.yaml> [--mail-to <address>]   # look at what the configuration points at: gateway, engine, network, folders, names, mail
 npm run cloud -- egress --config <egress.yaml> [--check]   # the way out of a workspace's network: HTTPS tunnels to the hosts listed, and nothing else
@@ -99,6 +100,16 @@ dist/                compiled output (gitignored)
 
 - After editing packages, run `npm run typecheck` before `npm test`; the test
   script rebuilds everything and is slower.
+- **The hosted cloud is three moving parts**, and a release is only the first: the
+  release `curule-control` serves, the `curule-workspace:launch` image the workspaces
+  are built from, and the workspace containers already running from the old image.
+  Changing a default, a role prompt, a schema or the plan table is not live until all
+  three move. `npm run deploy:cloud` (with the change committed) builds the release,
+  rebuilds the image, restarts the active units, recreates every container labelled
+  `curule.workspace` with its env, volume, address and limits carried over, and then
+  verifies each container's release and the default team it serves. Existing projects
+  keep their own `mesh.yaml`; the deploy reports any that are behind the new default
+  rather than rewriting them — that upgrade is deliberate, in the Designer.
 - New package: add it to `packages/`, wire the `@mesh/*` alias in root
   `tsconfig.json` `paths`, and export from its `src/index.ts`.
 - Dashboard code is typechecked by a separate tsconfig at
