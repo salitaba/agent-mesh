@@ -115,8 +115,15 @@ mapfile -t PLANNED < <(docker ps -a --filter "label=$WORKSPACE_LABEL" --format '
 OLD_REL="$(basename "$(readlink -f "$DEPLOY/current")")"
 OLD_IMAGE_ID="$(docker image inspect -f '{{.Id}}' "$IMAGE" 2>/dev/null || true)"
 ROLLBACK_IMAGE=""
+# An image reference holds at most one tag after its last slash; `repo:tag:rollback` is not a name
+# the engine parses. Split the name and put the rollback suffix on the tag.
+image_rollback_tag() {
+  local last="${IMAGE##*/}" repo tag
+  if [[ "$last" == *:* ]]; then repo="${IMAGE%:*}"; tag="${IMAGE##*:}"; else repo="$IMAGE"; tag="latest"; fi
+  printf '%s:%s-rollback-%s' "$repo" "$tag" "$(date +%Y%m%d-%H%M%S)"
+}
 if [ -n "$OLD_IMAGE_ID" ]; then
-  ROLLBACK_IMAGE="$IMAGE:rollback-$(date +%Y%m%d-%H%M%S)"
+  ROLLBACK_IMAGE="$(image_rollback_tag)"
 fi
 
 if [ "$VERIFY" = 0 ]; then
