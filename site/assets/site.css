@@ -236,6 +236,22 @@ main:has(.hero) .section-head .eyebrow::before { counter-increment: sec; content
 .proof { --s: 20px; --y: 12px; margin-top: 32px; }
 .proof li { padding-block: 12px; border-top: 1px solid var(--line); color: var(--ink2); font-weight: 500; }
 .hero-visual { margin-top: 36px; }
+/* On a phone the first screen is the promise and the way in, then the product: the note under the
+   actions sits below the capture it describes, so the frame and its tabs reach the first screen
+   rather than starting under its edge. The DOM order is unchanged (statement, subhead, actions,
+   picture, claims); only the note moves, and it holds no control. */
+@media (max-width: 719px) {
+  .hero { padding-top: 16px; }
+  .hero-grid { display: flex; flex-direction: column; }
+  .hero .eyebrow { order: 1; margin-bottom: 12px; }
+  .hero h1 { order: 2; }
+  .hero .lede { order: 3; margin-top: 16px; }
+  .hero-cta { display: contents; }
+  .hero-cta .actions { order: 4; margin-top: 20px; }
+  .hero-visual { order: 5; margin-top: 20px; }
+  .hero-cta > p { order: 6; margin-top: 12px; }
+  .proof { order: 7; }
+}
 @media (min-width: 1040px) {
   .hero-grid { grid-template-columns: repeat(12, minmax(0, 1fr)); column-gap: 24px; }
   .hero .eyebrow, .hero h1 { grid-column: 1 / -1; }
@@ -326,6 +342,16 @@ main:has(.hero) .section-head .eyebrow::before { counter-increment: sec; content
 .way > .way-action { margin: auto 28px 28px; }
 /* With one of the two hidden the other takes the width; its answers sit side by side. */
 @media (min-width: 760px) { .ways:has(> .way[hidden]) { grid-template-columns: minmax(0, 1fr); } .ways:has(> .way[hidden]) dl { grid-template-columns: var(--c2); gap: 32px; } }
+/* Stacked on a phone, the two ways are still cards (each holds one action), but they take less of
+   the page: the plans are what a visitor came for, and they start higher. The action is full width,
+   where a thumb already is. */
+@media (max-width: 759px) {
+  .way-kind { padding: 12px 20px; }
+  .way h3 { margin: 20px 20px 0; }
+  .way dl { gap: 14px; margin: 16px 20px 20px; }
+  .way > .way-action { margin: auto 20px 20px; }
+  .way > .way-action .btn { width: 100%; }
+}
 
 /* three steps on one rail (down the left on a phone, across on a desktop) */
 .steps { gap: 40px; counter-reset: step; }
@@ -357,6 +383,11 @@ main:has(.hero) .section-head .eyebrow::before { counter-increment: sec; content
 .tile .frame img { aspect-ratio: 8 / 5; object-fit: cover; }
 .tile h3 { margin: 20px 14px 6px; }
 .tile p { max-width: 34rem; margin: 0 14px; }
+/* The six views are numbered like the sections and the contents, so the row reads as one ledger
+   rather than six identical blocks, and a thumb can tell where in it it is. */
+.tiles { counter-reset: view; }
+.tile h3 { display: flex; align-items: baseline; gap: 10px; }
+.tile h3::before { counter-increment: view; content: counter(view, decimal-leading-zero); flex: none; padding-right: 10px; border-right: 1px solid var(--line2); color: var(--muted); font-size: .75rem; font-weight: 600; letter-spacing: .04em; font-variant-numeric: tabular-nums; }
 /* A capture is 1440px wide; on a phone its words are not readable at page width. Every one has a
    named way to its full size, at a thumb's height. */
 .shot-open { display: inline-flex; align-items: center; min-height: 44px; font-weight: 600; }
@@ -551,6 +582,10 @@ main:has(.hero) .section-head .eyebrow::before { counter-increment: sec; content
 .unit { white-space: nowrap; }
 .compare .unit { display: block; }
 .table-wrap { position: relative; overflow-x: auto; border: 1px solid var(--line); border-radius: var(--k-r-lg); box-shadow: var(--lift); background: linear-gradient(to left, var(--panel) 30%, transparent) right / 48px 100% no-repeat local, linear-gradient(to left, var(--edge), transparent) right / 12px 100% no-repeat scroll, var(--panel); }
+/* A row that scrolls sideways keeps the gesture in the row: no page history swipe, no bounce of the page behind it. */
+.tiles, .plans, .toc, .table-wrap, .code pre { overscroll-behavior-x: contain; }
+/* On a phone a comparison table scrolls, and says so: a silent sideways table looks like a cut-off one. */
+.table-hint { display: none; }
 .compare { width: 100%; min-width: 720px; table-layout: fixed; border-collapse: separate; border-spacing: 0; font-size: .9375rem; font-variant-numeric: tabular-nums; }
 .compare th, .compare td { padding: 14px 18px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
 .compare thead th { background: var(--panel2); color: var(--ink); }
@@ -563,6 +598,13 @@ main:has(.hero) .section-head .eyebrow::before { counter-increment: sec; content
 .compare .yes, .compare .no { white-space: nowrap; }
 .compare .yes { color: var(--k-ok); font-weight: 600; }
 .compare .no { color: var(--muted); }
+/* On a phone the table scrolls inside its box, and says so above it; it is narrower because the
+   first column stays and a phone should not have to swipe a screen and a half to reach Enterprise. */
+@media (max-width: 799px) {
+  .table-hint { display: block; margin: 0 0 10px; }
+  .compare { min-width: 660px; }
+  .compare th, .compare td { padding: 12px 14px; }
+}
 .calc { gap: 24px; }
 @media (min-width: 860px) { .calc { grid-template-columns: var(--c2); gap: 48px; align-items: start; } }
 .field { margin-bottom: 20px; }
@@ -620,6 +662,8 @@ main:has(.hero) .section-head .eyebrow::before { counter-increment: sec; content
 .doc-list .head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 /* The last document a filter leaves in a group closes it. */
 .doc-list li:nth-last-child(1 of :not([hidden])) { border-bottom: 0; padding-bottom: 0; }
+/* A filter that leaves nothing takes the map with it; the empty state is what is left, with no dead gap above it. */
+.doc-grid:not(:has(> .doc-card:not([hidden]))) { display: none; }
 .doc-filter { display: grid; gap: 6px; max-width: 32rem; }
 .doc-filter label { margin: 0; }
 .doc-filter input { appearance: none; }
@@ -666,12 +710,21 @@ main:has(.hero) .section-head .eyebrow::before { counter-increment: sec; content
   .tabs::before, .billing::before { outline: 2px solid Highlight; outline-offset: -2px; }
   .doc-card:target, .plan:target { outline: 2px solid Highlight; outline-offset: 2px; }
   .address-row:target { outline: 2px solid Highlight; outline-offset: -2px; }
+  /* The dot is the second cue that a chip is the section being read; keep it in High Contrast. */
+  .toc a[aria-current="true"]::before { forced-color-adjust: none; background: Highlight; }
 }
 @media print {
   .site-header, .skip, .tabs, .billing, .copy, .foot-grid, .hero::before, .hero::after, .cta::after, .to-top-dock { display: none; }
+  .table-hint { display: none; }
   .toc-bar.is-live { position: static; }
   .rv { opacity: 1 !important; transform: none !important; }
   body { background: #fff; color: #000; }
   .cta, .cta .lede { background: none; color: #000; }
   .btn { background: none !important; border-color: #000 !important; color: #000 !important; }
+  /* A printed plan has no switch to choose a period with, so it shows both prices. */
+  .plans .price-annual, .plans .price-monthly { display: block !important; }
+  /* A printed page has no swipe: the rows and the table are laid out, not scrolled. */
+  .tiles, .plans { display: grid; grid-template-columns: var(--c2); grid-auto-flow: row; gap: 16px; margin-inline: 0; padding: 0; overflow: visible; }
+  .table-wrap { overflow: visible; }
+  .compare { min-width: 0; }
 }
