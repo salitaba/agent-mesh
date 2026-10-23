@@ -601,9 +601,13 @@ main:has(.hero) .section-head .eyebrow::before { counter-increment: sec; content
 /* On a phone the table scrolls inside its box, and says so above it; it is narrower because the
    first column stays and a phone should not have to swipe a screen and a half to reach Enterprise. */
 @media (max-width: 799px) {
-  .table-hint { display: block; margin: 0 0 10px; }
   .compare { min-width: 660px; }
   .compare th, .compare td { padding: 12px 14px; }
+}
+/* The hint is only where the table really scrolls: at 720 and up a 660px table fits its 660px box,
+   and a phone told to swipe a table that fits is a phone being made to look for a defect. */
+@media (max-width: 719px) {
+  .table-hint { display: block; margin: 0 0 10px; }
 }
 .calc { gap: 24px; }
 @media (min-width: 860px) { .calc { grid-template-columns: var(--c2); gap: 48px; align-items: start; } }
