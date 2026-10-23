@@ -52,23 +52,23 @@
   <h2>Where they stand now</h2>
   <div class="pair three"><a class="shot" href="shots/landing-now.png"><img src="shots/landing-now.png" alt="the landing page" loading="lazy"><span>the landing page</span></a><a class="shot" href="shots/account-now.png"><img src="shots/account-now.png" alt="the account pages" loading="lazy"><span>the account pages</span></a><a class="shot" href="shots/console-now.png"><img src="shots/console-now.png" alt="the console" loading="lazy"><span>the console</span></a></div>
 </section>
-<p class="stat"><span><b>9</b> passes</span><span><b>8</b> merged</span><span><b>4</b> surfaces</span><span>updated 23 Oct 2026 12:12</span></p>
+<p class="stat"><span><b>9</b> passes</span><span><b>8</b> merged</span><span><b>4</b> surfaces</span><span>updated 23 Oct 2026 12:34</span></p>
 <article class="pass">
   <header>
     <h2>the designer</h2>
     <p class="when">23 Oct 2026 · 08:50</p>
   </header>
-  
+  <div class="pair"><a class="shot" href="shots/20261023-0850-before.png"><img src="shots/20261023-0850-before.png" alt="before this pass" loading="lazy"><span>before this pass</span></a><a class="shot" href="shots/20261023-0850-after.png"><img src="shots/20261023-0850-after.png" alt="after" loading="lazy"><span>after</span></a></div>
   <ul class="did"><li>A name is content, not a label. The roster and the canvas now spend their width on the seat's name before anything else; role, flags and wire counts are subordinate lines. At 360 the roster name gets 194 px and no longer cuts; at 1440 a long name wraps to two lines instead of reading frontend-….</li><li>A thing that covers the page is a layer. The inspector drawer, the YAML preview and the assistant dock now have a scrim, a named modal dialog, a held page, a Tab trap, a 44 px way out and focus returned to the opener. Before, the phone inspector had none of these while covering all 360 × 844 px.</li><li>One move is open at a time. The first-run guide was four open instructions (553 px) above a roster that started at y=881 on an 844 px screen. It now opens only the step that is *now*, states Step 1 of 4, and the first seat row begins at y=795 — on the screen.</li><li>One voice. Every Designer state uses the same lede; the drawer's heading says what it is editing (Seat: pm, Mesh settings) rather than Inspector; a checks error with no field now names the route out instead of ending at &quot;edit mesh.yaml&quot;.</li></ul>
   <details><summary>3 bugs found, proved and fixed</summary><ol class="bugs"><li><b>Read `.ms-seatrow .nm` at 360</b><br><span class="was">was:</span> Name box 88 px for 151 px of text; **6 of 9 names clipped** (`frontend-…`, `ux-desig…`); flags shared the line<br><span class="now">now:</span> Name its own line, flags/counts below. Measured **194/194 px, 0/9 cut**</li><li><b>Open a seat at 360; inspect drawer, Tab/Shift+Tab</b><br><span class="was">was:</span> 360 × 844 fixed box, `role=null`, `aria-modal=null`, no scrim, page scrolled behind, **Shift+Tab landed on a seat row behind it**<br><span class="now">now:</span> Scrim z 39 under drawer z 40, `role=dialog`, `aria-modal=true`, labelled by the seat heading, body/view locked, **16/16 Tabs inside**, Shift+Tab from root inside, close **44 × 44**, Escape returns focus to the row</li><li><b>Open the drawer on a phone</b><br><span class="was">was:</span> Focus went to the first input → on-screen keyboard over the panel<br><span class="now">now:</span> `initialFocus: &quot;root&quot;`; measured active element = `.ms-side`, not a field</li></ol></details>
-  <p class="meta">16 files changed · suite green, merged</p>
+  <p class="meta">16 files changed · <code>25a0005</code> · suite green, merged</p>
 </article>
 <article class="pass unmerged">
   <header>
     <h2>the landing page</h2>
     <p class="when">22 Oct 2026 · 19:48 · <b>not merged</b></p>
   </header>
-  
+  <div class="pair"><a class="shot" href="shots/landing-now.png"><img src="shots/landing-now.png" alt="as it is today" loading="lazy"><span>as it is today</span></a></div>
   
   
   <p class="meta">14 files changed · suite not green, kept</p>
@@ -78,7 +78,7 @@
     <h2>the account pages</h2>
     <p class="when">22 Oct 2026 · 14:59</p>
   </header>
-  <div class="pair"><a class="shot" href="shots/account-before.png"><img src="shots/account-before.png" alt="before this pass" loading="lazy"><span>before this pass</span></a><a class="shot" href="shots/account-after.png"><img src="shots/account-after.png" alt="after" loading="lazy"><span>after</span></a></div>
+  <div class="pair"><a class="shot" href="shots/20261022-1459-before.png"><img src="shots/20261022-1459-before.png" alt="before this pass" loading="lazy"><span>before this pass</span></a><a class="shot" href="shots/20261022-1459-after.png"><img src="shots/20261022-1459-after.png" alt="after" loading="lazy"><span>after</span></a></div>
   
   
   <p class="meta">14 files changed · <code>6d23268</code> · suite green, merged</p>
@@ -88,60 +88,60 @@
     <h2>the console</h2>
     <p class="when">22 Oct 2026 · 01:39</p>
   </header>
+  <div class="pair"><a class="shot" href="shots/20261022-0139-before.png"><img src="shots/20261022-0139-before.png" alt="before this pass" loading="lazy"><span>before this pass</span></a><a class="shot" href="shots/20261022-0139-after.png"><img src="shots/20261022-0139-after.png" alt="after" loading="lazy"><span>after</span></a></div>
   
   
-  
-  <p class="meta">31 files changed · suite green, merged</p>
+  <p class="meta">31 files changed · <code>ecbb5ed</code> · suite green, merged</p>
 </article>
 <article class="pass">
   <header>
     <h2>the console</h2>
     <p class="when">21 Oct 2026 · 12:07</p>
   </header>
+  <div class="pair"><a class="shot" href="shots/20261021-1207-before.png"><img src="shots/20261021-1207-before.png" alt="before this pass" loading="lazy"><span>before this pass</span></a><a class="shot" href="shots/20261021-1207-after.png"><img src="shots/20261021-1207-after.png" alt="after" loading="lazy"><span>after</span></a></div>
   
   
-  
-  <p class="meta">12 files changed · suite green, merged</p>
+  <p class="meta">12 files changed · <code>5913cc4</code> · suite green, merged</p>
 </article>
 <article class="pass">
   <header>
     <h2>the account pages</h2>
     <p class="when">20 Oct 2026 · 22:58</p>
   </header>
+  <div class="pair"><a class="shot" href="shots/20261020-2258-before.png"><img src="shots/20261020-2258-before.png" alt="before this pass" loading="lazy"><span>before this pass</span></a><a class="shot" href="shots/20261020-2258-after.png"><img src="shots/20261020-2258-after.png" alt="after" loading="lazy"><span>after</span></a></div>
   
   
-  
-  <p class="meta">14 files changed · suite green, merged</p>
+  <p class="meta">14 files changed · <code>67025f4</code> · suite green, merged</p>
 </article>
 <article class="pass">
   <header>
     <h2>the console</h2>
     <p class="when">20 Oct 2026 · 09:08</p>
   </header>
+  <div class="pair"><a class="shot" href="shots/20261020-0908-before.png"><img src="shots/20261020-0908-before.png" alt="before this pass" loading="lazy"><span>before this pass</span></a><a class="shot" href="shots/20261020-0908-after.png"><img src="shots/20261020-0908-after.png" alt="after" loading="lazy"><span>after</span></a></div>
   
   
-  
-  <p class="meta">24 files changed · suite green, merged</p>
+  <p class="meta">24 files changed · <code>caa8424</code> · suite green, merged</p>
 </article>
 <article class="pass">
   <header>
     <h2>the console</h2>
     <p class="when">20 Oct 2026 · 04:13</p>
   </header>
+  <div class="pair"><a class="shot" href="shots/20261020-0413-before.png"><img src="shots/20261020-0413-before.png" alt="before this pass" loading="lazy"><span>before this pass</span></a><a class="shot" href="shots/20261020-0413-after.png"><img src="shots/20261020-0413-after.png" alt="after" loading="lazy"><span>after</span></a></div>
   
   
-  
-  <p class="meta">6 files changed · suite green, merged</p>
+  <p class="meta">6 files changed · <code>8bfeb75</code> · suite green, merged</p>
 </article>
 <article class="pass">
   <header>
     <h2>the console</h2>
     <p class="when">19 Oct 2026 · 15:05</p>
   </header>
+  <div class="pair"><a class="shot" href="shots/20261019-1505-before.png"><img src="shots/20261019-1505-before.png" alt="before this pass" loading="lazy"><span>before this pass</span></a><a class="shot" href="shots/20261019-1505-after.png"><img src="shots/20261019-1505-after.png" alt="after" loading="lazy"><span>after</span></a></div>
   
   
-  
-  <p class="meta">8 files changed · suite green, merged</p>
+  <p class="meta">8 files changed · <code>5d4b98e</code> · suite green, merged</p>
 </article>
-<footer>Generated from the pass reports and the git history by <code>ux-history.mjs</code>, on every deploy. Captures are rendered at 360 px with the workspace image's own Chromium; the console is a single-page app that needs a running mesh, so it is shown as it is now rather than as a "before" no checkout can serve.</footer>
+<footer>Generated from the pass reports and the git history by <code>ux-history.mjs</code>, on every deploy. Every capture is a real render at 360 px in the workspace image's own Chromium: the landing page and the account pages from the commit before the pass and the one after, the console by building each of those commits and running its own console against the demo team. Tap any capture for full size.</footer>
 </div></body></html>
