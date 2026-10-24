@@ -583,3 +583,62 @@ passes 1,313 tests. `phone-targets` and `primitives-a11y` now name the two contr
 - No axe-core run (not installed here); `qa:console`'s own Chrome launch is still blocked by libatk on this machine. Safari,
   Firefox, a real phone's touch, a screen reader and real Windows High Contrast remain untested by this pass.
 
+
+## 2026-10-24 — the views' targets, the answer at the action, and a phone's shipping list
+
+Three passes, one per surface, run in parallel against `main` at `efd8855` and merged in this order: the marketing site
+(`5f55edb`), the account pages (`1f08dbd`), the console (`b2b8925`). The console was rendered against
+`examples/demo-stub/mesh.yaml` at **Delivered**; the account pages against a local trial with a seeded plan-less account;
+the site from a static server. Screenshots at 360/390/768/1440, light (dark swept for contrast and scroll), reduced motion.
+
+**What changed.**
+
+- **Site: three of the six console-view chips went back to the hero.** The hero's tab radios reused the ids of the console
+  cards (`view-overview`, `view-events`, `view-designer`), so each id named two elements and chips 01, 02 and 04 scrolled to
+  `y=571` instead of the view row at `7,143` at 360. The radios are `hero-view-*`; all six land (`scrollLeft 0 / 322 / 965`).
+  A test now fails on a repeated id or an in-page link that names more than one element.
+- **Site: the documentation filter comes before the labels it filters by.** Five label rows sat above the filter; they are
+  one closed *What each label means*, and the GitHub-titles note sits beside the cards it describes.
+- **Site: the estimate follows the fields.** On a phone the form and result cannot share a screen, so editing a field left
+  the figure 1,007 px down the viewport; a 48 px total now pins at `top 140` under the header and On-this-page bar while the
+  fields are edited (hidden at 860+ and in print). The fee row names its period. The pricing page's first two headings take
+  the page's rank (22 → 28 px at 360, 22 → 48 px at 1440), at the cost of height.
+- **Account: an answer is said at the button that asked, with the cursor kept.** A plan action's refusal appeared at the top
+  of the plan section (248 px above *Manage billing*, pushing the button out from under the pointer and dropping focus to the
+  body); it is now in that plan's row, 112 px under the buttons, and `leaveFor` re-focuses a trigger the browser dropped. A
+  refusal from the stage card is said in the card, not in the Plan section 1,050 px below.
+- **Account: a plan is promised only when one was read.** With `/api/plans` down, a plan-less account was told to choose one
+  below, above a section saying no price was shown. The card now says the plans could not be loaded, with a 133 × 48 *Try
+  again* that draws the list in place. The allowance says "left of" in words, and the consent refusal is one line.
+- **Console: what shipped is rows on a phone.** The panel was 1,150 px of stacked cards for nine files, six of them shown;
+  each file is now a row in the Files page's shape, with the 40 px tile at 28. The delivery path is cut at the front
+  (`direction: rtl` over a `<bdi>`), 98 → 39 px. A page change whose control was removed hands focus to the new page's `h2`
+  instead of the body, and the tab title names the view.
+
+**Measured.**
+
+| Surface | Before | After |
+|---|---|---|
+| Console *What shipped*, 390 | panel 1,111 px; page 4,437 | panel 775; page 4,063 |
+| Console page, 360 / 320 | 4,458 / 4,776 px | 4,120 / 4,480 |
+| Console delivery path, 390 | wraps anywhere, 98 px | one line, tail visible, 39 px |
+| Docs page, 360 | filter at 3,101; page 9,208 | filter at 2,523; page 8,805 |
+| Docs page, 1440 | first card 1,930; page 4,696 | 1,671; 4,437 |
+| Sign-up refusal, 360 × 800 | note 74 px; action 775–819 | note 50 px; action 751–795 (inside) |
+| Pricing page, 360 / 1440 | 13,790 / 9,188 | 14,006 / 9,393 |
+| Plan-action refusal, 360 | 248 px above *Manage billing*; focus on body | 112 px below; button y 1470 → 1470; focus kept |
+| Sideways scroll, all surfaces, 320–1440, both themes | none | none |
+
+`npm run typecheck`, `npm run lint` (0 errors), `npm run build` and the full `npm test` on the merged tree pass: **6,316
+tests, 6,314 pass, 0 fail, 2 skipped**. New tests: the site's duplicate-id check; the account's refusal-in-the-card and
+cursor assertions; the console's `views-phone`, `primitives-a11y` and the view-in-the-title.
+
+**Left.**
+
+- The landing page's height did not change (13,526 / 12,258 px): the pass fixed its path down, not its length. The demo
+  steps and security sections are the product's own words and folding them would hide what the hero promises.
+- The pricing page is 216 px taller at 360 for the two headings' rank; a phone reader pays that once, above the plans.
+- The console's *Left* items from the 2026-10-23 pass stand: the goal card's bar repeats the hero's 7 of 7, the two routine
+  folds, and the time on a third line in Latest work.
+- No axe-core run and no real phone, screen reader, Safari, Firefox or High Contrast test; `qa:console`'s own Chrome launch
+  is still blocked by libatk on this machine, so the shared CDP browser did the rendering.
