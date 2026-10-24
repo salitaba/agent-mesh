@@ -324,6 +324,17 @@ test("each page has one h1 and headings that never skip a level, one main landma
   }
 });
 
+test("no page uses an id twice, so every in-page link, label and aria reference lands on the one thing it names", () => {
+  for (const p of pages) {
+    const ids = [...p.markup.matchAll(/\sid="([^"]+)"/g)].map((m) => m[1]!);
+    const repeated = [...new Set(ids.filter((id, i) => ids.indexOf(id) !== i))];
+    assert.deepEqual(repeated, [], `${p.rel}: an id is used once`);
+    for (const m of p.markup.matchAll(/\shref="#([^"]+)"/g)) {
+      assert.equal(ids.filter((id) => id === m[1]).length, 1, `${p.rel}: #${m[1]} names one element`);
+    }
+  }
+});
+
 test("every link and every control has a name a screen reader can say, and every field has a label", () => {
   for (const p of pages) {
     for (const m of p.markup.matchAll(/<a\b([^>]*)>([\s\S]*?)<\/a>/g)) {
@@ -652,7 +663,7 @@ test("every capture has a named way to its full size, in the same window, and th
 
 test("the four plans are one snap row on a phone, and nothing off the row widens the page", () => {
   const pricing = page(pages, "pricing/index.html").html;
-  assert.match(pricing, /<h2 class="legend-title plans-title">The licence plans\.<\/h2>\n    <p class="small muted plans-hint">Four plans\. Swipe or scroll sideways; the comparison below lists every line\.<\/p>/);
+  assert.match(pricing, /<p class="eyebrow">Plans<\/p>\n      <h2 class="title plans-title">The licence plans\.<\/h2>\n      <p class="small muted plans-hint">Four plans\. Swipe or scroll sideways; the comparison below lists every line\.<\/p>/, "the section keeps its heading and the hint that the row swipes");
   const css = fs.readFileSync(path.join(SITE, "assets", "site.css"), "utf8");
   assert.match(css, /@media \(max-width: 719px\) \{\n  \.plans-hint \{ display: block; margin: 0 0 12px; \}\n  \.plans \{ position: relative; grid-template-columns: none; grid-auto-flow: column;[^}]*overflow-x: auto;/);
   // Without a positioned box, the screen-reader spans inside the cards that sit off the row

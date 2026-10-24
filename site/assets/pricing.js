@@ -7,6 +7,9 @@
   var dataNode = document.getElementById("plans-data");
   var form = document.getElementById("calc");
   var out = document.getElementById("result");
+  // The same figure over the fields on a phone, where the form and the estimate cannot be on the screen together.
+  var totalPlan = document.getElementById("calc-total-plan");
+  var totalFigure = document.getElementById("calc-total-figure");
   if (!dataNode || !form || !out) return;
   var data = JSON.parse(dataNode.textContent);
   var run = data.measuredRuns[0];
@@ -55,10 +58,13 @@
     var annual = period() === "annual";
     var fee = plan.pricing === "listed" ? (annual ? plan.priceMonthlyAnnualUsd : plan.priceMonthlyUsd) : plan.pricing === "free" ? 0 : null;
     var spend = missions * run.costUsdByModel[model];
+    var figure = fee === null ? "Quoted, plus model usage" : plan.pricing === "free" ? "Free" : money(fee + spend) + " / month (" + (annual ? "annual" : "monthly") + ")";
 
+    if (totalPlan) totalPlan.textContent = plan.name;
+    if (totalFigure) totalFigure.textContent = figure;
     out.textContent = "";
     out.appendChild(row("Plan", "", plan.name));
-    out.appendChild(row("Platform fee", "(to us)", fee === null ? "quoted" : money(fee) + " / month"));
+    out.appendChild(row("Platform fee", "(to us)", fee === null ? "quoted" : money(fee) + " / month" + (plan.pricing === "listed" ? ", billed " + (annual ? "annually" : "monthly") : "")));
     out.appendChild(row("Model usage", "(to your provider)", "about " + money(spend) + " / month"));
     out.appendChild(fee === null
       ? row("Total", "", "Quoted, plus model usage", true)

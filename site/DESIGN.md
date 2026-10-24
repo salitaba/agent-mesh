@@ -434,3 +434,74 @@ measured today; no number is copied from an earlier pass.
 - **Curule Cloud's prices** are still in the app: the card now says so and its action goes there.
 - The screenshots are unchanged; the captures were not retaken.
 
+
+## 2026-10-24, second pass: the six views' targets, the map's filter, the estimate at the field
+
+### What changed
+- **Three of the six "Jump to a view" tabs pointed at the hero.** The hero's three tab radios
+  reused the ids of the cards below (`view-overview`, `view-events`, `view-designer`), so at 360
+  the 01, 02 and 04 chips scrolled back up to y=571, the hero, instead of the console row at
+  7,143. The radios are now `hero-view-*`; all six chips land on their own card and the row
+  scrolls to it (carousel scrollLeft 0 / 322 / 965). `site.test.ts` now fails on a repeated id or
+  an in-page link that names more than one element.
+- **The documentation map's filter comes before the label legend.** The four label explanations
+  are a closed `details` ("What each label means") and the "Each title opens the document on
+  GitHub" note follows the filter, next to the cards it describes. The filter moves from 3,101 to
+  2,523 at 360 (1,722 to 1,361 at 1440) and the first document card from 3,306 to 2,903. Opened,
+  the four rows are the same rows, and the filter moves down by their height, as before.
+- **The estimate follows the fields on a phone.** The calculator's form and its result cannot be
+  on a 360 × 800 screen together (558 + 666 px), so a change of a field left the figure 1,007 px
+  down the viewport. The form now opens with a 48 px total (`#calc-total`, aria-hidden, the
+  ledger's live region stays the result) that pins under the header and On this page bar while
+  the form is edited: "Business / $637 / month (annual)". It is hidden at 860 and up, where the
+  form and the result are side by side, and in print.
+- **The calculator names its billing period.** For a listed plan the fee row now reads
+  "$499 / month, billed annually" (or monthly), and the pinned total says "(annual)" or
+  "(monthly)"; a quoted plan still says "Quoted, plus model usage", and the free plan "Free".
+- **The pricing page's first two sections take the page's heading rank.** "The licence plans." and
+  "Do you run it, or do we?" were 22 px `.legend-title`s, the same size as the plan names they
+  carry, while the five sections after them were 28 px on a phone and 48 px on a desktop. Both are
+  now section heads with an eyebrow ("Plans", "Two ways in") and a 28/48 px title.
+
+### Measurements after this pass
+| Page at 360 / 1440 | Before | After |
+|---|---|---|
+| Home | 13,526 / 12,258 | **13,526 / 12,258** |
+| Documentation | 9,208 / 4,696 | **8,805 / 4,437** |
+| Pricing | 13,790 / 9,188 | **14,006 / 9,393** |
+
+- The home page is unchanged in height: the ids are the whole of its change. At 768 it is still
+  13,156. The contents strip, the section order and the first screen are untouched.
+- Documentation: the filter 3,101 → **2,523** at 360 and 1,722 → **1,361** at 1440; the first card
+  3,306 → **2,903** and 1,930 → **1,671**; the page 9,208 → **8,805** at 360 and 4,696 → **4,437**
+  at 1440 (6,171 → **5,839** at 768). The closed disclosure is one 48 px row; opened it is the
+  same four rows (the columns block grows 226 → 684 at 360).
+- Pricing: the plans section 1,636 → **1,700** at 360, the ways 1,225 → **1,309**, the calculator
+  2,907 → **2,974** (the pinned total's 48 px and its 20 px margin), and the page +216 at 360 and
+  +205 at 1440. The two H2s are **28 px at 360 and 48 px at 1440** (were 22 at both). The cost is
+  the two eyebrows and the section-head's own gap, taken deliberately for the rank.
+- The calculator, 360 and 768: with the first field in view (y=479), the figure is at
+  **357–430** at 360, where the result used to start at 1,007 (below an 800 px screen); at 768 the
+  result used to start at 939, and the pinned total is at the same place. The result itself is
+  where it was. The pinned total holds at **top 140** under the 69 px header and 61 px bar, and is
+  46 px tall (72 px when "Enterprise · Quoted, plus model usage" wraps at 320/360).
+- No page scrolls sideways at 320, 360, 390, 768 or 1440 in light, or at 360 and 1440 in dark;
+  0 console errors. The smallest text is **12 px** and the contrast probe finds **0** failing
+  text pairs on the home, pricing and docs pages in either scheme.
+- Tests: `node --test` over the eight site files (structure, copy, chrome, cloud, script,
+  brand assets, pages workflow, pricing) is **130 pass, 0 fail**.
+
+### What this pass deliberately left
+- **The landing page is still 13,526 px at 360**, and its longest sections are the four demo steps
+  (1,871) and security (1,531). Their words are the product's argument and the demo's commands are
+  what the hero's second action promises; folding either behind a disclosure would hide the thing
+  the visitor pressed. The pass fixed the path through the page (the six chips) rather than the
+  page's length.
+- **The home page's two ways in still carry one action each**, the demo for "You run it" and
+  "Get started" for the Cloud card: `site-cloud.test.ts` states that as the design ("the one thing
+  to press"), so a second "See the plans" link under the demo was not added. The plans sit one
+  section above.
+- **The pricing comparison still follows the Annual/Monthly switch above it** rather than
+  repeating a switch under the table; its row label names the period, and a second segmented
+  control would be two controls for one fact.
+- The screenshots are unchanged; no capture was retaken.

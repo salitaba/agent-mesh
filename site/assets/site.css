@@ -637,6 +637,16 @@ main:has(.hero) .section-head .eyebrow::before { counter-increment: sec; content
 }
 .calc { gap: 24px; }
 @media (min-width: 860px) { .calc { grid-template-columns: var(--c2); gap: 48px; align-items: start; } }
+/* The estimate over the fields on a phone: the form and the result cannot be on one screen, so the
+   figure follows the fields (under the pinned header and bar) while they are changed. The result
+   below stays the ledger; this is its total, and a screen reader hears that one. Hidden where the
+   form and the result are side by side. */
+.calc-total { display: none; }
+@media (max-width: 859px) {
+  .calc-total { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 2px 12px; position: sticky; top: calc(var(--head-h) + var(--toc-h) + 10px); z-index: 4; margin: 0 0 20px; padding: 10px 14px; border: 1px solid var(--k-line-control); border-radius: var(--k-r-md); background: var(--panel); box-shadow: var(--lift); color: var(--ink); font-size: .9375rem; font-weight: 650; font-variant-numeric: tabular-nums; }
+  .calc-total-plan { color: var(--muted); font-weight: 500; }
+  .calc-total-figure { white-space: nowrap; }
+}
 .field { margin-bottom: 20px; }
 .field label, .doc-filter label { display: block; margin-bottom: 6px; font-size: .875rem; font-weight: 600; }
 .field input[type=number], .field select, .doc-filter input { width: 100%; min-height: 44px; padding: 0 14px; border: 1px solid var(--k-line-control); border-radius: var(--k-r-md); background: var(--panel); color: var(--ink); font: 1rem var(--font); }
@@ -679,6 +689,17 @@ main:has(.hero) .section-head .eyebrow::before { counter-increment: sec; content
 /* documents */
 .legend-title { font-size: 1.375rem; line-height: 1.25; letter-spacing: var(--k-track-title); }
 .legend b { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; }
+/* The four labels are explained on request: they are read once, and while closed they no longer
+   stand between the page's first cards and the filter over them. The summary is a row of the same
+   ruled list, with the FAQ's chevron. */
+.legend-more > summary { display: flex; align-items: center; justify-content: space-between; gap: 16px; min-height: 48px; border-block: 1px solid var(--line); font-weight: 600; list-style: none; cursor: pointer; }
+.legend-more > summary::-webkit-details-marker { display: none; }
+.legend-more > summary::after { content: ""; flex: none; width: 8px; height: 8px; margin: -4px 8px 0 0; border-right: 2px solid var(--muted); border-bottom: 2px solid var(--muted); transform: rotate(45deg); }
+.legend-more[open] > summary::after { margin-top: 4px; transform: rotate(-135deg); }
+.legend-more > summary:hover { color: var(--link); }
+.legend-more > summary:hover::after { border-color: var(--link); }
+.legend-more .rows { border-top: 0; }
+
 .doc-grid { gap: 16px; }
 @media (min-width: 720px) { .doc-grid { grid-template-columns: var(--c2); } }
 @media (min-width: 1040px) { .doc-grid { grid-template-columns: var(--c3); } }
@@ -757,6 +778,7 @@ main:has(.hero) .section-head .eyebrow::before { counter-increment: sec; content
 }
 @media print {
   .site-header, .skip, .tabs, .billing, .copy, .foot-grid, .hero::before, .hero::after, .cta::after, .to-top-dock { display: none; }
+  .calc-total { display: none; }
   .stack-table { display: none !important; }
   #compare .table-wrap, #calculator .table-wrap { display: block !important; }
   .toc-bar.is-live { position: static; }
