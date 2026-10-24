@@ -574,3 +574,60 @@ second port and measured today; no number is copied from an earlier pass.
 - **The home page's first screen was not touched.** Its action is still in the first 800px and the
   capture still starts at 634; this pass is the bar above it.
 - **No capture was retaken**, and `site/ux/` was not edited.
+
+## 2026-10-24, fourth pass: the address line, the rank of a section, the rules a forced-colour mode drops
+
+Measured with the same probe (Chrome 156 over CDP, reduced motion, light unless said, touch at 320/360/390).
+The before column is the site at the commit this pass started from (`651c5e5`), served on a second port and
+measured today; no number is copied from an earlier pass.
+
+### What changed
+
+- **An address and its Copy are one line at every phone width.** At 360 the line wanted **280px in the row's
+  278** (the address 205.97, the button 62.27, the gap 12), so the button dropped under the address and each of
+  the contact page's three rows was **217.38px** where a row is **169.38**. The address now takes the shrink (it
+  may break inside itself) and the button keeps its size; at 420 and below the line's gap is 8px, which gives the
+  email its last 4px. Rows at 360: **217.38 → 169.38** (three rows **653.13 → 507.13**); at 320: **217.38 →
+  179.75** (the email keeps two lines where 238px cannot hold it, so the saving is 37.63 a row, not 48).
+- **A card's title no longer outranks its section's.** On the contact page the section heads were **22px** and the
+  card titles **24px**, so "To sales" was the largest thing in its section. The card takes the design's card title
+  (**24 → 19**, the same 19 every other card on the site uses) and the page's own section heads take the section
+  rank the home and pricing pages use: **22 → 28 at 360, 22 → 48 at 1440** (`.section > .wrap > h2.legend-title`,
+  which does not reach a title inside a column or a box). The docs page's "Start here" and "Something missing?"
+  take it too: **22 → 28 at 360, 22 → 48 at 1440**; "How to read the labels" (a column's title) and the security
+  page's "At a glance" (a box's title) stay 22.
+- **A forced-colour mode keeps the rate card's and a plan's rules.** The home page's four plans and a plan's three
+  figures are ruled by the 1px gap between cells, and a gap is a colour: with `forcedColors: active` at 360 the
+  rate card measured **rgb(255,255,255) ground and rgb(255,255,255) cells** — one white block — and a plan's
+  figures the same. The ground is now painted `CanvasText` (**measured rgb(0,0,0)**) and the cells keep their own
+  forced colours (**rgb(255,255,255)**) over it, so the rules survive; the cells take `forced-color-adjust: auto`
+  so their words stay the system's.
+
+### Measurements after this pass
+
+| Page | 320 before / after | 360 before / after | 390 | 768 | 1440 |
+|---|---|---|---|---|---|
+| Contact | 5,062 / **4,948** | 4,815 / **4,698** | 4,437 / 4,490 | 3,871 / 3,883 | 2,815 / 2,860 |
+| Docs | 9,418 / 9,421 | 8,805 / 8,808 | 8,527 / 8,529 | 5,839 / 5,851 | 4,437 / 4,461 |
+| Home, pricing, security, legal, 404 | unchanged | unchanged | unchanged | unchanged | unchanged |
+
+- The contact page is **117px shorter at 360** and **114px shorter at 320**. It is 39–53px taller at 390 and above,
+  which is the section rank (a 28px head at 390, a 48px one at 1440) where the address rows were already one line.
+  The docs page is 3–24px taller for the same reason, on two heads.
+- The contact page's first address is at **508 → 540** at 360 (the section head is 6px taller and the addresses
+  start under it); the three addresses end **1,161 → 1,047**.
+- The smallest computed text is still **12px** on every page at 320 and 360; no page has text under 12px.
+- No page scrolls sideways at 320, 360, 390, 768 or 1440 in light or dark (**0** on all 70 page/width/theme
+  pairs), and the probe reports no console errors. The type sizes added are on the design's ramp (19, 28, 48).
+
+### What this pass deliberately left
+
+- **The contact page still shows the same address three times**, once for each purpose: that is the owner's
+  address, not the layout's, and the rows say which purpose each is for.
+- **The On this page row still scrolls in silence where its chips do not fit** (the security page's six chips take
+  1,232px in 768 and 1,203 in 360; the pricing page's 804 in 768). The script reveals the chip being read, so a
+  reader is never left without the current section; a fade at the row's edge would be the next step, and it needs a
+  class the script sets (CSS cannot see that a row overflows) — a larger change than this pass.
+- **The two ways, the plans and the console row were not touched**; their snap rows and the 86px between the
+  pricing page's first screen and its first figure are as the third pass left them.
+- **No capture was retaken**, and `site/ux/` was not edited.
