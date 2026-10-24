@@ -412,3 +412,79 @@ Same trial service (`trial --port 7620`), Chromium 1208 through `playwright-core
 - **The account is unchanged.** The plan-less account at 360 is 1,627px, no sideways
   scroll, nothing under 12px, no target under 44px, its first price at y = 708 and the
   "Choose a plan" action at 498. Both schemes, 320 and 1440 included.
+
+## 2026-10-24: the path a stranger takes
+
+Same harness: Chromium 156 (playwright-core, the headless shell) against two trial services — the
+unmodified base on `trial --port 7670`, and this pass on `trial --port 7640` — so every "before" was
+measured on the same commit with the same fixture, not copied from an earlier record. 360×800 and
+1440×900, light and dark, `prefers-reduced-motion: reduce`, a touch pointer at 360. Heights are
+`document.documentElement.scrollHeight`; positions are `getBoundingClientRect`; the fixture's
+address is 29 characters, so the "Signed in as" line wraps to two lines at 360 in both halves.
+
+- **The tick's refusal is said at the tick, and stops when the tick is ticked.** This was the one
+  field the 2026-10-23 sentence was not true of: the consent branch wrote its message into the
+  form's top status instead of calling `invalid()`. At 360, after email and password but no tick,
+  the sentence sat at y = 314, **353px above the tick** at y = 667, and the tick carried no
+  `aria-invalid` and no `aria-describedby`; ticking it left the sentence and the 1,530px page as
+  they were. It is now `#agree-error`, a note after the consent row: at y = 685, **12px under the
+  sentence it belongs to**, with `aria-invalid="true"` and `aria-describedby="agree-error"`. Ticking
+  clears it: the note is 74 → 0px and the page 1,530 → **1,440**. With the refusal up the page is
+  1,530px and the submit 775–819 in both halves: the note took the old top note's 90px, so the
+  action is still 19px below an 800px screen (see what this leaves).
+- **A failed read of the account carries the action its sentence promises.** With `/api/me`
+  failing (503) the page said "The account could not be read just now. Reload the page to try
+  again." at y = 135–209 and offered **no control** at all; the same was true of `/api/session`
+  failing before the account was read. Both now say "... Nothing was changed." and put a
+  **106×44 "Try again"** at y = 225, which loads the page and its one read again. A session that
+  answers 401 now goes to `/login?next=/account`, as a signed-out page should, instead of showing
+  a failure to someone who is not signed in. Measured at 360; the page stays 800 tall and the
+  retry is above Settings.
+- **A plan list that could not be read has its own retry, and the card at the top no longer
+  dead-ends.** With `/api/plans` failing, the plan panel was a **51px sentence** ("... Reload the
+  page to try again.") at y = 646 and the page **916px**, with **0 buttons in it** — while the
+  card at the top still offered "Choose a plan" and its action jumped straight to that sentence.
+  It is now a 133px warning with the sentence "The plans could not be loaded just now, so no plan
+  or price is shown." and a 106×44 **Try again** at y = 722; the page is 998px. Pressing it
+  re-reads `/api/plans` and draws the answer **in place**: the trial's two cards appear, the page
+  is 1,627px again, the first "Choose Team" at y = 979, and no reload happens. The sentence is now
+  the same wording and shape as the front page's failed plans.
+- **After the link is sent, the page names what the link does.** The card said only "We sent the
+  link to … It works once, and the email says when it expires."; nothing said that opening it
+  confirms the address *and signs you in*, and the line beside the form still offered "Already have
+  an account? Sign in", a door that refuses until the address is confirmed. The sentence now reads
+  "Open it: it confirms your address and signs you in to your account." and the aside reads
+  "Already confirmed? Sign in." — the same words the confirmation page uses. At 360 the card is
+  604 → **656px** and the page **1,469 → 1,521** (1440: 991 → 1,016); the next action is in the
+  first screen, and the aside at y = 850 is below the first screen, where it belongs. The sign-in rail no
+  longer claims "Your address is already confirmed." (which the page cannot know) but "Your address
+  must be confirmed first."; the sign-in page is **1,285px** before and after, and its rail span is
+  still two 48px lines with no new overflow.
+- **Widths, schemes and the floor.** 320, 360, 390, 768 and 1440 in light and dark on the plan-less
+  account: no sideways page scroll (320: 320; 360: 360; 390: 390; 768: 768; 1440: 1440), no text
+  under 12px, and the account is 1,757 / 1,627 / 1,579 / 1,078 / 1,036. At 360 the only control
+  under 44×44 is still the 20px tick, whose label is 108px tall; at 1440 the 40px fields and 36px
+  header links are the pointer's 24px exception, unchanged. The new "Try again" targets are 44px
+  tall. Nothing new is coloured: `app.css` is untouched, at **40,958 bytes of 40,960**, because
+  every addition reuses the note, button and row classes that were already there.
+- **The harness was lying about one thing.** `FakeNode.dataset` returned a fresh snapshot, so the
+  script's `field.dataset.refused` never survived a write: the sentence-stops-on-input behaviour
+  the last pass measured in a browser could not be tested. It is now backed by the element's
+  attributes, and `check()` fires `input` then `change` as a browser does, so the new consent test
+  proves both the attachment and the clearing.
+
+### What this pass leaves
+
+- **The consent refusal still puts the submit 19px below an 800px screen.** The note is now at the
+  field, but it is the same 74px the top note was; bringing the button fully in would mean a
+  shorter sentence (it loses the privacy notice) or a compact error style the budget has no room
+  to add. The reader sees the note and the top of the button on the screen they are on.
+- **The account's failed read retries by loading the page.** Its first read is the page's whole
+  setup, so there is no smaller request to re-run; the button says "Try again", not "Reload".
+- **The confirmation page's success is still a flash.** `POST /api/verify` signs the person in and
+  the page replaces itself with the account before "Your address is confirmed" can be read; the
+  account says "Signed in as …" instead. Keeping the confirmation on screen would add the screen
+  this pass removed, so it is left as it is.
+- **A direct landing still shows a skeleton with three tiles that a plan-less account never gets**
+  (a 628px block on a 982px page, against 1,627px after the read), then the page grows. The
+  skeleton cannot know the plan before the read.

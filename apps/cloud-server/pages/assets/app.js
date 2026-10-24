@@ -24,12 +24,12 @@
 
   const NEEDS = {
     home: ["plans", "topups"],
-    signup: ["card", "form", "status", "title", "lede", "email", "password", "agree"],
+    signup: ["card", "form", "status", "title", "lede", "email", "password", "agree", "agree-error"],
     login: ["form", "status", "email", "password", "resend-form", "resend", "resend-wait", "resend-status"],
     verify: ["status", "title", "again", "resend-form", "resend", "resend-wait", "resend-status", "email"],
     forgot: ["form", "status", "email"],
     reset: ["card", "form", "status", "title", "lede", "password"],
-    account: ["who", "notice", "skeleton", "glance", "glance-list", "subnav", "settings-panel", "stage", "stage-steps", "stage-title", "stage-text", "stage-actions", "stage-live", "workspaces-panel", "workspaces", "create-slot", "create-box", "create", "workspace-name", "create-plan-field", "workspace-plan", "create-note", "plan-panel", "plan-h", "plan-status", "plan", "balance-panel", "usage-panel", "figures", "topup", "topup-amount", "topup-unit", "topup-hint", "topup-status", "topup-options", "usage", "password-form", "password-status", "current", "next"],
+    account: ["who", "notice", "retry-row", "skeleton", "glance", "glance-list", "subnav", "settings-panel", "stage", "stage-steps", "stage-title", "stage-text", "stage-actions", "stage-live", "workspaces-panel", "workspaces", "create-slot", "create-box", "create", "workspace-name", "create-plan-field", "workspace-plan", "create-note", "plan-panel", "plan-h", "plan-status", "plan", "balance-panel", "usage-panel", "figures", "topup", "topup-amount", "topup-unit", "topup-hint", "topup-status", "topup-options", "usage", "password-form", "password-status", "current", "next"],
     terms: [],
     privacy: [],
     notfound: [],
@@ -447,6 +447,15 @@
     return false;
   }
 
+  /**
+   * A first read of the account that fails says what happened and gives the action its sentence used to only name: the page asks again,
+   * by loading itself and its one read. The button is next to the sentence, not inside it, so the live region stays a sentence.
+   */
+  function offerRetry() {
+    $("retry-row").replaceChildren(button("Try again", { onclick: () => location.reload() }));
+    $("retry-row").hidden = false;
+  }
+
   // ---- the API ----
 
   /** One call to this service. It never throws: a failure is a reply with `ok: false` and an error that is fit to show. */
@@ -825,11 +834,7 @@
     onSubmit($("form"), status, async () => {
       say(status, "", "");
       if (!checkEmailAndPassword(email, password, status, { chosen: true })) return;
-      if (!$("agree").checked) {
-        say(status, "bad", "Agree to the Terms and the Privacy notice to continue.");
-        $("agree").focus();
-        return;
-      }
+      if (!$("agree").checked) return invalid($("agree"), $("agree-error"), "Agree to the Terms and the Privacy notice to continue.");
       const address = email.value.trim();
       const r = await call("POST", "/api/signup", { email: address, password: password.value });
       if (!r.ok) {
@@ -848,11 +853,15 @@
       card.replaceChildren(
         el("div", { class: "tile tile-mail", "aria-hidden": "true" }),
         el("div", { class: "note note-ok", role: "status" }, r.data.message),
-        el("p", null, "We sent the link to ", el("strong", null, address), ". It works once, and the email says when it expires."),
+        el("p", null, "We sent the link to ", el("strong", null, address), ". Open it: it confirms your address and signs you in to your account. It works once, and the email says when it expires."),
         again,
         el("h2", { class: "causes-h" }, "If it does not come"),
         el("ul", { class: "causes muted small" }, el("li", null, "It can take a few minutes. Look in your spam or junk folder too."), el("li", null, "Check the address above for a typo. If it is wrong, use another address.")),
       );
+      // The door beside the form was for someone who had not made an account yet. This person has one, unconfirmed: the only other way in
+      // is the link they were just sent, or a sign-in after confirming it on another device.
+      const aside = doc.querySelector(".auth-main .aside");
+      if (aside) aside.replaceChildren("Already confirmed? ", el("a", { href: "/login" }, "Sign in"), ".");
       // The email has just gone: the first minute is already a wait.
       resender(again, press, answer, wait, () => address).startWait();
       card.setAttribute("tabindex", "-1");
@@ -1039,7 +1048,10 @@
     if (!first.ok) {
       skeleton(false);
       if (signedOut(first)) location.replace(SIGN_IN);
-      else say($("notice"), "bad", `${first.error.message} Reload the page to try again.`);
+      else {
+        say($("notice"), "bad", `${first.error.message} Nothing was changed.`);
+        offerRetry();
+      }
       return;
     }
     // A plan picked on the front page: the account it was picked for is this one, and the choice is read once.
@@ -1088,14 +1100,7 @@
       usageLoaded: false,
     };
 
-    const offered = await plans();
-    if (offered.ok) {
-      state.plans = offered.data.plans;
-      state.plansKnown = true;
-      state.currency = offered.data.currency;
-      state.topups = offered.data.topups;
-      state.policy = offered.data.policy;
-    }
+    await readPlans();
 
     const account = () => state.me.account;
     const subscription = () => account().subscription;
@@ -1115,6 +1120,19 @@
       location.replace(SIGN_IN);
       return true;
     };
+
+    /** Ask the service for the plans again, and take the answer: the page's first read, and the one a failed read's button asks for. */
+    async function readPlans() {
+      plansReply = null;
+      const offered = await plans();
+      if (!offered.ok) return false;
+      state.plans = offered.data.plans;
+      state.plansKnown = true;
+      state.currency = offered.data.currency;
+      state.topups = offered.data.topups;
+      state.policy = offered.data.policy;
+      return true;
+    }
 
     // -- the top of the page --
 
@@ -1842,6 +1860,15 @@
       if (typeof card.scrollIntoView === "function") card.scrollIntoView({ block: "center" });
     }
 
+    /** Ask again for the plans a failed read could not give, and draw the account from the answer, wherever it was the plans that were missing. */
+    function retryPlans(event) {
+      const press = event.currentTarget;
+      press.disabled = true;
+      press.setAttribute("aria-busy", "true");
+      press.textContent = "Trying again";
+      readPlans().then(() => renderAll());
+    }
+
     function renderPlan() {
       const box = $("plan");
       const sub = subscription();
@@ -1889,8 +1916,16 @@
           ),
         );
       }
-      if (!state.plansKnown) parts.push(el("p", { class: "muted" }, "The plans could not be loaded just now. Reload the page to try again."));
-      else if (!live && state.plans.length > 0) parts.push(el("div", { class: "plans" }, state.plans.map((p) => planCard(p, state.currency, { subscription: sub, picked: state.picked === p.id, action: (x) => button(`Choose ${x.title}`, { kind: "primary", onclick: checkout(x) }) }))));
+      if (!state.plansKnown) {
+        parts.push(
+          el(
+            "div",
+            { class: "note note-warn" },
+            el("p", null, "The plans could not be loaded just now, so no price is shown."),
+            button("Try again", { onclick: retryPlans }),
+          ),
+        );
+      } else if (!live && state.plans.length > 0) parts.push(el("div", { class: "plans" }, state.plans.map((p) => planCard(p, state.currency, { subscription: sub, picked: state.picked === p.id, action: (x) => button(`Choose ${x.title}`, { kind: "primary", onclick: checkout(x) }) }))));
       box.replaceChildren(...parts);
       const status = $("plan-status");
       if (state.planNote) say(status, state.planNote.kind, state.planNote.text);
@@ -2218,7 +2253,11 @@
     paintChrome(me, page);
     if (page === "account" && !reply.ok) {
       skeleton(false);
-      say($("notice"), "bad", `${reply.error.message} Reload the page to try again.`);
+      if (signedOut(reply)) location.replace(SIGN_IN);
+      else {
+        say($("notice"), "bad", `${reply.error.message} Nothing was changed.`);
+        offerRetry();
+      }
       return;
     }
     const run = PAGES[page];

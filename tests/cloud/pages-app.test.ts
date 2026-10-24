@@ -312,8 +312,15 @@ test("sign-up says what is missing before it asks anything, and puts the cursor 
   assert.equal(v.doc.activeElement, v.$("password"));
   v.type("password", "correct horse battery staple");
   await submit();
-  assert.equal(v.text("status"), "Agree to the Terms and the Privacy notice to continue.");
+  assert.equal(v.text("status"), "", "a refusal about the tick is not said at the top of the form");
+  assert.equal(v.text("agree-error"), "Agree to the Terms and the Privacy notice to continue.");
+  assert.equal(v.$("agree").getAttribute("aria-invalid"), "true");
+  assert.equal(v.$("agree").getAttribute("aria-describedby"), "agree-error", "the sentence describes the tick it is about");
   assert.equal(v.doc.activeElement, v.$("agree"));
+  v.check("agree");
+  assert.equal(v.text("agree-error"), "", "ticking answers it, so the sentence stops being said");
+  assert.equal(v.$("agree").getAttribute("aria-invalid"), null);
+  assert.equal(v.$("agree").getAttribute("aria-describedby"), null);
   assert.deepEqual(v.to("POST", "/api/signup"), [], "nothing was asked of the service for any of that");
 });
 
@@ -328,7 +335,10 @@ test("sign-up sends the address as typed (trimmed) and the password as typed, on
   v.submit(v.$("form"));
   await v.idle();
   assert.deepEqual(v.to("POST", "/api/signup"), [{ method: "POST", path: "/api/signup", body: { email: "Ada@Example.com", password: " a password with edges " } }], "a second submit while the first is out is not a second request");
-  assert.equal(v.text("card"), "Check your email for a link to confirm your address. We sent the link to Ada@Example.com. It works once, and the email says when it expires. Resend the email Use another address You can ask for another in 60 seconds. If it does not come It can take a few minutes. Look in your spam or junk folder too. Check the address above for a typo. If it is wrong, use another address.");
+  assert.equal(v.text("card"), "Check your email for a link to confirm your address. We sent the link to Ada@Example.com. Open it: it confirms your address and signs you in to your account. It works once, and the email says when it expires. Resend the email Use another address You can ask for another in 60 seconds. If it does not come It can take a few minutes. Look in your spam or junk folder too. Check the address above for a typo. If it is wrong, use another address.");
+  const sentAside = v.doc.querySelector(".auth-main .aside")!;
+  assert.equal(v.text(sentAside), "Already confirmed? Sign in.", "the door beside the form is for a confirmed account, not for this one before it has opened the link");
+  assert.equal(sentAside.querySelector("a")!.getAttribute("href"), "/login");
   assert.equal(v.link("card", "Use another address").getAttribute("href"), "/signup");
   assert.equal(v.doc.activeElement, v.$("card"), "focus moves to what happened");
   assert.deepEqual(v.navigations, []);
@@ -736,19 +746,27 @@ test("the account page sends a visitor to sign in and remembers where they were 
   assert.deepEqual(open.navigations, ["replace /login?next=/account"]);
 });
 
-test("the account page says the service cannot be reached, instead of sending a person to sign in again for nothing", async () => {
+test("the account page says the service cannot be reached, offers the same read again, and does not send a person to sign in again for nothing", async () => {
   const down = await visit("account", { routes: (c) => (c.path === "/api/session" ? failure(503, "unavailable", "Changes cannot be saved just now. Try again in a few minutes.") : undefined) });
-  assert.equal(down.text("notice"), "Changes cannot be saved just now. Try again in a few minutes. Reload the page to try again.");
+  assert.equal(down.text("notice"), "Changes cannot be saved just now. Try again in a few minutes. Nothing was changed.");
   assert.deepEqual(down.navigations, []);
+  const again = down.button("retry-row", "Try again");
+  assert.equal(down.shows(down.$("retry-row")), true, "the action the sentence used to only name is a control");
+  down.click(again);
+  assert.deepEqual(down.navigations, ["reload"], "pressing it asks for the page, and its one read, again");
   const offline = await visit("account", { routes: (c) => (c.path === "/api/session" ? { fail: true } : undefined) });
-  assert.equal(offline.text("notice"), "The service could not be reached. Check your connection and try again. Reload the page to try again.");
+  assert.equal(offline.text("notice"), "The service could not be reached. Check your connection and try again. Nothing was changed.");
   assert.deepEqual(offline.navigations, []);
 
   const w = world(paid);
   w.answers.set("GET /api/me", failure(502, "bad_gateway", "Something went wrong on our side. Try again in a moment."));
   const half = await visit("account", { routes: w.routes });
-  assert.equal(half.text("notice"), "Something went wrong on our side. Try again in a moment. Reload the page to try again.");
+  assert.equal(half.text("notice"), "Something went wrong on our side. Try again in a moment. Nothing was changed.");
+  assert.equal(half.text(half.button("retry-row", "Try again")), "Try again", "a read that fails after the session is known offers the same way back");
   assert.deepEqual(half.navigations, []);
+
+  const ended = await visit("account", { routes: (c) => (c.path === "/api/session" ? failure(401, "not_signed_in", "Sign in to continue.") : undefined) });
+  assert.deepEqual(ended.navigations, ["replace /login?next=/account"], "a session that has ended goes where a signed-out page goes, not to a retry");
 });
 
 test("a new account sees what to do first: choose a plan, and nothing to create, open, pay for or use yet", async () => {
@@ -945,16 +963,39 @@ test("the balance is what the gateway says, rounded down; when it cannot be read
   assert.match(b.text(b.$("plan").querySelector(".row")!), /^Team Active \$149\.00 per month\. Paid until November 5, 2026\. /);
 });
 
-test("the plans being unavailable leaves the rest of the account usable and says what is missing", async () => {
+test("the plans being unavailable leaves the rest of the account usable, says what is missing, and asks again when told to", async () => {
   const w = world(paid);
   w.plans = failure(503, "unavailable", "Down.");
   w.workspaces = [workspace({ status: "suspended", statusReason: "paused by its owner" })];
   const v = await visit("account", { routes: w.routes });
-  assert.equal(v.text(v.$("plan").querySelectorAll("p").at(-1)!), "The plans could not be loaded just now. Reload the page to try again.");
-  assert.equal(v.text("topup-hint"), "");
+  const last = v.$("plan").querySelectorAll("p").at(-1)!;
+  assert.equal(v.text(last), "The plans could not be loaded just now, so no price is shown.");
+  assert.equal(v.text(v.$("topup-hint")), "");
   assert.deepEqual(v.labels("topup-options"), []);
   assert.deepEqual(v.labels("workspaces"), ["Resume", "More"]);
   assert.match(v.text("workspaces"), /Paused by you\. Its files are kept\. Resume it to open it\./);
+  // The sentence is an action now: the same read, again, and the page takes the answer.
+  const retry = v.button("plan", "Try again");
+  w.plans = { json: PLANS };
+  v.click(retry);
+  await v.idle();
+  assert.doesNotMatch(v.text(v.$("plan")), /could not be loaded/, "the plan the account is on arrives");
+  assert.match(v.text(v.$("plan")), /Team Active \$149\.00 per month/, "and the summary is drawn from it");
+  assert.equal(v.button("plan", "Manage billing").tag, "button");
+  assert.deepEqual(v.consoleErrors, []);
+
+  // A new account: the card at the top still says "Choose a plan", and the retry is what turns that sentence into the list it promises.
+  const fresh = world((x) => {
+    x.plans = failure(503, "unavailable", "Down.");
+  });
+  const n = await visit("account", { routes: fresh.routes });
+  assert.equal(n.text(n.$("plan").querySelectorAll("p").at(-1)!), "The plans could not be loaded just now, so no price is shown.");
+  fresh.plans = { json: PLANS };
+  n.click(n.button("plan", "Try again"));
+  await n.idle();
+  assert.deepEqual(n.labels("plan"), ["Choose Team", "Choose Business"], "the list the card at the top offers is drawn without a reload");
+  assert.equal(n.link("stage-actions", "Choose a plan").getAttribute("href"), "#plan-h");
+  assert.deepEqual(n.consoleErrors, []);
 });
 
 // ---- workspaces ----
