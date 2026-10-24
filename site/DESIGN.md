@@ -505,3 +505,72 @@ measured today; no number is copied from an earlier pass.
   repeating a switch under the table; its row label names the period, and a second segmented
   control would be two controls for one fact.
 - The screenshots are unchanged; no capture was retaken.
+
+## 2026-10-24, third pass: the bar that fits the phone, and the sections at 768
+
+Measured with the same probe (Chrome 156 over CDP, reduced motion, touch, light and dark unless
+said). The before column is the site at the commit this pass started from (`3a9b11a`), served on a
+second port and measured today; no number is copied from an earlier pass.
+
+### What changed
+
+- **The wordmark is drawn at its own proportions on every phone.** The header's bar held more than
+  it could: at 360 the wordmark's link is 102.61px wide and the bar's four items needed **401.6px
+  of a 328px wrap**, so flex shrank the link to its 44px floor and the drawing inside it to
+  **30 × 24** — 1.25:1 where the logo is drawn 221.54 × 60 (3.69:1) — and the actions ended at
+  **345.0** against the wrap's right edge at **344**. The link and the drawing are now `flex: none`
+  (a test pins both), and what gives way is the bar's copy, below.
+- **Sign in is said once.** Below 600 the bar's Sign in is hidden and the menu's own row is the
+  link (it was the same sentence twice on a 360 screen: in the bar at y=12 and four rows into the
+  open panel); it stays in the bar from 600, and the panel's copy is hidden there, so exactly one
+  "Sign in" is on screen at every width.
+- **The menu is a 44 × 44 thumb's square below 600**, its word kept for a screen reader ("Menu"),
+  and its icon is three bars instead of two (the two the bar had read as "=" once the word beside
+  them was gone). At 600 and up there is room for the word: "Menu".
+- **The four sections are a row from 768**, where they fit: at 768 the links take **301.1px**
+  (Product 79.1, Pricing 72.9, Docs 59.6, Security 83.5) from x=158.7 to 459.8, and the actions
+  start at 543.7 — **83.9px between them**. Before, a 768px window was a phone header: brand, Sign
+  in, Get started, Menu, and the four sections behind a press. The menu is hidden there, and the
+  current page's link keeps its mark (`aria-current`).
+- No type, colour, radius or spacing step was added, and the header is still 69px: every page is the
+  same height as before.
+
+### Measurements after this pass
+
+| The bar at | Logo before | Logo after | Brand link | What else |
+|---|---|---|---|---|
+| 320 | 46.39 × 24 (1.93:1) | **88.61 × 24 (3.69:1)** | 60.39 → **102.61** | menu 44 × 44; 13.25px to spare |
+| 360 | 30 × 24 (1.25:1) | **88.61 × 24** | 44 (its floor) → **102.61** | 45.25px to spare; content 329/328 → **328/328** |
+| 390 | 59.02 × 24 (2.46:1) | **88.61 × 24** | 73.02 → **102.61** | 45.25px to spare |
+| 420 | 87.41 × 24 (3.64:1) | 88.61 × 24 | 101.41 → **102.61** | the last width where it was still off |
+| 768 | 96 × 26 (3.69:1) | 96 × 26 | 110 | nav **hidden → shown** (301.1px), menu **shown → hidden** |
+| 1440 | 96 × 26 | 96 × 26 | 110 | unchanged |
+
+- Page heights are unchanged at 360 and 768 and 1440: home **13,526 / 13,172 / 12,258**, pricing
+  **14,004 / 10,907 / 9,393**, docs **8,805 / 5,843 / 4,437**, security **11,844 / 8,331 / 7,620**,
+  contact **4,815 / 3,871 / 2,815**, legal **5,267 / 3,863 / 3,317**, 404 **2,348 / 1,915 / 1,524**.
+- No page scrolls sideways at 320, 360, 390, 768 or 1440 in light or dark (**0** on all 70
+  page/width/theme pairs), and the probe reports **0** console errors on every one.
+- At a 24px user default the document is **0px over** at 320, 360 and 720, and the bar does not
+  overflow. With the script off the header is the same 69px and the menu still opens (a `details`).
+  In High Contrast the menu keeps all three bars (two are the element's borders, the middle one
+  `CanvasText`). Print does not print the header, as before.
+- The smallest computed text is still **12px**. The only controls smaller than 44 × 44 are the same
+  hidden 1 × 1 billing and hero radios and the 24 × 24 checkbox whose label is 44px; the menu is
+  44 × 44, the brand 102.61 × 44.
+- Tests: the eight site suites (**136** tests) pass, including a new one in `site.test.ts` that
+  pins the bar's rules and the reason for each.
+
+### What this pass deliberately left
+
+- **The bar's Sign in is one press away on a phone, not in the bar.** At 360 the four items cannot
+  all fit in 328px, so something had to go; the primary action and the wordmark stayed, and the
+  returning visitor's link is the fifth row of the menu. The alternative — the wordmark at 74px, or
+  "Get started" behind the menu — spends the first screen's most valuable 100px on a secondary link.
+- **The 44px menu loses its word below 600.** The name stays for a screen reader, and the three
+  bars carry it visually; at 600 the word returns, where the bar has 131px to spare.
+- **The 768–859 band shows the nav but keeps its 36px links.** They are 44px on a coarse pointer,
+  which is what that band is on a tablet; a mouse's 36px row in a 44px bar is the same as at 1440.
+- **The home page's first screen was not touched.** Its action is still in the first 800px and the
+  capture still starts at 634; this pass is the bar above it.
+- **No capture was retaken**, and `site/ux/` was not edited.
