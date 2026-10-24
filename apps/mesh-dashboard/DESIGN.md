@@ -133,10 +133,9 @@ Breakpoints: **1280 1100 900 800 760 620 560**. 800 is the sidebar drawer (JS
 
 ## Open problems (carried forward)
 
-- The Overview is 8,582 px tall at 360 px with a delivered mission. `JumpRow`
-  makes its four sections one press away, but the sections themselves (a dozen
-  goal checks, a long shipped list) are still long. Measure whether one line per
-  section at 620 px and below, opening in place, is worth what it hides.
+- The Overview is 4,474 px tall at 360 px with a delivered mission (was 8,582 before the folding and the shipped card work). `JumpRow`
+  makes its four sections one press away, but the sections themselves (seven goal checks, six file cards, eight log rows) are still
+  long. Measure whether one line per section at 620 px and below, opening in place, is worth what it hides.
 - Events and the approvals inbox are the only console pages without an end-cap.
   That is deliberate for now: Events is a live viewport that filters and grows,
   and the inbox owns its own navigation. The next pass should decide whether
@@ -165,7 +164,7 @@ Breakpoints: **1280 1100 900 800 760 620 560**. 800 is the sidebar drawer (JS
 ## What the next pass should take
 
 1. The Overview's length (above): the index is a signpost, not a fold. Measure a
-   one-line-per-section phone shape against the current 8,582 px page.
+   one-line-per-section phone shape against the current 4,474 px page.
 2. Decide the Events and inbox end-caps (above), and whether the Events fold row
    should also offer the actor filter it now counts.
 3. Prove whether 768 px needs the project sheet: seed enough projects that the
@@ -184,6 +183,31 @@ Breakpoints: **1280 1100 900 800 760 620 560**. 800 is the sidebar drawer (JS
    the insets are in the CSS but the stand-in browser reports them as zero.
 
 ## Pass log
+
+### 2026-10-24 — the figures name the team, and the lists say a thing once
+
+Surface: `views/MissionHero.tsx`, `views/Timeline.tsx`, `views/Overview.tsx`, `views/overview.css`, `overview-model.ts`.
+Measured on `examples/demo-stub/mesh.yaml` at **Delivered** (the scripted demo, no model calls), production build, Chromium 156 at
+1440, 390 and 360, both themes; before is the base build and after this one, both read within 10 s of delivery.
+
+- **The Agents figure was three zeros** in the two states a person parks on. `agentTally` counts who is working while anyone is and
+  otherwise names the team: **`0 working` / `0 waiting · 0 queued` → `7 seats` / `all finished`** (delivered) and **`7 seats` /
+  `none working`** (not started). The stack's label is "The team: …" so the count is not said twice to a screen reader.
+- **A phone's figure cells were 28 px on the left of the first column**, because the two-up rule from 1100 outranked the phone's
+  rule: content **138 → 150 px at 390**, **123 → 135 at 360**, where the Tokens figure had been breaking at its unit
+  (**`51.0k of` / `2.0M` → one line**). Hero **761 → 737 px** and strip **325 → 301** at 360.
+- **The two lists said a fact twice.** "Latest work" printed `wrote nothing` beside a pill already reading `no output` (4 of 5 rows
+  at 390); "Just happened" printed "Folded. Open Events for each one." on all three folds. The effect line now appears only when the
+  pill does not carry it, and the fold sentence belongs to the first fold: panel **817 → 789 px at 390**, **465 → 437 at 1440**.
+- **A script's smooth scroll ignored `prefers-reduced-motion`** (the `scrollIntoView` option is not reached by the stylesheet's
+  `scroll-behavior` rule). The Overview's index now asks the media query.
+
+Overview **4,462 → 4,434 px at 390** and **1,778 → 1,750 at 1440**; no horizontal page scroll at 360/390/1440 in either theme, 0
+controls under 44 px at the phone widths, smallest text pair unchanged at **5.61:1**, type census on the ramp. Suite: 1,133
+dashboard/build tests pass.
+
+**Left.** The two routine folds are still separate (a reading decision). The Goal checks card's 100 % bar repeats the hero's
+segments on a finished goal. A phone timeline row still spends a line on its time.
 
 ### 2026-10-23 — the parked Overview is a briefing, not the roster
 

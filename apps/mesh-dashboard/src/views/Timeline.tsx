@@ -1,9 +1,9 @@
-import { localDateTime, opsSummary, plainReason, zoneLabel } from "../format";
+import { localDateTime, plainReason, zoneLabel } from "../format";
 import { sinceText } from "../feed";
 import { AgentAvatar, IconTile, OutcomePill, Skeleton, agentColor, useNow } from "../components";
 import { EventSummary, evSeverity } from "../events";
 import type { MiniFeedRow, NameOf } from "../eventmodel";
-import { eventLook } from "../overview-model";
+import { eventLook, whatItLeft } from "../overview-model";
 import type { TimelineEvent, TurnStep } from "../store";
 import "./overview.css";
 
@@ -20,18 +20,22 @@ export function WorkTimeline({ steps, roleOf, onOpen }: { steps: TurnStep[]; rol
   const now = useNow(5000);
   return (
     <ul className="tl">
-      {steps.map((s) => (
-        <li key={s.turnId}>
-          <button type="button" className="tl-row" data-turn={s.turnId} onClick={() => onOpen(s.turnId)}>
-            <span className={`tl-mark${s.status === "running" ? " live lit" : ""}`}><AgentAvatar id={s.agentId} color={agentColor(roleOf(s.agentId))} size="sm" /></span>
-            <span className="tl-main">
-              <span className="tl-line"><b>{s.agentId}</b><span className="tl-dim"> · {plainReason(s.reasonKind)}</span></span>
-              <span className="tl-sub"><time dateTime={s.startedAt} title={exact(s.startedAt)}>{since(s.startedAt, now)}</time> · {opsSummary(s)}</span>
-            </span>
-            <OutcomePill step={s} />
-          </button>
-        </li>
-      ))}
+      {steps.map((s) => {
+        // A quiet turn's pill says "no output"; the line under it says when, and what it left only when there is something to say.
+        const left = whatItLeft(s);
+        return (
+          <li key={s.turnId}>
+            <button type="button" className="tl-row" data-turn={s.turnId} onClick={() => onOpen(s.turnId)}>
+              <span className={`tl-mark${s.status === "running" ? " live lit" : ""}`}><AgentAvatar id={s.agentId} color={agentColor(roleOf(s.agentId))} size="sm" /></span>
+              <span className="tl-main">
+                <span className="tl-line"><b>{s.agentId}</b><span className="tl-dim"> · {plainReason(s.reasonKind)}</span></span>
+                <span className="tl-sub"><time dateTime={s.startedAt} title={exact(s.startedAt)}>{since(s.startedAt, now)}</time>{left ? <> · {left}</> : null}</span>
+              </span>
+              <OutcomePill step={s} />
+            </button>
+          </li>
+        );
+      })}
     </ul>
   );
 }
@@ -63,10 +67,12 @@ export function EventTimeline({ events, nameOf, onOpen }: { events: TimelineEven
 /**
  * The Overview's "Just happened": the same rows, with the runs eventmodel.ts's `miniFeed` folds said as one row. A fold is a
  * button too, and it goes to the place each event can be read: the folded rows are not hidden, only summarised. The line says
- * the count and what happened; the second line says where the rows are, so a press is not a guess.
+ * the count and what happened; the second line says where the rows are, so a press is not a guess — once, on the first fold the
+ * panel draws, because it already speaks for each one and four folds printed the same sentence four times.
  */
 export function MiniFeed({ rows, nameOf, onOpen, onAll }: { rows: MiniFeedRow<TimelineEvent>[]; nameOf: NameOf; onOpen: (seq: number) => void; onAll: () => void }): React.JSX.Element {
   const now = useNow(5000);
+  const explained = rows.find((r) => r.kind === "fold")?.key;
   return (
     <ul className="tl">
       {rows.map((r) => {
@@ -80,7 +86,7 @@ export function MiniFeed({ rows, nameOf, onOpen, onAll }: { rows: MiniFeedRow<Ti
               <span className="tl-mark"><IconTile size="sm" icon={look.icon} tone={look.tone} /></span>
               <span className="tl-main">
                 <span className="tl-line"><b>{r.items.length}</b> {r.what}</span>
-                <span className="tl-sub">Folded. Open Events for each one.</span>
+                {r.key === explained ? <span className="tl-sub">Folded. Open Events for each one.</span> : null}
               </span>
               <time className="tl-time" dateTime={newest.timestamp} title={`${exact(oldest.timestamp)} to ${exact(newest.timestamp)}`}>{since(newest.timestamp, now)}</time>
             </button>

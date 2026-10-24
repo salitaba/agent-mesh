@@ -72,3 +72,18 @@ test("the Events agent chooser folds with the chips on a phone and is counted by
   assert.match(css, /\.ev-facets \.sel \{ flex: none; max-width: 100%; \}/, "a desk width leaves it at its own size beside the chips");
   assert.match(phone, /\.ev-facets \.sel \{ flex: 1 1 100%; \}/, "the folded panel gives it the whole width");
 });
+
+test("a phone's figure cells are 16 px on both sides, and the hero's two-up rule does not keep its 28", () => {
+  const css = view("overview.css");
+  const twoUp = mediaBlock(css, /max-width:\s*1100px/);
+  assert.match(twoUp, /\.ov-hero \.stat-cell:nth-child\(odd\) \{ padding-left: var\(--s6\); border-left: 0; \}/, "from 1100 down the first cell of each row lines up with the hero's own 28 px edge");
+  // At (0, 2, 0) the phone rule lost to that (0, 3, 0) selector and the odd cells kept 28 px of left padding on a phone: every figure
+  // in the first column lost 12 px, and at 360 the Tokens figure wrapped to "51.0k of" / "2.0M" and the strip measured 325 px for
+  // four figures that need 301.
+  const phone = mediaBlock(css, /max-width:\s*620px/);
+  assert.match(
+    phone,
+    /\.ov-hero \.stat-cell:first-child, \.ov-hero \.stat-cell:nth-child\(odd\), \.ov-hero \.stat-cell:last-child \{ padding: var\(--s3-5\) var\(--s4\); \}/,
+    "the phone's cells are named as heavily as the two-up rule they answer",
+  );
+});
