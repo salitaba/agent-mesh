@@ -28,7 +28,7 @@
     login: ["form", "status", "email", "password", "resend-form", "resend", "resend-wait", "resend-status"],
     verify: ["status", "title", "again", "resend-form", "resend", "resend-wait", "resend-status", "email"],
     forgot: ["form", "status", "email"],
-    reset: ["card", "form", "status", "title", "lede", "password"],
+    reset: ["card", "form", "status", "title", "lede", "ask", "password"],
     account: ["who", "notice", "retry-row", "skeleton", "glance", "glance-list", "subnav", "settings-panel", "stage", "stage-steps", "stage-title", "stage-text", "stage-status", "stage-actions", "stage-live", "workspaces-panel", "workspaces", "create-slot", "create-box", "create", "workspace-name", "create-plan-field", "workspace-plan", "create-note", "plan-panel", "plan-h", "plan-status", "plan", "balance-panel", "usage-panel", "figures", "topup", "topup-amount", "topup-unit", "topup-hint", "topup-status", "topup-add", "topup-options", "usage", "password-form", "password-status", "current", "next"],
     terms: [],
     privacy: [],
@@ -842,6 +842,9 @@
       if (!checkEmailAndPassword(email, password, status, { chosen: true })) return;
       if (!$("agree").checked) return invalid($("agree"), $("agree-error"), "Tick the box to continue.");
       const address = email.value.trim();
+      // The link's life is the service's own, filled into the line above by paintPolicy; it is read before retitle clears that line.
+      const life = $("lede") && $("lede").querySelector("[data-policy]");
+      const period = life ? life.textContent : "";
       const r = await call("POST", "/api/signup", { email: address, password: password.value });
       if (!r.ok) {
         // A refusal that is about a field puts the cursor there: that is where the next try starts.
@@ -858,8 +861,7 @@
       const again = el("form", { id: "resend-form", class: "resend", novalidate: true }, el("div", { class: "btn-row" }, press, el("a", { id: "another", class: "btn btn-ghost", href: "/signup", onclick: () => store.set(SIGNUP_ADDRESS, address) }, "Use another address")), answer, wait);
       card.replaceChildren(
         el("div", { class: "tile tile-mail", "aria-hidden": "true" }),
-        el("div", { class: "note note-ok", role: "status" }, r.data.message),
-        el("p", null, "We sent the link to ", el("strong", null, address), ". Open it: it confirms your address and signs you in to your account. It works once, and the email says when it expires."),
+        el("p", null, "We sent the link to ", el("strong", null, address), ". Open it: it confirms your address and signs you in to your account. It works once", period ? ` and expires in ${period}.` : ", and the email says when it expires."),
         again,
         el("h2", { class: "causes-h" }, "If it does not come"),
         el("ul", { class: "causes muted small" }, el("li", null, "It can take a few minutes. Look in your spam or junk folder too."), el("li", null, "Check the address above for a typo. If it is wrong, use another address.")),
@@ -959,7 +961,6 @@
     const status = $("status");
     const password = $("password");
     const token = new URLSearchParams(location.search).get("token");
-    const askAgain = () => el("p", null, el("a", { class: "btn", href: "/forgot" }, "Ask for a new link"));
     // A link that cannot be used: the heading says so, the form that has no use is put away, and what there is to do is what is left.
     const dead = (text) => {
       retitle("That link did not work", "");
@@ -967,9 +968,7 @@
       $("form").hidden = true;
       // The rail marks the link, which is where the trouble is, not the password the reader never reaches.
       atStep(0);
-      const again = askAgain();
-      $("card").append(again);
-      return again.querySelector("a");
+      return $("ask");
     };
     if (!token) {
       dead("This link is incomplete. Open the link in the email again, or ask for a new one.");
