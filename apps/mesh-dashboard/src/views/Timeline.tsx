@@ -1,4 +1,5 @@
-import { localDateTime, plainReason, zoneLabel } from "../format";
+import { localDateTime, zoneLabel } from "../format";
+import { wakeReason } from "../steps";
 import { sinceText } from "../feed";
 import { AgentAvatar, IconTile, OutcomePill, Skeleton, agentColor, useNow } from "../components";
 import { EventSummary, evSeverity } from "../events";
@@ -28,7 +29,7 @@ export function WorkTimeline({ steps, roleOf, onOpen }: { steps: TurnStep[]; rol
             <button type="button" className="tl-row" data-turn={s.turnId} onClick={() => onOpen(s.turnId)}>
               <span className={`tl-mark${s.status === "running" ? " live lit" : ""}`}><AgentAvatar id={s.agentId} color={agentColor(roleOf(s.agentId))} size="sm" /></span>
               <span className="tl-main">
-                <span className="tl-line"><b>{s.agentId}</b><span className="tl-dim"> · {plainReason(s.reasonKind)}</span></span>
+                <span className="tl-line"><b>{s.agentId}</b><span className="tl-dim"> · {wakeReason(s).why}</span></span>
                 <span className="tl-sub"><time dateTime={s.startedAt} title={exact(s.startedAt)}>{since(s.startedAt, now)}</time>{left ? <> · {left}</> : null}</span>
               </span>
               <OutcomePill step={s} />

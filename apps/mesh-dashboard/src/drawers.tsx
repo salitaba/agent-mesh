@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { type ProjectClient } from "./api";
 import { ago, dur, fmt, hhmmss, outcomeOf, opsSummary, pillCls, plural, producedCount, plainArtifact, plainEvent, plainLifecycle, plainReason, shortTurn, MESSAGE_PLAIN, RUNNING, type OutcomeInput } from "./format";
+import { wakeReason } from "./steps";
 import { buildLedger, ledgerTally, msgKind, msgSnippet, opHead, producedFromTimeline, recordNotices, splitSummary } from "./ledger";
 import { planLabel, planStale } from "./plan";
 import { useMesh, useMeshStreams, type TimelineEvent, type TurnStep } from "./store";
@@ -850,7 +851,7 @@ export function StepDrawer({ turnId: openedId, steps, routed }: { turnId: string
             </div>
             <StatusPillOf status={listStep.status} ops={listStep.ops} />
           </div>
-          <p className="sv-why"><span className="sv-why-k">{(plainReason(listStep.reasonKind))}</span></p>
+          <p className="sv-why"><span className="sv-why-k">{(wakeReason(listStep).why)}</span></p>
           <div className="sv-metrics">
             {listStep.durationMs != null ? <span>{dur(listStep.durationMs)}</span> : null}
             {listStep.tokens != null ? <span>{fmt(listStep.tokens)} tok</span> : null}

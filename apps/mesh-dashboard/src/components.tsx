@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { ButtonHTMLAttributes, CSSProperties, InputHTMLAttributes, KeyboardEvent as ReactKeyboardEvent, ReactNode, RefObject, SelectHTMLAttributes, TextareaHTMLAttributes } from "react";
-import { ago, localTime, opsSummary, outcomeOf, plainEvent, plainLifecycle, plainReason, pillCls, zoneLabel, OUTCOME_META, STEP_PLAIN, type OutcomeInput } from "./format";
+import { ago, localTime, opsSummary, outcomeOf, plainEvent, plainLifecycle, pillCls, zoneLabel, OUTCOME_META, STEP_PLAIN, type OutcomeInput } from "./format";
+import { wakeReason } from "./steps";
 import { evClass, evSeverity, EventSummary } from "./events";
 import type { NameOf } from "./eventmodel";
 import { Icon, type IconName } from "./icons";
@@ -277,7 +278,7 @@ export function StepMini({ s, onOpen }: { s: TurnStep; onOpen: (turnId: string) 
     <div className={`step-mini ${OUTCOME_META[outcomeOf(s)].cls}`} data-turn={s.turnId} role="button" tabIndex={0} onClick={open} onKeyDown={rowKey(open)}>
       <AgentAvatar id={s.agentId} size="sm" />
       <div style={{ minWidth: 0, flex: 1 }}>
-        <b>{(s.agentId)}</b> <span className="muted">· {(plainReason(s.reasonKind))}</span>
+        <b>{(s.agentId)}</b> <span className="muted">· {(wakeReason(s).why)}</span>
         <div className="muted" style={{ fontSize: 11 }}>{(ago(s.startedAt))} · {opsSummary(s)}</div>
       </div>
       <OutcomePill step={s} />

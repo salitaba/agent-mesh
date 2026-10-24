@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 
 import {
   FILTERS, FIT_WINDOW, FOLD_AT, MIN_BAR_PCT, WINDOWS, autoPick, autoWindow, axisTicks, busyText, clockTicks, filterSteps, foldQuiet, groupSteps, outcomeCounts,
-  pulseLine, rowSummary, spendOf, timeline, type StepLike,
+  pulseLine, rowSummary, spendOf, timeline, wakeReason, type StepLike,
 } from "../../apps/mesh-dashboard/src/steps";
 import { BUCKETS } from "../../apps/mesh-dashboard/src/feed";
 import { rovingTarget } from "../../apps/mesh-dashboard/src/roving";
@@ -408,6 +408,37 @@ test("a row says what the turn left behind only when that adds to its outcome la
     "12 decisions · 2 refused",
     "a turn that landed some and was refused some says both",
   );
+});
+
+test("the wake line names the event that woke a seat, not the scheduler's generic phrase", () => {
+  const interest = wakeReason({ reasonKind: "interest_event", triggerEventType: "patch.ready", reasonNote: "patch.ready" });
+  assert.equal(interest.why, "patch ready", "the trigger event's own label, as the step drawer has always shown it");
+  assert.notEqual(interest.why, "something it cares about happened");
+  assert.equal(interest.note, "", "the note repeats the event and is not printed twice");
+
+  assert.equal(
+    wakeReason({ reasonKind: "interest_event", triggerEventType: "architecture.approved", reasonNote: "tech-lead approved your ArchitectureDocument" }).why,
+    "architecture approved",
+  );
+  assert.equal(
+    wakeReason({ reasonKind: "interest_event", triggerEventType: "architecture.approved", reasonNote: "tech-lead approved your ArchitectureDocument" }).note,
+    "tech-lead approved your ArchitectureDocument",
+    "a longer kernel note still says what the event label alone does not",
+  );
+
+  assert.equal(wakeReason({ reasonKind: "message", triggerEventType: "message.sent", reasonNote: "message.sent" }).why, "new message", "a message wake keeps the kind's own phrase");
+  assert.equal(wakeReason({ reasonKind: " message " }).why, "new message", "the kind is trimmed");
+  assert.equal(wakeReason({ reasonKind: "interest_event" }).why, "something it cares about happened", "no event means the kind is the fallback");
+  assert.equal(wakeReason({ reasonKind: "timer", reasonNote: "your patch merged; close out the task" }).note, "your patch merged; close out the task");
+});
+
+test("a turn can be found by the event that woke it", () => {
+  const steps = [
+    turn("shipped", "developer", 9_000, 1000, { reasonKind: "interest_event", triggerEventType: "patch.ready", reasonNote: "patch.ready" }),
+    turn("shipped", "qa", 8_000, 1000, { reasonKind: "interest_event", triggerEventType: "review.requested", reasonNote: "review.requested" }),
+  ];
+  assert.deepEqual(filterSteps(steps, "", "patch ready").map((s) => s.agentId), ["developer"]);
+  assert.deepEqual(filterSteps(steps, "", "review").map((s) => s.agentId), ["qa"]);
 });
 
 test("the swimlane's keys: Right and Left walk a lane only when asked to, Down and Up always do", () => {

@@ -6,7 +6,7 @@
  * the filter's counts, a fold never hides a turn that did something, a lane's busy share divides by the window it is drawn in,
  * and "nothing is running" is not allowed to say "parked on its mailbox" about a mission that was delivered.
  */
-import { localTime, opsSummary, outcomeOf, plainReason, producedCount, refusedOps, spanLabel, type Outcome, type OutcomeInput } from "./format";
+import { localTime, opsSummary, outcomeOf, plainEvent, plainReason, producedCount, refusedOps, spanLabel, type Outcome, type OutcomeInput } from "./format";
 import { bucketOf, type Bucket } from "./feed";
 
 /** What this model reads of a turn. Structural, so the store's `TurnStep` fits without this file importing a .tsx. */
@@ -19,6 +19,8 @@ export interface StepLike extends OutcomeInput {
   tokens: number;
   reasonKind: string;
   reasonNote?: string;
+  /** The event type that matched the seat's interest, when the scheduler woke it for one. */
+  triggerEventType?: string;
   /** Position in the event log when the turn began: only ever grows, which is what a hold marks. */
   seqStart: number;
 }
@@ -47,9 +49,28 @@ export function outcomeCounts(steps: readonly StepLike[]): Record<string, number
   return c;
 }
 
+/**
+ * Why a turn woke, in the event's own words. An interest wake carries the event that matched
+ * (`triggerEventType`: patch.ready, release.candidate, …), but the ledger printed the scheduler's
+ * generic phrase for every one of them: the delivered demo showed
+ * "Woke: something it cares about happened" on 17 of its 29 turns, while the step drawer named the
+ * event. The event's label is the fact; the kind is only the fallback when there is no event.
+ *
+ * `note` is the kernel's longer reason, shown when it says more than the event that is already
+ * named. A message wake stays "new message": its trigger type is the message itself.
+ */
+export function wakeReason(s: Pick<StepLike, "reasonKind" | "reasonNote" | "triggerEventType">): { why: string; note: string } {
+  const kind = String(s.reasonKind || "").trim();
+  const eventType = String(s.triggerEventType || "");
+  const note = String(s.reasonNote || "").trim();
+  const why = kind === "interest_event" && eventType ? plainEvent(eventType) : plainReason(kind);
+  return { why, note: note && note !== eventType ? note : "" };
+}
+
 /** The search box matches who, why it woke and its note: what a person remembers about a turn. */
-export function searchText(s: Pick<StepLike, "agentId" | "reasonKind" | "reasonNote">): string {
-  return `${s.agentId} ${plainReason(s.reasonKind)} ${s.reasonNote || ""}`.toLowerCase();
+export function searchText(s: Pick<StepLike, "agentId" | "reasonKind" | "reasonNote" | "triggerEventType">): string {
+  const wake = wakeReason(s);
+  return `${s.agentId} ${wake.why} ${wake.note || ""}`.toLowerCase();
 }
 
 export function filterSteps<T extends StepLike>(steps: readonly T[], outcome: string, query: string): T[] {
