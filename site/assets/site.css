@@ -547,7 +547,11 @@ main:has(.hero) .section-head .eyebrow::before { counter-increment: sec; content
 .proof li, .tick li, .plan-includes li { position: relative; padding-left: calc(var(--s, 16px) + 10px); }
 .proof li::before, .tick li::before, .plan-includes li::before { content: ""; position: absolute; left: 0; top: calc(var(--y, 0px) + .26em); width: var(--s, 16px); height: var(--s, 16px); border-radius: 50%; background: var(--soft); }
 .proof li::after, .tick li::after, .plan-includes li::after { content: ""; position: absolute; left: calc(var(--s, 16px) * .3); top: calc(var(--y, 0px) + .26em + var(--s, 16px) * .27); width: calc(var(--s, 16px) * .42); height: calc(var(--s, 16px) * .25); border-left: 1.5px solid var(--link); border-bottom: 1.5px solid var(--link); transform: rotate(-45deg); }
-.contact h3 { margin-bottom: 8px; font-size: 1.5rem; line-height: 1.2; }
+/* A card's title is the card's, not the page's: on the contact page it was 24px over a 22px section head, so a card
+   outranked the section it was in. The card takes the card rank (19, as every other card's), and the section below takes
+   the page's section rank (28 on a phone, 48 on a desktop, as the home and pricing pages do). */
+.contact h3 { margin-bottom: 8px; font-size: 1.1875rem; line-height: 1.3; }
+.section > .wrap > h2.legend-title { font-size: clamp(1.75rem, 1.1rem + 2.5vw, 3rem); line-height: 1.08; letter-spacing: -.032em; }
 .contact h4 { margin: 20px 0 8px; color: var(--muted); }
 /* Which address, for what: ruled rows; one a link points at gets a bar, not colour alone. */
 .addresses { overflow: hidden; }
@@ -555,8 +559,15 @@ main:has(.hero) .section-head .eyebrow::before { counter-increment: sec; content
 .address-row:last-child { border-bottom: 0; }
 @media (min-width: 760px) { .address-row { grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); align-items: center; } }
 .address-row b { display: block; font-size: 1.0625rem; }
-.address-row .address { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; margin: 0; font-size: 1.0625rem; font-weight: 600; overflow-wrap: anywhere; }
-.address-row .address a { display: inline-flex; align-items: center; min-height: 44px; }
+/* The address and its Copy are one line at every phone width. At 360 the two wanted 280px in the row's 278, so the button
+   wrapped under the address and each row was 217px where a row is 168. The address gives way (it may break inside itself)
+   before the button moves. */
+.address-row .address { display: flex; flex-wrap: nowrap; align-items: center; gap: 4px 12px; margin: 0; font-size: 1.0625rem; font-weight: 600; overflow-wrap: anywhere; }
+.address-row .address .copy { flex: none; }
+/* The line's gap gives the email its last 4px: at 360 the address is 206 and its button 62, and the row has 278, so a
+   12px gap broke "ali79taba@gmail.com" over two lines. At 8 the line is one, and the row keeps its 168. */
+@media (max-width: 420px) { .address-row .address { gap: 4px 8px; } }
+.address-row .address a { display: inline-flex; align-items: center; min-width: 0; min-height: 44px; overflow-wrap: anywhere; }
 .address-row:target { background: var(--panel); box-shadow: inset 4px 0 0 var(--accent); }
 
 /* not found */
@@ -785,6 +796,11 @@ main:has(.hero) .section-head .eyebrow::before { counter-increment: sec; content
 @media (forced-colors: active) {
   /* The menu's middle bar is a background; a forced-colour mode keeps it a bar. */
   .menu-icon::before { background: CanvasText; }
+  /* The rate card's four plans and a plan's three figures are ruled by the 1px gap between cells, and that gap is a
+     colour: a forced-colour mode drops it and four plans become one block of words. The line is the ground the cells sit
+     on, so the ground is painted, and the cells keep their own forced colours over it. */
+  .teaser, .plan-limits { forced-color-adjust: none; background: CanvasText; }
+  .teaser > li, .plan-limits > div { forced-color-adjust: auto; }
   .tabs::before, .billing::before { outline: 2px solid Highlight; outline-offset: -2px; }
   .doc-card:target, .plan:target { outline: 2px solid Highlight; outline-offset: 2px; }
   .address-row:target { outline: 2px solid Highlight; outline-offset: -2px; }

@@ -722,3 +722,37 @@ test("the two wide comparisons are one plan or model at a time on a phone, from 
   assert.ok(!pricing.includes("Swipe the table sideways"), "no page tells a phone to swipe a table it is not given");
 });
 
+/**
+ * Measured at 360 on the site of 651c5e5. The contact page's address line wanted 280px in the row's 278 (the address is 206
+ * and the Copy button 62, with a 12px gap), so the button dropped under the address and every row was 217.38px where a row
+ * is 169.38; the three rows took 653px of the 4,815px page. The page's section heads were 22px while the card titles under
+ * them were 24px, so a card outranked its section, and the docs page's section heads were 22px beside pricing's 28/48.
+ * A forced-colour mode dropped the 1px gaps that rule the home rate card and a plan's three figures, so four plans and
+ * three figures ran together, measured at 360 with forcedColors: active.
+ */
+test("an address line stays one line on a phone, a card's title sits below its section's, and a forced-colour mode keeps the rate card's rules", () => {
+  const css = fs.readFileSync(path.join(SITE, "assets", "site.css"), "utf8");
+  assert.match(css, /\n\.address-row \.address \{ display: flex; flex-wrap: nowrap;/, "the address and its button are one line");
+  assert.match(css, /\n\.address-row \.address a \{[^}]*min-width: 0;[^}]*min-height: 44px;[^}]*overflow-wrap: anywhere; \}/, "the address shrinks and breaks inside itself before the button moves, and stays a thumb's height");
+  assert.match(css, /\n\.address-row \.address \.copy \{ flex: none; \}/, "the button keeps its size");
+  assert.match(css, /@media \(max-width: 420px\) \{ \.address-row \.address \{ gap: 4px 8px; \} \}/, "at a phone's width the line's gap gives the email its last 4px");
+  // The rank: the contact page's card title is a card's title, and a page section's title is the page's.
+  assert.match(css, /\n\.contact h3 \{ margin-bottom: 8px; font-size: 1\.1875rem; line-height: 1\.3; \}/);
+  assert.match(css, /\n\.section > \.wrap > h2\.legend-title \{ font-size: clamp\(1\.75rem, 1\.1rem \+ 2\.5vw, 3rem\);/, "the section rank, 28 at 360 and 48 at 1440");
+  // The two pages whose section heads this is written for, and the ones it must not catch (a title inside a column or a card).
+  const contact = page(pages, "contact/index.html").markup;
+  const contactPage = parsePage(contact);
+  assert.equal(contactPage.querySelectorAll("h2.legend-title").length, 3, "the contact page has three section heads");
+  assert.equal(contactPage.querySelectorAll(".cols h2.legend-title").length, 1, "the band's title is a column's, and keeps its own size");
+  assert.equal(contactPage.querySelectorAll("h2.legend-title").length - contactPage.querySelectorAll(".cols h2.legend-title").length, 2, "the page's own two take the page's rank");
+  const docs = page(pages, "docs/index.html").markup;
+  assert.match(docs, /<div class="wrap">\s*<h2 class="legend-title">Start here<\/h2>/);
+  assert.match(docs, /<h2 class="legend-title">How to read the labels<\/h2>/, "a title in a column keeps its own size");
+  assert.match(page(pages, "security/index.html").markup, /<h2 class="legend-title" id="glance-title">At a glance<\/h2>/, "and so does the At a glance box's");
+  // Forced colours: the line is the ground the cells sit on, and the cells over it keep their forced colours.
+  const forced = /@media \(forced-colors: active\) \{[\s\S]*?\n\}/.exec(css)![0];
+  assert.match(forced, /\.teaser, \.plan-limits \{ forced-color-adjust: none; background: CanvasText; \}/, "the rate card's and the plan's cells keep their rules");
+  assert.match(forced, /\.teaser > li, \.plan-limits > div \{ forced-color-adjust: auto; \}/, "and the cells are still drawn in the system's colours");
+});
+
+
