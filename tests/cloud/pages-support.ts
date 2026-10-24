@@ -29,7 +29,6 @@ type Listener = (event: FakeEvent) => unknown;
 const VOID = new Set(["meta", "link", "input", "br", "img", "hr"]);
 const ENTITIES: Record<string, string> = { "&amp;": "&", "&lt;": "<", "&gt;": ">", "&quot;": '"', "&#39;": "'", "&nbsp;": " " };
 const decode = (text: string): string => text.replace(/&(?:amp|lt|gt|quot|#39|nbsp);/g, (e) => ENTITIES[e] ?? e);
-const camel = (name: string): string => name.replace(/-([a-z])/g, (_m, c: string) => c.toUpperCase());
 
 export class FakeNode {
   parent: FakeNode | null = null;
@@ -105,9 +104,22 @@ export class FakeNode {
     this.current = v;
   }
   get dataset(): Record<string, string> {
-    const out: Record<string, string> = {};
-    for (const [k, v] of this.attrs) if (k.startsWith("data-")) out[camel(k.slice(5))] = v;
-    return out;
+    // The browser's `dataset` is live: a page that writes `field.dataset.refused` writes the attribute, and reads it back later.
+    // A snapshot here would silently drop what the script remembered, so this one is backed by the element's own attributes.
+    const node = this;
+    const attrOf = (key: string): string => `data-${String(key).replace(/[A-Z]/g, (c) => `-${c.toLowerCase()}`)}`;
+    return new Proxy({} as Record<string, string>, {
+      get: (_target, key) => node.attrs.get(attrOf(String(key))),
+      set: (_target, key, value) => {
+        node.attrs.set(attrOf(String(key)), String(value));
+        return true;
+      },
+      deleteProperty: (_target, key) => {
+        node.attrs.delete(attrOf(String(key)));
+        return true;
+      },
+      has: (_target, key) => node.attrs.has(attrOf(String(key))),
+    });
   }
   get textContent(): string {
     return this.isText ? this.text : this.children.map((c) => c.textContent).join("");
@@ -587,6 +599,8 @@ export class Visit {
   check(node: FakeNode | string, on = true): void {
     const n = typeof node === "string" ? this.$(node) : node;
     n.checked = on;
+    // A browser tells a page that a tick changed twice: `input`, then `change`.
+    this.fire(n, "input");
     this.fire(n, "change");
   }
   /** The tab goes behind another, or comes back to the front: the page is told, as a browser tells it. */
