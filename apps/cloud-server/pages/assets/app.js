@@ -29,7 +29,7 @@
     verify: ["status", "title", "again", "resend-form", "resend", "resend-wait", "resend-status", "email"],
     forgot: ["form", "status", "email"],
     reset: ["card", "form", "status", "title", "lede", "password"],
-    account: ["who", "notice", "retry-row", "skeleton", "glance", "glance-list", "subnav", "settings-panel", "stage", "stage-steps", "stage-title", "stage-text", "stage-status", "stage-actions", "stage-live", "workspaces-panel", "workspaces", "create-slot", "create-box", "create", "workspace-name", "create-plan-field", "workspace-plan", "create-note", "plan-panel", "plan-h", "plan-status", "plan", "balance-panel", "usage-panel", "figures", "topup", "topup-amount", "topup-unit", "topup-hint", "topup-status", "topup-options", "usage", "password-form", "password-status", "current", "next"],
+    account: ["who", "notice", "retry-row", "skeleton", "glance", "glance-list", "subnav", "settings-panel", "stage", "stage-steps", "stage-title", "stage-text", "stage-status", "stage-actions", "stage-live", "workspaces-panel", "workspaces", "create-slot", "create-box", "create", "workspace-name", "create-plan-field", "workspace-plan", "create-note", "plan-panel", "plan-h", "plan-status", "plan", "balance-panel", "usage-panel", "figures", "topup", "topup-amount", "topup-unit", "topup-hint", "topup-status", "topup-add", "topup-options", "usage", "password-form", "password-status", "current", "next"],
     terms: [],
     privacy: [],
     notfound: [],
@@ -2002,6 +2002,11 @@
 
     function renderTopups() {
       const t = state.topups;
+      // Drawn when what it says changes, not on every look: a refresh while a workspace starts must not take the cursor from a button.
+      const shape = JSON.stringify([t, state.currency]);
+      if (shape === state.topupShape) return;
+      state.topupShape = shape;
+      $("topup-add").hidden = !t;
       if (!t) {
         $("topup-hint").textContent = "";
         $("topup-options").replaceChildren();
@@ -2013,7 +2018,8 @@
       $("topup-amount").setAttribute("placeholder", bareAmount(Math.max(t.minimumMinor, t.optionsMinor[1] || t.optionsMinor[0] || t.minimumMinor), state.currency));
       const rate = (t.usageMicrosPerMinor * 10 ** d) / 1e6;
       $("topup-hint").textContent = `From ${money(t.minimumMinor, state.currency)} to ${money(t.maximumMinor, state.currency)}. Each ${money(10 ** d, state.currency)} adds ${format(rate, state.currency, d, Math.max(d, 4))} of usage, and credit does not expire.`;
-      $("topup-options").replaceChildren(...t.optionsMinor.map((minor) => button(`Add ${money(minor, state.currency)}`, { small: true, onclick: (event) => payTopup(minor, event.currentTarget) })));
+      // The amount is what a reader compares; "Add credit" is the trough's caption, so the three fit one row on a phone, and each says its own action to a screen reader.
+      $("topup-options").replaceChildren(...t.optionsMinor.map((minor) => button(money(minor, state.currency), { small: true, attrs: { "aria-label": `Add ${money(minor, state.currency)}` }, onclick: (event) => payTopup(minor, event.currentTarget) })));
     }
 
     function payTopup(minor, trigger) {
@@ -2101,6 +2107,7 @@
       $("balance-panel").hidden = !sections.balance;
       $("usage-panel").hidden = !sections.usage;
       renderBalance();
+      renderTopups();
       renderSubnav();
       skeleton(false);
       // Credit and usage are asked for once the account has a plan that sells them, whenever that comes to be.
@@ -2184,7 +2191,6 @@
 
     // -- the first paint, and what a return from the payment page means --
 
-    renderTopups();
     renderAll();
     if (state.picked) landOnPlan(state.picked);
     // A workspace that became ready while the tab was behind another is opened when the person comes back to it.

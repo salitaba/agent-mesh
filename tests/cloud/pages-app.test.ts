@@ -278,7 +278,7 @@ test("every call a page makes goes to this service's own API, with the session, 
   for (const [page, search] of [["home", ""], ["signup", ""], ["login", ""], ["verify", "?token=t"], ["forgot", ""], ["reset", "?token=t"], ["terms", ""], ["privacy", ""], ["account", ""]] as Array<[string, string]>) visits.push(await visit(page, { routes: w.routes, search }));
   const account = visits[visits.length - 1]!;
   account.click(account.button("workspaces", "Pause"));
-  account.click(account.button("topup-options", "Add $10.00"));
+  account.click(account.button("topup-options", "$10.00"));
   account.type("current", "x");
   account.type("next", "a long enough new password");
   await account.send(account.$("password-form"));
@@ -979,6 +979,7 @@ test("the plans being unavailable leaves the rest of the account usable, says wh
   assert.equal(v.text(last), "The plans could not be loaded just now, so no price is shown.");
   assert.equal(v.text(v.$("topup-hint")), "");
   assert.deepEqual(v.labels("topup-options"), []);
+  assert.equal(v.$("topup-add").hidden, true, "the amounts' caption goes with the amounts");
   assert.deepEqual(v.labels("workspaces"), ["Resume", "More"]);
   assert.match(v.text("workspaces"), /Paused by you\. Its files are kept\. Resume it to open it\./);
   // The sentence is an action now: the same read, again, and the page takes the answer.
@@ -988,6 +989,10 @@ test("the plans being unavailable leaves the rest of the account usable, says wh
   await v.idle();
   assert.doesNotMatch(v.text(v.$("plan")), /could not be loaded/, "the plan the account is on arrives");
   assert.match(v.text(v.$("plan")), /Team Active \$149\.00 per month/, "and the summary is drawn from it");
+  // The same read carries what credit may be bought; before, the amounts stayed empty until the page was reloaded.
+  assert.equal(v.$("topup-add").hidden, false);
+  assert.deepEqual(v.labels("topup-options"), ["$10.00", "$25.00", "$100.00"], "and the amounts to add, which the same read carries");
+  assert.match(v.text("topup-hint"), /^From \$5\.00 to \$1,000\.00\./);
   assert.equal(v.button("plan", "Manage billing").tag, "button");
   assert.deepEqual(v.consoleErrors, []);
 
@@ -1253,7 +1258,13 @@ test("a quick amount goes straight to its payment page, and what the account loo
   const w = world(paid);
   w.answers.set("POST /api/checkout", { json: { url: "https://pay.example/c/topup" } });
   const v = await visit("account", { routes: w.routes });
-  v.click(v.button("topup-options", "Add $25.00"));
+  // The trough is captioned "Add credit" and each segment is the amount it adds: three amounts in one row on a phone, and the
+  // verb the caption carries is what a reader of the page hears with each button.
+  assert.equal(v.text("topup-add"), "Add credit");
+  assert.deepEqual([v.$("topup-options").getAttribute("role"), v.$("topup-options").getAttribute("aria-labelledby")], ["group", "topup-add"]);
+  assert.deepEqual(v.labels("topup-options"), ["$10.00", "$25.00", "$100.00"]);
+  assert.deepEqual(v.buttons("topup-options").map((b) => b.getAttribute("aria-label")), ["Add $10.00", "Add $25.00", "Add $100.00"]);
+  v.click(v.button("topup-options", "$25.00"));
   await v.idle();
   assert.deepEqual(v.to("POST", "/api/checkout"), [{ method: "POST", path: "/api/checkout", body: { purpose: "topup", amountMinor: 2_500 } }]);
   assert.deepEqual(v.navigations, ["assign https://pay.example/c/topup"]);
@@ -1261,7 +1272,7 @@ test("a quick amount goes straight to its payment page, and what the account loo
 
   w.answers.set("POST /api/checkout", failure(400, "invalid_amount", "That amount cannot be bought."));
   const again = await visit("account", { routes: w.routes });
-  again.click(again.button("topup-options", "Add $10.00"));
+  again.click(again.button("topup-options", "$10.00"));
   await again.idle();
   assert.equal(again.text("topup-status"), "That amount cannot be bought.");
 });
@@ -1305,7 +1316,8 @@ test("what is typed for credit is read in the currency's own places: a currency 
   w.plans = { json: { ...PLANS, currency: "JPY", topups: { optionsMinor: [1_000, 5_000], minimumMinor: 500, maximumMinor: 100_000, usageMicrosPerMinor: 1_000_000 } } };
   w.answers.set("POST /api/checkout", { json: { url: "https://pay.example/c/yen" } });
   const v = await visit("account", { routes: w.routes });
-  assert.deepEqual(v.labels("topup-options"), ["Add ¥1,000", "Add ¥5,000"]);
+  assert.deepEqual(v.labels("topup-options"), ["¥1,000", "¥5,000"]);
+  assert.deepEqual(v.buttons("topup-options").map((b) => b.getAttribute("aria-label")), ["Add ¥1,000", "Add ¥5,000"], "and the amount a reader hears carries the currency too");
   assert.equal(v.text("topup-hint"), "From ¥500 to ¥100,000. Each ¥1 adds ¥1 of usage, and credit does not expire.");
   v.type("topup-amount", "1500.5");
   await v.send(v.$("topup"));
