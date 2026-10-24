@@ -587,6 +587,21 @@ test("the home page puts the price before the arguments, under a numbered conten
   assert.match(css, /\n\.index \+ \.section \{ padding-top: clamp\(32px, 4vw, 48px\); \}/, "the price does not open with a whole section's gap under the strip");
 });
 
+test("on a phone the four plans are one rate card read in rows, with how buying starts before the buttons", () => {
+  const home = page(pages, "index.html").html;
+  const section = /<section class="section" id="pricing">([\s\S]*?)<\/section>/.exec(home)![1]!;
+  const css = fs.readFileSync(path.join(SITE, "assets", "site.css"), "utf8");
+  // Four cards of 199px put the fourth price and the way to buy below a phone screen; one card of rows
+  // reads the four figures in 603px at 360, the name beside the amount and the period and allowance under them.
+  assert.match(css, /@media \(max-width: 599px\) \{\n  \.teaser li \{ flex-flow: row wrap; gap: 2px 12px; padding: 14px 18px; \}/, "the row is the rate card's line");
+  assert.match(css, /\.teaser \.amount \{ flex: 0 0 auto; align-self: center; \}/, "the amount keeps its size, and drops under the name when the line is too narrow");
+  // The note that says how a paid plan starts is read before the two buttons, not after them.
+  const button = section.indexOf('<p class="btn-row');
+  const notes = [...section.matchAll(/<p class="small muted mt-s"[^>]*>/g)].map((m) => m.index!);
+  assert.equal(notes.length, 2, "one note for each state of Curule Cloud");
+  for (const at of notes) assert.ok(at > section.indexOf("plan-teaser:end") && at < button, "after the four plans, and before the two buttons");
+});
+
 test("explanatory prose is ruled, and a surface is kept for something a person acts on", () => {
   const css = fs.readFileSync(path.join(SITE, "assets", "site.css"), "utf8");
   assert.match(css, /\n\.way, \.plan, \.doc-card, \.start, \.glance, \.result, \.tile, \.teaser, \.addresses, \.nf-list a \{ border: 1px solid var\(--line\);[^}]*background: var\(--panel\);/, "the plans, starts, document cards, addresses and ways out keep their border");

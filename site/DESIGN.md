@@ -362,3 +362,75 @@ measured today; no number is copied from an earlier pass.
   heading, the phone hint and the switch take the first 200px. The card is on the screen; the
   figure needs one small scroll.
 - **Curule Cloud's prices** are still in the app, not on the site.
+
+## 2026-10-24: the price, one card on a phone; where Curule Cloud's prices are
+
+Measured with the same probe (Chrome 156 over CDP, reduced motion, touch, light and dark unless
+said). The before column is the site at the commit this pass started from, extracted again and
+measured today; no number is copied from an earlier pass.
+
+### What changed
+
+- **The four plans are one rate card, read in rows, on a phone.** Below 600px each plan is a line of
+  the card instead of a card: the name and its 36px amount on one line, the billing period under
+  them, then the allowance under a hairline. The border, the 1px rules between cells and every
+  word stay; the amount keeps its 36px, the name 15, the period and allowance 14. At 360 the teaser
+  is **800.94 → 602.94px**: a screen that starts at the first plan (2,006) now holds all four
+  figures, the note and the top of the buttons, where before it ended at the fourth plan's
+  allowance with the buttons at 2,839 and the note at 2,955 below it. The page is 174px shorter at
+  360.
+- **How a paid plan starts is read before the two ways on.** The note that says a paid plan starts
+  with an email and that the key is issued by hand (and, while Curule Cloud is open, that it has its
+  own sign-up) now sits under the four plans and above the buttons: **2,955.19 → 2,625.19** at 360,
+  while the buttons move **2,839.19 → 2,746.75**. The section reads plans, then the terms of buying,
+  then "Compare the plans" and "How licences work"; it is **1,425.05 → 1,227.05px**.
+- **Curule Cloud's card says where its own prices are.** "What you pay" in the way in now adds
+  "Its plans and prices are on the sign-up page.", the sentence the pricing page's card already
+  makes; the card's one action already goes to that page. The dead end a buyer met after the
+  licence prices (a flat monthly plan with no figure and no place) is closed. The card is
+  **522.56 → 546.56** at 360 and the ways section is 1,206.55 → 1,230.55px tall; at 768 the page is
+  48px taller and at 1440 it is unchanged, because the sentence fits the lines the card already
+  had.
+
+### Measurements after this pass
+
+| Home at | 320 | 360 | 390 | 768 | 1440 |
+|---|---|---|---|---|---|
+| Before | 14,476.89 | 13,699.39 | 13,171.77 | 13,106.70 | 12,256.70 |
+| After | **14,283.80** | **13,525.39** | **12,997.77** | **13,154.66** | **12,256.70** |
+
+- At 360 the pricing section is **1,667.70–2,894.75** (was 1,667.70–3,092.75); its first amount is
+  at **2,021.25** (was 2,056.75), the note at **2,625.19**, the buttons at **2,746.75**, and the
+  ways start at **2,894.75** (was 3,092.75). The four plans, the note and both buttons now span
+  841px, where they spanned 1,039px.
+- At 320 the teaser is **841.53 → 624.44px**: Team and Business used to wrap their period and
+  allowance into 219.28px rows; they are 149.48 now. The quoted plan's amount takes its own line
+  (row 170.98) rather than break "Enterprise" against a 36px "Let's talk" in a 250px line.
+- At 390 the pricing section is **1,395.67 → 1,197.67**; the page 13,171.77 → 12,997.77.
+- Type is unchanged: the smallest computed text is **12px**, the amount 36, and no new size,
+  colour or radius was added. The worst text pair is **5.61:1** in light and **7.10:1** in dark at
+  360 and 1440 (AA normal text needs 4.5). The only targets under 44×44 are the same inline links
+  in sentences (3 at 360, 2 at 320); the four plans hold no control of their own.
+- No page scrolls sideways at 320, 360, 390, 768 or 1440 in light, or at 360 and 1440 in dark. At
+  a 24px user default the document is **0px over** at 320 and 360: the amount drops under the name
+  rather than widening the row. Print is wider than the breakpoint and keeps the two-column rate
+  card.
+- The probe's failure list is identical before and after at 360 light and dark (28 and 26): the
+  closed phone menu's links, the cards that sit off the snap row (which the probe cannot scroll),
+  and the 1px hairlines under its 3:1 boundary floor. Nothing new was added to it.
+
+### What this pass deliberately left
+
+- **The first screen still carries the statement, the way in and the top of the capture, not a
+  price.** A generated price line under the hero's actions was the other candidate and was left: it
+  is a second line in the actions' column, which on a phone pushes the capture down and on a wide
+  screen grows the hero's row, and it gives the first screen a second job. The price section is one
+  flick below the contents, and its four figures now read in 603px.
+- **The four plans are still four rows, not a snap row.** A price a buyer must swipe for is worse
+  than one they can read; the pricing page's cards are a snap row because a card there carries a
+  whole plan, and the teaser carries a line.
+- **The teaser still shows the limits only.** What each plan includes, its support and the annual
+  total are on the pricing page, one press from the buttons.
+- **Curule Cloud's prices** are still in the app: the card now says so and its action goes there.
+- The screenshots are unchanged; the captures were not retaken.
+
