@@ -630,3 +630,75 @@ dark, `prefers-reduced-motion: reduce`, a touch pointer below 720. Heights are
   monospace host and the 65px button are 327px in 288px — 39px over, not the few pixels the
   identity and the amount field were over — so the fix is the strip's design, not a padding.
 - **No new run at 200% text.** The 320px pass is still the stand-in.
+
+## 2026-10-24: the link's life, and the way out before it fails
+
+Same harness: Chromium 156 through `playwright-core` against this worktree's trial
+(`trial --port 7644`), 360 × 900 with a touch pointer and 1440 × 900, light and dark,
+`prefers-reduced-motion: reduce`. "Before" is the base commit's own pages served by the
+same trial, measured again today; no figure is copied from an earlier pass. Heights are
+`document.documentElement.scrollHeight`.
+
+- **The card that says the link was sent stops repeating the heading under it.** The
+  heading is now "Check your email" and the card opened with the same sentence again in a
+  green note ("Check your email for a link to confirm your address."), so the first thing
+  under the heading was the heading. The card now opens with what happened: "We sent the
+  link to …". At 360 the card is **656 → 566px**, the page **1,529 → 1,439**, and the
+  line to the other door ("Already confirmed? Sign in.") moves from y = **854** to 764,
+  inside an 800px screen. The card is still focused, so what happened is still announced.
+- **The sent card states the link's life, not where to read about it.** It said "It works
+  once, and the email says when it expires." The sign-up page's own line now carries the
+  period from `verificationHours` ("We send a link to confirm your address; it expires
+  after **24 hours**."), and the sent card reads that line before `retitle` clears it:
+  "It works once and expires in 24 hours.", exactly as the confirmation page and the email
+  say it. With a service set to one hour, the page says **"1 hour"** (a test pins it). At
+  360 and 390 the line keeps its two rows and the page its **1,448px**; at 320 the line
+  takes a fourth row and the page is **1,595 → 1,620**, at 768 **1,407 → 1,433** and at
+  1440 **931 → 956**. The sent card's paragraph keeps the 154px it had.
+- **A reset page says how long its link lasts, before anything is typed.** The lede now
+  reads "The link works once and expires after 2 hours." from `resetHours` (the same
+  number the email gives), and the page that asks for a link repeats it in its own lede.
+  At 360 the reset lede keeps its 102px (the words fit the lines it had); the forgot page
+  grows **1,143 → 1,169** (+26) at 360 and 768, unchanged at 320 and 1440.
+- **The way to another link is on the reset page before the link is tried.** A
+  **286 × 44 "Send a new link"** sits under the form at y = 544 at 360 (382 × 44 at 1440),
+  so a person holding a link they know is old does not have to type a password and submit
+  it to be told there is a way out. The page is **1,137 → 1,181** at 360 (the one button),
+  **1,161 → 1,231** at 320 and **1,111 → 1,181** at 390, where the period sentence also
+  takes a row; a page with no token is unchanged at **981** because the appended link it
+  used to build after a refusal is now this one, and a used link after a submit is
+  unchanged at **957** with the cursor on **`#ask`** (before: an anonymous link, appended
+  by the refusal).
+  Without a script the page now has a working 286 × 44 way out at y = 462 where it used
+  to have a hidden form and nothing to do.
+- **One action keeps one name.** The reset page's way out was "Ask for a new link" while
+  the confirmation page's was "Send a new link"; both are "Send a new link" now.
+- **Widths, schemes and the floor.** 320, 360, 390, 768 and 1440 in light on every account
+  page: no sideways page scroll (320: 320; 360: 360; 390: 390; 768: 768; 1440: 1440),
+  nothing under 12px, and the only control under 44 × 44 below 721 is the 20px consent tick
+  whose label is 108px. Dark at 360 on the reset, sign-up and sign-in pages; the new button
+  is the existing `.btn` on the existing card. No colour, size or spacing step was added,
+  and **`app.css` is untouched at 40,953 bytes of 40,960**.
+- **Tests.** `pages-app.test.ts` pins the sent card's opening sentence and the period from
+  a one-hour service, the reset page's way out before any failure, its single link after a
+  refusal, and the cursor on it; `pages.test.ts` counts the three new `data-policy` spans
+  (`signup:verificationHours`, `forgot:resetHours`, `reset:resetHours`) so a period cannot
+  become prose.
+
+### What this pass leaves
+
+- **A dead reset link is still discovered only on submit.** No non-mutating token route
+  exists in the control plane, and this surface does not add one. The page now says how
+  long the link lasts and puts the way out beside the form, so the recovery is one press
+  rather than a typed password and a refusal, but the form still appears for a link that
+  cannot work. A `GET` check on load, reusing "That link is not valid, or it has expired.",
+  is the next step if the service can grow the route.
+- **The reset page is 44px taller at 360 for the button.** The alternative — the link only
+  after a refusal — is the path this pass removed.
+- **The sent card's period is the sign-up page's own line, filled once.** It is painted by
+  `paintPolicy` at load, before the card exists, so the first frame of the sent card is
+  already right; if the plans cannot be read the page's default ("24 hours") stands, as the
+  confirmation page's markup does. A service whose mail says another number and whose plans
+  are down would show the default.
+- **The account is unchanged by this pass.** Its plan retry, address strip and loading
+  skeleton still have the defects the previous sections record.

@@ -30,7 +30,7 @@
   <div class="auth-main">
     <p class="eyebrow">Curule Cloud · password</p>
     <h1 id="title">Choose a new password</h1>
-    <p class="lede" id="lede">The link works once. Choosing a password signs you out everywhere, so you sign in again on every device with the new one.</p>
+    <p class="lede" id="lede">The link works once and expires after <span data-policy="resetHours">2 hours</span>. Choosing a password signs you out everywhere, so you sign in again on every device with the new one.</p>
     <noscript><p class="note note-warn">This page needs JavaScript to send your new password, and it loads nothing from another site.</p></noscript>
     <div class="card" id="card">
       <div id="status" class="note" role="status" aria-live="polite"></div>
@@ -46,6 +46,7 @@
         </div>
         <button class="btn btn-primary" type="submit" data-busy="Saving">Save password</button>
       </form>
+      <div class="btn-row" id="ask-row"><a class="btn" id="ask" href="/forgot">Send a new link</a></div>
     </div>
   </div>
   <div class="auth-side">

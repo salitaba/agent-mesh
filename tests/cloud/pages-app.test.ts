@@ -173,6 +173,10 @@ test("the policy numbers a page states are changed with the service's settings, 
   });
   const verify = await visit("verify", { routes: w.routes });
   assert.deepEqual(verify.doc.querySelectorAll("[data-policy]").map((n) => n.textContent), ["1 hour"]);
+  const reset = await visit("reset", { routes: w.routes, search: "?token=t0k3n" });
+  const forgot = await visit("forgot", { routes: w.routes });
+  assert.deepEqual(reset.doc.querySelectorAll("[data-policy]").map((n) => n.textContent), ["2 hours"], "the page that holds a reset link says how long it lasts");
+  assert.deepEqual(forgot.doc.querySelectorAll("[data-policy]").map((n) => n.textContent), ["2 hours"], "and so does the page that asks for one");
   const privacy = await visit("privacy", { routes: w.routes });
   assert.deepEqual(privacy.doc.querySelectorAll("[data-policy]").map((n) => n.textContent), ["7 days", "2 days", "90 days"]);
   const terms = await visit("terms", { routes: w.routes });
@@ -335,13 +339,30 @@ test("sign-up sends the address as typed (trimmed) and the password as typed, on
   v.submit(v.$("form"));
   await v.idle();
   assert.deepEqual(v.to("POST", "/api/signup"), [{ method: "POST", path: "/api/signup", body: { email: "Ada@Example.com", password: " a password with edges " } }], "a second submit while the first is out is not a second request");
-  assert.equal(v.text("card"), "Check your email for a link to confirm your address. We sent the link to Ada@Example.com. Open it: it confirms your address and signs you in to your account. It works once, and the email says when it expires. Resend the email Use another address You can ask for another in 60 seconds. If it does not come It can take a few minutes. Look in your spam or junk folder too. Check the address above for a typo. If it is wrong, use another address.");
+  assert.equal(v.text("card"), "We sent the link to Ada@Example.com. Open it: it confirms your address and signs you in to your account. It works once and expires in 24 hours. Resend the email Use another address You can ask for another in 60 seconds. If it does not come It can take a few minutes. Look in your spam or junk folder too. Check the address above for a typo. If it is wrong, use another address.");
   const sentAside = v.doc.querySelector(".auth-main .aside")!;
   assert.equal(v.text(sentAside), "Already confirmed? Sign in.", "the door beside the form is for a confirmed account, not for this one before it has opened the link");
   assert.equal(sentAside.querySelector("a")!.getAttribute("href"), "/login");
   assert.equal(v.link("card", "Use another address").getAttribute("href"), "/signup");
   assert.equal(v.doc.activeElement, v.$("card"), "focus moves to what happened");
   assert.deepEqual(v.navigations, []);
+});
+
+test("the card that says the link was sent says how long it lasts, in the service's own hours, and does not say the heading again", async () => {
+  const w = world((x) => {
+    x.signedIn = false;
+    x.plans = { json: { ...PLANS, policy: { ...PLANS.policy, verificationHours: 1 } } };
+  });
+  w.answers.set("POST /api/signup", { status: 202, json: { ok: true, message: "Check your email for a link to confirm your address." } });
+  const v = await visit("signup", { routes: w.routes, manualTimers: true });
+  v.type("email", "ada@example.com");
+  v.type("password", "correct horse battery staple");
+  v.check("agree");
+  await v.send(v.$("form"));
+  await v.idle();
+  assert.equal(v.text("title"), "Check your email");
+  assert.ok(v.text("card").startsWith("We sent the link to ada@example.com."), "the card opens with what happened, not with the heading it sits under");
+  assert.match(v.text("card"), /It works once and expires in 1 hour\./, "and the period is the service's, not a sentence about an email that has not been read");
 });
 
 test("sign-up shows what the service says when it refuses, and lets the person try again", async () => {
@@ -467,7 +488,7 @@ test("choosing a new password: the form is not there without a link, and with on
   const none = await visit("reset", { routes: w.routes });
   assert.equal(none.shows(none.$("form")), false, "a form with no link to go with it is not shown");
   assert.equal(none.text("status"), "This link is incomplete. Open the link in the email again, or ask for a new one.");
-  assert.equal(none.link("card", "Ask for a new link").getAttribute("href"), "/forgot");
+  assert.equal(none.link("card", "Send a new link").getAttribute("href"), "/forgot");
   assert.equal(none.text("title"), "That link did not work", "the heading says what the page is: a link that cannot be used is not \"Choose a new password\"");
   assert.equal(none.doc.title, "That link did not work – Curule Cloud");
   assert.equal(none.shows(none.$("lede")), false, "and the line about a link that works once goes with the form");
@@ -477,6 +498,8 @@ test("choosing a new password: the form is not there without a link, and with on
   assert.equal(v.text("title"), "Choose a new password");
   assert.equal(v.shows(v.$("form")), true);
   assert.equal(v.text("status"), "");
+  assert.equal(v.link("card", "Send a new link").getAttribute("href"), "/forgot", "the way to another link is on the page before this one is tried, so a link that has already expired need not be discovered by typing a password");
+  assert.match(v.text(v.$("lede")), /expires after 2 hours/, "and the line says how long the link the person holds lasts");
   v.type("password", "short");
   await v.send(v.$("form"));
   assert.equal(v.text("status"), "Choose a password of at least 10 characters.");
@@ -490,18 +513,19 @@ test("choosing a new password: the form is not there without a link, and with on
   assert.equal(v.$("card").getAttribute("tabindex"), "-1");
 });
 
-test("a reset link that has been used offers a new one; a password that is too weak does not, because the link is fine", async () => {
+test("a reset link that has been used sends the person to a new one; a password that is too weak keeps the link, which is fine", async () => {
   const w = world((x) => (x.signedIn = false));
   w.answers.set("POST /api/reset", failure(400, "invalid_token", "That link is not valid, or it has expired. Ask for a new one."));
   const v = await visit("reset", { routes: w.routes, search: "?token=used" });
   v.type("password", "a perfectly good password");
   await v.send(v.$("form"));
   assert.equal(v.text("status"), "That link is not valid, or it has expired. Ask for a new one.");
-  assert.equal(v.link("card", "Ask for a new link").getAttribute("href"), "/forgot");
+  assert.equal(v.link("card", "Send a new link").getAttribute("href"), "/forgot");
   assert.deepEqual(v.history, [], "the page keeps the link in the address until it has been used");
   assert.equal(v.text("title"), "That link did not work", "the heading says so now");
   assert.equal(v.shows(v.$("form")), false, "a form that can do nothing with that link is put away");
-  assert.equal(v.doc.activeElement, v.link("card", "Ask for a new link"), "and the cursor is on what there is to do");
+  assert.equal(v.doc.activeElement, v.link("card", "Send a new link"), "and the cursor is on what there is to do");
+  assert.equal(v.doc.querySelectorAll("a").filter((a) => a.textContent === "Send a new link").length, 1, "the way out was already on the page: the refusal does not add a second one");
 
   const weak = world((x) => (x.signedIn = false));
   weak.answers.set("POST /api/reset", failure(400, "weak_password", "That password is too easy to guess."));
@@ -512,7 +536,7 @@ test("a reset link that has been used offers a new one; a password that is too w
   assert.equal(u.text("status"), "That password is too easy to guess.");
   assert.equal(u.doc.activeElement, u.$("password"), "the cursor is in the field to choose another, though it was on the button that was pressed");
   assert.equal(u.$("password").getAttribute("aria-invalid"), "true");
-  assert.equal(u.doc.querySelectorAll("a").filter((a) => a.textContent === "Ask for a new link").length, 0);
+  assert.equal(u.link("card", "Send a new link").getAttribute("href"), "/forgot", "and the quiet way out is unchanged, because it is a link to ask again, not a second refusal");
   assert.equal(u.text("title"), "Choose a new password", "the link is fine, so the page is as it was");
   assert.equal(u.shows(u.$("form")), true);
 });

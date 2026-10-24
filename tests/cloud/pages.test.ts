@@ -521,7 +521,7 @@ test("no page states a period or a count the service could change: those are fil
     assert.doesNotMatch(text, number, `${name}: ${number.exec(text)?.[0]}`);
   }
   const labelled = pages().flatMap((p) => p.all.filter((n) => n.attrs.has("data-policy")).map((n) => `${p.name}:${attr(n, "data-policy")}`));
-  assert.deepEqual(labelled.sort(), ["index:graceDays", "index:retentionDays", "privacy:idleDays", "privacy:retentionDays", "privacy:sessionDays", "terms:graceDays", "terms:retentionDays", "verify:verificationHours"]);
+  assert.deepEqual(labelled.sort(), ["forgot:resetHours", "index:graceDays", "index:retentionDays", "privacy:idleDays", "privacy:retentionDays", "privacy:sessionDays", "reset:resetHours", "signup:verificationHours", "terms:graceDays", "terms:retentionDays", "verify:verificationHours"]);
   const units = helpers().POLICY_UNITS;
   for (const entry of labelled) assert.ok(units[entry.split(":")[1]!], `the script knows the unit of ${entry}`);
   // The words in the script are the same: it builds its sentences from the numbers it is given.
