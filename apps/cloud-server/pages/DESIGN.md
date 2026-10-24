@@ -560,3 +560,73 @@ from an earlier record. Heights are `document.documentElement.scrollHeight`; pos
 - **The usage read's own failure now matters more than it did.** The trial rate-limited this
   pass's repeated reads, which is what the panel's 98px "Too many attempts" note looks like; the
   sentence and its retry were not changed here.
+
+## 2026-10-24: the account's rows on a phone
+
+Same harness: Chromium 156 through `playwright-core` against a trial service of this pass
+(`trial --port 7550`) and against the unmodified page files, both on the same fixtures: a fresh
+account with no plan, which is what a new customer lands in, and a paid account with one running
+workspace and an empty usage table. 320 × 900, 360 × 900, 390 × 900, 768 and 1440, light and
+dark, `prefers-reduced-motion: reduce`, a touch pointer below 720. Heights are
+`document.documentElement.scrollHeight`; positions are `getBoundingClientRect` plus `scrollY`.
+
+- **The getting-started steps are one row.** The rail in the card at the top was 316px of content
+  in a 286px card at 360, so `3 Open` fell to a second row while the 20px rule after `Workspace`
+  stayed at the end of the first, pointing at nothing: the steps box was **52px** tall, with
+  `Open` at y = 227. On a phone the rule between steps is gone and the row is numbers and names
+  with 12px between them: the box is **22px**, `Open` is at y = 197, the card at the top
+  **369 → 339** and the page **1,604 → 1,574** at 360 (390: 1,556 → 1,526). At 320 the three
+  names are 240px in a 246px box, so they still take two rows — 52px, with no rule left hanging
+  at the edge of the first. At 768 and 1440 the rail keeps its rules and does not move.
+- **The account's own address is one line.** With this fixture's 23-character address,
+  `Signed in as …` was 3px wider than its pill's 304px of text, so it broke after "Signed in
+  as" and the capsule held two lines: **55px** tall, the head block **137px**, the card at the top at y = 198. The pill's
+  side padding is 8px (was 12): the line fits, the capsule is **32px**, the head **115px** and
+  the card at **y = 176**. At 320 the address still takes two lines; at 1440 the pill is 8px
+  narrower and nothing moves.
+- **The three amounts to add are one row, under a caption.** "Add $10.00" three times is 316px
+  in a 280px trough at 360, so the trough took two rows and the third segment stretched to the
+  full 280px: **96px**. The trough is now captioned **Add credit** — the phrase the front page
+  already uses — and each segment is its amount, with the verb in the caption and in the
+  button's own name (`Add $10.00`): three 92px segments in **50px** at 360, three 79px ones in
+  the 246px trough at 320. The caption is hidden when the service sells no credit and when the
+  plans could not be read, so it never sits over nothing.
+- **The amount and its Pay are one row.** The field's 224px basis plus the 62px button and the
+  10px gap is 296px in a 286px card, so the button wrapped by 10px and sat 44px under the field:
+  the form was **128px**. The basis is 160px (the field still grows to fill a wide card): the
+  **214px** field and the **62px** Pay share one row, the form is **74px**, and the balance panel
+  **652 → 583**. At 320 the label "Another amount (USD)" takes two lines beside the 174px field,
+  so the form is 97px; at 768 and 1440 the row was already one and only the caption is new
+  (2,174 → 2,205 at 1440).
+- **A failed plans read, retried, now brings the amounts too.** With `/api/plans` down the
+  trough was empty, the hint empty and — this pass's caption — hidden; pressing the Plan
+  section's **Try again** drew the plan and the prices from the answer, but the credit amounts
+  stayed empty until the page was reloaded, because only the page's first paint asked for them.
+  The trough is drawn from what the account has whenever the account is drawn: after that retry
+  there are **3 buttons** ("Add $10.00", "Add $25.00", "Add $100.00"), the caption and the
+  sentence back. It is redrawn only when what it says changes, so a look at the account while a
+  workspace starts does not take the cursor from a button.
+- **Widths, schemes and the floor.** 320, 360, 390, 768 and 1440 in light and dark on both
+  fixtures: no sideways page scroll (320: 320; 360: 360; 390: 390; 768: 768; 1440: 1440), no
+  console error, nothing under **12px**, and no control under 44 × 44 below 721px. Forced colours
+  draws the amounts and the caption as the system's own. The caption, the group name and the
+  buttons' spoken names are in `pages.test.ts`/`pages-app.test.ts`: the three segments' labels,
+  their `aria-label`s, the group's `aria-labelledby`, and the caption's hidden state with no
+  credit to sell.
+
+### What this pass leaves
+
+- **The steps still take two rows at 320.** The three names are 240px and two 12px gaps are 24,
+  in a 246px box: they would fit only with no gap at all between the steps. The clean wrap is
+  the better trade.
+- **The caption costs 30px on a wide screen.** At 1440 the balance card is 30px taller than it
+  was, which is the whole of the page's growth there; on a phone it is paid for by a wrapped
+  row.
+- **The plan panel's Try again still leaves the cursor on the body when the plans arrive.** The
+  panel is drawn again with the answer, so the button that asked is gone; the card at the top
+  puts the cursor on its new title in the same case, and the section could too. It was like this
+  before this pass and is left for one that changes the section, not its rows.
+- **The address strip's Copy button still takes its own line at 360.** The label, the 194px
+  monospace host and the 65px button are 327px in 288px — 39px over, not the few pixels the
+  identity and the amount field were over — so the fix is the strip's design, not a padding.
+- **No new run at 200% text.** The 320px pass is still the stand-in.
