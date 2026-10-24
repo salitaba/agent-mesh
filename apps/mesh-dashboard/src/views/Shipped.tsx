@@ -32,7 +32,7 @@ export function Shipped({ arts, state, onRetry, openArt, onOpenFiles }: {
         <div role="status" aria-busy="true">
           <span className="sr-only">Loading the files.</span>
           <ul className="ov-files" aria-hidden="true">
-            {[0, 1, 2].map((i) => <li key={i} className="card fc"><Skeleton w={40} h={40} /><Skeleton w="70%" h={14} /><Skeleton w="50%" h={12} /></li>)}
+            {[0, 1, 2].map((i) => <li key={i} className="card fc fc-skel"><Skeleton w={40} h={40} /><Skeleton w="70%" h={14} /><Skeleton w="50%" h={12} /></li>)}
           </ul>
         </div>
       ) : null}
@@ -61,7 +61,7 @@ export function Shipped({ arts, state, onRetry, openArt, onOpenFiles }: {
             })}
           </ul>
           {files.length > shown.length ? <p className="ov-foot">and {files.length - shown.length} more. <Button variant="linklike" onClick={onOpenFiles}>Open the files</Button></p> : null}
-          {ws ? <p className="ov-foot">Delivered into <span className="mono">{ws}</span></p> : null}
+          {ws ? <p className="ov-foot">Delivered into <span className="mono"><bdi>{ws}</bdi></span></p> : null}
         </>
       ) : null}
     </Panel>

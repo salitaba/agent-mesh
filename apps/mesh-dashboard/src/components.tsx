@@ -665,12 +665,15 @@ export function EmptyState({ icon, title, children, action, tone }: {
 /**
  * The title row every view opens with: the name of the page, an optional status chip beside it, the page's actions at the
  * end, and one line under it saying what the page is for. A page that explains itself in a paragraph has the wrong title.
+ *
+ * `tabIndex` -1 makes the heading a landing place for a view change whose control was removed (shell.tsx). It is not a tab
+ * stop, so the keyboard order does not change.
  */
 export function PageHeader({ title, status, lede, actions }: { title: ReactNode; status?: ReactNode; lede?: ReactNode; actions?: ReactNode }): React.JSX.Element {
   return (
     <header className="page-head">
       <div className="view-title">
-        <h2>{title}</h2>
+        <h2 tabIndex={-1}>{title}</h2>
         {status}
         {actions ? <div className="page-actions">{actions}</div> : null}
       </div>

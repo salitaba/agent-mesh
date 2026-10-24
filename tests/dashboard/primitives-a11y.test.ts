@@ -152,3 +152,17 @@ test("two menus on one page do not answer to one name", () => {
   assert.ok(shellTitles.length && designerTitles.length, "both pages have a menu");
   for (const t of designerTitles) assert.ok(!shellTitles.includes(t), `"${t}" names two different menus`);
 });
+
+test("a view change whose control was removed lands in the page, not back at the top of the shell", () => {
+  // "All steps" under Latest work is a button in the Overview that the person unmounts by pressing it: the browser drops focus
+  // on <body>, and the next Tab starts at the skip link, through the whole top bar and thirteen sidebar tabs, before it reaches
+  // the list that was asked for. The shell puts focus on the new page's own heading instead — but only when the change left
+  // nothing focused, so a sidebar click keeps its tab and the off-canvas menu still hands focus back to ☰.
+  const shell = read("shell.tsx");
+  assert.match(shell, /const lastView = useRef\(view\);/, "the shell remembers which view it drew last");
+  assert.match(shell, /if \(document\.activeElement !== document\.body\) return;/, "a change that kept its focus is left alone");
+  assert.match(shell, /const head = root\?\.querySelector<HTMLElement>\("h2"\)/, "the landing is the page's own heading, never the sr-only h1");
+  assert.match(shell, /head\.focus\(\{ preventScroll: true \}\)/, "and it takes focus without moving the page under the person");
+  const header = bodyOf(components, "PageHeader");
+  assert.match(header, /<h2 tabIndex=\{-1\}>/, "the page's h2 is a programmatic target, not a tab stop");
+});
