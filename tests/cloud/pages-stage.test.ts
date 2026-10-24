@@ -94,6 +94,7 @@ test("the card says one thing for each stage, in a sentence, with the one action
   const link = { kind: "link", label: "Choose a plan", href: "#plan-h" };
   assert.deepEqual(card(view({ subscription: null })), { tone: "", title: "Choose a plan", text: "A plan is a flat monthly price for your account, and it says how many workspaces you may run at once. Each workspace runs on a plan of its own. Choose one below and pay on the next page.", action: link });
   assert.deepEqual(card(hostingView([], { subscription: null })), { tone: "", title: "Choose a plan", text: "A plan is a flat monthly price for your account, and it says how many workspaces you may run at once. Each workspace runs on a plan of its own. Choose one below and pay on the next page. You bring your own model key and pay your model provider yourself.", action: link });
+  assert.deepEqual(card(view({ subscription: null, plans: [], plansKnown: false })), { tone: "warn", title: "The plans could not be loaded", text: "No plan or price is shown just now, and nothing was changed.", action: { kind: "retry", label: "Try again" } }, "a plan is promised only when one was read");
   assert.deepEqual(card(view({ subscription: { plan: "team", title: "Team", status: "ended" } })), {
     tone: "warn",
     title: "Choose a plan to start again",
@@ -265,10 +266,14 @@ test("what the card offers is done from the card: open the workspace, resume it,
   const late = world((x) => { x.subscription = LATE; x.workspaces = [workspace()]; });
   late.answers.set("POST /api/portal", failure(409, "no_portal", "There is no billing portal for payments made by invoice or transfer. Contact the operator to change or cancel a plan."));
   const l = await visit("account", { routes: late.routes });
-  l.click(l.button("stage-actions", "Update payment details"));
+  const update = l.button("stage-actions", "Update payment details");
+  l.click(update);
   await l.idle();
-  assert.equal(l.text("plan-status"), "There is no billing portal for payments made by invoice or transfer. Contact the operator to change or cancel a plan.", "a service that has no portal says so in its own words");
+  assert.equal(l.text("stage-status"), "There is no billing portal for payments made by invoice or transfer. Contact the operator to change or cancel a plan.", "a service that has no portal says so in its own words");
+  assert.ok(l.$("stage").contains(l.$("stage-status")), "and says it in the card whose button asked, not in a section below the fold");
+  assert.equal(l.text("plan-status"), "", "the plan section below says nothing about an action it did not offer");
   assert.equal(l.button("stage-actions", "Update payment details").disabled, false);
+  assert.equal(l.doc.activeElement, update, "the cursor is still on the button that was pressed");
 });
 
 test("a late payment puts the payment first and keeps Open beside it for a workspace that still runs, which is how a person comes back to work", async () => {
