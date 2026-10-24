@@ -10,7 +10,7 @@
 <link rel="apple-touch-icon" href="../assets/apple-touch-icon.png">
 <meta name="theme-color" content="#fbfaf8" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#131211" media="(prefers-color-scheme: dark)">
-<link rel="stylesheet" href="../assets/site.css?v=b28b71fb52">
+<link rel="stylesheet" href="../assets/site.css?v=387d376cdd">
 <meta property="og:type" content="website">
 <link rel="canonical" href="https://curule.dev/docs/">
 <meta property="og:url" content="https://curule.dev/docs/">
@@ -111,16 +111,16 @@
         <h2 class="legend-title">How to read the labels</h2>
         <p class="muted mt-s">Each label says what a document is, and a test checks it against the file: a document that grows past its label fails until the label is changed.</p>
       </div>
-      <ul class="rows legend">
-        <li><b><span class="tag">Reference</span> long, to search</b><span>Every field and every message. Hundreds of lines, so search it rather than reading from the top.</span></li>
-        <li><b><span class="tag">Guide</span> read in order</b><span>One job, end to end: deploying it, running it, licensing it.</span></li>
-        <li><b><span class="tag">Short</span> a page or two</b><span>A summary or a policy, short enough to read whole.</span></li>
-        <li><b><span class="tag">Log</span> what changed</b><span>A record by version, newest first.</span></li>
-      </ul>
+      <details class="legend-more">
+        <summary>What each label means</summary>
+        <ul class="rows legend mt-s">
+          <li><b><span class="tag">Reference</span> long, to search</b><span>Every field and every message. Hundreds of lines, so search it rather than reading from the top.</span></li>
+          <li><b><span class="tag">Guide</span> read in order</b><span>One job, end to end: deploying it, running it, licensing it.</span></li>
+          <li><b><span class="tag">Short</span> a page or two</b><span>A summary or a policy, short enough to read whole.</span></li>
+          <li><b><span class="tag">Log</span> what changed</b><span>A record by version, newest first.</span></li>
+        </ul>
+      </details>
     </div>
-    <p class="notice neutral mt-l"><b>Each title opens the document on GitHub.</b> The path under it is where the file is in the repository, if you would rather read it in a copy of your own.</p>
-    <noscript><p class="notice mt-s">With JavaScript off the titles do not open anything: the path under each one is where the file is.</p></noscript>
-
     <div class="doc-filter mt-l" id="doc-filter" hidden>
       <label for="doc-filter-input">Filter the documents</label>
       <input id="doc-filter-input" type="search" autocomplete="off" spellcheck="false" aria-describedby="doc-filter-hint">
@@ -131,6 +131,8 @@
       <p><b>No document matches <q id="doc-filter-said"></q>.</b> Try fewer words, or a label such as Guide, Reference, Short or Log.</p>
       <p><button class="btn" type="button" id="doc-filter-clear">Clear the filter</button></p>
     </div>
+    <p class="notice neutral mt-m"><b>Each title opens the document on GitHub.</b> The path under it is where the file is in the repository, if you would rather read it in a copy of your own.</p>
+    <noscript><p class="notice mt-s">With JavaScript off the titles do not open anything: the path under each one is where the file is.</p></noscript>
 
     <div class="doc-grid mt-xl">
       <article class="doc-card" id="quickstart">
