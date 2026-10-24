@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import {
-  DENSE_FROM, GROUPS, actionNote, controlsHint, controlsOf, groupAgents, groupOf, lastTurnText, pauseWarning, seatBudgets, stateText, totalsText, turnSeries,
+  DENSE_FROM, GROUPS, actionNote, controlsHint, controlsOf, groupAgents, groupOf, lastTurnText, pauseWarning, rosterFinished, seatBudgets, seatRecord, stateText, totalsText, turnSeries,
   turnsByAgent, memoryKey, unstartedText, worryText, type AgentLike, type TurnLike,
 } from "../../apps/mesh-dashboard/src/agents";
 import { plainLifecycle } from "../../apps/mesh-dashboard/src/format";
@@ -347,6 +347,26 @@ test("a seat's own budget is read from the ledger by seat, and only when it is a
 });
 
 test("a long roster is offered as rows as well as cards", () => {
-  assert.ok(DENSE_FROM > 7, "the demo team of seven stays cards");
+  assert.ok(DENSE_FROM > 7, "the working demo team of seven stays cards");
   assert.ok(DENSE_FROM <= 12, "a dozen cards is already more than one screen");
+});
+
+/* ------------------------------------------------------------- finished teams */
+
+test("a team with nothing left to run is read as rows, and one with anything to run is not", () => {
+  assert.equal(rosterFinished([agent("a", "COMPLETED"), agent("b", "COMPLETED")]), true);
+  assert.equal(rosterFinished([agent("a", "COMPLETED"), agent("b", "STARTING")]), false, "a seat that Run one step can wake is a card");
+  assert.equal(rosterFinished([agent("a", "COMPLETED"), agent("b", "WAITING")]), false, "waiting for mail still has a now");
+  assert.equal(rosterFinished([agent("a", "COMPLETED"), agent("b", "FAILED")]), false);
+  assert.equal(rosterFinished([agent("a", "COMPLETED"), agent("b", "SUSPENDED")]), false);
+  assert.equal(rosterFinished([]), false, "no roster is not a finished one");
+  assert.equal(rosterFinished([agent("a", "odd")]), false, "an unknown lifecycle is still offered its controls");
+});
+
+test("a finished seat's row says what it did, so two rows can be compared", () => {
+  const last = turn("qa", "ok", 8 * 60_000 + 1000, { tokens: 9000 });
+  assert.equal(seatRecord(agent("qa", "COMPLETED", { activations: 5 }), last, NOW), "5 turns · last 8m ago");
+  assert.equal(seatRecord(agent("pm", "COMPLETED", { activations: 1 }), turn("pm", "ok", 500), NOW), "1 turn · last just now", "one turn is not '1 turns'");
+  assert.equal(seatRecord(agent("qa", "COMPLETED", { activations: 5 }), undefined, NOW), "5 turns", "a turn the loaded history does not hold is not dated");
+  assert.equal(seatRecord(agent("qa", "COMPLETED"), undefined, NOW), "Never ran", "no count on the roster and no turn is not '0 turns'");
 });

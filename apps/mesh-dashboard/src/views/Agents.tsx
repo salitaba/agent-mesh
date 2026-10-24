@@ -10,7 +10,7 @@ import { compactNow, nowLine, timeLeftText } from "../livework";
 import { FeedStatus } from "../feedstatus";
 import { budgetTone } from "../cost";
 import {
-  DENSE_FROM, controlsHint, controlsOf, groupAgents, seatBudgets, stateText, turnSeries, turnsByAgent, worryText,
+  DENSE_FROM, controlsHint, controlsOf, groupAgents, rosterFinished, seatBudgets, seatRecord, stateText, turnSeries, turnsByAgent, worryText,
   type Control, type GroupId, type SeatBudget, type SeatSetting,
 } from "../agents";
 import { useMission } from "../useMission";
@@ -166,14 +166,16 @@ interface RowsProps {
   groupOf: (id: string) => GroupId;
   onOpen: (id: string) => void;
   onControl: (a: RosterAgent, c: Control) => void;
+  /** The whole roster has nothing left to run: the state column says what each seat did, and there is no controls column to draw. */
+  finished?: boolean;
 }
 
 /** The same seats as rows, for a team too long to read as cards: the name opens it, the state is one line, the controls are at the end. */
 function AgentRows(p: RowsProps): React.JSX.Element {
   return (
-    <table className="tbl dense ag-table">
+    <table className="tbl dense ag-table" data-finished={p.finished ? "true" : undefined}>
       <thead>
-        <tr><th scope="col" className="ag-t-who">Agent</th><th scope="col" className="ag-t-state">State</th><th scope="col" className="ag-t-now">Now</th><th scope="col" className="num ag-t-tok">Tokens</th><th scope="col" className="ag-t-act"><span className="sr-only">Controls</span></th></tr>
+        <tr><th scope="col" className="ag-t-who">Agent</th><th scope="col" className="ag-t-state">State</th><th scope="col" className="ag-t-now">{p.finished ? "What it did" : "Now"}</th><th scope="col" className="num ag-t-tok">Tokens</th>{p.finished ? null : <th scope="col" className="ag-t-act"><span className="sr-only">Controls</span></th>}</tr>
       </thead>
       <tbody>
         {p.rows.map((a) => {
@@ -193,19 +195,23 @@ function AgentRows(p: RowsProps): React.JSX.Element {
               </td>
               <td className="ag-t-state"><SeatPill a={a} run={seat.run} stalled={seat.stalled} setting={p.setting} /></td>
               <td className="ag-t-now">
-                <span className="agent-state"><b>{seat.text.headline}</b><span className={`agent-detail${seat.doing ? " mono" : ""}`} title={seat.text.detail}>{seat.text.detail}</span></span>
+                {p.finished
+                  ? <span className="agent-record">{seatRecord(a, p.last.get(a.id), p.now)}</span>
+                  : <span className="agent-state"><b>{seat.text.headline}</b><span className={`agent-detail${seat.doing ? " mono" : ""}`} title={seat.text.detail}>{seat.text.detail}</span></span>}
               </td>
               <td className="num ag-t-tok">
                 <b>{fmt(a.tokens ?? 0)}</b>
                 {budget ? <Progress value={budget.used} max={budget.limit} label={`${a.id}'s own token budget`} tone={tone === "ok" ? undefined : tone} valueText={`${fmt(budget.used)} of ${fmt(budget.limit)} tokens`} /> : null}
               </td>
-              <td className="ag-t-act">
-                <span className="agent-controls">
-                  {seat.controls.map((c) => (
-                    <Button key={c.id} variant="ghost" data-act={c.id} data-id={a.id} title={c.title} onClick={(e) => { e.stopPropagation(); p.onControl(a, c); }}>{c.label}</Button>
-                  ))}
-                </span>
-              </td>
+              {p.finished ? null : (
+                <td className="ag-t-act">
+                  <span className="agent-controls">
+                    {seat.controls.map((c) => (
+                      <Button key={c.id} variant="ghost" data-act={c.id} data-id={a.id} title={c.title} onClick={(e) => { e.stopPropagation(); p.onControl(a, c); }}>{c.label}</Button>
+                    ))}
+                  </span>
+                </td>
+              )}
             </tr>
           );
         })}
@@ -273,10 +279,13 @@ export default function Agents(): React.JSX.Element {
   const groups = useMemo(() => groupAgents(roster, stalled, setting), [roster, stalled, setting]);
   const groupOf = useMemo(() => new Map(groups.flatMap((g) => g.agents.map((a) => [a.id, g.id] as const))), [groups]);
 
-  // A team of a dozen seats or more is offered as rows; the choice is kept in this browser and is only ever a convenience.
+  // A team of a dozen seats or more is offered as rows; so is a team with nothing left to run, whose cards would repeat one
+  // sentence about the mission on every seat. The choice is kept in this browser and is only ever a convenience.
   const dense = roster.length >= DENSE_FROM;
+  const finished = rosterFinished(roster);
   const [chosen, setChosen] = useState<Mode | null>(readMode);
-  const mode: Mode = dense ? chosen ?? "list" : "cards";
+  const choose = dense || finished;
+  const mode: Mode = choose ? chosen ?? (finished ? "list" : "cards") : "cards";
   const pick = (m: Mode): void => {
     setChosen(m);
     try {
@@ -296,7 +305,7 @@ export default function Agents(): React.JSX.Element {
       title="Agents"
       status={<FeedStatus />}
       lede="Who is working, who is stuck, who is waiting."
-      actions={dense ? <Segmented label="Show agents as" value={mode} onChange={pick} options={[{ id: "cards", label: "Cards" }, { id: "list", label: "List" }]} /> : undefined}
+      actions={choose ? <Segmented label="Show agents as" value={mode} onChange={pick} options={[{ id: "cards", label: "Cards" }, { id: "list", label: "List" }]} /> : undefined}
     />
   );
 
@@ -326,7 +335,7 @@ export default function Agents(): React.JSX.Element {
           </div>
           {mode === "list" ? (
             <AgentRows
-              rows={g.agents} now={now} setting={setting} loaded={stepsLoaded} running={running} last={last} vitals={vitals} budgets={budgets}
+              rows={g.agents} now={now} setting={setting} loaded={stepsLoaded} running={running} last={last} vitals={vitals} budgets={budgets} finished={finished}
               groupOf={(id) => groupOf.get(id) ?? "idle"} onOpen={(id) => openDetail("agent", id)} onControl={(ag, c) => void control(ag, c)}
             />
           ) : (

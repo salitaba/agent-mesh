@@ -228,6 +228,30 @@ export function seatBudgets(budgets: ReadonlyArray<{ key?: string; limit?: numbe
 /** From this many seats a page offers its list as rows as well as cards: thirty cards are a wall, and a column of rows is read down. */
 export const DENSE_FROM = 9;
 
+/**
+ * Every seat has nothing left to run: no live turn, no decision, and not one control to offer (only a finished seat has none, in
+ * `controlsOf`). A card is the shape for a seat with a now — what it is doing, for how long, and the buttons that act on it. Once
+ * the whole roster is finished the card's two lines say one sentence about the team on every seat ("Done with the mission, so
+ * there is nothing for it to run."), seven times over, while what differs per seat — the turns it ran, what it spent — is a
+ * figure. Such a team is drawn as its list instead.
+ */
+export function rosterFinished(agents: ReadonlyArray<{ lifecycle: string }>): boolean {
+  return agents.length > 0 && agents.every((a) => controlsOf(a.lifecycle).length === 0);
+}
+
+/**
+ * What a finished seat did, for the roster's rows: its turns and when the last one was. The card's sentence is about the team
+ * and cannot be compared down a column; this is about one seat, and two seats' rows can. Nothing is invented: a seat whose turns
+ * the roster does not count, or whose turn the loaded history does not hold, says only what is known.
+ */
+export function seatRecord(a: AgentLike, last: TurnLike | undefined, now: number): string {
+  const turns = typeof a.activations === "number" && a.activations > 0 ? a.activations : 0;
+  if (!turns) return "Never ran";
+  const one = `${turns} ${turns === 1 ? "turn" : "turns"}`;
+  const when = last ? sinceText(now - Date.parse(last.endedAt || last.startedAt)) : "";
+  return when ? `${one} · last ${when}` : one;
+}
+
 /** "31.0k tokens · 4 turns": the cheap totals, only the ones the roster carries. */
 export function totalsText(a: AgentLike): string {
   const bits: string[] = [];

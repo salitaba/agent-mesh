@@ -89,6 +89,8 @@
 .ag-who { display: flex; align-items: center; gap: var(--s2-5); min-width: 0; }
 .ag-who > span { min-width: 0; }
 .ag-t-now .agent-detail { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* A seat with nothing left to run says what it did, not what it is doing: its turns and when the last one was, in the metadata step. */
+.ag-table .agent-record { font-size: 13px; line-height: 1.4; color: var(--text-dim); }
 .ag-table td.num { padding-right: var(--s4); }
 .ag-table td.num b { display: block; font-weight: 600; }
 .ag-table td.num .prog { margin-top: var(--s1); min-width: 72px; }
@@ -100,6 +102,8 @@
 
 @media (max-width: 1100px) {
   .ag-t-now { display: none; }
+  /* A finished roster has no controls column to make room for, and its "what it did" is the reason it is a ledger: keep it. */
+  .ag-table[data-finished="true"] .ag-t-now { display: table-cell; }
   .ag-t-who { width: auto; }
 }
 /* Where a table of five columns cannot keep a name readable, a row is a small card of its own: who and how it is, what it is doing, then
@@ -127,4 +131,6 @@
   .ag-table.tbl.dense .ag-t-tok .prog { flex: 1 1 auto; min-width: 72px; margin-top: 0; }
   .ag-table.tbl.dense .ag-t-act { grid-area: act; }
   .ag-table .agent-controls { flex-wrap: wrap; justify-content: flex-start; }
+  /* A finished roster draws no controls column, so its row card is three lines rather than four-and-a-blank. */
+  .ag-table.dense[data-finished="true"] tr { grid-template-areas: "who who" "state tok" "now now"; }
 }
