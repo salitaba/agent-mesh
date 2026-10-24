@@ -227,12 +227,14 @@ export function Shell({ viewNode }: { viewNode: React.ReactNode }): React.JSX.El
   const chipLabel = reconnecting ? "Reconnecting" : state.label;
   const chipTitle = reconnecting ? "Connection lost: reconnecting. What you see may be stale." : state.headline;
 
-  // A mission waiting on you is the one thing worth a glance at a background tab, so the count leads the title.
+  // A mission waiting on you is the one thing worth a glance at a background tab, so the count leads the title. The page the
+  // tab is on follows it, so two tabs of one console do not both read "Delivered · demo-stub — Curule".
+  const viewLabel = view === "overview" ? null : NAV_ITEMS.find((n) => n.view === view)?.label ?? null;
   useEffect(() => {
     document.title = hostLevel
       ? documentTitle({ phaseLabel: noProjects ? null : "Projects", decisions: 0, project: null })
-      : documentTitle({ phaseLabel: status ? chipLabel : null, decisions: inbox, project: projectName });
-  }, [hostLevel, noProjects, status, chipLabel, inbox, projectName]);
+      : documentTitle({ phaseLabel: status ? chipLabel : null, decisions: inbox, project: projectName, view: viewLabel });
+  }, [hostLevel, noProjects, status, chipLabel, inbox, projectName, viewLabel]);
 
   const [menuOpen, setMenuOpen] = useState(false);
   const narrow = useNarrow();
@@ -468,6 +470,23 @@ export function Shell({ viewNode }: { viewNode: React.ReactNode }): React.JSX.El
       }
     }
   }, [menuOpen, narrow]);
+
+  // A view change made from inside the page — "All steps", a turn row, the doors under a ledger — removes the control that was
+  // pressed, so the browser drops focus on <body> and the next Tab starts at the top of the shell: the person who asked for Steps
+  // walks the whole top bar and every sidebar tab again to reach the list they clicked for. When a change lands with nothing
+  // focused, focus goes to the new page's own heading, which a screen reader reads out as the page's name. A change made from the
+  // sidebar keeps its focus on the tab (and the off-canvas menu hands it back to ☰), so that path is untouched.
+  const lastView = useRef(view);
+  useEffect(() => {
+    if (lastView.current === view) return;
+    lastView.current = view;
+    if (document.activeElement !== document.body) return;
+    const root = document.getElementById("view");
+    // The sr-only h1 is not a landing place: the page's own h2 is what a person sees at the top of what they asked for.
+    const head = root?.querySelector<HTMLElement>("h2") ?? null;
+    if (head?.hasAttribute("tabindex")) head.focus({ preventScroll: true });
+    else root?.focus({ preventScroll: true });
+  }, [view]);
 
   // Tab stays inside the navigation sheet. Everything else is inert, so the only way out was the browser's chrome and a
   // focus landing on <body>; a modal layer should cycle its own controls.

@@ -318,6 +318,19 @@ test("the tab title leads with the count of decisions and says what is true of t
   assert.equal(documentTitle({ phaseLabel: null, decisions: 1, project: null }), "(1) Curule");
 });
 
+test("the tab title names the page, so two tabs of one console are not one page twice", () => {
+  // Every page carried the same title: every view read out one string ("Delivered — Curule"), so a strip of them named nothing.
+  assert.equal(documentTitle({ phaseLabel: "Delivered", decisions: 0, project: null, view: "Steps" }), "Delivered · Steps — Curule");
+  assert.equal(documentTitle({ phaseLabel: "Delivered", decisions: 2, project: "Payments", view: "Events" }), "(2) Delivered · Payments · Events — Curule");
+  assert.notEqual(
+    documentTitle({ phaseLabel: "Delivered", decisions: 0, project: null, view: "Steps" }),
+    documentTitle({ phaseLabel: "Delivered", decisions: 0, project: null, view: "Cost" }),
+    "two pages of the same state, and two different titles",
+  );
+  assert.equal(documentTitle({ phaseLabel: "Delivered", decisions: 0, project: null }), "Delivered — Curule", "the landing page passes no page name and reads as before");
+  assert.equal(documentTitle({ phaseLabel: "Delivered", decisions: 0, project: null, view: null }), "Delivered — Curule");
+});
+
 test("a bar button that only goes to a page stands down on that page; one that acts on the mission never does", () => {
   // "Review decisions" on the Needs you page took the person where they already were, above the card they came to answer.
   assert.equal(barActionIsHere("review", "escalations", "escalations"), true);

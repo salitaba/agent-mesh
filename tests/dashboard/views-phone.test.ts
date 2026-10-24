@@ -87,3 +87,21 @@ test("a phone's figure cells are 16 px on both sides, and the hero's two-up rule
     "the phone's cells are named as heavily as the two-up rule they answer",
   );
 });
+
+test("a phone scans what shipped as rows, and the narrowest one puts the state under the name", () => {
+  // What shipped was six cards of 126-156 px at 390: 1,150 px of the delivered demo for a summary of nine files. A phone draws them
+  // as rows now (measured 390: 1,150 → 775 px for the panel, its six files 873 → 557), and the desk keeps its cards.
+  const css = view("overview.css");
+  const phone = mediaBlock(css, /max-width:\s*620px/);
+  assert.match(phone, /\.ov-files \.fc-top \{ display: contents; \}/, "the card's top line is unpacked so its tile and its state become row cells");
+  assert.match(phone, /grid-template-areas: "tile name name" "tile meta state" "path path path";/, "name, then what it is with its state at the right, then the path");
+  assert.match(phone, /\.ov-files \.fc-top > \.tile \{ grid-area: tile; width: 28px; height: 28px/, "a 40 px tile belongs to a card; the row's mark is the size the seat stack uses");
+  assert.match(phone, /\.ov-files \.fc-top > \.pill \{ grid-area: state; \}/, "where a file stands is a cell of its own");
+  // The loading card is not a row: three bars stacked, so the placeholders do not jump into three cells and one of them collapse.
+  assert.match(phone, /\.ov-files \.fc-skel \{ grid-template-columns: minmax\(0, 1fr\); grid-template-areas: none; \}/, "the skeleton keeps the card's shape while it loads");
+  assert.match(view("Shipped.tsx"), /className="card fc fc-skel"/, "and names itself, so only the placeholder takes that rule");
+  // At 320 the state pill left the type 32 px — one word a line, a 140 px row for a short file. Below 340 the state takes the line.
+  const narrow = mediaBlock(css, /max-width:\s*340px/);
+  assert.match(narrow, /grid-template-areas: "tile name" "tile meta" "state state" "path path";/, "the narrowest phone stacks the state under the type");
+  assert.match(narrow, /\.ov-files \.fc-top > \.pill \{ grid-area: state; justify-self: start;/, "and it reads down the row's left edge");
+});

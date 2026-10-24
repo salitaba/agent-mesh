@@ -212,7 +212,32 @@ details.ov-note { display: block; }
   .stat-cell, .stat-cell:first-child, .stat-cell:nth-child(odd), .stat-cell:last-child,
   .ov-hero .stat-cell:first-child, .ov-hero .stat-cell:nth-child(odd), .ov-hero .stat-cell:last-child { padding: var(--s3-5) var(--s4); }
   .stat-cell:nth-child(even) { border-left: 1px solid var(--line); }
-  .ov-files { grid-template-columns: minmax(0, 1fr); }
+  .ov-files { grid-template-columns: minmax(0, 1fr); gap: var(--s2); }
+  /* A phone scans the result rather than browsing it. Six cards with a 40 px icon, a state pill and a path made the panel 1,150 px
+     on the delivered demo — a quarter of the page for a summary of nine files — so a phone draws the same files as rows, the shape
+     the Files page already uses: the name, then what it is with where it stands at the right, then the path (when the file is in
+     the repository). The 40 px tile belongs to a card; a row's mark is the size the seat stack uses. */
+  .ov-files .fc {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    grid-template-areas: "tile name name" "tile meta state" "path path path";
+    align-content: center;
+    align-items: center;
+    gap: var(--s0) var(--s3);
+    padding: var(--s2) var(--s3);
+  }
+  .ov-files .fc-top { display: contents; }
+  .ov-files .fc-top > .tile { grid-area: tile; width: 28px; height: 28px; border-radius: var(--k-r-sm); }
+  .ov-files .fc-top > .pill { grid-area: state; }
+  /* The name has the row's whole width, so a file is broken only where a word cannot fit at all — "payment-requirements" set
+     anywhere-broken beside a 144 px pill was three lines of a word. */
+  .ov-files .fc-name { grid-area: name; align-self: end; overflow-wrap: break-word; }
+  .ov-files .fc-meta { grid-area: meta; align-self: start; }
+  .ov-files .fc-path { grid-area: path; margin-top: var(--s1); }
+  /* The loading shape is not a row: three bars stack where the card's own lines will be, so nothing jumps when the files arrive. */
+  .ov-files .fc-skel { grid-template-columns: minmax(0, 1fr); grid-template-areas: none; }
+  /* Where the result lives on disk is one line on a phone, not five: a path is read from its end, so the front is the part to cut
+     (the Files page's rows read the same way, with `direction: rtl` over a `<bdi>`). Measured at 390: 98 px of wrapped mono → 18. */
+  .ov-foot .mono { display: block; direction: rtl; text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .cb-meters { grid-template-columns: minmax(0, 1fr); }
   .tl-row { grid-template-columns: 28px minmax(0, 1fr); }
   .tl-row > :last-child { grid-column: 2; justify-self: start; }
@@ -220,6 +245,14 @@ details.ov-note { display: block; }
   .ov .ov-note > summary, .ov .ov-ad > summary { align-items: center; min-height: 44px; padding-top: 0; }
   .ov .ov-ad > summary::before { margin-top: 0; }
   .ov .ov-ev .chip { min-height: 44px; padding: 0 var(--s3); }
+}
+
+/* The narrowest phone cannot hold a state pill beside the file's type: at 320 the type's column measured 32 px, one word a line, a
+   140 px row. Below 340 the state takes the line under it, the shape the Files page's own rows use. Above it three columns are the
+   shorter row; at 360 the same file is 122 px. */
+@media (max-width: 340px) {
+  .ov-files .fc { grid-template-columns: auto minmax(0, 1fr); grid-template-areas: "tile name" "tile meta" "state state" "path path"; }
+  .ov-files .fc-top > .pill { grid-area: state; justify-self: start; margin-top: var(--s1); }
 }
 
 /* ---------- when the system takes the colours (Windows High Contrast) ----------

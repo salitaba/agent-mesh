@@ -403,9 +403,14 @@ export function barActionIsHere(action: MissionAction, view: View, inboxView: Vi
 /**
  * The browser tab's title. A mission waiting on you is the one thing worth a glance at a background tab, so the count leads
  * and the tab says what is true of the mission, not only what the product is called.
+ *
+ * `view` is the page the tab is on, and it is what tells two tabs of one console apart: every page used to carry the same title
+ * ("Delivered · demo-stub — Curule" on the Overview, on Events and on Cost alike), so a strip of them could not say which page
+ * one was. It comes last because the state still leads, and the landing page passes none: "Overview" is where a console opens,
+ * and the word says nothing the product's own name does not.
  */
-export function documentTitle(opts: { phaseLabel: string | null; decisions: number; project: string | null }): string {
+export function documentTitle(opts: { phaseLabel: string | null; decisions: number; project: string | null; view?: string | null }): string {
   const lead = opts.decisions > 0 ? `(${opts.decisions}) ` : "";
-  const bits = [opts.phaseLabel, opts.project].filter((s): s is string => Boolean(s));
+  const bits = [opts.phaseLabel, opts.project, opts.view].filter((s): s is string => Boolean(s));
   return `${lead}${bits.length ? `${bits.join(" · ")} — ` : ""}Curule`;
 }
