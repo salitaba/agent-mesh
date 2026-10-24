@@ -639,6 +639,32 @@ test("the small standing targets are 44 pixels: the brand, the footer's address 
   assert.match(css, /\n\.glance-list h3 a \{[^}]*padding: 12px 0;/, "the three answers at the top of the security page are 44px links");
 });
 
+/**
+ * The header on a phone, measured at 360 in Chrome 156: the bar wanted 401.6px of a 328px wrap, so flex shrank the
+ * wordmark's link to its 44px floor and the drawing inside it to 30 × 24 (1.25:1, where it is drawn 221.54 × 60 = 3.69:1),
+ * ran the actions 1px past the wrap's right edge, and said "Sign in" twice — in the bar and again in the menu. At 768 the
+ * four sections fit in a row (301px of a 706px bar, 58px to spare) and were behind a press anyway.
+ */
+test("the phone's bar fits: the wordmark at its own proportions, one Sign in, and a 44px menu", () => {
+  const css = fs.readFileSync(path.join(SITE, "assets", "site.css"), "utf8");
+  assert.match(css, /\n\.brand \{[^}]*flex: none;/, "the logo's link is not squeezed by the bar");
+  assert.match(css, /\n\.logo \{[^}]*flex: none;/, "and the drawing keeps its 221.54 × 60 on every width");
+  assert.match(css, /@media \(max-width: 599px\) \{\n  \.bar-actions \.signin \{ display: none; \}/, "below 600 the bar's Sign in gives way to the menu's own row, which is the same link");
+  assert.match(css, /@media \(max-width: 599px\) \{[\s\S]*?\n  \.menu summary \{ width: 44px; padding: 0; justify-content: center; \}/, "the menu is its icon, a thumb's 44px square");
+  assert.match(css, /@media \(max-width: 599px\) \{[\s\S]*?\n  \.menu-label \{ position: absolute;/, "with the word kept for the screen reader, so the control is still called Menu");
+  assert.match(css, /@media \(min-width: 600px\) \{ \.menu-panel a\[data-cloud="login"\] \{ display: none; \} \}/, "from 600 the bar's Sign in is the only one, so the open panel does not say it again");
+  assert.match(css, /@media \(min-width: 768px\) \{ \.nav-main \{ display: flex; \} \.menu \{ display: none; \} \}/, "at 768 the four sections fit as a row of their own");
+  assert.match(css, /\n\.menu-icon \{[^}]*border-block: 2px solid currentColor;/, "the icon is three bars, since on a phone the word is not beside it");
+  assert.match(css, /@media \(forced-colors: active\) \{[\s\S]*?\.menu-icon::before \{ background: CanvasText; \}/, "and the middle bar survives a forced-colour mode, where a background is dropped");
+  // One Sign in on screen at every width: the bar's from 600 up, the menu's below it, never both in the same bar.
+  for (const p of pages) {
+    const bar = /<div class="bar-actions">([\s\S]*?)<details class="menu">/.exec(p.html)?.[1] ?? "";
+    const panel = /<nav aria-label="Menu">([\s\S]*?)<\/nav>/.exec(p.html)?.[1] ?? "";
+    assert.equal((bar.match(/>Sign in<\/a>/g) ?? []).length, 2, `${p.rel}: the bar's Sign in is the app's and the dashboard's, one of them hidden`);
+    assert.equal((panel.match(/>Sign in<\/a>/g) ?? []).length, 2, `${p.rel}: and the menu carries the same two`);
+  }
+});
+
 test("every capture has a named way to its full size, in the same window, and the phone's six views are one snap row", () => {
   const home = page(pages, "index.html").html;
   const links = [...home.matchAll(/<a class="shot-open" href="([^"]+)"[^>]*aria-label="([^"]+)"[^>]*>Full size<\/a>/g)];

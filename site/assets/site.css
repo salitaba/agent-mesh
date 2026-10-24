@@ -171,8 +171,10 @@ main:has(.hero) .section-head .eyebrow::before { counter-increment: sec; content
   .site-header.is-scrolled, .toc-bar { background: color-mix(in srgb, var(--bg) 78%, transparent); backdrop-filter: saturate(1.4) blur(16px); }
 }
 .bar { display: flex; align-items: center; gap: 12px; min-height: 68px; }
-.brand { display: inline-flex; align-items: center; min-width: 44px; min-height: 44px; margin-inline: -7px; padding-inline: 7px; border-radius: var(--k-r-sm); color: var(--ink); text-decoration: none; }
-.logo { display: block; height: 26px; width: auto; }
+.brand { display: inline-flex; flex: none; align-items: center; min-width: 44px; min-height: 44px; margin-inline: -7px; padding-inline: 7px; border-radius: var(--k-r-sm); color: var(--ink); text-decoration: none; }
+/* The wordmark is drawn 221.54 × 60 (3.69:1) and is never squeezed by the bar: a flex item that may shrink took it
+   to 30 × 24 at 360. */
+.logo { display: block; flex: none; height: 26px; width: auto; }
 .logo .ink, .nf-mark .ink { stroke: var(--ink); }
 .logo .seat, .nf-mark .seat { fill: var(--accent); }
 .nav-main { display: none; gap: 2px; margin-left: 20px; }
@@ -183,19 +185,30 @@ main:has(.hero) .section-head .eyebrow::before { counter-increment: sec; content
 .menu summary { gap: 8px; min-height: 40px; padding: 0 14px; border-radius: var(--k-r-md); font-size: 14px; list-style: none; user-select: none; }
 .menu summary:hover { background: var(--panel2); }
 .menu summary::-webkit-details-marker { display: none; }
-.menu-icon { position: relative; width: 16px; height: 12px; }
-.menu-icon::before, .menu-icon::after { content: ""; position: absolute; left: 0; right: 0; height: 2px; border-radius: 1px; background: currentColor; }
-.menu-icon::before { top: 1px; }
-.menu-icon::after { bottom: 1px; }
+/* Three bars, so that the icon says "menu" on a phone where the word does not: the two edges are the element's own
+   borders (kept in High Contrast) and the middle one is drawn between them. */
+.menu-icon { position: relative; width: 16px; height: 12px; border-block: 2px solid currentColor; }
+.menu-icon::before { content: ""; position: absolute; left: 0; right: 0; top: 50%; height: 2px; margin-top: -1px; border-radius: 1px; background: currentColor; }
 .menu-panel { position: absolute; left: var(--gutter); right: var(--gutter); top: calc(100% + 4px); padding: 6px; border: 1px solid var(--line); border-radius: var(--k-r-lg); background: var(--panel); box-shadow: var(--k-hl), var(--k-shadow-3); }
 .menu-panel nav { display: grid; }
 .menu-panel a { display: flex; align-items: center; min-height: 48px; padding: 0 14px; border-radius: var(--k-r-md); color: var(--ink2); font-size: 1rem; font-weight: 500; text-decoration: none; }
 .menu-panel a:hover { background: var(--panel2); color: var(--ink); }
-@media (min-width: 860px) { .nav-main { display: flex; } .menu { display: none; } }
+/* The sections are a bar of their own where they fit: at 768 the four links take 301px, and the bar has 58px to spare.
+   Below that the menu holds them, and Sign in sits in the bar from 600 up. */
+@media (min-width: 768px) { .nav-main { display: flex; } .menu { display: none; } }
+@media (min-width: 600px) { .menu-panel a[data-cloud="login"] { display: none; } }
 @media (max-width: 859px) { .signin { padding: 0 6px; } }
 @media (max-width: 420px) { .bar .btn { padding-inline: 14px; white-space: nowrap; } .bar-actions { gap: 4px; } .logo { height: 24px; } }
-/* Narrowest phones: the menu is its icon, and still says "Menu". */
-@media (max-width: 359px) { .menu summary { width: 44px; padding: 0; justify-content: center; } .menu-label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); clip-path: inset(50%); } .bar .btn { padding-inline: 12px; } }
+/* A phone's bar holds the wordmark, the one way in, and the menu. Below 600 the bar's Sign in is not said twice — the
+   menu's own row is the other one, one press away — and the menu is its 44px icon, whose name is still "Menu". At 600
+   and up there is room for the word and for both actions (the bar needs 421px, and a 600px window gives it 552). */
+@media (max-width: 599px) {
+  .bar-actions .signin { display: none; }
+  .menu summary { width: 44px; padding: 0; justify-content: center; }
+  .menu-label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); clip-path: inset(50%); }
+}
+/* The narrowest phones give the primary action eight pixels back. */
+@media (max-width: 359px) { .bar { gap: 8px; } .bar .btn { padding-inline: 12px; } }
 
 /* buttons and links */
 .btn, .menu summary, .copy, .toc a { display: inline-flex; align-items: center; border: 1px solid var(--line2); background: var(--panel); box-shadow: var(--lift); font-weight: 600; cursor: pointer; }
@@ -770,6 +783,8 @@ main:has(.hero) .section-head .eyebrow::before { counter-increment: sec; content
 }
 /* Forced colours drop the thumb's fill: outline it. */
 @media (forced-colors: active) {
+  /* The menu's middle bar is a background; a forced-colour mode keeps it a bar. */
+  .menu-icon::before { background: CanvasText; }
   .tabs::before, .billing::before { outline: 2px solid Highlight; outline-offset: -2px; }
   .doc-card:target, .plan:target { outline: 2px solid Highlight; outline-offset: 2px; }
   .address-row:target { outline: 2px solid Highlight; outline-offset: -2px; }
