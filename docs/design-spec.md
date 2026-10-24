@@ -268,7 +268,7 @@ A view is then drawing.
 | `attention.ts`, `favicon.ts`, `notify.ts` (+ `notifyclient.ts`, `notifycontrol.tsx`, `attentioneffects.tsx`) | Being told. Which mission states are news to someone who is not looking (a decision starts to wait, delivered, stopped on its own; never the person's own pause), what the tab's icon and title say about it (a disc with a bar, a disc with a tick, a square with a cross: shape, not only colour), when a desktop notification is raised (only while the page is hidden, once per event) and what the opt-in control promises: it works while the page is open in a browser tab, nothing is sent to anyone else, nothing reaches you once the tab is closed. There is no service worker, no push message, no e-mail and no request. |
 | `rightnow.ts` | The Overview's "Right now" lines for a running mission: who is in a turn and for how long, what is next or waiting for mail, how many requests are open, which seats crashed or are blocked, why nothing happens, and whether anything needs the person. At most three lines, no ids, facts and not diagnoses. It cannot say who waits for whom: `/status` carries only a count of open requests. The status is read with every event and the list of steps every few seconds, so the two disagree for a moment about who is working; the lines and the count believe the status where it is newer, and `overview-model.ts` names the turns to read again (`staleRunning`, `unlistedRunning`). |
 | `overview-model.ts` (the hero) | Which mark the hero wears for a phase (`heroLook`), the segments of the checks bar (`checkSegments`), the seats as a stack with the ones in a turn kept in view (`seatStack`), the wall clock against its limit (`missionClock`), and the headline split into a state and its sentence (`splitHeadline`). |
-| `agents.ts` | The figures on a seat's card: the series of its recent turns for the sparkline (`turnSeries`), its own budget (`seatBudgets`), and `DENSE_FROM`, the number of seats from which the page offers rows. |
+| `agents.ts` | The figures on a seat's card: the series of its recent turns for the sparkline (`turnSeries`), its own budget (`seatBudgets`), `DENSE_FROM`, the number of seats from which the page offers rows, and `rosterFinished` / `seatRecord`: a team with nothing left to run is drawn as rows, each saying what that seat did. |
 | `steps.ts` | Which window the timeline opens on and where the bars and ticks fall. A mission that is working keeps the smallest preset that holds about nine turns in ten; one that is over, paused, failed or at its ceiling opens on **Fit**, first turn to last, with clock ticks in the reader's zone. The mission's *phase* decides (`autoPick`), not whether a turn is in flight this second: agents work in bursts, and a window that changed whenever the last live turn ended would never hold still. |
 | `files.ts` | What kind of file a type is (patch, release plan, report or document; an unknown type is a document), the short names of the status buttons, and which lines of a patch are added, removed or context (a removed line that starts with dashes is still a removal). |
 | `commands.ts`, `palette-groups.ts` | What the palette can run and in what order. The shell's own scope is listed first whichever scope registered first (the project strip registers before the shell, and "Go to Projects" used to come ahead of "Go to Overview"); the other scopes keep the order they first registered in, and a view that goes away takes its commands with it. Until something is typed the rows are in groups (Go to, Agents, Actions), and the arrow keys walk them in the order they are drawn. |
@@ -302,7 +302,11 @@ recipe that a third page needs is written here.
 - **Needs you leads with the decision**: a stripe in the tone of the decision, the question first, who asks and since when, and what
   happens if nobody answers (a notice holds nothing, so it gets no such line). **Agents** leads with the seat and what it is
   doing: a seat in a turn is lit, one that needs you has a stripe, a finished one recedes, and from nine seats (`DENSE_FROM`) a
-  person can read them as rows (the choice stays in this browser); a phone stacks them as small cards.
+  person can read them as rows (the choice stays in this browser); a phone stacks them as small cards. When *no* seat has
+  anything left to run (every one is finished, `rosterFinished`) the page opens as those rows: a card's two lines would say one
+  sentence about the mission on every seat, while the facts that differ — the turns that seat ran, when its last one ended, what
+  it spent — are a column each. The Cards/List choice is offered there too; a team with anything to run (a seat to wake, a
+  decision, a live turn) stays cards.
 - **On a phone** everything that is pressed is 44 px tall and a field is 16 px, so the page does not zoom.
 
 **The working pages** (Steps, Events, Graph, Designer, Files, Product, Cost, Tool gates, the drawers):
@@ -416,6 +420,59 @@ Known debt, so it is not rediscovered:
 
 The changes to the console that were measured against rendered screens, newest first. A pass is only in this list with the run
 that produced it, the before and the after, and what it deliberately did not change.
+
+### 2026-10-24 — a finished team is a ledger, not seven identical cards
+
+Run against `examples/demo-stub/mesh.yaml` at **Delivered** (the scripted demo, no model calls), on the production build from the
+worktree: a fresh state, the mission started from the console, both readings taken within 10 s of the goal completing. 320, 390,
+768, 900, 960, 1000, 1100 and 1440 in light and dark, with a coarse pointer below 500; Chromium over CDP. Before is the console
+serving the previous build (`3a9b11a`), after is this pass's.
+
+**What changed.**
+
+- **A roster with nothing left to run is read as rows.** Every seat of the delivered demo finished, so every card of the Agents
+  page measured 243 px at 390 and said the same two lines: "Finished" over "Done with the mission, so there is nothing for it to
+  run." — seven times, 1,828 px of the page. A card is the shape for a seat with a *now*: what it is doing, for how long, and the
+  buttons that act on it. When no seat has a turn, a decision or a control (`rosterFinished` in `agents.ts`), the page opens as
+  its ledger: Agent, State, What it did, Tokens. The group's sentence stays, once, in its heading.
+- **The row's middle column is the seat's own record.** `seatRecord` writes the turns the roster counted and when the last one
+  ended ("4 turns · last 5m ago") instead of repeating the team's sentence; a seat whose turn the loaded history does not hold
+  says only its count, and one with no counted turn says "Never ran". The same figure is now a column beside every other seat's, so
+  14.4k and 650 can be compared by looking down rather than across seven cards.
+- **The Cards/List choice is offered to this team, not only to nine seats.** A finished roster opens as List and can be turned
+  back; the choice is the same one `DENSE_FROM` teams already had, kept in this browser. A parked team (every seat able to `Run one
+  step`) and a running one still open as cards.
+- **The record survives the width where the Now column used to be dropped.** From 1100 down, `.ag-t-now` is hidden because the
+  240 px controls column needs its room; a finished roster has no controls column, so its record stays (901–1100) and the ≤900
+  row card is three lines rather than four-and-a-blank.
+
+**Measured.**
+
+| | Before | After |
+|---|---|---|
+| Agents, 390 | 2,019 px; 7 cards of 243 | 1,302 px; 7 rows of 141 |
+| Agents, 320 | 2,077 px | 1,360 px |
+| Agents group, 390 | 1,828 px | 1,051 px |
+| Agents, 1440 | 909 px (73 px of scroll); cards 3 + 3 + 1; group 722 | 836 px, fits the view; one 7-row ledger; group 425 |
+| "Done with the mission, so there is nothing for it to run." | 7 times | 0 |
+| "Finished", 390 | 7 times | 0 (the state is `done` in its own column) |
+| Next links, 1440 | below the fold (y = 900) | on the screen (y = 611) |
+| Per-seat tokens, 1440 | right end of each card, one per column | one right-aligned column |
+| Tab stops, 390 | 10 | 12 (Cards, List) |
+| Record line | — | 13 px, 11.31:1 light / 11.53:1 dark |
+| Smallest text, both themes | 11 px (`Next`) | 11 px |
+| Worst text pair, both themes | 5.90:1 | 5.90:1 |
+| Horizontal page scroll, 320/390/768/900/960/1000/1100/1440, both themes | none | none |
+| Controls under 44 × 44 at 320 and 390, coarse pointer | 0 | 0 |
+
+`npm run typecheck` and `npm run build` pass; `node --test "dist/tests/dashboard/*.test.js" "dist/tests/build/console-palette.test.js"
+"dist/tests/build/ui-kit-tokens.test.js"` passes 1,140 tests, including the two new rules in `agents.test.ts` (mutation-checked:
+`rosterFinished` returning true for a `STARTING` seat, and `seatRecord` dating a turn the history does not hold, both seen to fail).
+
+**Left.** The 768 row card leaves a wide gap between the state pill and the token figure (the shared dense-list grid, unchanged);
+the Cards view of a finished team is 2,079 px, 60 px more than before, because the choice it now offers sits in the header; the
+ledger has no sort or grouping, because the roster's order is the mesh's; and no axe-core run was made this pass (the palette,
+type-ramp, tokens and primitives tests stand, and the page's contrast sweep is above).
 
 ### 2026-10-24 — the figures name the team, and the lists say a thing once
 
