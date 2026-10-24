@@ -1,6 +1,6 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties } from "react";
-import { ago, dur, fmt, localTime, plainBlocker, plainReason, plural, refusalSummary, outcomeOf, zoneLabel, OUTCOME_META, type Outcome } from "../format";
+import { ago, dur, fmt, localTime, plainBlocker, plural, refusalSummary, outcomeOf, zoneLabel, OUTCOME_META, type Outcome } from "../format";
 import { useMesh, type TurnStep } from "../store";
 import { AgentAvatar, Button, EmptyState, ErrorState, NextLinks, OutcomePill, PageHeader, Ring, SearchField, Segmented, Skeleton, Stat, Switch, Tooltip, agentColor, useNow } from "../components";
 import { Icon } from "../icons";
@@ -10,7 +10,7 @@ import { FeedStatus, HoldBar, PauseButton, useFeedHold } from "../feedstatus";
 import { useRoving } from "../rovinglist";
 import { titleWhenClipped } from "../domutil";
 import {
-  FILTERS, FIT_WINDOW, OUTCOME_ORDER, WINDOWS, autoPick, busyText, filterSteps, groupSteps, outcomeCounts, pulseLine, rowSummary, spendOf, timeline,
+  FILTERS, FIT_WINDOW, OUTCOME_ORDER, WINDOWS, autoPick, busyText, filterSteps, groupSteps, outcomeCounts, pulseLine, rowSummary, spendOf, timeline, wakeReason,
   type Bar, type Lane,
 } from "../steps";
 import { useMission } from "../useMission";
@@ -41,12 +41,13 @@ const WINDOW_OPTIONS = [FIT_WINDOW, ...WINDOWS].map((w) => ({
 function TurnTip({ s }: { s: TurnStep }): React.JSX.Element {
   const oc = outcomeOf(s);
   const summary = rowSummary(s);
+  const wake = wakeReason(s);
   return (
     <span className="tt">
       <span className="tt-h"><b>{s.agentId}</b><span className={`tt-oc ${OUTCOME_META[oc].cls}`}>{OUTCOME_META[oc].label}</span></span>
       <span className="tt-r">{localTime(s.startedAt)} · {dur(s.durationMs) || (oc === "live" ? "running" : "no duration")} · {s.tokens ? `${fmt(s.tokens)} tok` : "no cost"}</span>
       {summary ? <span className="tt-r">{summary}</span> : null}
-      <span className="tt-r tt-dim">Woke: {plainReason(s.reasonKind)}</span>
+      <span className="tt-r tt-dim">Woke: {wake.why}{wake.note ? ` · ${wake.note}` : ""}</span>
     </span>
   );
 }
@@ -102,7 +103,7 @@ function Strip({ steps, loaded, onPick, filter, counts, missionTokens, hot, onHo
                 type="button"
                 className="st-now"
                 onClick={() => onPick(s)}
-                title={`${s.agentId}. Woke: ${plainReason(s.reasonKind)}${s.currentTool ? `. ${nowLine(s.currentTool, now)}` : ""}`}
+                title={`${s.agentId}. Woke: ${wakeReason(s).why}${s.currentTool ? `. ${nowLine(s.currentTool, now)}` : ""}`}
               >
                 <AgentAvatar id={s.agentId} color={agentColor(s.agentId)} size="sm" />
                 <span className="st-now-name">{s.agentId}</span>
@@ -281,7 +282,7 @@ const StepRow = memo(function StepRow({ s, maxTokens, tab, hot, onPick, onTab, o
   const live = oc === "live";
   const elapsed = live ? Date.now() - Date.parse(s.startedAt) : s.durationMs;
   const share = maxTokens && s.tokens ? Math.max(6, Math.round((s.tokens / maxTokens) * 100)) : 0;
-  const note = s.reasonNote && s.reasonNote !== s.triggerEventType ? s.reasonNote : "";
+  const wake = wakeReason(s);
   const liveTok = live && typeof s.liveTokens === "number";
   const summary = rowSummary(s);
   return (
@@ -308,7 +309,7 @@ const StepRow = memo(function StepRow({ s, maxTokens, tab, hot, onPick, onTab, o
           </span>
           {/* The reasons are phrases of mixed grammar ("new message", "restarted after a problem"), so a fixed verb only fit some of them. */}
           <span className="st-l2">
-            <span className="st-woke" onMouseEnter={titleWhenClipped}>Woke: {plainReason(s.reasonKind)}{note ? <span className="st-note">{` · ${note}`}</span> : null}</span>
+            <span className="st-woke" onMouseEnter={titleWhenClipped}>Woke: {wake.why}{wake.note ? <span className="st-note">{` · ${wake.note}`}</span> : null}</span>
           </span>
           {/* Clamped to two lines, the full text in the tooltip: slicing at 160 characters cut words in half with no ellipsis. */}
           {refusal ? <span className="st-refusal" title={`The kernel refused this op: ${refusal}`}><b>Refused.</b> {refusal}</span> : null}
