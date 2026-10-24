@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import {
+  agentTally,
   artifactOfUri,
   buildAttention,
   bufferIsBehind,
@@ -28,6 +29,7 @@ import {
   standingBlocks,
   staleRunning,
   unlistedRunning,
+  whatItLeft,
   workspaceOf,
   type AttentionInput,
   type HeroNoteInput,
@@ -634,6 +636,46 @@ test("a roster too long to stack keeps the seats in a turn in view, in roster or
   const seven = Array.from({ length: 7 }, (_, i) => ({ id: `t${i}`, role: "qa", lifecycle: "IDLE" }));
   assert.deepEqual(seatStack(seven, 7), { shown: seven.map((x) => ({ id: x.id, role: "qa", working: false })), more: 0 }, "a roster that fits the row is drawn whole, with no count");
   assert.equal(seatStack([...seven, { id: "t7", role: "qa", lifecycle: "IDLE" }], 7).more, 2, "one seat over the row: the count takes a chip, so it says two");
+});
+
+test("the Agents figure counts who is working and names the team only when nobody is, never three zeros", () => {
+  const seats = (lifecycle: string) => ["pm", "architect", "tech-lead", "developer", "qa", "security", "explorer"].map((id) => ({ id, lifecycle }));
+  assert.deepEqual(
+    agentTally(seats("WORKING"), { working: 2, waiting: 1, queued: 0 }),
+    { value: 2, unit: "working", sub: "1 waiting · 0 queued" },
+    "a mission with agents in a turn counts them, as before",
+  );
+  assert.deepEqual(
+    agentTally(seats("COMPLETED"), { working: 0, waiting: 0, queued: 0 }),
+    { value: 7, unit: "seats", sub: "all finished" },
+    "a delivered mission says what the team is, not that nobody is doing anything",
+  );
+  assert.deepEqual(
+    agentTally(seats("STARTING"), { working: 0, waiting: 0, queued: 0 }),
+    { value: 7, unit: "seats", sub: "none working" },
+    "a roster that has not run has a size, and all that is true of it",
+  );
+  assert.deepEqual(
+    agentTally(seats("WAITING"), { working: 0, waiting: 3, queued: 2 }),
+    { value: 0, unit: "working", sub: "3 waiting · 2 queued" },
+    "a queue is a fact: three zeros are not replaced when they are not all zeros",
+  );
+  assert.deepEqual(
+    agentTally([{ id: "human", lifecycle: "COMPLETED" }], { working: 0, waiting: 0, queued: 0 }),
+    { value: 0, unit: "working", sub: "0 waiting · 0 queued" },
+    "the human is not a seat",
+  );
+});
+
+test("a turn's second line says what it left, and is silent when its pill already said it", () => {
+  assert.equal(whatItLeft({ status: "ok", ops: { messages: 0, artifacts: 0, tasks: 0, decisions: 0 } }), "", "a quiet turn's pill reads \"no output\"");
+  assert.equal(whatItLeft({ status: "ok" }), "", "a turn with nothing recorded is quiet too");
+  assert.equal(whatItLeft({ status: "ok", ops: { messages: 2, artifacts: 1, tasks: 0, decisions: 0 } }), "2 messages · 1 file");
+  assert.equal(
+    whatItLeft({ status: "ok", ops: { messages: 0, artifacts: 0, tasks: 0, decisions: 0 }, opTimings: [{ op: "approve", ok: false }, { op: "merge", ok: false }] }),
+    "2 refused",
+    "a refusal's count is not in the pill, so it stays",
+  );
 });
 
 test("one segment for each mandatory check, in the goal's order, as the checklist marks them", () => {

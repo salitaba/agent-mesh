@@ -417,6 +417,61 @@ Known debt, so it is not rediscovered:
 The changes to the console that were measured against rendered screens, newest first. A pass is only in this list with the run
 that produced it, the before and the after, and what it deliberately did not change.
 
+### 2026-10-24 — the figures name the team, and the lists say a thing once
+
+Run against `examples/demo-stub/mesh.yaml` at **Delivered** (the scripted demo, no model calls): `curule console --fresh`, the
+mission started from the console, both readings taken within 10 s of the goal completing, on the production build. 390 and 1440 in
+both themes, 360 in light; Chromium 156. Before is the build of `c240e3b`, after is this pass's.
+
+**What changed.**
+
+- **The Agents figure named three zeros.** In the two states a person parks on — a mission delivered, or one not started — nobody
+  works, nothing waits and nothing is queued, so a quarter of the hero's strip read `0 working` over `0 waiting · 0 queued` while
+  every other figure reported a result. `agentTally` (`overview-model.ts`) counts who is working while anyone is, and otherwise
+  names the team: `7 seats` over `all finished` when every seat finished its work, `none working` when the roster has not run.
+  The stack's screen-reader name follows ("The team: pm, architect, …", no longer the count the figure now says).
+- **A phone's first figure column had 12 px less width than the second.** The two-up rule from 1100 (`padding-left: var(--s6)` on
+  the first cell of each row, which lines it up with the hero's own edge) outweighs the phone's four-cells rule at (0, 2, 0), so
+  the odd cells kept 28 px of left padding where the hero's content is 16. The phone rule now names the hero's cells with the same
+  weight. Every cell is 16/16 on a phone: content 138 → 150 px at 390 and 123 → 135 at 360, where the Tokens figure was breaking
+  inside its unit (`51.0k of` / `2.0M`) and now sits on one line.
+- **"Latest work" said the outcome twice.** A quiet turn's pill reads "no output" and its second line read "… · wrote nothing":
+  one fact, twice, in one row — four of the delivered demo's five rows at 390. `whatItLeft` keeps the line for what the pill does
+  not carry (a count of messages or files, a refusal's count) and leaves it empty when the pill already worded it.
+- **"Just happened" printed one sentence on every fold.** Every fold row carried "Folded. Open Events for each one." under a card
+  whose own button says *All events*: the delivered demo showed three folds and read the same line three times. The first fold the
+  panel draws carries it; its words already speak for each one. A fold row is 92 → 78 px at 390 and 58 → 44 at 1440.
+
+**Bug found and fixed.** The Overview's index scrolled with `scrollIntoView({ behavior: "smooth" })`, which animates whatever the
+person's motion setting is: the stylesheet's `scroll-behavior: auto !important` cannot reach an option passed to that call, so a
+reduced-motion reader still got the sweep. The click now asks the same media query; `primitives-a11y.test.ts` holds it.
+
+**Measured.**
+
+| | Before | After |
+|---|---|---|
+| Agents figure, delivered, 390 | `0 working`, `0 waiting · 0 queued` | `7 seats`, `all finished` |
+| Agents figure, parked, 390 | the same three zeros | `7 seats`, `none working` |
+| Figure cells, 390 | odd columns pad 28/16, content 138 px | 16/16, content 150 px |
+| Figure cells, 360 | content 123 px; `51.0k of` / `2.0M` | content 135 px; `51.0k of 2.0M` |
+| Hero / figures strip, 360 | 761 / 325 px | 737 / 301 px |
+| Latest work, one quiet row, 390 | `6s ago · wrote nothing` + pill `no output` | `6s ago` + pill `no output` |
+| Just happened, 390 | 3 folds, 3 × "Folded. Open Events…", 817 px | 1 explained fold, 2 × 78 px, 789 px |
+| Just happened, 1440 | 465 px | 437 px |
+| Overview, 390 / 1440 | 4,462 / 1,778 px | 4,434 / 1,750 px |
+| Horizontal page scroll, 360 / 390 / 1440, both themes | none | none |
+| Controls under 44 × 44 at 360 and 390 | 0 | 0 |
+| Smallest text pair, both themes | 5.61:1 | 5.61:1 |
+| Type sizes on the Overview | 11 12 13 14 15 16 18 24 30 | unchanged |
+
+`npm run typecheck` and `npm run build` pass; `node --test "dist/tests/dashboard/*.test.js" "dist/tests/build/console-palette.test.js"
+"dist/tests/build/icons.test.js"` passes 1,133 tests, including the new `timeline-rows` file and the phone-cell rule. Each new rule was
+mutation-checked (broken, seen to fail, restored).
+
+**Left.** The two routine folds in the delivered buffer are still separate (a reading decision, as before). The Goal checks card's
+100 % bar and the hero's seven segments draw the same figure twice on a finished goal. The Events and Latest work rows still put the
+time on a third line at 390; joining it to the line above needs the row to give up width the message uses.
+
 ### 2026-10-23 — names a person can say, and a hero that ends in two rows
 
 Run against `examples/demo-stub/mesh.yaml` at **Delivered** (the scripted demo, no model calls): 13 views × 390 / 768 / 1440 ×

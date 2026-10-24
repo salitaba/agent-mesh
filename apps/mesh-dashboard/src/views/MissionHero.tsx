@@ -3,7 +3,7 @@ import { AgentAvatar, Button, IconTile, Menu, Pill, Progress, Stat, Tooltip, age
 import { Icon, type IconName } from "../icons";
 import { budgetTone } from "../cost";
 import type { HeroAction, MissionAction, MissionControl, MissionState, NextStep } from "../mission";
-import { checkSegments, heroLook, missionClock, seatStack, splitHeadline, type CheckMark, type ChecksSummary, type HeroNote } from "../overview-model";
+import { checkSegments, heroLook, missionClock, seatStack, splitHeadline, agentTally, type CheckMark, type ChecksSummary, type HeroNote } from "../overview-model";
 import { rightNowRows, type RightNowInput, type RightNowKind } from "../rightnow";
 import "./overview.css";
 
@@ -103,15 +103,20 @@ function TokensKpi({ tokens, events, messages }: { tokens: HeroProps["tokens"]; 
   );
 }
 
-/** Every seat as an avatar on its role's colour, the ones in a turn lit; the roster is as long as the mesh, so what does not fit is counted. */
+/**
+ * Every seat as an avatar on its role's colour, the ones in a turn lit; the roster is as long as the mesh, so what does not fit is
+ * counted. The figure over them (`agentTally`) counts who is working while anyone is, and names the team when nobody is: three zeros
+ * are not a figure.
+ */
 function AgentsKpi({ seats, agents }: { seats: HeroProps["seats"]; agents: HeroProps["agents"] }): React.JSX.Element {
   const { shown, more } = seatStack(seats);
   const names = shown.map((s) => (s.working ? `${s.id} (working)` : s.id)).join(", ");
+  const tally = agentTally(seats, agents);
   return (
-    <Stat label="Agents" value={agents.working} unit="working" sub={`${agents.waiting} waiting · ${agents.queued} queued`}>
+    <Stat label="Agents" value={tally.value} unit={tally.unit} sub={tally.sub}>
       <Visual>
         {shown.length ? (
-          <div className="ov-seats" role="img" aria-label={`${shown.length + more} seats: ${names}${more ? ` and ${more} more` : ""}`}>
+          <div className="ov-seats" role="img" aria-label={`The team: ${names}${more ? ` and ${more} more` : ""}`}>
             {shown.map((s) => <span key={s.id} className={`ov-seat${s.working ? " on" : ""}`}><AgentAvatar id={s.id} color={agentColor(s.role)} size="sm" /></span>)}
             {more ? <span className="ov-seat more">+{more}</span> : null}
           </div>

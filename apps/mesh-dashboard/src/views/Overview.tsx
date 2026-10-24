@@ -37,11 +37,14 @@ const FIX_VIEW: Record<FixTarget, View> = { inbox: "escalations", tools: "gates"
  * press each, and the target takes focus as well as the scroll so a keyboard user continues inside the section.
  */
 function JumpRow({ delivered }: { delivered: boolean }): React.JSX.Element {
+  // The scroll is the one thing a script animates on this page, and `behavior: "smooth"` asks for it whatever the person's motion
+  // preference is: the stylesheet's `scroll-behavior: auto !important` cannot reach an option passed to this call.
   const jump = (id: string): void => {
     const el = document.getElementById(id);
     if (!el) return;
     el.focus({ preventScroll: true });
-    el.scrollIntoView({ block: "start", behavior: "smooth" });
+    const still = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    el.scrollIntoView({ block: "start", behavior: still ? "auto" : "smooth" });
   };
   return (
     <nav className="ov-jump" aria-label="Sections of this page">

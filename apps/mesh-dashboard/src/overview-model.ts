@@ -14,7 +14,7 @@
  *   itself is information, a refusal that will not retry is a fault, and the tone says which.
  * - A number that cannot be known is `null`, never `0`.
  */
-import { RUNNING, criterionDone, plainArtifact } from "./format";
+import { RUNNING, criterionDone, opsSummary, outcomeOf, plainArtifact, type OutcomeInput } from "./format";
 import type { MissionPhase } from "./mission";
 
 /* ------------------------------------------------------------------------- */
@@ -520,6 +520,45 @@ export function seatStack(agents: ReadonlyArray<{ id: string; role?: string; lif
   for (const s of seats) if (s.working && keep.size < room) keep.add(s.id);
   for (const s of seats) if (keep.size < room) keep.add(s.id);
   return { shown: seats.filter((s) => keep.has(s.id)), more: seats.length - room };
+}
+
+/** A seat whose work on this mission is over: it finished its last turn, or it left the roster. */
+const FINISHED = new Set(["COMPLETED", "RETIRED"]);
+
+export interface AgentTally {
+  /** The figure. */
+  value: number;
+  /** What it counts, after it. */
+  unit: string;
+  /** One line under it. */
+  sub: string;
+}
+
+/**
+ * What the Agents figure says. While anybody is in a turn it counts them, and says who waits and what is queued under it, because
+ * that is the question the figure exists for. In the states a person parks on — a mission delivered, or one not started — nobody
+ * works, nothing waits and nothing is queued, and the figure spent a quarter of the hero's strip on three zeros. There it names the
+ * team instead: a roster whose seats have all finished says so, and one that has not run says nobody is working.
+ */
+export function agentTally(
+  seats: ReadonlyArray<{ id?: string; lifecycle?: string }> | undefined,
+  agents: { working: number; waiting: number; queued: number },
+): AgentTally {
+  const roster = (seats ?? []).filter((s) => s?.id !== "human");
+  const idle = { value: agents.working, unit: "working", sub: `${agents.waiting} waiting · ${agents.queued} queued` };
+  if (agents.working > 0) return idle;
+  if (!roster.length || agents.waiting > 0 || agents.queued > 0) return idle;
+  const finished = roster.every((s) => FINISHED.has(String(s?.lifecycle ?? "").toUpperCase()));
+  return { value: roster.length, unit: "seats", sub: finished ? "all finished" : "none working" };
+}
+
+/**
+ * What a turn left, for the second line of its row — or nothing, when the row's own pill already said it. A quiet turn's pill reads
+ * "no output" and its effect line read "wrote nothing": one fact, twice, in one row (four of the five rows of the delivered demo).
+ * A turn that produced something keeps its counts, and a refusal its count, because its pill does not carry them.
+ */
+export function whatItLeft(s: OutcomeInput): string {
+  return outcomeOf(s) === "quiet" ? "" : opsSummary(s);
 }
 
 /**

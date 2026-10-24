@@ -205,7 +205,12 @@ details.ov-note { display: block; }
   .ov-acts > button.ghost { padding-inline: var(--s1); font-size: 13px; }
   /* The goal is what the mission is. A phone hid the last two words of a one-sentence goal behind an ellipsis; three lines fit it. */
   .ov-goal-line { -webkit-line-clamp: 3; line-clamp: 3; }
-  .stat-cell, .stat-cell:first-child, .stat-cell:nth-child(odd), .stat-cell:last-child { padding: var(--s3-5) var(--s4); }
+  /* The hero's own two-by-two rule above (max-width: 1100) pads the first cell of each row by s6, so its cells are named here with
+     the same weight: at (0, 2, 0) this rule lost to that one and the odd cells kept 28 px of left padding on a phone, 12 px of a
+     figure's width gone. Measured at 360: every cell 16/16 instead of 28/16, content 123 → 135, the Tokens figure one line
+     ("51.0k of 2.0M" wrapped to "51.0k of" / "2.0M"), the strip 325 → 301 and the hero 761 → 737. */
+  .stat-cell, .stat-cell:first-child, .stat-cell:nth-child(odd), .stat-cell:last-child,
+  .ov-hero .stat-cell:first-child, .ov-hero .stat-cell:nth-child(odd), .ov-hero .stat-cell:last-child { padding: var(--s3-5) var(--s4); }
   .stat-cell:nth-child(even) { border-left: 1px solid var(--line); }
   .ov-files { grid-template-columns: minmax(0, 1fr); }
   .cb-meters { grid-template-columns: minmax(0, 1fr); }

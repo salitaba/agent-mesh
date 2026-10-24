@@ -121,6 +121,14 @@ test("a person who asks for less motion gets none: every animation, transition a
   }
 });
 
+test("a scroll a script asks for asks the same question: the stylesheet's rule cannot reach an option passed to scrollIntoView", () => {
+  // The Overview's index scrolls to a section it focuses. `behavior: "smooth"` animates whatever the person's setting is,
+  // because that option is read by the browser and not by a stylesheet.
+  const overview = read("views/Overview.tsx");
+  assert.match(overview, /matchMedia\("\(prefers-reduced-motion: reduce\)"\)\.matches/, "the click asks the motion preference");
+  assert.match(overview, /behavior: still \? "auto" : "smooth"/, "and asks for an instant jump when it is set");
+});
+
 test("forced colours: what is drawn with a background says so, so it survives Windows High Contrast", () => {
   const block = /@media \(forced-colors: active\) \{([\s\S]*?)\n\}/.exec(styles);
   assert.ok(block, "the stylesheet has a forced-colours block");
