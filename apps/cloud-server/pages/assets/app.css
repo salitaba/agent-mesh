@@ -573,10 +573,10 @@ body[data-page="home"] main { background: var(--k-glow) top / 100% 520px no-repe
   background: var(--k-surface) linear-gradient(to bottom, color-mix(in srgb, var(--k-accent) 5%, transparent), transparent 60%);
   box-shadow: var(--k-hl), var(--k-shadow-2);
 }
-.stage-warn, .stage-bad { border-radius: var(--k-r-xl); }
 .stage-body { flex: 1 1 24rem; min-width: 0; }
 .stage h2 { margin-bottom: 6px; font-size: clamp(1.375rem, 1.2rem + .8vw, 1.75rem); }
 .stage p { max-width: 42rem; color: var(--k-ink-2); }
+.stage-body p { margin-bottom: 0; }
 .stage input { min-height: 48px; }
 .stage .btn-row:empty { display: none; }
 .steps {

@@ -488,3 +488,75 @@ address is 29 characters, so the "Signed in as" line wraps to two lines at 360 i
 - **A direct landing still shows a skeleton with three tiles that a plan-less account never gets**
   (a 628px block on a 982px page, against 1,627px after the read), then the page grows. The
   skeleton cannot know the plan before the read.
+
+## 2026-10-24: the answer at the action
+
+Same harness: Chromium 156 through `playwright-core` against the trial service (`trial --port
+7601`), 360×900 with a touch pointer and 1440×900 with a mouse, light and dark,
+`prefers-reduced-motion: reduce`. "Before" is this pass's own base commit on the same fixture —
+a paid account with one running workspace, and a fresh account with no plan — not a figure copied
+from an earlier record. Heights are `document.documentElement.scrollHeight`; positions are
+`getBoundingClientRect` plus `scrollY`.
+
+- **A plan action's refusal is said under the button that asked.** The plan panel's status was the
+  first thing in the section, above everything it was about. Pressing **Manage billing** at 360 put
+  its answer at **y = 1222**, 248px above the button at 1454, and the 138px the sentence took pushed
+  that button to 1592 — out from under the pointer that had just pressed it — and left the cursor on
+  **BODY**. Pressing **Choose Team** on a plan-less account answered at the plan section's top
+  (**y = 623**), 350px above the button at 973 and 98px of new height above it. The sentence is now
+  put with its action: in the plan's own row, 112px under the row's buttons (the button does not
+  move: 1470 → 1470), and in the card whose plan was chosen, **14px** under its button (973 → 973),
+  at the foot of that card. `leaveFor` gives the cursor back to the button the browser dropped it
+  from: `document.activeElement` is "Manage billing" / "Choose Team" after the refusal, not BODY.
+  The page is 2,910 → 3,100 with the note at 360 (the note is 146px: the trial's message is long).
+- **A request made from the card at the top answers in the card.** On a past-due account,
+  **Update payment details** lives in the stage card at y = 380, and its refusal was written into
+  the Plan section — at 360 that section begins at **y = 1399**, so the sentence appeared about
+  **1,050px** below the button, off the screen. The card now carries `#stage-status`, a note under
+  its own sentence and above its buttons (y = 360–506 with the same message), the Plan section says
+  nothing about an action it did not offer, and the cursor stays on the button. The card is empty
+  when there is nothing to say: `.stage-body p` takes the margin that `p:last-child` used to give the
+  sentence, so a stage with no message is the same 195px at 360 and 133px at 1440 it was.
+- **A plan is promised only when one was read.** With `/api/plans` down, a person with no plan was
+  told "A plan is a flat monthly price for your account … Choose one below and pay on the next page."
+  over a section that said no price is shown — the same class of untruth the front page stopped
+  telling on 2026-10-20. That card now reads **"The plans could not be loaded"** / "No plan or price
+  is shown just now, and nothing was changed." with a **133×48 Try again** of its own (y = 417 at 360,
+  244 at 1440). Pressing it re-reads the plans in place: the trial's two cards appear, the card
+  becomes "Choose a plan", the page goes 917 → 1,620 at 360 (900 → 1,036 at 1440), and the cursor is
+  on the card's new title. A retry that fails again leaves the button usable and the cursor on it.
+  The Plan section keeps its own Try again for a paid account, whose card has no such button.
+- **The allowance says what is left in words.** The middle figure read "From your plan $19.99 of
+  $20.00" while its own spoken label said "From your plan: $19.99 left of $20.00". The visible line
+  now reads **"left of $20.00"**, which is what the bar is a picture of; nothing moved at 360, 768 or
+  1440, because the five characters fit the column.
+- **A consent refusal is one line, so the sign-up action stays on the screen.** "Agree to the Terms
+  and the Privacy notice to continue." wrapped to two lines (a 74px note) and put **Create account**
+  at 775–819, 19px below an 800px screen. The note says **"Tick the box to continue."** — the
+  sentence above it already names the Terms and the notice — and measures **50px**: the submit is
+  755–799, inside the screen, and the page 1,530 → **1,514**. Ticking still clears it (1,448).
+- **Widths, schemes and the floor.** 320 / 360 / 390 / 768 / 1440 in light and dark on the paid
+  account: no sideways page scroll (320: 320; 360: 360; 390: 390; 768: 768; 1440: 1440), nothing
+  under 12px, and no control under 44×44 below 721px. The account is 2,910 at 360 and 2,173 at 1440
+  with the empty usage state — the same as before the pass. The new Try again is 48px tall and the
+  stage note reuses the note, button and card classes.
+- **The budget.** `app.css` is **40,936 bytes of 40,960** (was 40,958, a net −22). The
+  `.stage-warn, .stage-bad` radius rule repeated what `.stage` already sets and paid for
+  `.stage-body p { margin-bottom: 0 }`, which is what keeps the card's height when the new status is
+  empty. Twenty-four bytes remain.
+
+### What this pass leaves
+
+- **Two Try agains on a plan-less page with the plans down.** The card at the top and the Plan
+  section both re-read the plans (230px apart at 1440). The one in the card is the primary and the
+  one in the section is small; both work, and the section keeps one because a paid account's card
+  has no retry. Removing one would leave a reader at the section with no action.
+- **The consent links still sit on 44px lines.** The label is 108px tall at 360, so "I agree to the
+  Terms and have / read the Privacy notice." reads as two paragraphs. The targets are the reason
+  (a finger is likely below 721), and an expanded hit area would overlap the two links' bands.
+- **A plan's price and its paid-until date are still two clauses.** "$149.00 per month. Paid until
+  November 24, 2026." is the most the page can say: whether the next period is charged automatically
+  is the provider's business, and the page cannot learn it.
+- **The usage read's own failure now matters more than it did.** The trial rate-limited this
+  pass's repeated reads, which is what the panel's 98px "Too many attempts" note looks like; the
+  sentence and its retry were not changed here.

@@ -29,7 +29,7 @@
     verify: ["status", "title", "again", "resend-form", "resend", "resend-wait", "resend-status", "email"],
     forgot: ["form", "status", "email"],
     reset: ["card", "form", "status", "title", "lede", "password"],
-    account: ["who", "notice", "retry-row", "skeleton", "glance", "glance-list", "subnav", "settings-panel", "stage", "stage-steps", "stage-title", "stage-text", "stage-actions", "stage-live", "workspaces-panel", "workspaces", "create-slot", "create-box", "create", "workspace-name", "create-plan-field", "workspace-plan", "create-note", "plan-panel", "plan-h", "plan-status", "plan", "balance-panel", "usage-panel", "figures", "topup", "topup-amount", "topup-unit", "topup-hint", "topup-status", "topup-options", "usage", "password-form", "password-status", "current", "next"],
+    account: ["who", "notice", "retry-row", "skeleton", "glance", "glance-list", "subnav", "settings-panel", "stage", "stage-steps", "stage-title", "stage-text", "stage-status", "stage-actions", "stage-live", "workspaces-panel", "workspaces", "create-slot", "create-box", "create", "workspace-name", "create-plan-field", "workspace-plan", "create-note", "plan-panel", "plan-h", "plan-status", "plan", "balance-panel", "usage-panel", "figures", "topup", "topup-amount", "topup-unit", "topup-hint", "topup-status", "topup-options", "usage", "password-form", "password-status", "current", "next"],
     terms: [],
     privacy: [],
     notfound: [],
@@ -241,6 +241,10 @@
         if (stage.ended) {
           const days = view.policy ? ` ${plural(view.policy.retentionDays, "day")}` : "";
           return { tone: "warn", title: "Choose a plan to start again", text: `Your subscription has ended and your workspaces are stopped. They are deleted${days} after it ended. Choose a plan again before then and they start again.`, action };
+        }
+        // A plan is promised only when one was read: with the plans down there is nothing below to choose, and the card says so.
+        if (!view.plansKnown) {
+          return { tone: "warn", title: "The plans could not be loaded", text: "No plan or price is shown just now, and nothing was changed.", action: { kind: "retry", label: "Try again" } };
         }
         const pays = "Choose one below and pay on the next page.";
         const what = "A plan is a flat monthly price for your account, and it says how many workspaces you may run at once. Each workspace runs on a plan of its own.";
@@ -627,6 +631,8 @@
     trigger.disabled = false;
     trigger.textContent = label;
     trigger.removeAttribute("aria-busy");
+    // Disabling a button takes the cursor off it in most browsers: it comes back, so the next Tab starts where the person was.
+    if (!doc.activeElement || doc.activeElement === doc.body) trigger.focus();
     // An answer that is fine but names no address this page will follow is a failure like any other, and is said as one.
     failed(r.ok ? { ok: false, status: r.status, data: r.data, error: { code: "bad_address", message: "The page we were meant to send you to could not be opened. Try again in a moment." } } : r);
   }
@@ -834,7 +840,7 @@
     onSubmit($("form"), status, async () => {
       say(status, "", "");
       if (!checkEmailAndPassword(email, password, status, { chosen: true })) return;
-      if (!$("agree").checked) return invalid($("agree"), $("agree-error"), "Agree to the Terms and the Privacy notice to continue.");
+      if (!$("agree").checked) return invalid($("agree"), $("agree-error"), "Tick the box to continue.");
       const address = email.value.trim();
       const r = await call("POST", "/api/signup", { email: address, password: password.value });
       if (!r.ok) {
@@ -1583,8 +1589,10 @@
       switch (a.kind) {
         case "link":
           return el("a", { class: "btn btn-primary", href: a.href }, a.label);
+        case "retry":
+          return button(a.label, { id: "stage-retry", kind, onclick: retryPlans });
         case "billing":
-          return button(a.label, { kind, onclick: (event) => leaveFor(event.currentTarget, () => call("POST", "/api/portal"), failedHere) });
+          return button(a.label, { kind, onclick: (event) => leaveFor(event.currentTarget, () => call("POST", "/api/portal"), failedAtStage) });
         case "key":
           return button(a.label, { kind, onclick: () => focusKey(w) });
         case "open":
@@ -1631,6 +1639,8 @@
       $("stage-title").textContent = card.title;
       const text = $("stage-text");
       text.replaceChildren(card.text);
+      // A refusal from the card's own button goes with the card that offered it: what the card says now is the news.
+      say($("stage-status"), "", "");
       if (card.contact && /^(mailto:|https:)/.test(CONTACT)) text.append(" ", el("a", { href: CONTACT }, "Contact the operator"), ".");
       const actions = $("stage-actions");
       const form = $("create-box");
@@ -1863,10 +1873,31 @@
     /** Ask again for the plans a failed read could not give, and draw the account from the answer, wherever it was the plans that were missing. */
     function retryPlans(event) {
       const press = event.currentTarget;
-      press.disabled = true;
+      // Held, not disabled: a button that is disabled loses the cursor, and the card it is in may be drawn again with the answer.
+      hold(press, true);
       press.setAttribute("aria-busy", "true");
       press.textContent = "Trying again";
-      readPlans().then(() => renderAll());
+      readPlans().then(() => {
+        renderAll();
+        // A read that failed again leaves the card saying what it said, and the button that asked is the one still there.
+        hold(press, false);
+        press.removeAttribute("aria-busy");
+        press.textContent = "Try again";
+      });
+    }
+
+    /**
+     * The sentence about a plan action belongs under the control that asked. A person who pressed "Choose Team" at the foot of a
+     * card is looking at the card, and a refusal that appears above the list is one they never see; a customer's plan puts it in
+     * that plan's row, under the buttons they pressed.
+     */
+    function attachStatus() {
+      const note = state.planNote;
+      if (!note) return;
+      const box = $("plan");
+      const card = note.plan ? [...box.querySelectorAll(".plan")].find((n) => n.dataset.plan === note.plan) : null;
+      const host = card || box.querySelector(".row");
+      if (host) host.append($("plan-status"));
     }
 
     function renderPlan() {
@@ -1877,7 +1908,7 @@
       $("plan-panel").hidden = false;
       // A person with no plan is at the step of choosing one, and the panel says so; a customer's is their plan.
       $("plan-h").textContent = live ? "Plan" : "Choose a plan";
-      const checkout = (p, kind) => (event) => leaveFor(event.currentTarget, () => call("POST", "/api/checkout", { purpose: "subscription", plan: p.id }), failedHere, rememberBefore);
+      const checkout = (p) => (event) => leaveFor(event.currentTarget, () => call("POST", "/api/checkout", { purpose: "subscription", plan: p.id }), (r) => failedHere(r, p.id), rememberBefore);
       const parts = [];
       if (sub) {
         const label = planState(sub);
@@ -1927,15 +1958,24 @@
         );
       } else if (!live && state.plans.length > 0) parts.push(el("div", { class: "plans" }, state.plans.map((p) => planCard(p, state.currency, { subscription: sub, picked: state.picked === p.id, action: (x) => button(`Choose ${x.title}`, { kind: "primary", onclick: checkout(x) }) }))));
       box.replaceChildren(...parts);
+      // A sentence already in the panel about an action goes back with that action, wherever the panel was drawn again.
+      attachStatus();
       const status = $("plan-status");
       if (state.planNote) say(status, state.planNote.kind, state.planNote.text);
       else say(status, "", "");
     }
 
-    function failedHere(r) {
+    function failedHere(r, planId) {
       if (signInAgain(r)) return;
-      state.planNote = { kind: "bad", text: r.error.message };
+      state.planNote = { kind: "bad", text: r.error.message, plan: planId || "" };
+      attachStatus();
       say($("plan-status"), "bad", r.error.message);
+    }
+
+    /** A request made from the card at the top that fails says so in the card, under the sentence it is about. */
+    function failedAtStage(r) {
+      if (signInAgain(r)) return;
+      say($("stage-status"), "bad", r.error.message);
     }
 
     function rememberBefore() {
@@ -1956,7 +1996,7 @@
       }
       // What the plan includes each period, and how much of it is left: a bar for the eye, and the figure it is of.
       const left = allowanceLeft(planOf(), b);
-      const of = left ? el("dd", { class: "of" }, el("meter", { min: 0, max: left.of, value: left.left, "aria-label": `From your plan: ${balanceMoney(left.left, b.currency)} left of ${balanceMoney(left.of, b.currency)}` }), `of ${balanceMoney(left.of, b.currency)}`) : null;
+      const of = left ? el("dd", { class: "of" }, el("meter", { min: 0, max: left.of, value: left.left, "aria-label": `From your plan: ${balanceMoney(left.left, b.currency)} left of ${balanceMoney(left.of, b.currency)}` }), `left of ${balanceMoney(left.of, b.currency)}`) : null;
       $("figures").replaceChildren(figure("Available", balanceMoney(b.balance.available, b.currency)), figure("From your plan", balanceMoney(b.balance.included, b.currency), of), figure("From credit you added", balanceMoney(b.balance.purchased, b.currency)));
     }
 

@@ -313,7 +313,7 @@ test("sign-up says what is missing before it asks anything, and puts the cursor 
   v.type("password", "correct horse battery staple");
   await submit();
   assert.equal(v.text("status"), "", "a refusal about the tick is not said at the top of the form");
-  assert.equal(v.text("agree-error"), "Agree to the Terms and the Privacy notice to continue.");
+  assert.equal(v.text("agree-error"), "Tick the box to continue.", "one line, so the action below it stays on the screen the refusal is read on");
   assert.equal(v.$("agree").getAttribute("aria-invalid"), "true");
   assert.equal(v.$("agree").getAttribute("aria-describedby"), "agree-error", "the sentence describes the tick it is about");
   assert.equal(v.doc.activeElement, v.$("agree"));
@@ -840,6 +840,10 @@ test("a payment page that cannot be opened is said, with the button back, and an
   v.click(choose);
   await v.idle();
   assert.equal(v.text("plan-status"), "The payment page could not be opened. Try again in a moment.");
+  const card = v.$("plan").querySelectorAll(".plan")[0]!;
+  assert.ok(card.contains(v.$("plan-status")), "the refusal is in the card whose button asked, under it, not above the list where nobody is looking");
+  assert.equal(card.children.filter((n) => !n.isText).at(-1), v.$("plan-status"), "at the foot of that card");
+  assert.equal(v.doc.activeElement, v.button("plan", "Choose Team"), "and the cursor is back on the button that was pressed");
   assert.deepEqual(v.navigations, []);
   const again = v.button("plan", "Choose Team");
   assert.equal(again.disabled, false);
@@ -894,10 +898,13 @@ test("billing on an account is managed on the provider's page, and a provider th
   const manual = world(paid);
   manual.answers.set("POST /api/portal", failure(409, "no_portal", "There is no billing portal for payments made by invoice or transfer. Contact the operator to change or cancel a plan."));
   const m = await visit("account", { routes: manual.routes });
-  m.click(m.button("plan", "Manage billing"));
+  const manage = m.button("plan", "Manage billing");
+  m.click(manage);
   await m.idle();
   assert.equal(m.text("plan-status"), "There is no billing portal for payments made by invoice or transfer. Contact the operator to change or cancel a plan.");
+  assert.ok(m.$("plan").querySelector(".row")!.contains(m.$("plan-status")), "the answer is in the plan's own row, under the buttons that asked");
   assert.equal(m.button("plan", "Manage billing").disabled, false, "and the button is back");
+  assert.equal(m.doc.activeElement, manage, "with the cursor on it, so the next Tab starts there");
   assert.deepEqual(m.navigations, []);
 });
 
@@ -950,7 +957,7 @@ test("the balance is what the gateway says, rounded down; when it cannot be read
   const w = world(paid);
   w.balance = balance({ included: 19_999_200, purchased: 10_000_000 });
   const v = await visit("account", { routes: w.routes });
-  assert.equal(v.text("figures"), "Available $29.99 From your plan $19.99 of $20.00 From credit you added $10.00", "what the plan includes each period is the figure the part of it that is left is of");
+  assert.equal(v.text("figures"), "Available $29.99 From your plan $19.99 left of $20.00 From credit you added $10.00", "what is left of what the plan includes each period is said in words, as it is to a reader of the page");
   const bar = v.$("figures").querySelector("meter")!;
   assert.deepEqual([bar.getAttribute("min"), bar.getAttribute("max"), bar.getAttribute("value")], ["0", "20000000", "19999200"], "and the bar is that part against that whole, in the units the service gives");
   assert.equal(bar.getAttribute("aria-label"), "From your plan: $19.99 left of $20.00", "which is said to a reader of the page in words");
@@ -984,17 +991,23 @@ test("the plans being unavailable leaves the rest of the account usable, says wh
   assert.equal(v.button("plan", "Manage billing").tag, "button");
   assert.deepEqual(v.consoleErrors, []);
 
-  // A new account: the card at the top still says "Choose a plan", and the retry is what turns that sentence into the list it promises.
+  // A new account: the card at the top does not promise a plan it cannot show, and its own Try again is the way to the list.
   const fresh = world((x) => {
     x.plans = failure(503, "unavailable", "Down.");
   });
   const n = await visit("account", { routes: fresh.routes });
   assert.equal(n.text(n.$("plan").querySelectorAll("p").at(-1)!), "The plans could not be loaded just now, so no price is shown.");
+  assert.equal(n.text("stage-title"), "The plans could not be loaded", "the card says what failed, not what the person may choose");
+  assert.equal(n.text("stage-text"), "No plan or price is shown just now, and nothing was changed.");
+  assert.equal(n.$("stage").className, "stage stage-warn");
+  assert.deepEqual(n.labels("stage-actions"), ["Try again"], "and the action is the read again, not a jump to a promise");
   fresh.plans = { json: PLANS };
-  n.click(n.button("plan", "Try again"));
+  n.click(n.button("stage-actions", "Try again"));
   await n.idle();
   assert.deepEqual(n.labels("plan"), ["Choose Team", "Choose Business"], "the list the card at the top offers is drawn without a reload");
+  assert.equal(n.text("stage-title"), "Choose a plan", "and the card says what is now true");
   assert.equal(n.link("stage-actions", "Choose a plan").getAttribute("href"), "#plan-h");
+  assert.equal(n.doc.activeElement, n.$("stage-title"), "the cursor is on what the card says now, not on a button that went");
   assert.deepEqual(n.consoleErrors, []);
 });
 
