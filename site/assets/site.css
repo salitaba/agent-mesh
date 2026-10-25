@@ -218,7 +218,9 @@ main:has(.hero) .section-head .eyebrow::before { counter-increment: sec; content
 .btn-primary { border-color: var(--accent); background: var(--accent) linear-gradient(color-mix(in srgb, white 10%, transparent), transparent); color: var(--k-on-accent); }
 .btn-primary:hover { border-color: var(--k-accent-hover); background-color: var(--k-accent-hover); box-shadow: var(--k-hl), var(--k-shadow-2); }
 .btn-primary:active { border-color: var(--k-accent-press); background-color: var(--k-accent-press); }
-@media (max-width: 719px), (pointer: coarse) { .btn, .signin, .menu summary { min-height: 44px; } }
+/* A control is a thumb's height on a coarse pointer, the four sections of the bar too: at 768 and up they are a row of
+   36px links, which is a mouse's row in a 44px bar, but a tablet's finger gets 44 of the bar's 68. */
+@media (max-width: 719px), (pointer: coarse) { .btn, .signin, .menu summary, .nav-main a { min-height: 44px; } }
 .btn-lg { min-height: 48px; padding: 0 24px; font-size: 1rem; }
 .arrow-link { display: inline-block; padding: 10px 0; font-weight: 600; text-decoration: none; }
 .arrow-link::after { content: "\2192"; display: inline-block; margin-left: .4em; }
@@ -814,6 +816,10 @@ main:has(.hero) .section-head .eyebrow::before { counter-increment: sec; content
   .stack-table { display: none !important; }
   #compare .table-wrap, #calculator .table-wrap { display: block !important; }
   .toc-bar.is-live { position: static; }
+  /* The On this page row is a swipe row on a screen; a printed page has no swipe, so its chips wrap and the last of
+     them is not cut off at the paper's edge. The security page's six chips take 1,245px in a 794px page, and two of
+     them did not print at all. */
+  .toc { flex-wrap: wrap; }
   .rv { opacity: 1 !important; transform: none !important; }
   body { background: #fff; color: #000; }
   .cta, .cta .lede { background: none; color: #000; }
