@@ -615,6 +615,26 @@
     if (fine) input.focus();
   }
 
+  /**
+   * A link to a place on this page gives the cursor to what it names, so a reader who follows it hears the heading they arrived at
+   * and the tab key goes on from there. The browser's own jump takes the cursor back to the page: the second focus comes after it.
+   * A link the page makes while it runs is wired when it is made; one that is in the document when the page starts is wired then.
+   */
+  function jumpLink(a) {
+    a.addEventListener("click", (event) => {
+      if (event.defaultPrevented || event.button > 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+      const target = doc.getElementById(a.getAttribute("href").slice(1));
+      if (!target) return;
+      // The disclosure a section owns, and not one merely somewhere inside it: a skip to the content must not land on Settings.
+      const details = [...target.children].find((c) => c.tag === "details" || c.tagName === "DETAILS");
+      const heading = /^H[123]$/.test(target.tagName) ? target : target.querySelector("h1, h2, h3");
+      const to = target.tagName === "MAIN" ? target : (details && details.querySelector("summary")) || heading || target;
+      if (!to.hasAttribute("tabindex")) to.setAttribute("tabindex", "-1");
+      to.focus({ preventScroll: true });
+      setTimeout(() => to.focus({ preventScroll: true }), 0);
+    });
+  }
+
   /** Leave for an address the API returns (a payment page, a workspace), or put the button back and say why not. `before` runs just ahead of the request. */
   async function leaveFor(trigger, request, failed, before) {
     const label = trigger.textContent;
@@ -1586,8 +1606,11 @@
       const named = w ? { "aria-label": `${a.label} ${w.name}` } : undefined;
       const kind = lesser ? "" : "primary";
       switch (a.kind) {
-        case "link":
-          return el("a", { class: "btn btn-primary", href: a.href }, a.label);
+        case "link": {
+          const way = el("a", { class: "btn btn-primary", href: a.href }, a.label);
+          jumpLink(way);
+          return way;
+        }
         case "retry":
           return button(a.label, { id: "stage-retry", kind, onclick: retryPlans });
         case "billing":
@@ -1834,7 +1857,8 @@
         id: `plan-toggle-${id}`,
         small: true,
         kind: "quiet",
-        attrs: { "aria-expanded": open ? "true" : "false", "aria-controls": panel.id, "aria-label": `Change the plan of ${w.name}` },
+        // The words on it come first, so a person who names the control aloud says what they see.
+        attrs: { "aria-expanded": open ? "true" : "false", "aria-controls": panel.id, "aria-label": `Change plan for ${w.name}` },
         onclick: () => {
           const opening = panel.hidden;
           if (opening) state.changingPlans.add(id);
@@ -1843,7 +1867,9 @@
           toggle.setAttribute("aria-expanded", opening ? "true" : "false");
         },
       });
-      return [head, el("div", { class: "btn-row" }, toggle), panel];
+      // The plan and the control that changes it are one row: the action sits with the fact it acts on, and a phone's card is a line shorter.
+      head.append(" ", toggle);
+      return [head, panel];
     }
 
     /** Move this workspace, and no other, to another plan: the row says it is under way, and what came of it, like any other ask. */
@@ -1872,6 +1898,8 @@
     /** Ask again for the plans a failed read could not give, and draw the account from the answer, wherever it was the plans that were missing. */
     function retryPlans(event) {
       const press = event.currentTarget;
+      // Which part of the page asked. The card at the top gives the cursor to what it says now; the plan section does the same here.
+      const fromPlan = $("plan").contains(press);
       // Held, not disabled: a button that is disabled loses the cursor, and the card it is in may be drawn again with the answer.
       hold(press, true);
       press.setAttribute("aria-busy", "true");
@@ -1882,6 +1910,14 @@
         hold(press, false);
         press.removeAttribute("aria-busy");
         press.textContent = "Try again";
+        // The button went with the answer it asked for, so the cursor goes to what the section says now: its heading, or its way to ask again.
+        if (fromPlan) {
+          const back = state.plansKnown ? $("plan-h") : $("plan").querySelector("button");
+          if (back) {
+            if (state.plansKnown && !back.hasAttribute("tabindex")) back.setAttribute("tabindex", "-1");
+            back.focus();
+          }
+        }
       });
     }
 
@@ -2273,21 +2309,10 @@
       }
     });
     // A link to a place on this page gives the cursor to what it names, so a reader who follows it hears the heading they arrived at
-    // and the tab key goes on from there. The browser's own jump takes the cursor back to the page: the second focus comes after it.
+    // and the tab key goes on from there. One the page makes later (the card at the top's way to the plans) is wired where it is made.
     for (const a of doc.querySelectorAll("a[href]")) {
       if (!a.getAttribute("href").startsWith("#")) continue;
-      a.addEventListener("click", (event) => {
-        if (event.defaultPrevented || event.button > 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
-        const target = doc.getElementById(a.getAttribute("href").slice(1));
-        if (!target) return;
-        // The disclosure a section owns, and not one merely somewhere inside it: a skip to the content must not land on Settings.
-        const details = [...target.children].find((c) => c.tag === "details" || c.tagName === "DETAILS");
-        const heading = /^H[123]$/.test(target.tagName) ? target : target.querySelector("h1, h2, h3");
-        const to = target.tagName === "MAIN" ? target : (details && details.querySelector("summary")) || heading || target;
-        if (!to.hasAttribute("tabindex")) to.setAttribute("tabindex", "-1");
-        to.focus({ preventScroll: true });
-        setTimeout(() => to.focus({ preventScroll: true }), 0);
-      });
+      jumpLink(a);
     }
     for (const button of doc.querySelectorAll("[data-reveal]")) wireSecret(button);
     for (const meter of doc.querySelectorAll("[data-len]")) wireLength(meter);

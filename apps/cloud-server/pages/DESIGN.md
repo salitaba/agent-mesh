@@ -702,3 +702,76 @@ same trial, measured again today; no figure is copied from an earlier pass. Heig
   are down would show the default.
 - **The account is unchanged by this pass.** Its plan retry, address strip and loading
   skeleton still have the defects the previous sections record.
+
+## 2026-10-25: the card's facts and their actions
+
+Same harness: Chromium 156 through `playwright-core` against this worktree's trial
+(`trial --port 7812`, whose plans are the trial's own fixtures), 320 / 360 / 390 / 768 /
+1440, light and dark, `prefers-reduced-motion: reduce`, a touch pointer below 721.
+"Before" is the base commit's own page files served by the same trial on the same fixture,
+measured again today: a Team account with one running workspace and an empty usage table,
+and a fresh account with no plan. Heights are `document.documentElement.scrollHeight`;
+positions are `getBoundingClientRect` plus `scrollY`.
+
+- **A workspace's plan and the control that changes it are one row.** The card stacked
+  "Plan Team" over its own `Change plan` button: a 16px line, a 10px gap and a 44px button
+  (76px at a phone, 64 at a pointer) for one fact and one action. The button now sits in
+  the plan's line, after the name it changes: the row is **44px** at 360 and **32px** at
+  1440, the card **303 → 270** at 360 (**355 → 322** at 320, **273 → 241** at 390) and
+  **245 → 213** at 768 and 1440, and the page **2,841 → 2,808** at 360 (**2,205 → 2,172**
+  at 1440, **2,668 → 2,635** at 390). Everything below moves up the 33px: Plan
+  1,183 → 1,151, Balance 1,615 → 1,582, Usage 2,237 → 2,205, Settings 2,662 → 2,629. The
+  opened list still follows the row at full width, and focus stays on the button that
+  opened it (`aria-expanded` true, the cursor on `Change plan for Research`).
+- **The card at the top's way to the plans gives the cursor to the plans.** The stage
+  card's `Choose a plan` link is made by the script when the stage is drawn, after the
+  page had wired its own in-page links, so following it moved the page to `#plan-h` and
+  left the cursor on **BODY**: the next Tab started at the skip link, above the page the
+  reader had just moved to. It is wired where it is made. Enter on it now leaves the
+  cursor on **H2#plan-h** ("Choose a plan") at 360, 768 and 1440, and the next Tab is
+  the first plan's **Choose Team**. The static links (the section strip, the legal
+  pages' phone contents) still land on their headings.
+- **The plan section's Try again puts the cursor where the answer is.** With `/api/plans`
+  failing, the panel's button re-read the plans, and the button went with the answer it
+  asked for: `document.activeElement` was **BODY** at scrollY 0, with the list 431px down.
+  Now a successful re-read focuses the section's heading, and a read that fails again
+  focuses the new `Try again` (it was BODY in both cases). Measured at 360: success →
+  **H2#plan-h**, next Tab **Choose Team**; failure → **BUTTON "Try again"**. The card at
+  the top keeps its own behaviour (its retry still focuses the card's title), because the
+  cursor is placed only when the button that asked was in the plan section.
+- **A workspace's `Change plan` is named with the words on it.** The button read
+  "Change plan" and was named "Change the plan of Research"; WCAG 2.5.3 wants the visible
+  words in the name, and axe-core reported `label-content-name-mismatch` on the paid
+  account at every width and in both themes (**1 → 0** violations). It is now
+  **"Change plan for Research"**, which is also what a person saying "Change plan" will
+  match. No other page or state had a violation.
+- **Widths, schemes and the floor.** The paid and plan-less account at 320, 360, 390, 768
+  and 1440 in light and dark: no sideways page scroll (320: 320; 360: 360; 390: 390;
+  768: 768; 1440: 1440), nothing computes below **12px**, no control under 44 × 44 below
+  721, 20 axe-core runs with no violation, and no console error. The other pages and the
+  plan-less account are the same height at every width (1440 / 360 / 390: sign-up
+  956 / 1,440 / 1,444, login 900 / 1,285 / 1,258, forgot 900 / 1,161 / 1,085, reset
+  900 / 973 / 946).
+- **The budget.** `app.css` is **40,938 bytes of 40,960** (was 40,953): the only change is
+  the comment above the plan row, which said "on its own line" and no longer does. The
+  row itself is the markup, not a rule.
+
+### What this pass leaves
+
+- **The address strip's Copy still takes its own line at 360.** "Address" (46px), the
+  186px monospace host and the 65px Copy need **313px in a 286px strip**, so the button
+  wraps under the address and the strip is 94px instead of 65. One line needs the label
+  gone at every width (a bare host and Copy, which loses the word on a desktop that has
+  the room) or 12px type in a 2px gap at 360 (which breaks the host when a workspace's
+  name is longer than this fixture's). Both were judged worse than the wrapped line.
+- **A plan-less page starts its numbered sections at 02.** 01 Workspaces is not shown, so
+  the first heading is "02 Choose a plan" and the last "05 Settings". The numbers are the
+  section's place in the record (2026-10-23), not the count of what is visible; renumbering
+  would shift Settings when the usage panel arrives after its own read.
+- **The usage read is rate limited to 60 an hour per session.** Repeating the page load
+  more than that in an hour turns the usage panel into "Too many attempts. Try again in 35
+  minutes." with its own Try again; the trial's own limits, not a page state, but it was
+  met during this pass's screenshots and a fresh sign-in clears the session's count.
+- **The dense usage table was not walked again.** The trial's workspaces answer with a
+  stand-in and no model call is made, so the by-day table has no rows to draw; its sticky
+  first cell and its arithmetic are held by `pages-app.test.ts` and the 2026-10-23 record.
