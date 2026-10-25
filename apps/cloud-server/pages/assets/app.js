@@ -29,7 +29,7 @@
     verify: ["status", "title", "again", "resend-form", "resend", "resend-wait", "resend-status", "email"],
     forgot: ["form", "status", "email"],
     reset: ["card", "form", "status", "title", "lede", "ask", "password"],
-    account: ["who", "notice", "retry-row", "skeleton", "glance", "glance-list", "subnav", "settings-panel", "stage", "stage-steps", "stage-title", "stage-text", "stage-status", "stage-actions", "stage-live", "workspaces-panel", "workspaces", "create-slot", "create-box", "create", "workspace-name", "create-plan-field", "workspace-plan", "create-note", "plan-panel", "plan-h", "plan-status", "plan", "balance-panel", "usage-panel", "figures", "topup-fail", "topup", "topup-amount", "topup-unit", "topup-hint", "topup-status", "topup-add", "topup-options", "usage", "password-form", "password-status", "current", "next"],
+    account: ["who", "notice", "retry-row", "skeleton", "glance", "glance-list", "subnav", "settings-panel", "stage", "stage-steps", "stage-title", "stage-text", "stage-status", "stage-actions", "stage-live", "workspaces-panel", "workspaces", "create-slot", "create-box", "create", "workspace-name", "create-plan-field", "workspace-plan", "create-note", "plan-panel", "plan-h", "plan-status", "plan", "balance-panel", "usage-panel", "usage-h", "figures", "topup-fail", "topup", "topup-amount", "topup-unit", "topup-hint", "topup-status", "topup-add", "topup-options", "usage", "password-form", "password-status", "current", "next"],
     terms: [],
     privacy: [],
     notfound: [],
@@ -907,6 +907,9 @@
     const password = $("password");
     let wired = false;
     focusFirst(email);
+    // The account page sends a person here when their session is gone. The page they land on says why, rather than meeting them with
+    // an unmoved form and leaving them to guess.
+    if (new URLSearchParams(location.search).get("signedout") === "1") say(status, "", "You are signed out. Sign in to see your account.");
     onSubmit($("form"), status, async () => {
       say(status, "", "");
       if (!checkEmailAndPassword(email, password, status)) return;
@@ -960,7 +963,8 @@
     }
     retitle("Address confirmed", "");
     say(status, "ok", "Your address is confirmed. Taking you to your account.");
-    location.replace("/account");
+    // The confirmation goes with the person: the account page says it, because this page is replaced before the sentence can be read.
+    location.replace("/account?confirmed=1");
   }
 
   function forgotPage() {
@@ -1051,7 +1055,7 @@
   /** How many times the page looks again while a workspace is starting: every three seconds, so for ten minutes. */
   const WATCH_LIMIT = 200;
   const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-  const SIGN_IN = "/login?next=/account";
+  const SIGN_IN = "/login?next=/account&signedout=1";
 
   /** The shape of the page while its first read is out, so that what arrives does not move what is already there. */
   const skeleton = (on) => {
@@ -1314,27 +1318,18 @@
       );
     }
 
-    function confirmBox(w) {
+    function confirmBox(w, note) {
       const input = el("input", { id: `confirm-${w.workspaceId}`, type: "text", autocomplete: "off", value: state.typed });
-      const go = button("Delete workspace", { type: "submit", kind: "danger", disabled: state.typed !== w.name });
+      // A deletion is one request however many times its button is pressed: the form is sent the way every other form on the page is,
+      // which holds its buttons while the answer is out and gives the cursor back when it comes.
+      const go = button("Delete workspace", { type: "submit", kind: "danger", disabled: state.typed !== w.name, attrs: { "data-busy": "Deleting it" } });
       input.addEventListener("input", () => {
         state.typed = input.value;
         go.disabled = input.value !== w.name;
       });
-      return el(
+      const form = el(
         "form",
-        {
-          class: "confirm",
-          onsubmit: (event) => {
-            event.preventDefault();
-            if (state.typed !== w.name) return;
-            act(w, "Deleting it.", () => call("POST", path(w, "delete"), { confirm: w.name }), () => {
-              state.confirming = null;
-              state.typed = "";
-              state.focusStage = true;
-            });
-          },
-        },
+        { class: "confirm" },
         el("p", null, "Deleting ", el("strong", null, w.name), " removes it and everything in it. It cannot be undone."),
         el("label", { for: input.id, class: "small" }, "Type its name to confirm"),
         input,
@@ -1354,6 +1349,15 @@
           }),
         ),
       );
+      onSubmit(form, note, async () => {
+        if (state.typed !== w.name) return;
+        await act(w, "Deleting it.", () => call("POST", path(w, "delete"), { confirm: w.name }), () => {
+          state.confirming = null;
+          state.typed = "";
+          state.focusStage = true;
+        });
+      });
+      return form;
     }
 
     /** Whether the card at the top offers this workspace's person the same thing as a button of their own. */
@@ -1497,7 +1501,7 @@
       part(card, "actions", JSON.stringify([w.name, w.status, resumable(w, view), lacksKey(w), cardOffers(id, "open"), cardOffers(id, "resume"), state.more.has(id), state.confirming === id]), () => actionsOf(w, view));
       part(card, "plan", planShape(w, view), () => planBlock(w, view));
       part(card, "key", keyShape(w), () => keyBlock(w));
-      part(card, "confirm", String(state.confirming === id), () => (state.confirming === id ? [confirmBox(w)] : []));
+      part(card, "confirm", String(state.confirming === id), () => (state.confirming === id ? [confirmBox(w, card.note)] : []));
       // A request that is out holds the buttons without drawing them again: the one that was pressed keeps the cursor.
       const held = state.busy.has(id);
       for (const name of ["actions", "plan"]) for (const b of card.boxes[name].querySelectorAll("button")) hold(b, held);
@@ -2127,13 +2131,18 @@
       );
     }
 
-    async function loadUsage() {
+    async function loadUsage(asked) {
       const box = $("usage");
       box.replaceChildren(el("div", { class: "sk sk-card", "aria-hidden": "true" }), el("p", { class: "sr" }, "Loading."));
       const r = await call("GET", "/api/usage");
       if (signInAgain(r)) return;
       if (!r.ok) {
-        box.replaceChildren(el("p", { class: "note note-warn" }, r.error.message), button("Try again", { small: true, onclick: loadUsage }));
+        // The button that asked goes with the answer it asked for: the cursor goes to the new one, and that button carries the reason
+        // beside it, so a reader who comes back to it hears what failed as well as what to press.
+        const note = el("p", { class: "note note-warn", id: "usage-fail" }, r.error.message);
+        const again = button("Try again", { small: true, onclick: () => loadUsage(true), attrs: { "aria-describedby": "usage-fail" } });
+        box.replaceChildren(note, again);
+        if (asked) again.focus();
         return;
       }
       const u = r.data;
@@ -2141,8 +2150,18 @@
       state.usageCalls = u.total.calls;
       $("usage-panel").hidden = !sectionsOf(viewOf()).usage;
       renderSubnav();
+      // A person who asked for the answer is taken to it: the section's heading, whose next Tab is the table (or its empty state). The
+      // first read of a page is not a person's question, so it leaves the cursor where it was.
+      const arrived = () => {
+        if (!asked) return;
+        const to = $("usage-panel").hidden ? $("plan-h") : $("usage-h");
+        if (!to) return;
+        if (!to.hasAttribute("tabindex")) to.setAttribute("tabindex", "-1");
+        to.focus();
+      };
       if (u.total.calls === 0) {
         box.replaceChildren(el("div", { class: "empty" }, el("div", { class: "tile tile-bars", "aria-hidden": "true" }), el("p", { class: "empty-t" }, "Nothing has been used yet."), el("p", { class: "muted" }, "Calls appear here when a team in one of your workspaces asks a model for something.")));
+        arrived();
         return;
       }
       const days = u.byDay
@@ -2153,6 +2172,7 @@
       const spaces = u.byWorkspace.map((row) => ({ ...row, label: nameOf(row.group) }));
       const showFailed = u.total.failed > 0;
       box.replaceChildren(usageTable(`By day, the last ${USAGE_DAYS} days with calls`, "Day", days, u.total, showFailed, true), usageTable("By workspace, in all", "Workspace", spaces, null, showFailed, false));
+      arrived();
     }
 
     // -- everything that is drawn from the account --
@@ -2186,12 +2206,7 @@
       const input = $("workspace-name");
       const note = $("create-note");
       const name = input.value.trim();
-      if (!name) {
-        input.setAttribute("aria-invalid", "true");
-        input.focus();
-        hint(note, "bad", "Give the workspace a name.");
-        return;
-      }
+      if (!name) return invalid(input, note, "Give the workspace a name.");
       state.focusStage = true;
       // The plan the person picked for this workspace, if the form offered one; without it the account's plan is what it starts on.
       const chosen = $("create-plan-field").hidden ? "" : $("workspace-plan").value;
@@ -2265,7 +2280,10 @@
 
     const paid = params.get("paid") === "1";
     const cancelled = params.get("cancelled") === "1";
-    if (paid || cancelled) history.replaceState(null, "", "/account");
+    const confirmed = params.get("confirmed") === "1";
+    if (paid || cancelled || confirmed) history.replaceState(null, "", "/account");
+    // A link that has just been opened is confirmed here, where the person can read it, rather than on a page that is already gone.
+    if (confirmed) flash("ok", "Your address is confirmed.");
     if (cancelled) {
       // Nothing is known of what was being bought, so what is said is true of every case: nothing was charged, and what there was is as it was.
       const said = !holdsPlan(subscription()) ? ". Choose a plan below when you are ready." : sectionsOf(viewOf()).balance ? ", and your plan and balance are as they were." : ", and your plan is as it was.";
