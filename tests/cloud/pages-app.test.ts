@@ -1299,6 +1299,10 @@ test("a quick amount goes straight to its payment page, and what the account loo
   again.click(again.button("topup-options", "$10.00"));
   await again.idle();
   assert.equal(again.text("topup-status"), "That amount cannot be bought.");
+  // The answer sits between the amounts and the amount field: the sentence that a press of an amount brings does not push that
+  // amount down the card, and the field's own refusal is above the field it is about, not at the top of the card.
+  const ids = again.$("topup").parent!.children.filter((n) => !n.isText).map((n) => n.getAttribute("id"));
+  assert.deepEqual(ids.slice(-4), ["topup-options", "topup-status", "topup", "topup-hint"], "the amounts, their answer, the field's form, and the line under it");
 });
 
 test("an amount typed by hand is checked against what can be bought before anything is asked, and is sent in minor units", async () => {

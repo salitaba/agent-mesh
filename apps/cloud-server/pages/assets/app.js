@@ -1256,6 +1256,12 @@
       else state.notes.delete(workspaceId);
     }
 
+    /** Where a thing asked of a workspace answers: the card at the top when it asked there, the workspace's own card otherwise. */
+    function answerAt(from, w, kind, text) {
+      if (from === "stage") say($("stage-status"), kind, text);
+      else setNote(w.workspaceId, kind, text);
+    }
+
     async function refresh() {
       const r = await call("GET", "/api/me");
       if (signInAgain(r)) return false;
@@ -1265,10 +1271,11 @@
       return true;
     }
 
-    /** One thing a person asked of a workspace: the row says it is under way, the request goes, and the page shows what is now true. */
-    async function act(w, doing, request, after) {
+    /** One thing a person asked of a workspace: the row says it is under way, the request goes, and the page shows what is now true. `from` is where it was asked: a
+     * thing asked from the card at the top answers in that card, because the workspace it is about is a card-length below it. */
+    async function act(w, doing, request, after, from) {
       state.flash = null;
-      setNote(w.workspaceId, "", doing);
+      answerAt(from, w, "", doing);
       state.busy.add(w.workspaceId);
       renderWorkspaces();
       renderStage();
@@ -1276,14 +1283,14 @@
       state.busy.delete(w.workspaceId);
       if (signInAgain(r)) return;
       if (!r.ok) {
-        setNote(w.workspaceId, "bad", r.error.message);
+        answerAt(from, w, "bad", r.error.message);
         if (!(await refresh())) {
           renderWorkspaces();
           renderStage();
         }
         return;
       }
-      setNote(w.workspaceId, "", "");
+      answerAt(from, w, "", "");
       if (after) after(r);
       if (!(await refresh())) {
         renderWorkspaces();
@@ -1293,7 +1300,7 @@
 
     const path = (w, action) => `/api/workspaces/${encodeURIComponent(w.workspaceId)}/${action}`;
 
-    function open(w) {
+    function open(w, from) {
       return act(
         w,
         "Opening it.",
@@ -1301,8 +1308,9 @@
         (r) => {
           const url = outsideUrl(r.data && r.data.url);
           if (url) location.assign(url);
-          else setNote(w.workspaceId, "bad", "The address of this workspace is not one this page will open. Tell the operator.");
+          else answerAt(from, w, "bad", "The address of this workspace is not one this page will open. Tell the operator.");
         },
+        from,
       );
     }
 
@@ -1339,6 +1347,9 @@
               state.confirming = null;
               state.typed = "";
               renderWorkspaces();
+              // The box that had the cursor is gone with the confirmation: the cursor goes back to the control that opened it, so the
+              // next Tab is the Delete that was being considered, not the workspace's address at the foot of the card.
+              restoreFocus(`more-${w.workspaceId}`);
             },
           }),
         ),
@@ -1618,9 +1629,9 @@
         case "key":
           return button(a.label, { kind, onclick: () => focusKey(w) });
         case "open":
-          return button(a.label, { id: "stage-open", kind, onclick: () => open(w), ...(named ? { attrs: named } : {}) });
+          return button(a.label, { id: "stage-open", kind, onclick: () => open(w, "stage"), ...(named ? { attrs: named } : {}) });
         default:
-          return button(a.label, { id: "stage-resume", kind, onclick: () => act(w, "Starting it.", () => call("POST", path(w, "resume"))), ...(named ? { attrs: named } : {}) });
+          return button(a.label, { id: "stage-resume", kind, onclick: () => act(w, "Starting it.", () => call("POST", path(w, "resume")), undefined, "stage"), ...(named ? { attrs: named } : {}) });
       }
     }
 
