@@ -302,7 +302,9 @@ recipe that a third page needs is written here.
 - **Needs you leads with the decision**: a stripe in the tone of the decision, the question first, who asks and since when, and what
   happens if nobody answers (a notice holds nothing, so it gets no such line). **Agents** leads with the seat and what it is
   doing: a seat in a turn is lit, one that needs you has a stripe, a finished one recedes, and from nine seats (`DENSE_FROM`) a
-  person can read them as rows (the choice stays in this browser); a phone stacks them as small cards. When *no* seat has
+  person can read them as rows (the choice stays in this browser); a phone stacks them as small cards. A seat's role keeps its
+  line only when it is not the seat's own name (`roleLabel`, `agents.ts`): six of the delivered demo's seven seats are named after
+  their role, and `architect` over `architect` is one fact, on a card, in a row and in a phone's Graph row. When *no* seat has
   anything left to run (every one is finished, `rosterFinished`) the page opens as those rows: a card's two lines would say one
   sentence about the mission on every seat, while the facts that differ — the turns that seat ran, when its last one ended, what
   it spent — are a column each. The Cards/List choice is offered there too; a team with anything to run (a seat to wake, a
@@ -327,7 +329,11 @@ recipe that a third page needs is written here.
   recency. The detail pane shows both.
 - **Graph**: a seat is a disc in its role colour inside a ring for its state (solid working, amber waiting, red stopped, dashed
   paused); pointing at a seat draws only its lines, with counts on them; the key is chips, and the most active links are
-  ranked with bars.
+  ranked with bars. On a phone the page is rows: the key is not the drawing's footer but sits above the ranked links it filters,
+  and it lists only the kinds those rows carry — a dashed line and a state ring decode marks a phone never draws. A row's count is
+  its own column, on the line of the seat's name; the sentence under it names who the messages were with and does not print the
+  number again. The ranked card says once how many links of how many it lists; the note under it says why the list stops, in words,
+  not in the same two numbers again.
 - **Designer**: seat cards with the role colour down one edge; wires quiet until a seat or a wire is selected; one grouped
   toolbar of icon buttons that say whether what they opened is open; an inspector that reads as a form, its sections
   sentences on a turning chevron; kit dialogs; an assistant dock.
@@ -420,6 +426,71 @@ Known debt, so it is not rediscovered:
 
 The changes to the console that were measured against rendered screens, newest first. A pass is only in this list with the run
 that produced it, the before and the after, and what it deliberately did not change.
+
+### 2026-10-25 — the seats say each fact once, and a phone's Graph key goes with the list it filters
+
+Run against `examples/demo-stub/mesh.yaml` at **Parked**, **Running** and **Delivered** (the scripted demo, no model calls), on the
+production build from the worktree: a fresh state, the mission started from the console, every reading taken on the same build.
+320, 360, 390 and 1440 in light, 390 and 1440 in dark, `prefers-reduced-motion: reduce`, Chromium 1248 with axe-core 4.14 in the
+page. Before is the previous build (`e2aec42`), after is this pass's.
+
+**What changed.**
+
+- **A seat's role is not printed when it is the seat's own name.** Six of the delivered demo's seven seats are named after their
+  role, so a card read `architect` over `architect`, a ledger row read the same two lines, and a phone's Graph row read
+  `qa · qa · done`. `roleLabel` (`agents.ts`) leaves the line out when the role is the name, case and spacing aside, and keeps it
+  when it is news (`pm` over `product-manager`); a role that merely starts with the name (`frontend` / `frontend-dev`) is a
+  different fact and is kept whole. Agents' cards and rows and the Graph's phone rows all read it, so there is one answer.
+- **A phone's Graph row says its count once.** The row read "5 messages with qa, security and 1 more." and then its figure column
+  read "5 messages": the same number twice in 88 px, and the sentence spent a line on it. The count is the row's own column now,
+  on the line of the name, so seven counts read down one edge; the sentence names only who the messages were with. The first
+  line's count is no longer `aria-hidden` — nothing else says it — so a row is read "pm, 5 messages, product-manager · done, with
+  qa, security and 1 more. Open details."
+- **A phone's Graph key sits with the list it filters.** The key was a footer under the seat rows — at 390 px, 271 px above the
+  ranked links its buttons hide — and it decoded a dashed line ("carried a message in the last 40 events") and a ring
+  ("ready, idle or finished") that a phone's rows never draw: on a parked team those two entries were the *whole* key, under
+  seven rows that said "No messages yet." It is now a row of the kind chips inside *Most active links*, above the rows it
+  filters; the drawing keeps its fuller key under the wheel. The chips are 44 px tall as before, and the hairline under the key
+  sets it apart from the rows.
+- **The ranked card says how many links once.** The heading read `12 of 18` and the foot "Showing the 12 busiest of 18 links."
+  The foot's figure was also a different denominator when a kind was hidden (`9 of 15` under a heading saying `9 of 18`). The
+  heading keeps the count; the foot now says only why the list stops ("Only the busiest links are listed.").
+
+**Measured.**
+
+| | Before | After |
+|---|---|---|
+| Graph, 390, delivered | 1,848 px | 1,778 px |
+| Graph, 360 / 320, delivered | 2,006 / 2,194 px | 1,881 / 2,033 px |
+| Graph, 390 / 360 / 320, parked | 1,022 / 1,043 / 1,085 px | 909 / 930 / 972 px |
+| Graph "Seats" card, 390 | 878 px | 689 px |
+| Graph ranked card, 390 | y = 983 | y = 794 |
+| Graph key, 390 | 221 px tall, y = 761, under the seats | 107 px tall, y = 843, above the first ranked row |
+| A Graph row's count, 390 | in the sentence and in the column, 7 of 7 rows | once, 0 of 7 |
+| A seat row's role, Graph + Agents | the name again, 6 of 7 | 0 of 7 |
+| Graph seat rows, 390 | 93 / 93 / 93 / 74 / 93 / 74 / 74 px | 7 × 88 px |
+| The ties sentence, 390 | two lines on 4 of 7 rows | one line on 7 of 7 |
+| Agents ledger rows, 1440 | 51 px each | 44 px (51 for `pm`, the one with a role to say) |
+| Agents, 390 / 320, delivered | 1,302 / 1,360 px | 1,198 / 1,256 px |
+| Agents, 390, parked (cards) | 2,418 px | 2,314 px |
+| Smallest text, both themes | 11 px | 11 px |
+| Horizontal page scroll, 320/360/390/1440 both themes | none | none |
+| Controls under 44 × 44 at 320 and 390 | 0 | 0 |
+| axe-core, Graph and Agents, 6 plans × 3 states | 0 violations | 0 violations |
+| Console errors | 0 | 0 |
+
+`npm run typecheck`, `npm run lint` and `npm run build` pass; `node --test "dist/tests/dashboard/*.test.js"
+"dist/tests/build/*.test.js"` passes 1,336 tests, including four new rules in `graph-phone.test.ts` and the `roleLabel` cases in
+`agents.test.ts`; the full `npm test` passes 6,327 tests (6,325 pass, 0 fail, 2 skipped). Each new rule was mutation-checked (the
+role check returning the role always, the count put back into the sentence, the key put back under the seats, and the count's
+grid area removed from the stylesheet, all seen to fail).
+
+**Left.** The Agents ledger's `pm` row is 7 px taller than the other six at 1440 (and 16 px at 390) because its role is the one
+worth a line; equal rows would mean either printing the repeat or dropping the role everywhere. The ranked list is still capped
+at 12 links with no way to see the rest in place — the Events page is where they are read, and the note now says the list is the
+busiest only. The dialogs' `<header class="dlg-head">` is counted as a second banner landmark by axe while a dialog is open
+(`landmark-no-duplicate-banner`, one node); §6b already asks for a drawer's title row to be a `div`, and the dialog's should be
+one too. No real phone, screen reader, Safari, Firefox or High Contrast run this pass.
 
 ### 2026-10-24 — a finished team is a ledger, not seven identical cards
 

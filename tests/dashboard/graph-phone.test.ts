@@ -29,6 +29,34 @@ test("the sideways-scrolling phone drawing is gone", () => {
   assert.doesNotMatch(css, /gr-swipe/, "no style for the sideways instruction");
 });
 
+/* A row said "5 messages with qa, security and 1 more." and then its figure column said "5 messages" again: the same number twice
+ * in 90 px, and the sentence spent a line on it. The count is now the row's column (on the name's line, so seven seats' counts
+ * can be read down one edge) and the sentence names only who the messages were with. */
+test("a phone's seat row says its count once, in a column beside the name", () => {
+  const words = tsx.match(/const words = [^\n]+/)?.[0] ?? "";
+  assert.match(words, /"No messages yet\." : `with \$\{first\}\$\{more\}\.`/, "the sentence names the seats it exchanged messages with");
+  assert.doesNotMatch(words, /toLocaleString/, "and does not print the number its column carries");
+  assert.match(tsx, /className="gr-seat-n">\{ties\.count/, "the number is the row's own figure");
+  assert.doesNotMatch(tsx, /className="gr-seat-n"[^>]*aria-hidden/, "the count is read out, now that no sentence says it");
+  assert.match(css, /\.gr-seat-main \{[^}]*grid-template-areas:\s*"name count"/, "the count shares the name's line");
+  assert.match(css, /\.gr-seat-n \{[^}]*grid-area: count/, "…as its own column");
+});
+
+test("a phone's role line is left out when the role is the seat's own name", () => {
+  assert.match(tsx, /const role = roleLabel\(nd\.id, nd\.role\);/, "the row asks agents.ts whether the role is news");
+  assert.match(tsx, /\{\[role, state\]\.filter\(Boolean\)\.join\(" · "\)\}/, "and prints it beside the state only when it is");
+});
+
+/* On a phone the key was a footer under the seat rows — 900 px above the links its buttons hide — and it decoded a dashed line
+ * and a state ring that a phone never draws. It now sits in the card whose rows it filters and lists only the kinds those rows
+ * carry; the drawing keeps its own, fuller key. */
+test("on a phone the key sits with the list it filters and says only what that list draws", () => {
+  assert.equal((tsx.match(/\{legend\}/g) ?? []).length, 1, "the drawing's key is drawn once, with the drawing");
+  assert.ok(tsx.indexOf("gr-keyrow") > tsx.indexOf('title="Most active links"'), "the phone's key is in the card it filters");
+  assert.match(tsx, /kindsKey\("Kinds of link\. Each one is a button that shows or hides its links in the list below\."\)/, "the phone's key is the kinds alone: no dashed line, no ring");
+  assert.match(css, /\.gr-keyrow \{[^}]*border-bottom: 1px solid var\(--line\)/, "a hairline sets the key off from the rows under it");
+});
+
 test("the ring is still drawn where there is room and the seat rows are a phone height", () => {
   assert.match(tsx, /Card variant="graph-wrap"/, "the desktop drawing remains");
   assert.match(tsx, /phone \? \(/, "the two presentations are chosen by width");

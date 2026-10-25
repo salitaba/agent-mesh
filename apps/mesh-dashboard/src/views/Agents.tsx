@@ -10,7 +10,7 @@ import { compactNow, nowLine, timeLeftText } from "../livework";
 import { FeedStatus } from "../feedstatus";
 import { budgetTone } from "../cost";
 import {
-  DENSE_FROM, controlsHint, controlsOf, groupAgents, rosterFinished, seatBudgets, seatRecord, stateText, turnSeries, turnsByAgent, worryText,
+  DENSE_FROM, controlsHint, controlsOf, groupAgents, roleLabel, rosterFinished, seatBudgets, seatRecord, stateText, turnSeries, turnsByAgent, worryText,
   type Control, type GroupId, type SeatBudget, type SeatSetting,
 } from "../agents";
 import { useMission } from "../useMission";
@@ -97,7 +97,8 @@ function AgentCard(p: CardProps): React.JSX.Element {
         <AgentAvatar id={a.id} color={agentColor(a.role)} size="lg" />
         <div className="agent-who">
           <button type="button" className="agent-open" onClick={(e) => { e.stopPropagation(); onOpen(); }}><b>{a.id}</b></button>
-          <div className="role">{a.role}</div>
+          {/* A role that repeats the seat's name is not a second line: `architect` over `architect` is one fact. */}
+          {roleLabel(a.id, a.role) ? <div className="role">{roleLabel(a.id, a.role)}</div> : null}
         </div>
         <SeatPill a={a} run={run} stalled={stalled} setting={setting} />
       </div>
@@ -189,7 +190,7 @@ function AgentRows(p: RowsProps): React.JSX.Element {
                   <AgentAvatar id={a.id} color={agentColor(a.role)} size="sm" />
                   <span>
                     <button type="button" className="agent-open" onClick={(e) => { e.stopPropagation(); p.onOpen(a.id); }}><b>{a.id}</b></button>
-                    <span className="role">{a.role}</span>
+                    {roleLabel(a.id, a.role) ? <span className="role">{roleLabel(a.id, a.role)}</span> : null}
                   </span>
                 </span>
               </td>

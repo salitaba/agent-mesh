@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import {
-  DENSE_FROM, GROUPS, actionNote, controlsHint, controlsOf, groupAgents, groupOf, lastTurnText, pauseWarning, rosterFinished, seatBudgets, seatRecord, stateText, totalsText, turnSeries,
+  DENSE_FROM, GROUPS, actionNote, controlsHint, controlsOf, groupAgents, groupOf, lastTurnText, pauseWarning, roleLabel, rosterFinished, seatBudgets, seatRecord, stateText, totalsText, turnSeries,
   turnsByAgent, memoryKey, unstartedText, worryText, type AgentLike, type TurnLike,
 } from "../../apps/mesh-dashboard/src/agents";
 import { plainLifecycle } from "../../apps/mesh-dashboard/src/format";
@@ -369,4 +369,18 @@ test("a finished seat's row says what it did, so two rows can be compared", () =
   assert.equal(seatRecord(agent("pm", "COMPLETED", { activations: 1 }), turn("pm", "ok", 500), NOW), "1 turn · last just now", "one turn is not '1 turns'");
   assert.equal(seatRecord(agent("qa", "COMPLETED", { activations: 5 }), undefined, NOW), "5 turns", "a turn the loaded history does not hold is not dated");
   assert.equal(seatRecord(agent("qa", "COMPLETED"), undefined, NOW), "Never ran", "no count on the roster and no turn is not '0 turns'");
+});
+
+/* A roster is often named after its roles. The card's second line, the row's and a phone's Graph row printed the name over the
+ * name — "architect / architect", "qa · qa · done" — on six of the delivered demo's seven seats. The role keeps its line only
+ * when it says something the name does not. */
+test("a seat's role is not printed again when it is the seat's own name", () => {
+  assert.equal(roleLabel("pm", "product-manager"), "product-manager", "a role that says more than the name keeps its line");
+  assert.equal(roleLabel("architect", "architect"), "", "the same word twice is one fact");
+  assert.equal(roleLabel("Architect", " architect "), "", "case and a stray space are the same name");
+  assert.equal(roleLabel("qa", "QA"), "", "a roster in capitals is still the same name");
+  assert.equal(roleLabel("qa", ""), "", "no role is not a line");
+  assert.equal(roleLabel("qa", undefined), "", "an absent role is not a line");
+  assert.equal(roleLabel("frontend", "frontend-dev"), "frontend-dev", "a role that only starts with the name is a different fact");
+  assert.equal(roleLabel("pm", "pm-lead"), "pm-lead", "a longer role is kept whole");
 });

@@ -252,6 +252,18 @@ export function seatRecord(a: AgentLike, last: TurnLike | undefined, now: number
   return when ? `${one} · last ${when}` : one;
 }
 
+/**
+ * A seat's role, unless it is the seat's own name. A roster is often named after its roles — six of the delivered demo's seven
+ * seats are — so the card's second line and the row's read `architect` over `architect`, and a phone's Graph row read
+ * `qa · qa · done`. That is one fact printed twice. The role earns its line only when it says something the name does not
+ * (`pm` over `product-manager`); otherwise there is nothing to print and the caller leaves the line out.
+ */
+export function roleLabel(id: string, role: unknown): string {
+  const r = String(role ?? "").trim();
+  const name = String(id ?? "").trim();
+  return r && r.toLowerCase() !== name.toLowerCase() ? r : "";
+}
+
 /** "31.0k tokens · 4 turns": the cheap totals, only the ones the roster carries. */
 export function totalsText(a: AgentLike): string {
   const bits: string[] = [];

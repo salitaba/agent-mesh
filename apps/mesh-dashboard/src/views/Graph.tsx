@@ -4,6 +4,7 @@ import { useMesh } from "../store";
 import { useMission } from "../useMission";
 import { AgentAvatar, Button, Card, EmptyState, ErrorState, NextLinks, PageHeader, Skeleton, agentColor, rowKey, useNow } from "../components";
 import { AgentDrawer } from "../drawers";
+import { roleLabel } from "../agents";
 import { sinceText } from "../feed";
 import { middleClip } from "../text";
 import { around, drawingWidth, edgeKey, edgeText, edgeWidth, flowingKeys, isFlowing, kindOf, kindsPresent, labelPlacement, nodeTone, pairFilter, ringLayout, seatTies, toggleKind, visibleEdges, type LabelSpot, type NodeTone } from "../graph";
@@ -145,24 +146,29 @@ export default function Graph(): React.JSX.Element {
   const tones = new Set(nodes.map((n) => nodeTone(n.lifecycle)));
   // The key lists every kind that is on the graph, hidden or not: a kind that disappeared from the key when it was hidden could not be shown again.
   const kinds = kindsPresent(lines.drawable);
-  // The key says what a colour, a dash and a ring mean, and lists only what is on the page. It is the same under the drawing
-  // and under a phone's seat rows: each kind is a button, pressed to show it and pressed again to hide it and the list below.
+  // The chips for the kinds of line. Each is a button, pressed to show that kind and pressed again to hide it, so the key that
+  // decodes the drawing is the same control that filters it. The desktop drawing carries two more marks — a dashed line for a
+  // message among the newest events, and a ring for a seat's state — and they are drawn only there: a phone's rows say the state
+  // in words and draw solid bars, so those two entries would decode nothing on the page under them.
+  const kindsKey = (label: string, extra?: React.ReactNode): React.JSX.Element => (
+    <ul className="gr-legend" aria-label={label}>
+      {kinds.map((k) => (
+        <li key={k.id}>
+          <button
+            type="button" className="gr-key" aria-pressed={!off.has(k.id)} aria-label={`Show lines: ${k.label}`}
+            title={off.has(k.id) ? `Show the lines that ${k.label}` : `Hide the lines that ${k.label}`}
+            onClick={() => setOff((o) => toggleKind(o, k.id))}
+          >
+            <i className={`gr-line ${k.id}`} aria-hidden="true" />{k.label}
+          </button>
+        </li>
+      ))}
+      {extra}
+    </ul>
+  );
   const legend = (
     <div className="gr-foot">
-      <ul className="gr-legend" aria-label="Legend. Each kind of line is a button that shows or hides it.">
-        {kinds.map((k) => (
-          <li key={k.id}>
-            <button
-              type="button" className="gr-key" aria-pressed={!off.has(k.id)} aria-label={`Show lines: ${k.label}`}
-              title={off.has(k.id) ? `Show the lines that ${k.label}` : `Hide the lines that ${k.label}`}
-              onClick={() => setOff((o) => toggleKind(o, k.id))}
-            >
-              <i className={`gr-line ${k.id}`} aria-hidden="true" />{k.label}
-            </button>
-          </li>
-        ))}
-        <li className="gr-plain"><i className="gr-line dash" aria-hidden="true" />carried a message in the last {RECENT_EVENTS} events</li>
-      </ul>
+      {kindsKey("Legend. Each kind of line is a button that shows or hides it.", <li className="gr-plain"><i className="gr-line dash" aria-hidden="true" />carried a message in the last {RECENT_EVENTS} events</li>)}
       <ul className="gr-legend gr-seats">
         {(["working", "waiting", "stopped", "paused", "idle"] as NodeTone[]).filter((t) => tones.has(t)).map((t) => (
           <li key={t} className="gr-plain"><i className={`gr-ring ${t}`} aria-hidden="true" />{t === "idle" && where.parked && !where.over ? "ready, idle or finished" : RING_WORD[t]}</li>
@@ -192,28 +198,30 @@ export default function Graph(): React.JSX.Element {
           <ul className="gr-seat-list">
             {nodes.map((nd) => {
               const state = plainLifecycle(nd.lifecycle, where);
+              const role = roleLabel(nd.id, nd.role);
               const ties = seatTies(lines.drawable, nd.id);
               const first = ties.partners.slice(0, 2).map((t) => t.id).join(", ");
               const more = ties.partners.length > 2 ? ` and ${ties.partners.length - 2} more` : "";
-              const words = ties.count === 0
-                ? "No messages yet."
-                : `${ties.count.toLocaleString("en-US")} ${ties.count === 1 ? "message" : "messages"} with ${first}${more}.`;
+              // The count is the row's own column, at the end of the name; the sentence names only who the messages were with,
+              // so one fact is printed once and seven counts can be read down.
+              const words = ties.count === 0 ? "No messages yet." : `with ${first}${more}.`;
               return (
                 <li key={nd.id}>
                   <button type="button" className="gr-seat-row" onClick={() => open(nd.id)}>
                     <AgentAvatar id={nd.id} color={agentColor(nd.role ?? nd.id)} />
                     <span className="gr-seat-main">
                       <b>{nd.id}</b>
-                      <span className="gr-seat-meta">{[nd.role, state].filter(Boolean).join(" · ")}</span>
+                      {/* The count is the row's column: on the name's line, so seven seats' counts read down one edge, and it is
+                          read to a screen reader as "pm, 5 messages, …" rather than after the sentence. */}
+                      {ties.count ? <span className="gr-seat-n">{ties.count.toLocaleString("en-US")}<small>{ties.count === 1 ? "message" : "messages"}</small></span> : null}
+                      <span className="gr-seat-meta">{[role, state].filter(Boolean).join(" · ")}</span>
                       <span className="gr-seat-ties">{words}<span className="sr-only"> Open details.</span></span>
                     </span>
-                    {ties.count ? <span className="gr-seat-n" aria-hidden="true">{ties.count.toLocaleString("en-US")}<small>{ties.count === 1 ? "message" : "messages"}</small></span> : null}
                   </button>
                 </li>
               );
             })}
           </ul>
-          {legend}
         </Card>
       ) : (
       <Card variant="graph-wrap">
@@ -292,6 +300,13 @@ export default function Graph(): React.JSX.Element {
       )}
 
       <Card title="Most active links" meta={lines.shown.length ? `${lines.shown.length} of ${lines.drawable.length}` : undefined}>
+        {/* On a phone the key belongs to the list it filters, not to the seats above it: it was a footer under the seat rows,
+            900 px above the links it hides, and it explained a dashed line and a ring the phone never draws. */}
+        {phone && kinds.length ? (
+          <div className="gr-keyrow">
+            {kindsKey("Kinds of link. Each one is a button that shows or hides its links in the list below.")}
+          </div>
+        ) : null}
         {lines.shown.length ? (
           <ul className="gr-links">
             {lines.shown.map((e, i) => {
@@ -326,7 +341,8 @@ export default function Graph(): React.JSX.Element {
             })}
           </ul>
         ) : <p className="muted">{lines.off ? "Every line is hidden by the key above." : "No messages between agents yet."}</p>}
-        {lines.hidden ? <p className="gr-note muted">Showing the {lines.shown.length} busiest of {lines.shown.length + lines.hidden} links.</p> : null}
+        {/* The heading says how many of how many; this only says why the list stops there, so the same two numbers are not printed twice. */}
+        {lines.hidden ? <p className="gr-note muted">Only the busiest links are listed.</p> : null}
         {lines.off ? (
           <p className="gr-note muted">
             {lines.off} {lines.off === 1 ? "link is" : "links are"} hidden by the key. <Button variant="small" onClick={() => setOff(new Set())}>Show every kind</Button>
