@@ -775,3 +775,71 @@ positions are `getBoundingClientRect` plus `scrollY`.
 - **The dense usage table was not walked again.** The trial's workspaces answer with a
   stand-in and no model call is made, so the by-day table has no rows to draw; its sticky
   first cell and its arithmetic are held by `pages-app.test.ts` and the 2026-10-23 record.
+
+## 2026-10-25: the answer where the action is
+
+Same harness: Chromium 156 through `playwright-core` against this worktree's trial
+(`trial --port 7516`), 360 × 800 with a touch pointer and 1440 × 900, light, `prefers-reduced-motion:
+reduce`. "Before" is this pass's own base commit measured again today under the same script, not a
+figure copied from an earlier record: a Team account with one running workspace and a call in its
+usage table, and a fresh account with no plan. Heights are `document.documentElement.scrollHeight`;
+positions are `getBoundingClientRect` plus `scrollY`.
+
+- **A thing asked from the card at the top is answered in that card.** `Open` and `Resume` in
+  the card at the top are the page's main action, and their failure was written into the
+  *workspace's* card: at 360 the sentence appeared at y = **955** while the button was at
+  301–349 — **606px** below it and 155px below an 800px screen, so pressing Open looked like
+  pressing nothing. At 1440 it was 474px below the button, in another card. `act()` now takes
+  where it was asked and says so in the card's own `#stage-status`, the element
+  `Update payment details` already answered in. At 360 the sentence is at 281–379, **36px**
+  above the button and inside the card and the screen: the card **195 → 309** and the page
+  **2,910 → 3,024** while it is shown. At 1440 the sentence is in the card's own body (259–309)
+  beside the button (235–283), and the card is 133 → 199. The cursor stays on the button
+  (`aria-disabled` off, so it can be pressed again), and the workspace's own `Open` still
+  answers in its own card.
+- **An amount's answer sits under the amounts.** The balance card's status was the first
+  thing in the card, above the `Add credit` caption and the trough. Pressing **$10.00** with
+  the provider down put its sentence at y = 1,902–2,024 and pushed the trough from 1,932 to
+  2,070: the three segments the finger was on moved **138px**, out from under it — the same
+  138px the plan card paid on 2026-10-24 — and the sentence's bottom was 49px above where
+  the segments landed. The status is now between the amounts and the amount field: the trough
+  **does not move** (1,932; moved 0), the sentence is at 2,002–2,124, **23px** under the
+  pressed segment's bottom, and the panel grows by the same 138px the sentence takes. A typed
+  amount's own refusal moved with it: the sentence is now **47px** above the field it names
+  (was **147px**, above the caption and the trough), and the field is still pushed down 90px
+  while the sentence is shown, because it sits above the form — the trade the card at the top
+  already makes with its button.
+- **Calling off a deletion gives the cursor back to `More`.** `Keep it` emptied the box that
+  had the cursor and nothing put it back: `document.activeElement` was **BODY**, and the next
+  Tab was **Copy** at y = 1,047 — past `More` at 843 and past the Delete the person had been
+  considering, at the foot of the card. The cursor now returns to `More` (y = 843, its 2px
+  ring drawn), and the next Tab is **Delete this workspace** at y = 891. `aria-expanded` and
+  the open list are as they were.
+- **Widths, schemes and the floor.** The paid account at 320, 360, 390, 768 and 1440 in light
+  and dark: no sideways page scroll (320: 320; 360: 360; 390: 390; 768: 768; 1440: 1440),
+  nothing under **12px**, no control under 44 × 44 below 721, 20 axe-core runs with no
+  violation, no console error; the plan-less account at the same widths is
+  **1,757 / 1,574 / 1,526 / 1,078 / 1,036** before and after. With scripts off the account
+  still shows its `noscript` sentence and the settings form; sign-up, sign-in and forgot still
+  draw their forms, and reset its `Send a new link`.
+- **The budget.** `app.css` is untouched at **40,938 bytes of 40,960**: the two fixes are a
+  moved element and two script decisions, and no rule was needed for either.
+
+### What this pass leaves
+
+- **The amount field is still pushed down 90px by its own refusal.** The sentence has to be
+  above a form the person is typing in; a second status under the field would be a second
+  live region for one card, and the field's own refusal is already described to a screen
+  reader through `aria-describedby`.
+- **A paid account with `/api/plans` down still offers a form that cannot work.** The figures
+  draw, the caption and the trough go (leaving a 286 × 6 empty strip at 360), and pressing
+  Pay answers "Credit cannot be bought just now. Reload the page to try again." with no
+  button. The plan section above has a `Try again`; the balance section has none, and giving
+  it one is a section's job, not a row's.
+- **The usage read's `Try again` still ends on BODY.** With `/api/usage` refused, the retry
+  replaces itself with the tables and `document.activeElement` is BODY at scrollY 1,902 (the
+  next Tab is the table's region at 2,349). The read is limited to 60 an hour per session, so
+  it is reachable; the fix is the one the plan section got, and it was left for a pass that
+  changes that section.
+- **The address strip's Copy still takes its own line at 360** (313px in 286), for the reason
+  the 2026-10-25 record gives. **The steps still wrap at 320.**

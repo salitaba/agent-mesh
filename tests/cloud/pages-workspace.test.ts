@@ -437,4 +437,15 @@ test("a confirmation that was open when More was closed goes away with Keep it, 
   v.click(v.button("workspaces", "Keep it"));
   assert.equal(v.$("more-ws_1").getAttribute("aria-expanded"), "false");
   assert.equal(v.shows(v.$("delete-ws_1")), false);
+  assert.equal(v.doc.activeElement, v.$("more-ws_1"), "and the cursor goes back to the control that was pressed, not out of the card");
+});
+
+test("calling off a deletion puts the cursor back on More, so the next Tab is the Delete that was being considered", async () => {
+  const v = await visit("account", { routes: world((x) => { paid(x); x.workspaces = [ws("running")]; }).routes });
+  v.click(v.$("more-ws_1"));
+  v.click(v.button("workspaces", "Delete this workspace"));
+  assert.equal(v.doc.activeElement, v.$("confirm-ws_1"), "the cursor is in the field that asks for the name");
+  v.click(v.button("workspaces", "Keep it"));
+  assert.equal(v.shows(v.$("delete-ws_1")), true, "the list More opened is still open");
+  assert.equal(v.doc.activeElement, v.$("more-ws_1"), "and the cursor is back on More, which was where the deletion was asked for");
 });

@@ -276,6 +276,38 @@ test("what the card offers is done from the card: open the workspace, resume it,
   assert.equal(l.doc.activeElement, update, "the cursor is still on the button that was pressed");
 });
 
+test("a thing asked from the card at the top, when it fails, is answered in the card itself, not in the workspace's card a screen below it", async () => {
+  // The workspace's own card is where a workspace's failures used to land, and at a phone it is a card-length under the card that asked.
+  const w = world((x) => { paid(x); x.workspaces = [workspace()]; });
+  w.answers.set("POST /api/workspaces/ws_1/open", failure(500, "provision_failed", "The workspace could not be started. Try again in a minute."));
+  const v = await visit("account", { routes: w.routes });
+  const open = v.button("stage-actions", "Open");
+  v.click(open);
+  await v.idle();
+  assert.equal(v.text("stage-status"), "The workspace could not be started. Try again in a minute.", "the refusal is in the card whose button was pressed");
+  assert.ok(v.$("stage").contains(v.$("stage-status")));
+  assert.equal(/The workspace could not be started/.test(v.text("workspaces")), false, "and is not said again in the card below");
+  assert.equal(v.doc.activeElement, open, "the cursor is still on the button that asked");
+  assert.equal(open.held, false, "and the button can be pressed again");
+
+  const paused = world((x) => { paid(x); x.workspaces = [workspace({ status: "suspended", statusReason: "paused by its owner" })]; });
+  paused.answers.set("POST /api/workspaces/ws_1/resume", failure(503, "unavailable", "The workspace could not be started just now."));
+  const p = await visit("account", { routes: paused.routes });
+  p.click(p.button("stage-actions", "Resume"));
+  await p.idle();
+  assert.equal(p.text("stage-status"), "The workspace could not be started just now.", "Resume, which the card also offers, answers there too");
+  assert.equal(/just now/.test(p.text("workspaces")), false);
+
+  // The workspace's own button still answers in its own card, and the card at the top says nothing about it.
+  const card = world((x) => { paid(x); x.workspaces = [workspace()]; });
+  card.answers.set("POST /api/workspaces/ws_1/open", failure(500, "provision_failed", "The workspace could not be started. Try again in a minute."));
+  const c = await visit("account", { routes: card.routes });
+  c.click(c.button("workspaces", "Open"));
+  await c.idle();
+  assert.match(c.text("workspaces"), /The workspace could not be started/);
+  assert.equal(c.text("stage-status"), "", "and the card at the top says nothing about an action it did not offer");
+});
+
 test("a late payment puts the payment first and keeps Open beside it for a workspace that still runs, which is how a person comes back to work", async () => {
   const w = world((x) => { x.subscription = LATE; x.workspaces = [workspace()]; });
   w.answers.set("POST /api/workspaces/ws_1/open", { json: { url: "https://research-1a2b3c.ws.example.com/__enter?code=abc" } });
