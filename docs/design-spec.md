@@ -343,7 +343,8 @@ recipe that a third page needs is written here.
   a line in words under it, and the strip shows everyone's slice in the colours of the rows below. **Tool gates**: a seat that
   asked is a block with a rail, a row for each tool with its own *Unlock*, and *Unlock all N* at the foot.
 - **Drawers** (step, agent, event, artifact) have their own sheet, `views/drawers.css`. A step reads as a ledger and an agent as
-  a card of figures. A drawer's title row is a `div` and not a `header`, because the page has one banner landmark.
+  a card of figures. A drawer's title row is a `div` and not a `header`, because the page has one banner landmark; a dialog's
+  title row is the same `div` for the same reason (`tests/dashboard/primitives-a11y.test.ts`).
 
 **Windows High Contrast** replaces every background with the system's, so a bar, a segment or a dot that is only a background
 is gone, and nothing fails: the page still renders and every other check runs without it. A sheet that draws such a mark
@@ -427,7 +428,62 @@ Known debt, so it is not rediscovered:
 The changes to the console that were measured against rendered screens, newest first. A pass is only in this list with the run
 that produced it, the before and the after, and what it deliberately did not change.
 
-### 2026-10-25 — the step drawer is pressed and read like the rest of the console
+### 2026-10-25 — a read that fails or is slow still says what it is doing
+
+Run against `examples/demo-stub/mesh.yaml` at **Delivered** (the scripted demo, no model calls) on the production build from the
+worktree: one fresh state, the mission started from the console, and every before and after reading taken on that same state
+(491 events) within two minutes. 320, 360, 390, 768 and 1440 in light and dark; `prefers-reduced-motion: reduce`; Chromium 1248
+with axe-core 4.14 over the shared CDP browser; the agent record delayed 7 s and `/steps` answered 500 to expose the states.
+
+**What changed.**
+
+- **A failed first read of the turns is an error, not an endless skeleton.** `refreshSteps` kept a stale list on purpose and
+  swallowed the failure, so with no list yet Steps spent six seconds on "Loading turns · Fetching the step history." over five
+  skeleton rows at 360, 768 and 1440, with no error and no retry. `stepsError` now records the **first** failure only (a later
+  one still keeps the good list, as before), the pulse line reads **"Turns did not load" / "The step history could not be read."**
+  (`pulseLine` in `steps.ts` takes the flag), and the list draws an `ErrorState` with **Try again**. The count beside the filters
+  says `Not loaded`, not `Loading…`.
+- **An agent drawer that is still reading its record has a name and a way out.** On a 7 s-delayed `/agents/pm` the panel was the
+  word `loading…` in 360 × 800 — no title row, no close control, no status line — and focus sat on the drawer root. The loading
+  branch now draws the **same `DrawerHeader`** as the loaded and failed branches (so React reuses its close through the swap), a
+  visible `Reading pm…` (`role="status"`) and a skeleton of the four figures and three lines. At 360 the close is **0 → 44 × 44**,
+  the status **0 → 1**, skeleton marks **0 → 11**, and focus **#drawer → the close**. At 1440 the close stays 32 × 32 (pointer
+  density, unchanged) but exists while the record is read.
+- **The step drawer keeps focus when the turn arrives.** The skeleton's close button is replaced by the record's own head; removing
+  the focused node dropped focus to `<body>`, so a drawer a keyboard user had just opened had no focus in it. Measured at 360, 768
+  and 1440, the focus log was `row → close-x → BODY`; it is now `row → close-x → the close again`. The effect restores
+  once per turn and **only when focus was lost to `<body>`**, so a reader on an arrow or a tool row is not moved.
+- **A dialog's title row is not a second banner.** `<header class="dlg-head">` was counted as another `banner` landmark while a
+  confirm was open. It is a `<div>` now, as §6b asks and as the drawer's row already was. With the Reset confirm open at 360,
+  axe (all rules) went **2 violations / 2 nodes → 0** (`landmark-no-duplicate-banner` and `landmark-unique`, one node each);
+  WCAG 2.1 AA was **0 → 0**.
+
+**Measured.**
+
+| | Before | After |
+|---|---|---|
+| Steps with `/steps` 500, after 6 s, 360 / 768 / 1440 | 5 skeleton rows; "Loading turns · Fetching the step history."; 0 retry | 0 skeleton rows; "Turns did not load · The step history could not be read."; 1 **Try again** |
+| The count beside Steps' filters, same failure | `Loading…` | `Not loaded` |
+| Agent drawer with `/agents/pm` delayed 7 s, 360 | `loading…` (8 characters); title row 0; close 0; status 0; 0 skeleton | `pm` + `Reading pm…`; title row 1; close 44 × 44; status 1; 11 skeleton marks |
+| The same, 1440 | `loading…`; close 0 | `pm` + `Reading pm…`; close 32 × 32 |
+| Focus after opening the agent drawer (7 s delay), 360 / 1440 | `#drawer` (root) | the close button |
+| Focus after the step record replaces the skeleton, 360 / 768 / 1440 | row → close-x → **BODY**; 0/3 inside the panel | row → close-x → the close again; 3/3 inside |
+| axe with a confirm open, 360, all rules | 2 violations / 2 nodes | 0 / 0 |
+| axe with a confirm open, WCAG 2.1 AA | 0 | 0 |
+| The 12 views × 5 widths × 2 themes | 0 axe, 0 page scroll, smallest text 11 px, 0 real controls under 44 at 320/360/390 | identical |
+| Steps at 320 (whole sweep) | 3,351 px | 3,370 px — the live `Started` label; rebuilding the pre-change UI and reading it at the same minute also gave 3,370 |
+
+`npm run typecheck`, `npx eslint` on the changed files and `npm run build` pass; `node --test "dist/tests/dashboard/*.test.js"
+"dist/tests/build/*.test.js"` passes; the new `drawer-loading.test.ts` and the added rules in `failure-states.test.ts`,
+`primitives-a11y.test.ts` and `steps.test.ts` were each mutation-checked (the bare `loading…` put back, the focus restore removed,
+the `<header>` put back, the failure flag ignored — each seen to fail, then restored).
+
+**Left.** The agent drawer's close is still 32 × 32 at 768 and 1440, where the console runs at pointer density (the 44 px floor
+starts at the 620/760 phone layout); §5's tablet question is unchanged. A failed `/status` still holds the console's project pages
+as a whole (by design, `statusError`), and this pass did not give Steps a banner for a refresh that fails *after* a good load: the
+list is kept and the row count stands, as Files already does with its own stale note. No real phone, screen reader, Safari, Firefox
+or High Contrast run this pass.
+
 
 Run against `examples/demo-stub/mesh.yaml` at **Parked**, **Running** and **Delivered** (the scripted demo, no model calls) on the
 production build from the worktree: a fresh state, the mission started from the console, every reading taken on the same build
@@ -479,9 +535,9 @@ unconditional, the focus ring removed — each seen to fail, then restored).
 **Left.** The drawer's section jump row (`Outcome · Reasoning · Tools · Events · Brief · Raw`) still scrolls sideways on a phone
 with its scrollbar hidden, as the console's tabs do; on this run `Brief` and `Raw` sat past the edge at 390, with the cut
 `Events` pill as the only cue. Making all six visible means two rows (44 px) in a sticky head that is already 231 px of an
-800 px screen — a layout decision this pass did not take. The dialog's title row is still a `<header>` and so a second `banner`
+800 px screen — a layout decision this pass did not take. The dialog's title row was still a `<header>` and so a second `banner`
 landmark while a dialog is open (`landmark-no-duplicate-banner`, one node, on every confirm); §6b asks for a `div`, as the
-drawer's row already is, and that is a separate surface. The step drawer's sticky head still takes 204 px after scrolling
+drawer's row already is, and the 2026-10-25 entry above took it. The step drawer's sticky head still takes 204 px after scrolling
 (25 % of a phone screen), because its identity and metrics are information about the turn being read. No real phone, screen
 reader, Safari, Firefox or High Contrast run this pass.
 
@@ -546,9 +602,9 @@ grid area removed from the stylesheet, all seen to fail).
 **Left.** The Agents ledger's `pm` row is 7 px taller than the other six at 1440 (and 16 px at 390) because its role is the one
 worth a line; equal rows would mean either printing the repeat or dropping the role everywhere. The ranked list is still capped
 at 12 links with no way to see the rest in place — the Events page is where they are read, and the note now says the list is the
-busiest only. The dialogs' `<header class="dlg-head">` is counted as a second banner landmark by axe while a dialog is open
-(`landmark-no-duplicate-banner`, one node); §6b already asks for a drawer's title row to be a `div`, and the dialog's should be
-one too. No real phone, screen reader, Safari, Firefox or High Contrast run this pass.
+busiest only. The dialogs' `<header class="dlg-head">` was counted as a second banner landmark by axe while a dialog was open
+(`landmark-no-duplicate-banner`, one node); §6b already asked for a drawer's title row to be a `div`, and the 2026-10-25 entry
+above made the dialog's one too. No real phone, screen reader, Safari, Firefox or High Contrast run this pass.
 
 ### 2026-10-24 — a finished team is a ledger, not seven identical cards
 

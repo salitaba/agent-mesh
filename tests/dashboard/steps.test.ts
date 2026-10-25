@@ -197,6 +197,14 @@ test("before the step history has arrived the strip claims nothing about what is
   assert.equal(pulseLine(0, "running", true).title, "No turn in flight", "loaded, it reads the phase as before");
 });
 
+test("a first read that failed is not still 'fetching'", () => {
+  const failed = pulseLine(0, "running", false, true);
+  assert.equal(failed.title, "Turns did not load");
+  assert.equal(failed.detail, "The step history could not be read.");
+  assert.equal(pulseLine(0, "parked", false, true).title, "Turns did not load", "the failure outranks the phase");
+  assert.equal(pulseLine(0, "running", true, true).title, "No turn in flight", "once a list has landed the flag is not consulted");
+});
+
 /* ---------------------------------------------------------------- swimlanes */
 
 test("the window is the smallest preset that holds about nine in ten turns", () => {

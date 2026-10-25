@@ -52,10 +52,12 @@ function TurnTip({ s }: { s: TurnStep }): React.JSX.Element {
   );
 }
 
-function Strip({ steps, loaded, onPick, filter, counts, missionTokens, hot, onHot }: {
+function Strip({ steps, loaded, failed, onPick, filter, counts, missionTokens, hot, onHot }: {
   steps: TurnStep[];
   /** The step history has arrived. Before that the strip shows dashes, not zeros: zero is a claim about a list nobody has fetched. */
   loaded: boolean;
+  /** The first read failed: neither "loading" nor a zero is true, and the page draws the failure below. */
+  failed?: boolean;
   onPick: (s: TurnStep) => void;
   filter: string;
   counts: Record<string, number>;
@@ -78,7 +80,7 @@ function Strip({ steps, loaded, onPick, filter, counts, missionTokens, hot, onHo
   const live = steps.filter((s) => outcomeOf(s) === "live");
   const done = steps.length - live.length;
   const spend = useMemo(() => spendOf(steps, missionTokens), [steps, missionTokens]);
-  const pulse = pulseLine(live.length, state.phase, loaded);
+  const pulse = pulseLine(live.length, state.phase, loaded, failed);
   // A turn marked live while the server is silent is the last thing it said, so the strip does not glow green for it.
   const working = live.length > 0 && state.phase !== "offline";
   const tl = useMemo(() => timeline(steps, winId, now), [steps, winId, now]);
@@ -354,7 +356,7 @@ function Rows(): React.JSX.Element {
 /* ---------------------------------- page ----------------------------------- */
 
 export default function Steps(): React.JSX.Element {
-  const { steps, stepsLoaded, stepFilter, setStepFilter, stepSearch, setStepSearch, openDetail, refreshSteps, stepLimit, setStepLimit, status, serverDown, setView } = useMesh();
+  const { steps, stepsLoaded, stepsError, stepFilter, setStepFilter, stepSearch, setStepSearch, openDetail, refreshSteps, stepLimit, setStepLimit, status, serverDown, setView } = useMesh();
   const { state } = useMission();
   const missionActions = useMissionActions();
   const [fold, setFold] = useState(true);
@@ -431,7 +433,7 @@ export default function Steps(): React.JSX.Element {
         }
       />
 
-      <Strip steps={visible} loaded={stepsLoaded} onPick={pick} filter={stepFilter} counts={counts} missionTokens={missionTokens} hot={hot} onHot={setHot} />
+      <Strip steps={visible} loaded={stepsLoaded} failed={Boolean(stepsError)} onPick={pick} filter={stepFilter} counts={counts} missionTokens={missionTokens} hot={hot} onHot={setHot} />
 
       <div className="st-toolbar">
         <div className="seg st-filters" role="group" aria-label="Filter by outcome">
@@ -457,7 +459,7 @@ export default function Steps(): React.JSX.Element {
         </div>
         <div className="st-toolbar-right">
           <span className="st-count">
-            {!stepsLoaded ? "Loading…" : filtered ? `${rows.length} of ${visible.length}` : `${visible.length} turn${visible.length === 1 ? "" : "s"}`}
+            {!stepsLoaded ? (stepsError ? "Not loaded" : "Loading…") : filtered ? `${rows.length} of ${visible.length}` : `${visible.length} turn${visible.length === 1 ? "" : "s"}`}
           </span>
           {/* Said aloud only while a filter is on: a count that announced every new turn would talk all through a live run. */}
           <span className="sr-only" role="status">{filtered ? `${rows.length} of ${plural(visible.length, "turn")} ${rows.length === 1 ? "matches" : "match"}.` : ""}</span>
@@ -514,9 +516,15 @@ export default function Steps(): React.JSX.Element {
           </>
         ) : !stepsLoaded ? (
           // Before the first /steps response "No steps match" was a lie twice over: nothing had been fetched, and no filter had been applied.
-          serverDown
-            ? <ErrorState what="the step history" detail="The mesh server stopped answering. It may be restarting." onRetry={() => void refreshSteps(true)} />
-            : <section className="st-group"><Rows /></section>
+          serverDown ? (
+            <ErrorState what="the step history" detail="The mesh server stopped answering. It may be restarting." onRetry={() => void refreshSteps(true)} />
+          ) : stepsError ? (
+            // A failed FIRST read used to keep the skeleton forever: the loader kept a stale list on purpose and
+            // said nothing when it had never had one. The page now says what failed and offers the read again.
+            <ErrorState what="the step history" detail={stepsError} onRetry={() => void refreshSteps(true)} />
+          ) : (
+            <section className="st-group"><Rows /></section>
+          )
         ) : visible.length ? (
           <EmptyState icon="search" title="No turns match" action={<Button variant="small" onClick={clearFilters}>Clear filters</Button>}>
             Clear the outcome filter or the search to see every turn.

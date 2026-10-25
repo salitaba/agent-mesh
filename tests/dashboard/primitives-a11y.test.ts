@@ -57,6 +57,11 @@ test("the title row of a panel is not a second banner: the page has one, the top
   assert.match(body, /<div className="drawer-head">/);
   assert.doesNotMatch(read("stepdetail.tsx"), /<header/, "the step's loading shape is not one either");
   assert.doesNotMatch(read("evdetail.tsx"), /<header/, "nor is the event's title row");
+  // axe counted landmark-no-duplicate-banner (one node) on every confirm while the dialog's title row was a <header>: the page's
+  // top bar is the one banner, and a row inside a modal is furniture. Measured with a confirm open: 1 -> 0 violations.
+  const dialog = bodyOf(components, "DialogPanel");
+  assert.doesNotMatch(dialog, /<header/, "nor is a dialog's title row");
+  assert.match(dialog, /<div className="dlg-head">/, "the row that closes the head is a div");
 });
 
 test("a card's title is a sentence on every page, and the gallery draws one", () => {
