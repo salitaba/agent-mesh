@@ -16,7 +16,7 @@ import "./views/files.css";
 import { Button, CopyButton } from "./components";
 import { Icon, type IconName } from "./icons";
 import { LINE_WINDOW, fileKind, fileModes, fmtSize, lineWindow, looksLikePatch, modeLabel, patchKinds, type FileKind, type FileKindId, type FileViewMode } from "./files";
-import { renderMarkdown } from "./markdown";
+import { PANEL_HEADING_BASE, renderMarkdown } from "./markdown";
 import { plural } from "./format";
 
 export type { FileKind, FileViewMode } from "./files";
@@ -242,7 +242,7 @@ export function FileView({
         ) : content === undefined ? (
           <p className="fv-empty">This file has no content to show.</p>
         ) : kind === "markdown" && mode === "rendered" ? (
-          <div className="fv-md" dangerouslySetInnerHTML={{ __html: renderMarkdown(content) }} />
+          <div className="fv-md" dangerouslySetInnerHTML={{ __html: renderMarkdown(content, { headingBase: PANEL_HEADING_BASE }) }} />
         ) : (
           <div className={`fv-code${wrap ? " wrap" : ""}`}>
             {lines.slice(0, win.shown).map((l, i) => (

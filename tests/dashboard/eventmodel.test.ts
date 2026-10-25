@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 
 import {
   EV_FILTER_GROUPS, FOLD_AT, MINI_FEED_ROWS, MINI_FOLD_AT, SEVERITY_ORDER, applySeverity, buildRows, eventHaystack, evGroupOf, evSeverity, facetOne, facetValues,
-  filterBase, miniFeed, parseFacets, setFacet, severityCounts, toggleFacet, topActors, type EventLike,
+  filterBase, logIncomplete, logWindowText, miniFeed, newestFirst, parseFacets, setFacet, severityCounts, toggleFacet, topActors, type EventLike,
 } from "../../apps/mesh-dashboard/src/eventmodel";
 
 /**
@@ -228,4 +228,51 @@ test("a summary of a busy log is capped, and a fold's key is its oldest event so
   const after = miniFeed([ev("agent.completed", 9), ...base]).find((r) => r.kind === "fold")!;
   assert.equal(after.key, before.key);
   assert.equal(after.kind === "fold" && after.items.length, 4);
+});
+
+/* The Events page used to trust its newest seq: arriving from the Overview, it inherited that page's newest-200 tail, whose last
+ * seq is the log's last, and drew "200 events" with no note while the log held 481. The count is the fact the newest seq cannot
+ * give. The foot note then named the page's own buffer (400) as if it were the log. */
+test("a newest-first tail is not the whole log: the count is short even when the newest seq is the last", () => {
+  assert.equal(logIncomplete(481, 200, 481, 400), true, "the 200-event tail ends at the log's last seq but holds 281 fewer");
+  assert.equal(logIncomplete(481, 400, 481, 400), false, "one read's worth is all this page can hold");
+  assert.equal(logIncomplete(480, 400, 481, 400), true, "a newer event exists");
+  assert.equal(logIncomplete(0, 0, 481, 400), true, "an empty page reads the log");
+  assert.equal(logIncomplete(0, 0, 0, 400), false, "an empty log has nothing to read");
+  assert.equal(logIncomplete(5, 5, undefined, 400), false, "a count that has not answered is not a reason to read");
+  assert.equal(logIncomplete(5, 5, "481", 400), false, "a count that is not a number is not trusted");
+  assert.equal(logIncomplete(50, 20, 50, 400), true, "a short page reads the log even if its newest seq is the last");
+});
+
+test("the window note says what the page holds against what the log holds, and promises nothing it cannot reach", () => {
+  assert.equal(
+    logWindowText({ drawn: 300, matched: 400, held: 400, logged: 481 }),
+    "Showing the newest 300 of 400 matching events. This page holds the newest 400 of 481; 81 older ones are not loaded.",
+  );
+  assert.equal(
+    logWindowText({ drawn: 200, matched: 200, held: 200, logged: 481 }),
+    "Showing all 200 matching events. This page holds the newest 200 of 481; 281 older ones are not loaded.",
+  );
+  assert.equal(
+    logWindowText({ drawn: 10, matched: 10, held: 400, logged: 481 }),
+    "Showing all 10 matching events. This page holds the newest 400 of 481; 81 older ones are not loaded.",
+    "a filter does not hide the log the page has not read",
+  );
+  assert.equal(logWindowText({ drawn: 300, matched: 400, held: 400, logged: 0 }), "Showing the newest 300 of 400 matching events.", "before the status answers, the page counts what it holds");
+  assert.equal(logWindowText({ drawn: 1, matched: 1, held: 1, logged: 2 }), "Showing all 1 matching event. This page holds the newest 1 of 2; 1 older one is not loaded.");
+  assert.equal(logWindowText({ drawn: 481, matched: 481, held: 481, logged: 481 }), null);
+  assert.equal(logWindowText({ drawn: 0, matched: 0, held: 0, logged: 0 }), null);
+});
+
+/* The store appends what it ingests: the shell's catch-up tail, then the page's own fetch. The first 300 of that array were
+ * not the newest 300, so an artifact's own transition could fall outside the window while a wake from the same second was
+ * drawn. The list sorts by seq before it filters and caps. */
+test("the list is newest-first whichever way the buffer was filled, and sorting does not mutate it", () => {
+  const list = [ev("a", 1), ev("b", 2), ev("c", 3)];
+  list[0]!.seq = 9; list[1]!.seq = 2; list[2]!.seq = 7;
+  assert.deepEqual(newestFirst(list).map((e) => e.seq), [9, 7, 2]);
+  assert.deepEqual(list.map((e) => e.seq), [9, 2, 7], "the store's array is not reordered under React");
+  const frame = { type: "x", id: "f", timestamp: at(0), seq: undefined } as unknown as EventLike;
+  const y = ev("y", 5);
+  assert.deepEqual(newestFirst([frame, y]).map((e) => e.seq ?? 0), [y.seq, 0], "a frame without a seq sorts last");
 });

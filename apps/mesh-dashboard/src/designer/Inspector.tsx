@@ -23,12 +23,15 @@ const TABS: Array<[Tab, string, string]> = [
 
 export default function Inspector({ ctx, tab, setTab, errTabs }: InspectorProps): React.JSX.Element {
   const tabs: TabDef[] = TABS.map(([id, label, hint]) => ({ id, label, hint, badge: errTabs[id] || undefined, badgeHot: errTabs[id] > 0 }));
+  // The inspector column is the landmark (`Designer.tsx` gives `.ms-side` its `region`/`dialog` role and the name). This card
+  // used to be a second complementary landmark (an aside) inside it: two nested ones with one name, which axe reports as
+  // `landmark-complementary-is-top-level` and a screen reader lists twice.
   return (
-    <aside className="card ms-insp" aria-label="Inspector">
+    <div className="card ms-insp">
       <Tabs idPrefix="insp" label="Inspector" tabs={tabs} value={tab} onChange={(id) => setTab(id as Tab)} />
       <TabPanel idPrefix="insp" id={tab}>
         {tab === "crew" ? <CrewPanel ctx={ctx} /> : tab === "mesh" ? <MeshPanel ctx={ctx} /> : <PolicyPanel ctx={ctx} />}
       </TabPanel>
-    </aside>
+    </div>
   );
 }

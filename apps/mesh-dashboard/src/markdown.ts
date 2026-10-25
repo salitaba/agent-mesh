@@ -91,7 +91,19 @@ function delimiterRow(line: string | undefined): ("l" | "c" | "r" | "")[] | null
   return cs.map((c) => (c.startsWith(":") && c.endsWith(":") ? "c" : c.endsWith(":") ? "r" : c.startsWith(":") ? "l" : ""));
 }
 
-export function renderMarkdown(src: string): string {
+/** Where a document's own `#` starts. A panel that already has a title passes 4 (see `renderMarkdown`). */
+export interface MarkdownOptions {
+  headingBase?: number;
+}
+
+/** The base for markdown shown under a panel's own `<h3>`: a document's `#` is an h4, so it never outranks its panel. */
+export const PANEL_HEADING_BASE = 4;
+
+export function renderMarkdown(src: string, opts: MarkdownOptions = {}): string {
+  // A document's headings are relative to the panel that shows it, not to the console: a `#` in an artifact used to be an
+  // `<h1>` after the page's `<h2>` and its reader's `<h3>`, so the file's own title outranked and outgrew the page title.
+  // Callers under a heading pass the level it sits under; the clamp keeps a deep `#####` at h6.
+  const base = Math.min(6, Math.max(1, Math.trunc(opts.headingBase ?? 1)));
   const lines = src.replace(/[\u0000\u0001]/g, "").replace(/\r\n?/g, "\n").split("\n");
   const out: string[] = [];
 
@@ -229,7 +241,7 @@ export function renderMarkdown(src: string): string {
     const heading = HEADING.exec(line);
     if (heading) {
       flushPara();
-      const level = heading[1]!.length;
+      const level = Math.min(6, heading[1]!.length + base - 1);
       out.push(`<h${level}>${inline(heading[2]!)}</h${level}>`);
       continue;
     }
@@ -243,7 +255,7 @@ export function renderMarkdown(src: string): string {
       const inner: string[] = [];
       for (; i < lines.length && QUOTE.test(lines[i]!); i++) inner.push(QUOTE.exec(lines[i]!)![1]!);
       i--;
-      out.push(`<blockquote>${renderMarkdown(inner.join("\n"))}</blockquote>`);
+      out.push(`<blockquote>${renderMarkdown(inner.join("\n"), opts)}</blockquote>`);
       continue;
     }
     para.push(line);
