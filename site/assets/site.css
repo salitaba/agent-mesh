@@ -715,7 +715,8 @@ main:has(.hero) .section-head .eyebrow::before { counter-increment: sec; content
 .legend b { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; }
 /* The four labels are explained on request: they are read once, and while closed they no longer
    stand between the page's first cards and the filter over them. The summary is a row of the same
-   ruled list, with the FAQ's chevron. */
+   ruled list, with the FAQ's chevron, and it sits in the filter's column. */
+.legend-more { max-width: 32rem; }
 .legend-more > summary { display: flex; align-items: center; justify-content: space-between; gap: 16px; min-height: 48px; border-block: 1px solid var(--line); font-weight: 600; list-style: none; cursor: pointer; }
 .legend-more > summary::-webkit-details-marker { display: none; }
 .legend-more > summary::after { content: ""; flex: none; width: 8px; height: 8px; margin: -4px 8px 0 0; border-right: 2px solid var(--muted); border-bottom: 2px solid var(--muted); transform: rotate(45deg); }
@@ -808,7 +809,7 @@ main:has(.hero) .section-head .eyebrow::before { counter-increment: sec; content
   .toc a[aria-current="true"]::before { forced-color-adjust: none; background: Highlight; }
 }
 @media print {
-  .site-header, .skip, .tabs, .billing, .copy, .foot-grid, .hero::before, .hero::after, .cta::after, .to-top-dock { display: none; }
+  .site-header, .skip, .tabs, .billing, .copy, .doc-filter, .foot-grid, .hero::before, .hero::after, .cta::after, .to-top-dock { display: none; }
   .calc-total { display: none; }
   .stack-table { display: none !important; }
   #compare .table-wrap, #calculator .table-wrap { display: block !important; }
