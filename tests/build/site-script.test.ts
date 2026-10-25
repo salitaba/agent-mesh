@@ -169,19 +169,35 @@ test("the long pages carry an On this page bar right under their heading, and ea
     // sticky element never leaves the box it is in), and it is one navigation landmark with a name.
     assert.match(p.markup, /<main id="main" tabindex="-1">\s*<section class="page-head has-toc">[\s\S]*?<\/section>\s*<nav class="toc-bar" aria-label="On this page">\s*<ul class="toc">/, p.rel);
     const nav = /<nav class="toc-bar"[\s\S]*?<\/nav>/.exec(p.markup)![0];
-    const ids = [...nav.matchAll(/<li><a href="#([\w-]+)">[^<]+<\/a><\/li>/g)].map((m) => m[1]!);
-    assert.equal(ids.length, (nav.match(/<a /g) ?? []).length, `${p.rel}: every chip is a plain link to a place on the page`);
-    assert.ok(ids.length >= 3, `${p.rel}: a bar of ${ids.length} sections`);
-    const where = ids.map((id) => {
+    const chips = [...nav.matchAll(/<li([^>]*)><a href="#([\w-]+)">[^<]+<\/a><\/li>/g)].map((m) => ({ attrs: m[1]!, id: m[2]! }));
+    assert.equal(chips.length, (nav.match(/<a /g) ?? []).length, `${p.rel}: every chip is a plain link to a place on the page`);
+    assert.ok(chips.length >= 3, `${p.rel}: a bar of ${chips.length} sections`);
+    const where = chips.map(({ attrs, id }) => {
       const section = new RegExp(`<section\\b[^>]*\\sid="${id}"[^>]*>`).exec(p.markup);
       assert.ok(section, `${p.rel}: #${id} is a section of the page`);
-      // A section that the Curule Cloud switch hides would leave a chip that goes nowhere.
-      assert.ok(!/\shidden\b|data-cloud-only|data-selfhost-only/.test(section[0]), `${p.rel}: #${id} is on the page whether or not Curule Cloud is open`);
+      // A section that the Curule Cloud switch hides would leave a chip that goes nowhere: the chip is hidden by the same
+      // switch, so the two are shown and hidden together.
+      assert.ok(!/\shidden\b|data-selfhost-only/.test(section[0]), `${p.rel}: #${id} is on the page in the state it is written in`);
+      assert.equal(/\sdata-cloud-only\b/.test(attrs), /\sdata-cloud-only\b/.test(section[0]), `${p.rel}: #${id} and its chip are shown and hidden together`);
       return section.index;
     });
     assert.deepEqual(where, [...where].sort((a, b) => a - b), `${p.rel}: the chips are in the order of the page`);
   }
   for (const p of pages) assert.equal((p.markup.match(/aria-label="On this page"/g) ?? []).length, withBar.includes(p) ? 1 : 0, `${p.rel}: one list of the page's sections at most`);
+});
+
+test("the bar has one chip for each section of its page, so no section is read with another one's chip marked", () => {
+  const withBar = pages.filter((p) => p.markup.includes('class="toc-bar"'));
+  for (const p of withBar) {
+    const main = /<main\b[\s\S]*?<\/main>/.exec(p.markup)![0];
+    // The sections the bar is over: those with a name of their own. The page's heading (a <section>) is the one above it.
+    const sections = [...main.matchAll(/<section\b([^>]*)>([\s\S]*?)<\/section>/g)]
+      .filter((m) => /\sid="[\w-]+"/.test(m[1]!) && /<h2\b/.test(m[2]!))
+      .map((m) => /\sid="([\w-]+)"/.exec(m[1]!)![1]!);
+    const nav = /<nav class="toc-bar"[\s\S]*?<\/nav>/.exec(p.markup)![0];
+    const ids = [...nav.matchAll(/<li[^>]*><a href="#([\w-]+)">[^<]+<\/a><\/li>/g)].map((m) => m[1]!);
+    assert.deepEqual(ids, sections, `${p.rel}: a chip beside every section, in the page's order`);
+  }
 });
 
 test("the stylesheet's heights for the header and the bar are the heights it gives them, so a followed heading lands below both", () => {
@@ -214,56 +230,58 @@ test("on a page, the bar is made to stay and the chip of the section being read 
   assert.match(r.doc.querySelector(".toc-bar")!.className, /\bis-live\b/);
   // The line is a third of an 800 pixel window, never above the scroll padding (150) and 20 more; the observer's root ends there.
   assert.equal(r.observer().options.rootMargin, "0px 0px -533px 0px");
-  assert.equal(r.observer().observed.length, 6, "each section is watched");
-  r.at([500, 2000, 2700, 3800, 4600, 5300]);
+  assert.equal(r.observer().observed.length, 7, "each section is watched, the summary box too");
+  r.at([300, 500, 2000, 2700, 3800, 4600, 5300]);
   assert.deepEqual(r.marked(), [], "at the top of the page no section is being read yet");
-  r.at([-1300, 200, 900, 2000, 2800, 3500]);
+  r.at([200, 700, 2200, 2900, 4000, 4800, 5500]);
+  assert.deepEqual(r.marked(), ["At a glance=true"], "the box under the heading is a section of the page, and the bar says so");
+  r.at([-1900, -1300, 200, 900, 2000, 2800, 3500]);
   assert.deepEqual(r.marked(), ["What leaves your environment=true"]);
-  r.at([-4500, -3000, -2300, -1200, -400, 260]);
+  r.at([-5100, -4500, -3000, -2300, -1200, -400, 260]);
   assert.deepEqual(r.marked(), ["Reporting a problem=true"]);
-  r.at([500, 2000, 2700, 3800, 4600, 5300]);
+  r.at([300, 500, 2000, 2700, 3800, 4600, 5300]);
   assert.deepEqual(r.marked(), [], "and back at the top, none");
 });
 
 test("the marked chip is scrolled into view in its row, and only when it is not in view already", () => {
   const r = read("security/index.html");
-  r.at([-1300, 200, 900, 2000, 2800, 3500]);
+  r.at([-900, -300, 1200, 1900, 3000, 3800, 4500]);
   assert.deepEqual(r.rowScrolls, [], "the second chip is in view in a 390 pixel row");
-  r.at([-2000, -900, 200, 1300, 2100, 2800]);
+  r.at([-1900, -1300, 200, 900, 2000, 2800, 3500]);
   // The third chip spans 352 to 512: the row scrolls to show it with 24 pixels to spare (512 + 24 - 390).
   assert.deepEqual(r.rowScrolls, [146]);
-  r.at([-1300, 200, 900, 2000, 2800, 3500]);
+  r.at([-900, -300, 1200, 1900, 3000, 3800, 4500]);
   // Back to the second (184 to 344, less the 146 scrolled): it is in view, so the row stays where it is.
   assert.deepEqual(r.rowScrolls, [146]);
-  r.at([-300, 1200, 1900, 3000, 3800, 4500]);
+  r.at([-900, 500, 2200, 2900, 4000, 4800, 5500]);
   assert.deepEqual(r.rowScrolls, [146, 0], "the first chip, back at the start of the row");
 });
 
 test("a jump that passes whole sections at once (Back to top under reduced motion) clears the mark and brings the row back to its first chips", () => {
   const r = read("security/index.html");
-  r.at([-4500, -3000, -2300, -1200, -400, 260]);
+  r.at([-5100, -4500, -3000, -2300, -1200, -400, 260]);
   assert.deepEqual(r.marked(), ["Reporting a problem=true"]);
   assert.ok(r.chips[0]!.getBoundingClientRect!().left < 0, "the row was scrolled to the last chips");
   // The observer is told when a top crosses the line; nothing crosses it from where the last section is to the top in one step.
-  r.jumpTo([500, 2000, 2700, 3800, 4600, 5300]);
+  r.jumpTo([300, 500, 2000, 2700, 3800, 4600, 5300]);
   assert.deepEqual(r.marked(), [], "the bar does not say the reader is in the last section at the top of the page");
   assert.equal(r.rowScrolls[r.rowScrolls.length - 1], 0, "and the row shows its first chips again");
   assert.ok(r.chips[0]!.getBoundingClientRect!().left >= 0);
   // With the row already at its start there is nothing to bring back: reading the first section and then going to the top moves nothing.
-  r.jumpTo([-300, 1200, 1900, 3000, 3800, 4500]);
+  r.jumpTo([-900, -300, 1200, 1900, 3000, 3800, 4500]);
   assert.deepEqual(r.marked(), ["What it protects=true"]);
   const scrolled = r.rowScrolls.length;
-  r.jumpTo([500, 2000, 2700, 3800, 4600, 5300]);
+  r.jumpTo([300, 500, 2000, 2700, 3800, 4600, 5300]);
   assert.deepEqual(r.marked(), []);
   assert.equal(r.rowScrolls.length, scrolled, "the row is not scrolled when it is at its start");
   // A jump the other way, from the top to a section in the middle, is marked as well.
-  r.jumpTo([-1300, 200, 900, 2000, 2800, 3500]);
+  r.jumpTo([-1900, -1300, 200, 900, 2000, 2800, 3500]);
   assert.deepEqual(r.marked(), ["What leaves your environment=true"]);
   // It is looked at once a frame, not on every event, and a hold on a followed chip is still held until the page gets there.
   const held = read("security/index.html");
-  held.at([500, 2000, 2700, 3800, 4600, 5300]);
-  click(held, 4);
-  held.jumpTo([-900, 600, 1300, 2400, 3200, 3900]);
+  held.at([300, 500, 2000, 2700, 3800, 4600, 5300]);
+  click(held, 5);
+  held.jumpTo([-1500, -900, 600, 1300, 2400, 3200, 3900]);
   assert.deepEqual(held.marked(), ["Assurance=true"], "the sections the page passes on the way to a chip that was followed are not marked");
 });
 
@@ -303,41 +321,41 @@ test("the bar and Back to top work together on a long page: one scroll event upd
     frames.splice(0).forEach((fn) => fn());
   };
   const marked = (): string[] => chips.filter((a) => a.getAttribute("aria-current") !== null).map((a) => a.textContent);
-  scroll(9000, [-4500, -3000, -2300, -1200, -400, 260]);
+  scroll(9000, [-5100, -4500, -3000, -2300, -1200, -400, 260]);
   assert.equal(button.className, "to-top", "going down it stays out of the way of the lines being read, though the bar looked at the same event");
   assert.deepEqual(marked(), ["Reporting a problem"], "and the bar followed it");
-  scroll(8200, [-3700, -2200, -1500, -400, 400, 1060]);
+  scroll(8200, [-4300, -3700, -2200, -1500, -400, 400, 1060]);
   assert.equal(button.className, "to-top is-shown", "a reader who turns back is offered it, in the one event that moves the bar");
-  assert.deepEqual(marked(), [chips[3]!.textContent], "and the bar went back with them");
-  scroll(0, [500, 2000, 2700, 3800, 4600, 5300]);
+  assert.deepEqual(marked(), [chips[4]!.textContent], "and the bar went back with them");
+  scroll(0, [300, 500, 2000, 2700, 3800, 4600, 5300]);
   assert.equal(button.className, "to-top");
   assert.deepEqual(marked(), []);
 });
 
 test("a chip that is followed is marked at once, and the sections passed on the way there are not marked", () => {
   const r = read("security/index.html");
-  r.at([500, 2000, 2700, 3800, 4600, 5300]);
-  click(r, 4);
+  r.at([300, 500, 2000, 2700, 3800, 4600, 5300]);
+  click(r, 5);
   assert.deepEqual(r.marked(), ["Assurance=true"], "marked as it is chosen");
-  r.at([-900, 600, 1300, 2400, 3200, 3900]);
-  r.at([-2500, -1000, -300, 800, 1600, 2300]);
+  r.at([-1500, -900, 600, 1300, 2400, 3200, 3900]);
+  r.at([-3100, -1000, -300, 800, 1600, 2300, 3000]);
   assert.deepEqual(r.marked(), ["Assurance=true"], "the page passes What leaves your environment and What it does not do");
-  r.at([-4000, -2500, -1800, -700, 150, 800]);
+  r.at([-4600, -4000, -2500, -1800, -700, 150, 800]);
   assert.deepEqual(r.marked(), ["Assurance=true"], "and gets there");
-  r.at([-4600, -3100, -2400, -1300, -450, 200]);
+  r.at([-5200, -4600, -3100, -2400, -1300, -450, 200]);
   assert.deepEqual(r.marked(), ["Reporting a problem=true"], "from there on, reading is followed again");
 });
 
 test("when the scroll ends somewhere else, or never says it has ended, the chip of where the reader is gets the mark", () => {
   const r = read("security/index.html");
-  r.at([500, 2000, 2700, 3800, 4600, 5300]);
-  click(r, 5);
-  r.at([-1300, 200, 900, 2000, 2800, 3500]);
+  r.at([300, 500, 2000, 2700, 3800, 4600, 5300]);
+  click(r, 6);
+  r.at([-1900, -1300, 200, 900, 2000, 2800, 3500]);
   assert.deepEqual(r.marked(), ["Reporting a problem=true"]);
   r.fire("scrollend");
   assert.deepEqual(r.marked(), ["What leaves your environment=true"], "the reader stopped the scroll on the way");
-  click(r, 0);
-  r.at([-2000, -900, 200, 1300, 2100, 2800]);
+  click(r, 1);
+  r.at([-2600, -2000, -900, 200, 1300, 2100, 2800]);
   assert.deepEqual(r.marked(), ["What it protects=true"]);
   r.runTimers();
   assert.deepEqual(r.marked(), ["What it does not do=true"], "a browser without scrollend lets go after a while");
@@ -933,5 +951,5 @@ test("on a page with the On this page bar, the bar's observer is still the last 
   const r = read("pricing/index.html", 800, false);
   assert.equal(FakeObserver.made.length, 2, "one for the sections, one for the bar");
   assert.equal(r.observer().options.rootMargin, "0px 0px -533px 0px", "and the bar's is the last, so that what it does is as it was");
-  assert.equal(r.observer().observed.length, 6, "watching its six sections");
+  assert.equal(r.observer().observed.length, 7, "watching its seven sections");
 });

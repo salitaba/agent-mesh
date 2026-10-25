@@ -779,3 +779,75 @@ any edit (and, for the print heights, from a second copy on a second port); no n
   pages take 28/48: the fourth pass scoped the section rank to `.section > .wrap > h2.legend-title`, and a `.split`'s
   header is its own shape. That is a shared rule to settle, not a page to change on its own.
 - **No capture was retaken**, and `site/ux/` was not edited.
+
+## 2026-10-25, third pass: the bar names every section of its page
+
+Measured with the same probe (Chrome 156 over CDP, reduced motion, light unless said, touch at 320/360/390). The before column
+is the site at the commit this pass started from (`f77dcd2`), served from a second copy on a second port and measured today;
+no number is copied from an earlier pass. "Reading" below is the script's own rule: the last section whose top has passed the
+line a third of the way down the window, over **every** section of the page; "the bar says" is that same rule over the
+sections the bar has a chip for.
+
+### What changed
+
+- **The bar has a chip for every section of its page.** The page's promise is "a row of chips, one for each section", and the
+  script marks the last chipped section whose top has passed the line. Two sections had been added to pages after their bar was
+  written and never given a chip: the pricing page's **"Do you run it, or do we?"** (the two ways in, `12a3178`) and the
+  security page's **"At a glance"** box (`3ec4379`). On the pricing page that is not a blank but a wrong answer: while the
+  reader is in the band that asks who runs it, the bar marked **"The plans"** — for the whole band, which is
+  **1,309px at 360** (1,381 at 320, 1,207 at 390, 796 at 768, 752 at 1440). The chips are **"Who runs it"**, the home page's
+  own name for the same section, and **"At a glance"**, the box's own title. The bar is one row at every width and its height
+  does not change, so nothing below it moves.
+- **The pricing chip is hidden with the section it names.** `#ways` is `data-cloud-only`: while Curule Cloud is closed the
+  pricing page starts at the plans, so a chip to that section would go nowhere. The chip is a `<li data-cloud-only>`, and the
+  shared switch (`scripts/site-cloud-state.mjs`, and `assets/site.js` in the browser) hides the two together. The other pages'
+  chips are unchanged.
+- **A test holds the bar to the page.** The existing test pinned each chip to a section; it now also pins the pair's state
+  (a chip to a section the Curule Cloud switch hides is hidden by the same switch), and a new one walks each page's `<main>`
+  and fails unless **each section that carries an h2 has exactly one chip, in the page's order** — the assertion that would
+  have caught both omissions. Breaking either (removing the chip, or removing its `data-cloud-only`) fails it.
+
+### Measurements after this pass
+
+| Page, scroll positions where the bar disagrees with the section being read | Before | After |
+|---|---|---|
+| Pricing at 320 | 1,380px of 14,275 (9.7%) | **0** |
+| Pricing at 360 | 1,300px of 13,230 (9.8%) | **0** |
+| Pricing at 390 | 1,210px of 12,608 (9.6%) | **0** |
+| Pricing at 768 | 800px of 9,987 (8.0%) | **0** |
+| Pricing at 1440 | 750px of 8,493 (8.8%) | **0** |
+| Security at 320 | 1,270px of 11,999 (10.6%) | **0** |
+| Security at 360 | 1,070px of 11,044 (9.7%) | **0** |
+| Security at 390 | 980px of 10,305 (9.5%) | **0** |
+| Security at 768 | 620px of 7,427 (8.3%) | **0** |
+| Security at 1440 | 440px of 6,720 (6.5%) | **0** |
+| Legal (3 sections, 3 chips — the control) | 0 | **0** |
+
+- The band the bar lied about is the one it names now: the pricing page's "Do you run it, or do we?" is **1,309px at 360** and
+  the security page's "At a glance" is **1,074px** (1,264 at 320, 978 at 390, 620 at 768, 434 at 1440); the pricing band was
+  marked "The plans", the security one was marked by nothing at all.
+- Every chip takes a reader to its section and marks itself: following each of the **7 + 7 + 3** chips at 320, 360 and 768
+  lands the section's top at **150** (the 69 header and the 61 bar) and marks the chip. The pricing page's new chip lands at
+  **y = 2,087** at 360 and 1,957 at 1440; the security one at **419** and 418.
+- What the chips cost: the pricing row is **775 → 908px** wide at 320/360/390 and **804 → 938** at 768, and still fits at
+  1440; the security row is **1,203 → 1,333**, **1,232 → 1,363** at 768 and **1,491 → 1,621** at 1440, where it scrolled
+  a little before and scrolls a little more now. The bar stays **61px** and the row **60px** at every width, and no page
+  changes height: pricing **15,075 / 14,030 / 13,408 / 10,887 / 9,393**, security **12,799 / 11,844 / 11,105 / 8,327 /
+  7,620**, legal **5,793 / 5,267 / 4,943 / 3,863 / 3,317** at 320/360/390/768/1440.
+- Print at 794 is unchanged: the pricing row is **806 → 940px** unwrapped and the security row **1,234 → 1,365**, both wrap
+  to **2 lines**, the row is **112px**, and the printed pages stay **10,300** and **7,471**.
+- Nothing else moved: no page scrolls sideways at 320/360/390/768/1440 in either theme (**0** on all 70 page/width/theme
+  pairs), **0** console errors, **0** axe-core violations, the smallest text is **12px**, the chips are **44px** tall and no
+  target under 44 × 44 is new. Without a script the bar is the same row of plain links with nothing marked; in forced colours
+  the marked chip takes LinkText and its dot stays; with Curule Cloud closed the pricing chip is hidden (`[data-cloud-only]`),
+  as the shared switch's test pins.
+
+### What this pass deliberately left
+
+- **The row still scrolls in silence where the chips do not fit** (the security page's seven are 1,365px in a 768px row and
+  1,621 in 1,440). The script reveals the chip being read, so the reader is never without the current one; a fade at the
+  row's edge still needs a class the script sets, as the last pass said.
+- **The pricing page's first plan amount is still at y = 950 at 360**, and its hint still says "every line"; both are the
+  pricing page's opening, left as the last pass left them.
+- **The security page's At a glance box is still 1,074px at 360**; only its chip is new.
+- **No capture was retaken**, and `site/ux/` was not edited.
