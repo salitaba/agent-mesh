@@ -371,7 +371,7 @@ var IMAGE_NAME = "ghcr.io/salitaba/curule";
     var none = document.getElementById("doc-filter-none");
     var said = document.getElementById("doc-filter-said");
     var groups = all(".doc-card").map(function (card) {
-      var name = card.querySelector("h2");
+      var name = card.querySelector("h2, h3");
       var about = card.querySelector("p");
       var group = (name ? name.textContent : "") + " " + (about ? about.textContent : "");
       return { card: card, docs: within(card, ".doc-list li").map(function (li) { return { node: li, text: li.textContent + " " + group }; }) };

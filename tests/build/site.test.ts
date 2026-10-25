@@ -747,8 +747,14 @@ test("an address line stays one line on a phone, a card's title sits below its s
   assert.equal(contactPage.querySelectorAll("h2.legend-title").length - contactPage.querySelectorAll(".cols h2.legend-title").length, 2, "the page's own two take the page's rank");
   const docs = page(pages, "docs/index.html").markup;
   assert.match(docs, /<div class="wrap">\s*<h2 class="legend-title">Start here<\/h2>/);
-  assert.match(docs, /<h2 class="legend-title">How to read the labels<\/h2>/, "a title in a column keeps its own size");
-  assert.match(page(pages, "security/index.html").markup, /<h2 class="legend-title" id="glance-title">At a glance<\/h2>/, "and so does the At a glance box's");
+  // The map of documents is a section of the page, so it is named as one, at the page's rank; the areas inside it are cards'
+  // titles under that name (h3), and the legend of labels is a disclosure under the filter, not the section's name.
+  assert.match(docs, /<div class="wrap">\s*<h2 class="legend-title">The documents, by area\.<\/h2>/, "the map is named at the page's rank");
+  assert.equal(parsePage(docs).querySelectorAll(".doc-card h2").length, 0, "no area outranks the section it is in");
+  assert.ok(parsePage(docs).querySelectorAll(".doc-card h3").length >= 10, "each area is a card's title under it");
+  assert.ok(docs.indexOf('id="doc-filter"') < docs.indexOf('<details class="legend-more'), "the filter comes before the legend it filters by");
+  assert.match(docs, /<summary>What each label means<\/summary>\s*<p class="muted mt-s">Each label says what a document is,/, "and the legend keeps the sentence that explains it");
+  assert.match(page(pages, "security/index.html").markup, /<h2 class="legend-title" id="glance-title">At a glance<\/h2>/, "a title in a box keeps its own size");
   // Forced colours: the line is the ground the cells sit on, and the cells over it keep their forced colours.
   const forced = /@media \(forced-colors: active\) \{[\s\S]*?\n\}/.exec(css)![0];
   assert.match(forced, /\.teaser, \.plan-limits \{ forced-color-adjust: none; background: CanvasText; \}/, "the rate card's and the plan's cells keep their rules");

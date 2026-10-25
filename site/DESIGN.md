@@ -631,3 +631,75 @@ measured today; no number is copied from an earlier pass.
 - **The two ways, the plans and the console row were not touched**; their snap rows and the 86px between the
   pricing page's first screen and its first figure are as the third pass left them.
 - **No capture was retaken**, and `site/ux/` was not edited.
+
+## 2026-10-25: the map of documents is a section, and the filter stands under its name
+
+Measured with the same probe (Chrome 156 over CDP, reduced motion, light unless said, touch at 320/360/390). The before
+column is the site at the commit this pass started from (`e2aec42`), served from a second copy on a second port and
+measured today; no number is copied from an earlier pass.
+
+### What changed
+
+- **The map of documents is named, and named at the page's rank.** The band that holds every document was headed
+  "How to read the labels" — a note about the label legend, 22px, beside its own legend — so the page's largest band
+  (4,991px at 360, 57% of the page) had no name that said what it was, and its title was a footnote. It is now
+  **"The documents, by area."** as the section's own head: **22 → 28px at 360** and **22 → 48px at 1440**, the rank the
+  same page's "Start here" and the contact page's section heads already take. No new size was added.
+- **The filter is the first line under that name.** It stood 258px below the section's top at 360, behind the legend's
+  head, a three-line paragraph about labels and a closed legend row, so a reader who came to find one document scrolled
+  past the explanation of the labels to reach the field. It is now **258 → 92px** below the section top at 360 (1440:
+  152 → 84).
+- **The label legend moved under the filter, into the disclosure it belongs to.** "What each label means" is a 48px
+  closed row and the sentence that defends the labels ("a test checks it against the file…") now sits inside it, with
+  the four rows it explains. Before, that sentence was a 102px paragraph above the filter at 360 (51px at 768, 77px at
+  1440) and the legend sat beside it in a second column.
+- **The eleven areas are card titles under the section, not headings beside it.** Each map card's title was an `h2`
+  at 19px — the same rank as the section heads — so the outline read `h1 → h2 Start here → h2 Quickstart … h2 Brand`
+  and the areas looked like eleven sections of the page. They are `h3` now (19px, unchanged: the stylesheet already
+  sized `.doc-card h3`), and the outline reads `h1 → h2 The documents, by area → h3 Quickstart … h3 Brand`. The
+  filter's group name is read from `h2, h3` (`assets/site.js`), so searching an area's name still finds its documents
+  (measured: "configure" keeps the Configure card and its one document).
+
+### Measurements after this pass
+
+| The documentation page at | Before | After |
+|---|---|---|
+| 320 | 9,421 | **9,310** |
+| 360 | 8,808 | **8,722** |
+| 390 | 8,529 | **8,444** |
+| 768 | 5,851 | **5,790** |
+| 1440 | 4,461 | **4,473** |
+
+- At 360 the map's preamble (its top to the first card's top) is **637.82 → 552.42px**; the filter is at
+  **2,525.89 → 2,360.48** and the first document card at **2,905.84 → 2,820.44**. At 320 the same two are
+  **687.43 → 576.43** and **3,115.16 → 3,004.16**; at 768 **505.03 → 443.69**; at 1440 **461.84 → 473.39**.
+- The band is **85px shorter at 360**, 111 at 320, 85 at 390 and 61 at 768, and **12px taller at 1440**: the head is
+  the page's rank there (+24px on a 28px line) and the legend is a row of its own under the filter, against the 77px
+  column of explanation that moved into the disclosure. The legend row is 512px wide, in the filter's column.
+- The outline is 1 `h1`, 3 `h2` and 15 `h3` on the page, with no `h2` inside `.doc-grid` (it was 11). The map's head
+  is the section's own (28px at 320/360/390, 36.8 at 768, 48 at 1440); a title in a column — "Something missing?" in
+  the closing band — and the security page's "At a glance" still keep their 22px, as the rule says. (The fourth
+  pass's sentence said "Something missing?" had taken the section rank; it is a column's title and measures 22 at 360,
+  unchanged by this pass.)
+- The filter still works with every card as `h3`: "configure" → 1 of 16 documents and the Configure card; "Architecture"
+  → 1 of 16 and Concepts; no match → "0 of 16 documents" with the panel and its Clear button. Without a script the field
+  is hidden and the head, the legend, the notice and the eleven cards are all there.
+- No page scrolls sideways at 320, 360, 390, 768 or 1440 in either theme (**0** on all 70 page/width/theme pairs), the
+  probe reports **0** console errors, and the smallest computed text is **12px**. On the documentation page at 360 the
+  only target under 44 × 44 is the inline "Sign up" link in the Cloud card's sentence (the field is 44px high and the
+  legend's row 48px). The worst text pair on the page is **5.61:1** in light and **6.57:1** in dark, both above AA.
+- Print at A4 width and forced colours at 360: no overflow; the legend row keeps its rule in High Contrast
+  (`rgb(0, 0, 159)`). The filter is not printed — a printed map has no field to type in, as it has no billing switch
+  or copy buttons — so the band's printed preamble loses the field's 151.56px and begins with its name.
+
+### What this pass deliberately left
+
+- **The eleven cards are still cards.** Each is a place to start reading, and the rule keeps a surface for that; only
+  their rank changed.
+- **"Something missing?" stays 22px.** It is a title in a column, beside two buttons, exactly as the contact page's
+  closing band is; making it a section head is a change to that shared shape, not to the map.
+- **The notice that a title opens the document on GitHub** is still a notice between the filter and the cards (150px at
+  360). It is the only thing that explains the paths to a reader with no script, so it stays where the cards begin.
+- **The filter still needs the script.** Without one it is hidden (`hidden` in the markup), as before; the map is
+  complete without it.
+- **No capture was retaken**, and `site/ux/` was not edited.

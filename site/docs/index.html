@@ -10,7 +10,7 @@
 <link rel="apple-touch-icon" href="../assets/apple-touch-icon.png">
 <meta name="theme-color" content="#fbfaf8" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#131211" media="(prefers-color-scheme: dark)">
-<link rel="stylesheet" href="../assets/site.css?v=4b7d46365d">
+<link rel="stylesheet" href="../assets/site.css?v=341f82d143">
 <meta property="og:type" content="website">
 <link rel="canonical" href="https://curule.dev/docs/">
 <meta property="og:url" content="https://curule.dev/docs/">
@@ -106,21 +106,7 @@
 
 <section class="section" id="documents">
   <div class="wrap">
-    <div class="cols">
-      <div>
-        <h2 class="legend-title">How to read the labels</h2>
-        <p class="muted mt-s">Each label says what a document is, and a test checks it against the file: a document that grows past its label fails until the label is changed.</p>
-      </div>
-      <details class="legend-more">
-        <summary>What each label means</summary>
-        <ul class="rows legend mt-s">
-          <li><b><span class="tag">Reference</span> long, to search</b><span>Every field and every message. Hundreds of lines, so search it rather than reading from the top.</span></li>
-          <li><b><span class="tag">Guide</span> read in order</b><span>One job, end to end: deploying it, running it, licensing it.</span></li>
-          <li><b><span class="tag">Short</span> a page or two</b><span>A summary or a policy, short enough to read whole.</span></li>
-          <li><b><span class="tag">Log</span> what changed</b><span>A record by version, newest first.</span></li>
-        </ul>
-      </details>
-    </div>
+    <h2 class="legend-title">The documents, by area.</h2>
     <div class="doc-filter mt-l" id="doc-filter" hidden>
       <label for="doc-filter-input">Filter the documents</label>
       <input id="doc-filter-input" type="search" autocomplete="off" spellcheck="false" aria-describedby="doc-filter-hint">
@@ -131,12 +117,22 @@
       <p><b>No document matches <q id="doc-filter-said"></q>.</b> Try fewer words, or a label such as Guide, Reference, Short or Log.</p>
       <p><button class="btn" type="button" id="doc-filter-clear">Clear the filter</button></p>
     </div>
+    <details class="legend-more mt-l">
+      <summary>What each label means</summary>
+      <p class="muted mt-s">Each label says what a document is, and a test checks it against the file: a document that grows past its label fails until the label is changed.</p>
+      <ul class="rows legend mt-s">
+        <li><b><span class="tag">Reference</span> long, to search</b><span>Every field and every message. Hundreds of lines, so search it rather than reading from the top.</span></li>
+        <li><b><span class="tag">Guide</span> read in order</b><span>One job, end to end: deploying it, running it, licensing it.</span></li>
+        <li><b><span class="tag">Short</span> a page or two</b><span>A summary or a policy, short enough to read whole.</span></li>
+        <li><b><span class="tag">Log</span> what changed</b><span>A record by version, newest first.</span></li>
+      </ul>
+    </details>
     <p class="notice neutral mt-m"><b>Each title opens the document on GitHub.</b> The path under it is where the file is in the repository, if you would rather read it in a copy of your own.</p>
     <noscript><p class="notice mt-s">With JavaScript off the titles do not open anything: the path under each one is where the file is.</p></noscript>
 
     <div class="doc-grid mt-xl">
       <article class="doc-card" id="quickstart">
-        <h2>Quickstart</h2>
+        <h3>Quickstart</h3>
         <p>Run it with no model and no API key, then run it for real.</p>
         <ul class="doc-list">
           <li data-kind="guide"><div class="head"><a href="#documents" data-doc="../README.md">README</a><span class="tag">Guide</span></div><span class="about">What it is, a first run, the commands you will use and the layout of the repository.</span><span class="path">README.md</span></li>
@@ -144,35 +140,35 @@
         </ul>
       </article>
       <article class="doc-card" id="concepts">
-        <h2>Concepts</h2>
+        <h3>Concepts</h3>
         <p>How the pieces fit, and why a prompt is not the contract.</p>
         <ul class="doc-list">
           <li data-kind="short"><div class="head"><a href="#documents" data-doc="architecture.md">Architecture</a><span class="tag">Short</span></div><span class="about">The five planes, the four layers of enforcement, event sourcing and the single-writer rule.</span><span class="path">docs/architecture.md</span></li>
         </ul>
       </article>
       <article class="doc-card" id="configure">
-        <h2>Configure</h2>
+        <h3>Configure</h3>
         <p>Describe a team and its rules in <code>mesh.yaml</code>.</p>
         <ul class="doc-list">
           <li data-kind="reference"><div class="head"><a href="#documents" data-doc="configuration.md">Configuration</a><span class="tag">Reference</span></div><span class="about">Every field of <code>mesh.yaml</code> and <code>host.yaml</code>: agents, policies, hard actions, budgets and the message bus.</span><span class="path">docs/configuration.md</span></li>
         </ul>
       </article>
       <article class="doc-card" id="deploy">
-        <h2>Deploy</h2>
+        <h3>Deploy</h3>
         <p>Put it where it will run: one server, a cluster, or one instance per tenant.</p>
         <ul class="doc-list">
           <li data-kind="guide"><div class="head"><a href="#documents" data-doc="commercial/deployment.md">Deploying Curule</a><span class="tag">Guide</span></div><span class="about">Docker Compose, TLS and a reverse proxy, Kubernetes with Helm, fleets, air-gapped installs and building the image yourself.</span><span class="path">docs/commercial/deployment.md</span></li>
         </ul>
       </article>
       <article class="doc-card" id="operate">
-        <h2>Operate</h2>
+        <h3>Operate</h3>
         <p>Keep it running, and know what each refusal means.</p>
         <ul class="doc-list">
           <li data-kind="guide"><div class="head"><a href="#documents" data-doc="operations.md">Operating Curule</a><span class="tag">Guide</span></div><span class="about">Settings, upgrading, backup and restore, monitoring, rotating the token and what each refusal means.</span><span class="path">docs/operations.md</span></li>
         </ul>
       </article>
       <article class="doc-card" id="security-docs">
-        <h2>Security</h2>
+        <h3>Security</h3>
         <p>What it protects, what it does not, and how to report a problem.</p>
         <ul class="doc-list">
           <li data-kind="short"><div class="head"><a href="#documents" data-doc="commercial/security.md">Security</a><span class="tag">Short</span></div><span class="about">Every control, the test that pins it, and what it does not do.</span><span class="path">docs/commercial/security.md</span></li>
@@ -181,7 +177,7 @@
         </ul>
       </article>
       <article class="doc-card" id="licensing-docs">
-        <h2>Licensing and pricing</h2>
+        <h3>Licensing and pricing</h3>
         <p>The source licence, licence keys and the plans.</p>
         <ul class="doc-list">
           <li data-kind="guide"><div class="head"><a href="#documents" data-doc="commercial/licensing.md">Licences and plan limits</a><span class="tag">Guide</span></div><span class="about">The source licence in plain words, what a licence key is, what a limit does and what happens at expiry.</span><span class="path">docs/commercial/licensing.md</span></li>
@@ -189,7 +185,7 @@
         </ul>
       </article>
       <article class="doc-card" id="reference">
-        <h2>Reference</h2>
+        <h3>Reference</h3>
         <p>The contracts underneath, for whoever writes an adapter or reads the log.</p>
         <ul class="doc-list">
           <li data-kind="reference"><div class="head"><a href="#documents" data-doc="protocol.md">Protocol</a><span class="tag">Reference</span></div><span class="about">The message and event envelopes, artifact addresses, the typed state machines and trust classes.</span><span class="path">docs/protocol.md</span></li>
@@ -197,21 +193,21 @@
         </ul>
       </article>
       <article class="doc-card" id="cloud-docs" data-cloud-only>
-        <h2>Curule Cloud</h2>
+        <h3>Curule Cloud</h3>
         <p>The hosted service: what a customer gets, and what is built.</p>
         <ul class="doc-list">
           <li data-kind="guide"><div class="head"><a href="#documents" data-doc="cloud.md">Curule Cloud: the hosted service</a><span class="tag">Guide</span></div><span class="about">What a workspace is, what a customer gets, the hosting-only plans, and the status of each part of the service.</span><span class="path">docs/cloud.md</span></li>
         </ul>
       </article>
       <article class="doc-card" id="changelog">
-        <h2>Changelog</h2>
+        <h3>Changelog</h3>
         <p>What changed between versions, written for whoever runs it.</p>
         <ul class="doc-list">
           <li data-kind="log"><div class="head"><a href="#documents" data-doc="../CHANGELOG.md">Changelog</a><span class="tag">Log</span></div><span class="about">Read the notes on upgrading before you upgrade a deployment: there is no supported downgrade.</span><span class="path">CHANGELOG.md</span></li>
         </ul>
       </article>
       <article class="doc-card" id="brand">
-        <h2>Brand</h2>
+        <h3>Brand</h3>
         <p>The name, the voice, the colours and the logo.</p>
         <ul class="doc-list">
           <li data-kind="guide"><div class="head"><a href="#documents" data-doc="brand.md">Name, voice and look</a><span class="tag">Guide</span></div><span class="about">How to say what Curule is, and how to use the name and the logo.</span><span class="path">docs/brand.md</span></li>
@@ -281,6 +277,6 @@
   </div>
 </footer>
 <!-- generated:chrome-footer:end -->
-<script src="../assets/site.js?v=95b153fcf6" defer></script>
+<script src="../assets/site.js?v=2667c4532f" defer></script>
 </body>
 </html>
