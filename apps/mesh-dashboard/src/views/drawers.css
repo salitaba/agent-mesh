@@ -138,7 +138,7 @@ span.caret { color: var(--ok); animation: blink 1s steps(1) infinite; }
 .sv-md > :last-child { margin-bottom: 0; }
 .sv-md p { margin: 0 0 var(--s2); }
 .sv-md h1, .sv-md h2, .sv-md h3, .sv-md h4, .sv-md h5, .sv-md h6 { margin: var(--s3) 0 var(--s1-5); font: 650 15px/1.35 var(--sans); letter-spacing: var(--k-track-tight); text-transform: none; color: var(--text); }
-.sv-md h1, .sv-md h2 { font-size: 16px; }
+.sv-md h1, .sv-md h2, .sv-md h4, .sv-md h5 { font-size: 16px; }
 .sv-md ul, .sv-md ol { margin: 0 0 var(--s2); padding-left: 22px; }
 .sv-md li { margin: 3px 0; }
 .sv-md li > ul, .sv-md li > ol { margin: 2px 0 0; }

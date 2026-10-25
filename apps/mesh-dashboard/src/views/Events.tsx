@@ -5,7 +5,7 @@ import { EventDetail, EventMissing } from "../evdetail";
 import { Icon, type IconName } from "../icons";
 import { EV_FILTER_GROUPS, EventSummary, SEVERITY_META, SEVERITY_ORDER, SevMark, evSeverity, severityTitle, sevWord, useNameOf } from "../events";
 import {
-  applySeverity, buildRows, eventHaystack, evGroupOf, facetOne, facetValues, filterBase, parseFacets, setFacet, severityCounts, toggleFacet, topActors,
+  applySeverity, buildRows, eventHaystack, evGroupOf, facetOne, facetValues, filterBase, logIncomplete, logWindowText, newestFirst, parseFacets, setFacet, severityCounts, toggleFacet, topActors,
   type EventFilter, type NameOf, type Severity,
 } from "../eventmodel";
 import { heldList, newestKey } from "../feed";
@@ -31,6 +31,8 @@ import "./events.css";
 
 /** Rows built at once. Folding usually keeps the real DOM count far below this. */
 const CAP = 300;
+/** Events one read asks for. The page cannot hold more than this in one visit, so it says how much of the log that is. */
+const EVENT_LIMIT = 400;
 
 const NO_EVENT_FILTER: EventFilter = { search: "", groups: new Set(), actor: null, thread: null };
 
@@ -66,7 +68,7 @@ const EvLine = memo(function EvLine({ e, selected, tab, roster, onOpen, onTab, n
         <span className="sr-only">{sevWord(sev)}</span>
       </span>
       <span className="evc-sum" onMouseEnter={titleWhenClipped}><EventSummary e={e} nameOf={nameOf} /></span>
-      <span className="evc-type" title={e.type} onMouseEnter={titleWhenClipped}>{plainEvent(e.type, e.payload)}</span>
+      <span className="evc-type" title={e.type} onMouseEnter={titleWhenClipped}>{plainEvent(e.type)}</span>
     </button>
   );
 });
@@ -111,7 +113,7 @@ export default function Events(): React.JSX.Element {
     if (events.length > 0) return;
     setLoading(true);
     setLoadErr(null);
-    client.api("GET", "/events?limit=400", undefined, { timeoutMs: 30000 })
+    client.api("GET", `/events?limit=${EVENT_LIMIT}`, undefined, { timeoutMs: 30000 })
       .then(({ json, timeout, status }) => {
         if (dead) return;
         if (timeout) setLoadErr("The request timed out. The server may be busy.");
@@ -139,7 +141,9 @@ export default function Events(): React.JSX.Element {
   // the filtered list, so a filter changing under a hold must not move it.
   const newest = useMemo(() => newestKey(events, (e) => e.seq), [events]);
   const logLength = status?.eventCount;
-  const behind = typeof logLength === "number" && logLength > newest;
+  // A newest-first tail is not the log: a page that arrived from the Overview holds 200 events whose last seq is the log's last,
+  // and the newest-seq test called that complete. The count is the signal the newest seq cannot give.
+  const behind = logIncomplete(newest, events.length, logLength, EVENT_LIMIT);
   const reconcileTries = useRef(0);
   useEffect(() => {
     if (!behind) {
@@ -149,7 +153,7 @@ export default function Events(): React.JSX.Element {
     if (reconcileTries.current >= 3) return;
     const t = setTimeout(() => {
       reconcileTries.current++;
-      client.api("GET", "/events?limit=400", undefined, { timeoutMs: 30000 })
+      client.api("GET", `/events?limit=${EVENT_LIMIT}`, undefined, { timeoutMs: 30000 })
         .then(({ json }) => { if (Array.isArray(json)) primeEvents(json); })
         .catch(() => undefined);
     }, 1500);
@@ -180,14 +184,17 @@ export default function Events(): React.JSX.Element {
   // each time would draw every row again.
   const seatIds = ((status?.agents ?? []) as { id: string }[]).map((a) => a.id).join("\n");
   const roster = useMemo(() => new Set(seatIds ? seatIds.split("\n") : []), [seatIds]);
-  const hay = useMemo(() => events.map((e) => eventHaystack(e, nameOf)), [events, nameOf]);
-  const actors = useMemo(() => topActors(events), [events]);
+  // The buffer is in ingestion order, not seq order: the shell's tail, then what this page fetched. The newest 300 events
+  // are what the window promises, so sort before the filter and the cap (`newestFirst`).
+  const ordered = useMemo(() => newestFirst(events), [events]);
+  const hay = useMemo(() => ordered.map((e) => eventHaystack(e, nameOf)), [ordered, nameOf]);
+  const actors = useMemo(() => topActors(ordered), [ordered]);
 
   // Everything except the severity facet. Severity counts are taken from this, so "Alerts 3" means three alerts within what you
   // are already looking at: a count against the whole buffer would send you to an empty list.
   const base = useMemo(
-    () => filterBase(events, hay, { ...NO_EVENT_FILTER, search: evSearch.trim().toLowerCase(), groups: grpOn, actor: actorOn, thread: threadOn }),
-    [events, hay, evSearch, grpOn, actorOn, threadOn],
+    () => filterBase(ordered, hay, { ...NO_EVENT_FILTER, search: evSearch.trim().toLowerCase(), groups: grpOn, actor: actorOn, thread: threadOn }),
+    [ordered, hay, evSearch, grpOn, actorOn, threadOn],
   );
   const counts = useMemo(() => severityCounts(base), [base]);
   const matched = useMemo(() => applySeverity(base, sevOn), [base, sevOn]);
@@ -202,6 +209,7 @@ export default function Events(): React.JSX.Element {
   // them turns it off.
   const folding = foldPref && !sevOn.has("routine");
   const rows = useMemo(() => buildRows(shown, now, folding), [shown, now, folding]);
+  const windowText = logWindowText({ drawn: shown.length, matched: held.shown.length, held: events.length, logged: typeof logLength === "number" ? logLength : 0 });
   // How many events sit under each time heading, folded ones included: a heading that said nothing of its size made the list read as one run.
   const inBucket = useMemo(() => {
     const n = new Map<string, number>();
@@ -389,11 +397,7 @@ export default function Events(): React.JSX.Element {
                     </div>
                   );
                 })}
-                {held.shown.length > shown.length ? (
-                  <p className="list-more" role="status">
-                    Showing the newest <b>{shown.length}</b> of <b>{held.shown.length.toLocaleString("en-US")}</b> matching events. Narrow the search to reach older ones.
-                  </p>
-                ) : null}
+                {windowText ? <p className="list-more" role="status">{windowText}</p> : null}
               </div>
             </>
           )}

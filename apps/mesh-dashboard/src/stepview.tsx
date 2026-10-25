@@ -2,7 +2,7 @@ import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { Button, ZoneNote, rowKey } from "./components";
 import { hhmmss, plainEvent, snippetDiff, zoneLabel, type SnippetLine } from "./format";
 import { storageClips, type StorageClip } from "./ledger";
-import { renderMarkdown } from "./markdown";
+import { PANEL_HEADING_BASE, renderMarkdown } from "./markdown";
 import { EventSummary, Line, evClass, evSeverity, serverRow } from "./events";
 import { eventLine, lineText, type NameOf } from "./eventmodel";
 import { CopyBtn, bareToolName, salientArg, textStats, toolFailure, toolGroupOf, type ToolCall, type SandboxPerms } from "./stepdetail";
@@ -148,7 +148,7 @@ export function Prose({ children, dim }: { children: React.ReactNode; dim?: bool
  * plain text: they are records, not prose.
  */
 export function MarkdownProse({ text }: { text: string }): React.JSX.Element {
-  const html = useMemo(() => renderMarkdown(text), [text]);
+  const html = useMemo(() => renderMarkdown(text, { headingBase: PANEL_HEADING_BASE }), [text]);
   return <div className="sv-prose sv-md" dangerouslySetInnerHTML={{ __html: html }} />;
 }
 

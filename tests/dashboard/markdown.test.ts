@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { renderMarkdown } from "../../apps/mesh-dashboard/src/markdown";
+import { PANEL_HEADING_BASE, renderMarkdown } from "../../apps/mesh-dashboard/src/markdown";
 
 /**
  * The renderer the step view's narration and the file view share. The bug it
@@ -104,4 +104,17 @@ test("fences, headings, quotes and rules", () => {
   assert.equal(renderMarkdown("> one\n> **two**"), "<blockquote><p>one <strong>two</strong></p></blockquote>");
   assert.equal(renderMarkdown("---"), "<hr />");
   assert.equal(renderMarkdown("* * *"), "<hr />");
+});
+
+/* A document shown under a panel's title is a section of that panel, not a page of its own. The Files reader's title is an h3 at
+ * 18 px; an artifact's `# Release` used to render as an <h1> at 24 px inside it, above the page's own h2 and bigger than the
+ * file name. Both callers pass the panel's level (markdown.ts's PANEL_HEADING_BASE), so the outline reads h2 > h3 > h4 > h5. */
+test("a panel's markdown starts at the level it is given, and a deep heading stops at h6", () => {
+  assert.equal(renderMarkdown("# Release\n## release plan", { headingBase: PANEL_HEADING_BASE }), "<h4>Release</h4>\n<h5>release plan</h5>");
+  assert.equal(renderMarkdown("###### six", { headingBase: PANEL_HEADING_BASE }), "<h6>six</h6>", "a heading cannot go below h6");
+  assert.equal(renderMarkdown("# Release"), "<h1>Release</h1>", "the default is unchanged for a renderer with no panel");
+  assert.equal(renderMarkdown("# A", { headingBase: 99 }), "<h6>A</h6>");
+  assert.equal(renderMarkdown("# A", { headingBase: 0 }), "<h1>A</h1>", "a base below 1 is clamped, not trusted");
+  assert.equal(PANEL_HEADING_BASE, 4, "the panel level is the one both callers use");
+  assert.match(renderMarkdown("> ## quoted", { headingBase: PANEL_HEADING_BASE }), /<h5>quoted<\/h5>/, "a quoted heading is demoted too");
 });

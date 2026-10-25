@@ -994,3 +994,58 @@ export function miniFeed<T extends EventLike>(newestFirst: readonly T[], limit =
   }
   return out;
 }
+
+/* ------------------------------- the log's window ------------------------------- */
+
+/**
+ * Whether the console holds the whole log, not only its newest end. `newestSeq` alone is not enough: a page that arrives from
+ * the Overview inherits that page's newest-first tail (200 of a 481-event log), so its newest seq is the log's last while 281
+ * events are missing — the Events page then read "200 events" and stopped. A count that is short of what one read can bring
+ * (`fetchLimit`) is the signal to read the log, not the newest seq alone.
+ */
+export function logIncomplete(newestSeq: number, held: number, eventCount: unknown, fetchLimit: number): boolean {
+  if (typeof eventCount !== "number" || !Number.isFinite(eventCount) || eventCount <= 0) return false;
+  const want = Math.min(eventCount, Math.max(0, fetchLimit));
+  return newestSeq < eventCount || Math.max(0, held) < want;
+}
+
+/** The numbers the Events list knows about what it is and is not showing. */
+export interface LogWindow {
+  /** Events drawn (after the row cap). */
+  drawn: number;
+  /** Events that match the current filters, before the row cap. */
+  matched: number;
+  /** Events this page holds at all. */
+  held: number;
+  /** Events the log says it has. 0 when the status has not answered. */
+  logged: number;
+}
+
+/**
+ * What the Events page says about the part of the log it is not showing. The foot note used to name the page's own buffer
+ * ("the newest 300 of 400 matching events") while the log held 481, and it promised that narrowing the search would reach the
+ * rest — the 81 events the page never loaded were not reachable. It now says what it holds against what the log says, so the
+ * two numbers cannot disagree. Null when the list shows everything it holds and holds everything one read can bring.
+ */
+export function logWindowText(w: LogWindow): string | null {
+  const logged = Number.isFinite(w.logged) && w.logged > 0 ? w.logged : w.held;
+  const capped = w.matched > w.drawn;
+  const short = w.held < logged;
+  if (!capped && !short) return null;
+  const shown = capped
+    ? `Showing the newest ${w.drawn} of ${w.matched} matching events.`
+    : `Showing all ${w.drawn} matching ${w.drawn === 1 ? "event" : "events"}.`;
+  if (!short) return shown;
+  const missing = logged - w.held;
+  return `${shown} This page holds the newest ${w.held} of ${logged}; ${missing} older ${missing === 1 ? "one is" : "ones are"} not loaded.`;
+}
+
+/**
+ * The list as a reader reads it: newest first by seq. `events` arrives in the order it was ingested — the shell's catch-up
+ * tail first, then whatever a view fetched — so the first 300 of that array are not the newest 300, and an event could sit
+ * outside the drawn window while a newer one was drawn. Sorting before the filter and the cap makes the window the newest
+ * events, whichever way the buffer was filled.
+ */
+export function newestFirst<T extends EventLike>(events: readonly T[]): T[] {
+  return [...events].sort((a, b) => (Number(b.seq) || 0) - (Number(a.seq) || 0));
+}
