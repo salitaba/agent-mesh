@@ -20,6 +20,7 @@ const agents = fs.readFileSync(path.join(SRC, "views", "Agents.tsx"), "utf8");
 const events = fs.readFileSync(path.join(SRC, "views", "Events.tsx"), "utf8");
 const overview = fs.readFileSync(path.join(SRC, "views", "Overview.tsx"), "utf8");
 const yourProduct = fs.readFileSync(path.join(SRC, "views", "YourProduct.tsx"), "utf8");
+const stepsView = fs.readFileSync(path.join(SRC, "views", "Steps.tsx"), "utf8");
 
 test("a failed status poll is not stored as a status", () => {
   assert.match(store, /const \{ json, status: code, timeout \} = await clientRef\.current\.api\("GET", "\/status"\)/, "the poll reads the HTTP status as well as the body");
@@ -54,4 +55,21 @@ test("a failed page probe is not reported as 'it ships no page'", () => {
   assert.match(yourProduct, /page\.failed \? \(/, "the card has a failed branch");
   assert.match(yourProduct, /could not ask the server which page this product ships/, "the failure says what happened");
   assert.match(yourProduct, /setProbeAttempt\(\(n\) => n \+ 1\)/, "Try again asks the question again");
+});
+
+test("a failed first read of the step history is a failure, not an endless skeleton", () => {
+  // Measured at 360, 768 and 1440 with /steps answering 500: after six seconds the page still said "Loading turns · Fetching
+  // the step history." over five skeleton rows, with no error and no retry. The loader kept a stale list on purpose and had no
+  // way to say it had never had one.
+  assert.match(store, /setStepsError\(/, "the store can report the first read");
+  const guard = store.indexOf("if (stepsAt.current === 0) {");
+  const set = store.indexOf("setStepsError(", guard);
+  assert.ok(guard > -1 && set > guard, "only the FIRST read is reported: a good list is kept through a later failure");
+  assert.match(store, /code >= 400[\s\S]*?instead of the step history/, "the failure names the answer rather than a raw exception");
+  assert.match(store, /stepsLoaded, stepsError, stepFilter/, "the provider exposes it");
+  assert.match(stepsView, /const \{[^}]*stepsError/, "Steps reads it");
+  const branch = stepsView.indexOf(") : !stepsLoaded ? (");
+  const retry = stepsView.indexOf('<ErrorState what="the step history" detail={stepsError}', branch);
+  assert.ok(branch > -1 && retry > branch, "the no-list branch draws the ErrorState with a retry");
+  assert.match(stepsView, /failed=\{Boolean\(stepsError\)\}/, "the pulse line is told too, so it stops saying 'Loading turns'");
 });

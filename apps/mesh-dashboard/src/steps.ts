@@ -170,9 +170,11 @@ export function spendOf(steps: readonly StepLike[], missionTokens: number | null
  * the one reading of the mission the whole console shares (`mission.ts`), so this line cannot disagree with the top bar: it used
  * to say "every agent is parked on its mailbox" over a project that was parked, paused or delivered.
  */
-export function pulseLine(working: number, phase: string, loaded = true): { title: string; detail: string } {
+export function pulseLine(working: number, phase: string, loaded = true, failed = false): { title: string; detail: string } {
   // Before the step history has arrived, "nothing is running" would be a claim about a list that has not been fetched.
   if (!loaded) {
+    // Nor is a failed first read still "fetching": the strip would say so for as long as the page stayed open.
+    if (failed) return { title: "Turns did not load", detail: "The step history could not be read." };
     return phase === "offline"
       ? { title: "Not reachable", detail: "The server is not answering." }
       : { title: "Loading turns", detail: "Fetching the step history." };

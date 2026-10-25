@@ -184,6 +184,38 @@ Breakpoints: **1280 1100 900 800 760 620 560**. 800 is the sidebar drawer (JS
 
 ## Pass log
 
+### 2026-10-25 — a read that fails or is slow still says what it is doing
+
+Surface: `views/Steps.tsx`, `steps.ts`, `store.tsx`, `drawers.tsx`, `components.tsx` (the dialog's title row).
+Measured on the scripted demo at **Delivered**, production build, Chromium 1248 at 320/360/390/768/1440 light and 390/1440 dark,
+reduced motion, axe-core 4.14. Before and after are the same delivered state (491 events), read two minutes apart.
+
+- **A failed first `/steps` read was an endless skeleton.** At 360, 768 and 1440 it said "Loading turns · Fetching the step
+  history." over five skeleton rows after six seconds, with no error and no way to retry: the loader kept a stale list on purpose
+  and had nowhere to report that it had never had one. `stepsError` now records only the first failure; the pulse reads **"Turns
+  did not load · The step history could not be read."**, the count says `Not loaded`, and the list offers **Try again**. Five
+  skeleton rows → 0; 0 retry → 1.
+- **An agent drawer that is still reading becomes a panel, not the word "loading…".** With `/agents/pm` delayed 7 s the panel was
+  8 characters in 360 × 800: no title row, no close, no status, focus on the drawer root. It now draws the same `DrawerHeader`
+  as the record and the error, `Reading pm…` as `role="status"`, and the skeleton of its figures and lines. At 360: close
+  **0 → 44 × 44**, status **0 → 1**, skeleton marks **0 → 11**, focus **#drawer → close**. The 1440 close stays 32 × 32.
+- **The step drawer keeps focus when the turn arrives.** The skeleton's close is replaced by the record's head; removing the
+  focused node dropped focus to `<body>`. At 360, 768 and 1440 the log was `row → close-x → BODY`; it is now
+  `row → close-x → the close again`, restored once per turn and only when focus was lost.
+- **A dialog's title row is no longer a second banner.** `<header class="dlg-head">` made axe report
+  `landmark-no-duplicate-banner` and `landmark-unique` (one node each) on every confirm. It is a `<div>`: 2 → 0.
+
+The 120 view/width/theme reads are otherwise unchanged: no horizontal page scroll, smallest text 11 px, 0 real controls under
+44 × 44 at 320/360/390, and 0 WCAG axe violations. Steps at 320 moved 3,351 → 3,370 px in the sweep because its live `Started`
+label had aged from `6m ago` to `18m ago`; rebuilding the pre-change UI and reading it at the same minute gave 3,370 too.
+
+Suite: typecheck, eslint and build pass; the dashboard and build tests pass, including the new `drawer-loading.test.ts` and rules
+in `failure-states`, `primitives-a11y` and `steps` (each mutation-checked).
+
+**Left.** The agent drawer's close is 32 × 32 at 768/1440, pointer density as §5 defines it. Steps still gives no banner for a
+refresh that fails *after* a good load: the list is kept and the row count stands, as before. The step drawer's sticky head and
+its sideways section jump row are untouched.
+
 ### 2026-10-24 — the figures name the team, and the lists say a thing once
 
 Surface: `views/MissionHero.tsx`, `views/Timeline.tsx`, `views/Overview.tsx`, `views/overview.css`, `overview-model.ts`.

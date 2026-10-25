@@ -769,7 +769,7 @@ export function DialogPanel({ title, children, actions, onSubmit, role = "dialog
   return (
     <div className={`confirm${wide ? " wide" : ""}`} role={role} aria-modal="true" aria-labelledby={labelId} aria-describedby={describedBy} ref={panelRef}>
       <form onSubmit={onSubmit ?? ((e) => e.preventDefault())}>
-        <header className="dlg-head"><h2 id={labelId}>{title}</h2></header>
+        <div className="dlg-head"><h2 id={labelId}>{title}</h2></div>
         <div className="dlg-body" ref={body} tabIndex={scrolls ? 0 : undefined}>{children}</div>
         {actions ? <footer className="dlg-foot confirm-acts">{actions}</footer> : null}
       </form>

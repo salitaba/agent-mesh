@@ -5,7 +5,7 @@ import { wakeReason } from "./steps";
 import { buildLedger, ledgerTally, msgKind, msgSnippet, opHead, producedFromTimeline, recordNotices, splitSummary } from "./ledger";
 import { planLabel, planStale } from "./plan";
 import { useMesh, useMeshStreams, type TimelineEvent, type TurnStep } from "./store";
-import { StatusPill, LifecyclePill, StepMini, OutcomePill, isTopTrap, rowKey, AgentAvatar, Banner, Button, Chip, DrawerHead, ErrorState, Input, Pill, Progress, Select, TabPanel, Tabs, TextArea, ZoneNote, agentColor, type ConfirmFn } from "./components";
+import { StatusPill, LifecyclePill, StepMini, OutcomePill, isTopTrap, rowKey, AgentAvatar, Banner, Button, Chip, DrawerHead, ErrorState, Input, Pill, Progress, Select, Skeleton, TabPanel, Tabs, TextArea, ZoneNote, agentColor, type ConfirmFn } from "./components";
 import "./views/drawers.css";
 import { Icon } from "./icons";
 import { messageTypeLabel, recipientsOf, toggleRecipient } from "./message-form";
@@ -324,7 +324,27 @@ export function AgentDrawer({ id }: { id: string }): React.JSX.Element {
   useEffect(() => {
     if (failed) toast("Could not open the agent", String(json.error) || "It was not found.", "bad");
   }, [failed, json?.error, toast]);
-  if (!json) return <div className="muted">loading…</div>;
+  // The head is drawn while the record is read, not only after it lands: the drawer used to be the bare word "loading…" for as
+  // long as the request took, with no name and no close, and the panel's focus had nowhere to rest. The same <DrawerHeader> is
+  // the first child of every branch below, so React reuses the node and the close button keeps the focus it was given.
+  if (!json) {
+    return (
+      <>
+        <DrawerHeader>{id}</DrawerHeader>
+        <p className="muted ag-sub" role="status">Reading {id}…</p>
+        <div className="agent-vitals" aria-hidden="true">
+          {[0, 1, 2, 3].map((i) => (
+            <div className="avital" key={i}><Skeleton w={44} h={20} /><Skeleton w={64} h={11} /></div>
+          ))}
+        </div>
+        <div className="sk-text" aria-hidden="true">
+          <span className="sk sk-line" style={{ width: "92%" }} />
+          <span className="sk sk-line" style={{ width: "74%" }} />
+          <span className="sk sk-line" style={{ width: "86%" }} />
+        </div>
+      </>
+    );
+  }
   if (failed) {
     const unreachable = json.error === "unreachable";
     return (
@@ -638,6 +658,22 @@ export function StepDrawer({ turnId: openedId, steps, routed }: { turnId: string
   const json = data?.json ?? null;
   const vid = data?.id ?? turnId;
   const pending = data != null && data.id !== turnId;
+  // The skeleton's close button is replaced by the record's own head when the turn arrives, and removing the focused node drops
+  // focus to <body>: the panel stayed open with the keyboard nowhere in it. Put it back once per turn, on the close it had (the
+  // same control the skeleton held; an arrow would move the reader to another turn), and only when focus was lost — a reader who
+  // has moved to a tool row keeps where they are.
+  const restoredFor = useRef<string | null>(null);
+  useEffect(() => {
+    if (!data || restoredFor.current === data.id) return;
+    restoredFor.current = data.id;
+    const active = document.activeElement;
+    if (active && active !== document.body) return;
+    const root = document.getElementById("drawer");
+    if (!root) return;
+    const first = root.querySelector<HTMLElement>(".close-x")
+      ?? root.querySelector<HTMLElement>('a[href], button:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])');
+    (first ?? root).focus();
+  }, [data]);
   // A live turn whose poll failed: the page keeps its last good record and
   // says so, rather than freezing on "Working" with no sign anything broke.
   const [stale, setStale] = useState(false);
