@@ -29,7 +29,7 @@
     verify: ["status", "title", "again", "resend-form", "resend", "resend-wait", "resend-status", "email"],
     forgot: ["form", "status", "email"],
     reset: ["card", "form", "status", "title", "lede", "ask", "password"],
-    account: ["who", "notice", "retry-row", "skeleton", "glance", "glance-list", "subnav", "settings-panel", "stage", "stage-steps", "stage-title", "stage-text", "stage-status", "stage-actions", "stage-live", "workspaces-panel", "workspaces", "create-slot", "create-box", "create", "workspace-name", "create-plan-field", "workspace-plan", "create-note", "plan-panel", "plan-h", "plan-status", "plan", "balance-panel", "usage-panel", "figures", "topup", "topup-amount", "topup-unit", "topup-hint", "topup-status", "topup-add", "topup-options", "usage", "password-form", "password-status", "current", "next"],
+    account: ["who", "notice", "retry-row", "skeleton", "glance", "glance-list", "subnav", "settings-panel", "stage", "stage-steps", "stage-title", "stage-text", "stage-status", "stage-actions", "stage-live", "workspaces-panel", "workspaces", "create-slot", "create-box", "create", "workspace-name", "create-plan-field", "workspace-plan", "create-note", "plan-panel", "plan-h", "plan-status", "plan", "balance-panel", "usage-panel", "figures", "topup-fail", "topup", "topup-amount", "topup-unit", "topup-hint", "topup-status", "topup-add", "topup-options", "usage", "password-form", "password-status", "current", "next"],
     terms: [],
     privacy: [],
     notfound: [],
@@ -1909,8 +1909,10 @@
     /** Ask again for the plans a failed read could not give, and draw the account from the answer, wherever it was the plans that were missing. */
     function retryPlans(event) {
       const press = event.currentTarget;
-      // Which part of the page asked. The card at the top gives the cursor to what it says now; the plan section does the same here.
+      // Which part of the page asked. The card at the top gives the cursor to what it says now; the plan section does the same here; the
+      // balance gives it to the amounts the same read carries.
       const fromPlan = $("plan").contains(press);
+      const fromBalance = $("balance-panel").contains(press);
       // Held, not disabled: a button that is disabled loses the cursor, and the card it is in may be drawn again with the answer.
       hold(press, true);
       press.setAttribute("aria-busy", "true");
@@ -1921,13 +1923,17 @@
         hold(press, false);
         press.removeAttribute("aria-busy");
         press.textContent = "Try again";
-        // The button went with the answer it asked for, so the cursor goes to what the section says now: its heading, or its way to ask again.
+        // The button went with the answer it asked for, so the cursor goes to what the section says now: its heading, or, when the read
+        // failed again, the way to ask again — not the first button in the section, which can be another plan's action.
         if (fromPlan) {
-          const back = state.plansKnown ? $("plan-h") : $("plan").querySelector("button");
+          const back = state.plansKnown ? $("plan-h") : $("plan").querySelector(".note button");
           if (back) {
             if (state.plansKnown && !back.hasAttribute("tabindex")) back.setAttribute("tabindex", "-1");
             back.focus();
           }
+        } else if (fromBalance) {
+          const back = state.topups ? $("topup-options").querySelector("button") : press;
+          if (back) back.focus();
         }
       });
     }
@@ -2052,12 +2058,21 @@
       const shape = JSON.stringify([t, state.currency]);
       if (shape === state.topupShape) return;
       state.topupShape = shape;
+      // The amounts, the caption and the form are all read from the plans. Unread, there is nothing to offer, so the card says why and
+      // carries the read that fills it, rather than a field and a Pay that cannot work and would blame the amount typed for it. A service
+      // that sells no credit also has nothing to offer, but nothing failed, and its balance panel is not drawn at all.
       $("topup-add").hidden = !t;
+      $("topup-options").hidden = !t;
+      $("topup").hidden = !t;
+      $("topup-hint").hidden = !t;
+      $("topup-fail").hidden = Boolean(t) || state.plansKnown;
       if (!t) {
         $("topup-hint").textContent = "";
         $("topup-options").replaceChildren();
+        if (!state.plansKnown) $("topup-fail").replaceChildren(el("p", null, "The amounts could not be loaded just now, so no amount is shown."), button("Try again", { onclick: retryPlans }));
         return;
       }
+      $("topup-fail").replaceChildren();
       const d = digitsOf(state.currency);
       // The field is in the currency's own places, and says so before anything is typed.
       $("topup-unit").textContent = `(${state.currency})`;
@@ -2197,7 +2212,9 @@
       const input = $("topup-amount");
       say(status, "", "");
       const t = state.topups;
-      if (!t) return invalid(input, status, "Credit cannot be bought just now. Reload the page to try again.");
+      // The form is drawn only with the amounts to check an entry against, so this is the guard for a submit that had none; it says what
+      // is true of the service, and does not mark the field wrong for it.
+      if (!t) return say(status, "bad", "Credit cannot be bought just now.");
       const minor = parseAmount(input.value, digitsOf(state.currency));
       if (minor === null) return invalid(input, status, `Enter an amount such as ${money(t.optionsMinor[0] || t.minimumMinor, state.currency)}.`);
       if (minor < t.minimumMinor) return invalid(input, status, `The smallest amount is ${money(t.minimumMinor, state.currency)}.`);
