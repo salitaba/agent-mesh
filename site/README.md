@@ -43,7 +43,9 @@ the plan cards and tables are in the markup, and the contact addresses are text.
 copy buttons, and the links to the documents and the source (which live on GitHub, so they cannot be written into the pages: see
 the next section).
 
-The long pages (pricing, security, legal) have an *On this page* bar under their heading: a row of chips, one for each section.
+The long pages (pricing, security, legal) have an *On this page* bar under their heading: a row of chips, one for each section —
+the security page's summary box and the pricing page's two ways in included, and a section the Curule Cloud switch hides takes its
+chip with it, so the bar never marks a section the reader is not in or offers a link to something that is not there.
 Without a script it is a row of plain links. With one, the bar stays under the header while the page is read, and the chip of the
 section being read is marked (`aria-current`, and a filled chip with a dot). It is one row at every width, scrolled sideways when
 the chips do not fit, so it is as tall where it rests as where it stays and nothing moves when it starts to stay. The reading

@@ -510,7 +510,7 @@ test("nothing is hidden by the stylesheet to be shown later: what arrives as the
   // A browser does not print backgrounds unless it is told to: the primary button's white label and the closing band's light one would
   // be white on white. On paper a button is black text in a black line, and the band is black text on the paper.
   const print = /@media print \{[\s\S]*?\n\}/.exec(css)![0];
-  assert.match(print, /\.toc \{ flex-wrap: wrap; \}/, "the On this page row lays its chips out on paper, where the security page's six are 1,245px in 794 and two did not print");
+  assert.match(print, /\.toc \{ flex-wrap: wrap; \}/, "the On this page row lays its chips out on paper, where the security page's seven are 1,365px in 794 and would not print whole on one line");
   assert.match(print, /\.btn \{ background: none !important; border-color: #000 !important; color: #000 !important; \}/);
   assert.match(print, /\.cta, \.cta \.lede \{ background: none; color: #000; \}/);
   assert.match(css, /\n  \.rv \{ opacity: 0; transform: translateY\(8px\);/, "a rise of eight pixels and a fade");
