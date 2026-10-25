@@ -37,13 +37,17 @@ class El {
   }
 }
 
-function run(values: { projects: string; seats: string; missions: string; reports?: boolean }): { result: El; cells: string[][] } {
+function run(values: { projects: string; seats: string; missions: string; reports?: boolean }): { result: El; cells: string[][]; pinned: string[] } {
   const result = new El("div");
+  const pinnedPlan = new El("span");
+  const pinnedFigure = new El("span");
   const field = (value: string): El & { value: string } => Object.assign(new El("input"), { value });
   const nodes: Record<string, unknown> = {
     "plans-data": Object.assign(new El("script"), { textContent: DATA }),
     calc: new El("form"),
     result,
+    "calc-total-plan": pinnedPlan,
+    "calc-total-figure": pinnedFigure,
     "c-projects": field(values.projects),
     "c-seats": field(values.seats),
     "c-missions": field(values.missions),
@@ -59,7 +63,7 @@ function run(values: { projects: string; seats: string; missions: string; report
   };
   vm.runInNewContext(SCRIPT, { document }, { filename: "pricing.js" });
   const rows = result.children.filter((n) => n.className === "row");
-  return { result, cells: rows.map((row) => row.children.map((cell) => cell.textContent.trim())) };
+  return { result, cells: rows.map((row) => row.children.map((cell) => cell.textContent.trim())), pinned: [pinnedPlan.textContent.trim(), pinnedFigure.textContent.trim()] };
 }
 
 test("a quoted plan ends on what the total is made of, not on a blank figure", () => {
@@ -80,4 +84,28 @@ test("a listed plan still ends on a figure, and the free plan says it is free", 
   const free = run({ projects: "1", seats: "4", missions: "0" }).cells;
   assert.deepEqual(free[0], ["Plan", "Community"]);
   assert.deepEqual(free[3], ["Roughly", "$0 / month"]);
+});
+
+/**
+ * The figure that sticks over the fields, at 360, is the only total a phone can see while it types: the ledger is a
+ * screen below it. On the Community plan it said "Free" (the licence is $0) while the ledger said "$138 / month", so
+ * the two figures on one screen disagreed by the reader's whole model bill. Measured today, before this test was
+ * written: pinned "Community | Free", ledger "Roughly $138 / month" at 360.
+ */
+test("the figure pinned over the fields is the ledger's own total, on every kind of plan", () => {
+  const free = run({ projects: "1", seats: "7", missions: "25" });
+  assert.deepEqual(free.cells[3], ["Roughly", "$138 / month"], "the ledger's total, model usage included on the free plan");
+  assert.deepEqual(free.pinned, ["Community", "$138 / month (model usage)"], "and the pinned figure says the same number, and what it pays for");
+  const team = run({ projects: "3", seats: "7", missions: "25" });
+  assert.deepEqual(team.cells[3], ["Roughly", "$262 / month"]);
+  assert.deepEqual(team.pinned, ["Team", "$262 / month (annual)"], "a listed plan's figure is the fee plus the model, and names the period");
+  const quoted = run({ projects: "1000", seats: "1000", missions: "10" });
+  assert.deepEqual(quoted.cells[3], ["Total", "Quoted, plus model usage"]);
+  assert.deepEqual(quoted.pinned, ["Enterprise", "Quoted, plus model usage"]);
+  // The rule, not the examples: every figure's money is the ledger's money.
+  const money = (text: string): string | null => (/\$[\d,]+/.exec(text) ?? [null])[0];
+  for (const values of [{ projects: "1", seats: "7", missions: "25" }, { projects: "3", seats: "7", missions: "25" }, { projects: "1000", seats: "1000", missions: "10" }, { projects: "1", seats: "7", missions: "0" }]) {
+    const r = run(values);
+    assert.equal(money(r.pinned[1]!), money(r.cells[3]![1]!), `${JSON.stringify(values)}: the pinned figure and the ledger agree`);
+  }
 });

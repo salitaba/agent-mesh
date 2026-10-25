@@ -510,6 +510,7 @@ test("nothing is hidden by the stylesheet to be shown later: what arrives as the
   // A browser does not print backgrounds unless it is told to: the primary button's white label and the closing band's light one would
   // be white on white. On paper a button is black text in a black line, and the band is black text on the paper.
   const print = /@media print \{[\s\S]*?\n\}/.exec(css)![0];
+  assert.match(print, /\.toc \{ flex-wrap: wrap; \}/, "the On this page row lays its chips out on paper, where the security page's six are 1,245px in 794 and two did not print");
   assert.match(print, /\.btn \{ background: none !important; border-color: #000 !important; color: #000 !important; \}/);
   assert.match(print, /\.cta, \.cta \.lede \{ background: none; color: #000; \}/);
   assert.match(css, /\n  \.rv \{ opacity: 0; transform: translateY\(8px\);/, "a rise of eight pixels and a fade");
@@ -654,6 +655,8 @@ test("the phone's bar fits: the wordmark at its own proportions, one Sign in, an
   assert.match(css, /@media \(max-width: 599px\) \{[\s\S]*?\n  \.menu-label \{ position: absolute;/, "with the word kept for the screen reader, so the control is still called Menu");
   assert.match(css, /@media \(min-width: 600px\) \{ \.menu-panel a\[data-cloud="login"\] \{ display: none; \} \}/, "from 600 the bar's Sign in is the only one, so the open panel does not say it again");
   assert.match(css, /@media \(min-width: 768px\) \{ \.nav-main \{ display: flex; \} \.menu \{ display: none; \} \}/, "at 768 the four sections fit as a row of their own");
+  // A tablet has a coarse pointer, and this band is what a tablet is: the four links are 36px for a mouse, 44 for a finger.
+  assert.match(css, /@media \(max-width: 719px\), \(pointer: coarse\) \{ \.btn, \.signin, \.menu summary, \.nav-main a \{ min-height: 44px; \} \}/, "the four sections are a thumb's height on a coarse pointer");
   assert.match(css, /\n\.menu-icon \{[^}]*border-block: 2px solid currentColor;/, "the icon is three bars, since on a phone the word is not beside it");
   assert.match(css, /@media \(forced-colors: active\) \{[\s\S]*?\.menu-icon::before \{ background: CanvasText; \}/, "and the middle bar survives a forced-colour mode, where a background is dropped");
   // One Sign in on screen at every width: the bar's from 600 up, the menu's below it, never both in the same bar.

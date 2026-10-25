@@ -703,3 +703,79 @@ measured today; no number is copied from an earlier pass.
 - **The filter still needs the script.** Without one it is hidden (`hidden` in the markup), as before; the map is
   complete without it.
 - **No capture was retaken**, and `site/ux/` was not edited.
+
+## 2026-10-25, second pass: the estimate's total, the bar on a tablet, and the chips on paper
+
+Measured with the same probe (Chrome 156, reduced motion, light unless said, touch at 320/360/390, a coarse pointer at
+768 and 1440, and print at 794 for A4). The before column is the site as it stood at `a25d02d`, measured today before
+any edit (and, for the print heights, from a second copy on a second port); no number is copied from an earlier pass.
+
+### What changed
+
+- **The figure pinned over the estimate is the ledger's own total.** The phone's sticky total over the calculator was
+  the plan's *licence* price, so on the Community plan it read **"Community · Free"** while the ledger a screen below
+  read **"Roughly $138 / month"** — the two figures on one screen disagreed by the reader's whole model bill. The
+  pinned figure is now the ledger's total, and when that total is only model usage it says so:
+  **"Community · $138 / month (model usage)"** at the default fields (1 project, 7 agents, 25 missions, Haiku, annual).
+  It tracks every field: $276, $390 and $773 on the three other models at 25 missions, "$637 / month (annual)" on
+  Business, and "Quoted, plus model usage" on Enterprise, always the same number as the ledger's last row. The pinned
+  line is 46 → **72px** at 320/360/390 (it wraps to two lines), and the pricing page is 26px taller there
+  (14,049 → **14,075** at 360, 15,049 → **15,075** at 320, 13,407 → **13,433** at 390); at 768 and 1440, where the
+  pinned total is not shown (from 860 up), the page is unchanged.
+- **The four sections of the bar are a thumb's height on a coarse pointer.** At 768 and up the nav is a row of
+  **82×36, 75×36, 61×36 and 86×36** links: a mouse's row in a 44px bar, which is what the third pass measured, but a
+  tablet's finger got 36px of the bar's 68. With a coarse pointer they are 44 tall at every width
+  (**82×44, 75×44, 61×44, 86×44** at 768 and 1440); the bar stays 68, the header 69, and the page 10,931 at 768 and
+  9,481 at 1440. A fine pointer keeps its 36px row, so nothing moves for a mouse.
+- **The On this page row is laid out in print, not scrolled.** A printed page has no swipe: on the security page at
+  A4 width the six chips took **1,245px in 794**, so "What to do about it" was cut at the paper's edge and "Assurance"
+  and "Reporting a problem" did not print at all (three chips past the edge, 451px hidden). The chips now wrap in
+  print: **1,245 → 794px**, no chip cut, the row **60 → 112px** tall and the printed page 7,443 → **7,495**. The
+  pricing page's row (811 in 794, no chip cut) wraps too, 60 → 112 and 10,248 → **10,300**; the legal page's three
+  chips still fit one row and it is unchanged at 3,066. Nothing of this is on screen.
+
+### Measurements after this pass
+
+| Page at 360 / 1440 | Before | After |
+|---|---|---|
+| Home | 13,550 / 12,282 | **13,550 / 12,282** |
+| Pricing | 14,049 / 9,417 | **14,075 / 9,417** |
+| Documentation | 8,746 / 4,455 | **8,746 / 4,455** |
+| Security | 11,916 / 7,668 | **11,916 / 7,668** |
+| Contact | 4,698 / 2,860 | **4,698 / 2,860** |
+| Legal | 5,267 / 3,317 | **5,267 / 3,317** |
+| 404 | 2,348 / 1,524 | **2,348 / 1,524** |
+
+- The pricing page at 320 and 390: **15,075** and **13,433** (was 15,049 and 13,407); at 768 it is **10,931**,
+  unchanged.
+- The pinned total is 72px at 320/360/390 and 46 at 768 and 859; from 860 it is hidden, where the form and the result
+  are side by side.
+- No page scrolls sideways at 320, 360, 390, 768 or 1440 in either theme (**0** on all 70 page/width/theme pairs) and
+  the probe reports **0** console errors. The smallest computed text is **12px** on every page. On a coarse pointer at
+  320–768 the only targets under 44 × 44 are the 1 × 1 radios and the 24 × 24 checkbox whose label is 44.
+- The worst text pair is **5.61:1** in light and **6.57:1** in dark, as before (AA normal text needs 4.5). Forced
+  colours at 360: no overflow, the rate card and a plan's figures keep their ground (`rgb(0, 0, 0)`) under the cells,
+  and no text under 12px. Without a script at 360: no overflow, the calculator and the filter are hidden, and every
+  page's text is what it was.
+- Print at 794: no page overflows (0 on all seven), and no chip of an On this page row is cut on the three pages that
+  have one.
+
+### What this pass deliberately left
+
+- **The address row's Copy still moves its line when its word grows.** At 360 the button goes 62 → 76px for "Copied"
+  and 105 for "Not copied", so the email re-wraps (205 → 194px) and the row jumps **169.4 → 179.8px** for the 2.2
+  seconds the word is shown. The line has 280px for a 205px address and a 62px button; the design says the button says
+  "Copied", and any word wider than 67px breaks the address. A shorter state word or a line that does not reflow is a
+  change to that shared shape, not to this pass.
+- **The pricing page's first plan amount is at y=950 at 360**, 150px below an 800px first screen (the third pass's 86px
+  was before the two sections took the page's heading rank). Reclaiming it means moving the billing switch out of
+  `#plans` or dropping the hint that says the row swipes — both change what the page opens with.
+- **The pricing page's hint still promises "every line"** in the comparison, which has the price, the three limits, the
+  usage export and support, but not the two Business lines the cards carry (container and Helm support with runbooks,
+  and security questionnaire support). It is a sentence about what a table contains, and the wording is the owner's.
+- **The security page's "At a glance" box is 1,098px at 360**, 342 of which is the Curule Cloud notice inside it;
+  moving the caveat out of the box is a decision about what the box is, not a defect of the box's rules.
+- **The security and legal pages' section heads stay 24/34** (`.split > header h2`) while the documentation and contact
+  pages take 28/48: the fourth pass scoped the section rank to `.section > .wrap > h2.legend-title`, and a `.split`'s
+  header is its own shape. That is a shared rule to settle, not a page to change on its own.
+- **No capture was retaken**, and `site/ux/` was not edited.

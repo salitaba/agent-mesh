@@ -58,7 +58,12 @@
     var annual = period() === "annual";
     var fee = plan.pricing === "listed" ? (annual ? plan.priceMonthlyAnnualUsd : plan.priceMonthlyUsd) : plan.pricing === "free" ? 0 : null;
     var spend = missions * run.costUsdByModel[model];
-    var figure = fee === null ? "Quoted, plus model usage" : plan.pricing === "free" ? "Free" : money(fee + spend) + " / month (" + (annual ? "annual" : "monthly") + ")";
+    // One total, said the same in the figure pinned over the fields and in the ledger below it. The free plan's
+    // licence is $0, but the reader is still quoted their provider's bill: the figure was the word "Free" while the
+    // ledger's total was $138 / month, so the two numbers on one screen disagreed. Where the total is only model
+    // usage the figure says so, since there is no licence fee in it.
+    var total = fee === null ? "Quoted, plus model usage" : money(fee + spend) + " / month";
+    var figure = total + (plan.pricing === "listed" ? " (" + (annual ? "annual" : "monthly") + ")" : plan.pricing === "free" ? " (model usage)" : "");
 
     if (totalPlan) totalPlan.textContent = plan.name;
     if (totalFigure) totalFigure.textContent = figure;
@@ -67,8 +72,8 @@
     out.appendChild(row("Platform fee", "(to us)", fee === null ? "quoted" : money(fee) + " / month" + (plan.pricing === "listed" ? ", billed " + (annual ? "annually" : "monthly") : "")));
     out.appendChild(row("Model usage", "(to your provider)", "about " + money(spend) + " / month"));
     out.appendChild(fee === null
-      ? row("Total", "", "Quoted, plus model usage", true)
-      : row("Roughly", "", money(fee + spend) + " / month", true));
+      ? row("Total", "", total, true)
+      : row("Roughly", "", total, true));
     out.appendChild(el("p", "fine",
       "Model usage assumes " + missions + " mission" + (missions === 1 ? "" : "s") + " like the one we measured (" + run.seats + " agents, " + run.turns + " turns, " +
       money2(run.costUsd) + " on " + nameOf(run.model) + "), re-priced at " + nameOf(model) + "'s published list price of " + data.modelPrices.asOf +
