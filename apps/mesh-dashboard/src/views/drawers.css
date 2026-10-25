@@ -491,6 +491,20 @@ span.caret { color: var(--ok); animation: blink 1s steps(1) infinite; }
   .sv-jump::-webkit-scrollbar { display: none; }
   .sv-jump-b { flex: none; }
 }
+
+/* ---- A phone's drawer presses at 44 px ----
+ * §6b: on a phone everything that is pressed is 44 px tall. Two shapes in this sheet were the console's only exception: the
+ * walker's arrows set 30×28 at a specificity above styles.css's `:where()` floor, and the step's op, tool and event rows are
+ * `role="button"` divs that no `button` selector names. Measured in the running console at 390: six pressed things under
+ * 44 × 44 — the two arrows and four rows — where every one of the ten views has none. Named here, because this sheet owns the
+ * shapes and the shared floor cannot outrank it. */
+@media (pointer: coarse), (max-width: 620px) {
+  .sv-walk > button:not(.linklike) { min-width: 44px; min-height: 44px; }
+  .sv-op, .sv-tool, .sv-ev[role] { min-height: 44px; align-items: center; }
+}
+
+/* A long body takes a tab stop when it scrolls (ui/scroll-stop.tsx), and a stop a person cannot see is not one. */
+#drawer pre:focus-visible { outline: 2px solid var(--k-accent); outline-offset: -2px; }
 @media (prefers-reduced-motion: reduce) {
   .prail-fill, .lw-dl-fill, .sv-split b { transition: none; }
 }
