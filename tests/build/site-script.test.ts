@@ -94,6 +94,8 @@ interface Reading {
   /** The same, without the observer saying anything (a jump that passes whole sections at once), and the window's scroll event instead. */
   jumpTo: (tops: number[]) => void;
   fire: (type: string) => void;
+  /** The keyboard's focus arriving on a chip, as the row hears it. */
+  focus: (i: number) => void;
   runTimers: () => void;
   rowScrolls: number[];
   observer: () => FakeObserver;
@@ -148,6 +150,10 @@ function read(rel: string, height = 800, reduce = true): Reading {
       (listeners.get("scroll") ?? []).forEach((fn) => fn());
     },
     fire: (type) => (listeners.get(type) ?? []).forEach((fn) => fn()),
+    focus: (i) => {
+      const chip = chips[i]!;
+      for (const fn of row.listeners.get("focusin") ?? []) fn({ type: "focusin", target: chip, currentTarget: row, defaultPrevented: false, preventDefault() {} });
+    },
     runTimers: () => timers.splice(0).forEach((fn) => fn()),
     rowScrolls,
     observer,
@@ -255,6 +261,20 @@ test("the marked chip is scrolled into view in its row, and only when it is not 
   assert.deepEqual(r.rowScrolls, [146]);
   r.at([-900, 500, 2200, 2900, 4000, 4800, 5500]);
   assert.deepEqual(r.rowScrolls, [146, 0], "the first chip, back at the start of the row");
+});
+
+test("a chip that takes the keyboard's focus is brought wholly into the row, and one already in view is left alone", () => {
+  const r = read("security/index.html");
+  r.focus(1);
+  assert.deepEqual(r.rowScrolls, [], "the second chip is wholly in the row, so focusing it does not move the row");
+  r.focus(2);
+  // The third chip spans 352 to 512 in the 390px row: the browser made 38px of it visible when it took the focus, and
+  // the row scrolls 146 to show all of it with 24 to spare. At 360 the same chip was 42 of 277px.
+  assert.deepEqual(r.rowScrolls, [146], "the third chip is scrolled wholly into view");
+  r.focus(2);
+  assert.deepEqual(r.rowScrolls, [146], "focusing the same chip again moves nothing");
+  r.focus(0);
+  assert.deepEqual(r.rowScrolls, [146, 0], "the first chip, out of view after the scroll, comes back");
 });
 
 test("a jump that passes whole sections at once (Back to top under reduced motion) clears the mark and brings the row back to its first chips", () => {
