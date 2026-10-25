@@ -665,8 +665,9 @@ main:has(.hero) .section-head .eyebrow::before { counter-increment: sec; content
 @media (min-width: 860px) { .calc { grid-template-columns: var(--c2); gap: 48px; align-items: start; } }
 /* The estimate over the fields on a phone: the form and the result cannot be on one screen, so the
    figure follows the fields (under the pinned header and bar) while they are changed. The result
-   below stays the ledger; this is its total, and a screen reader hears that one. Hidden where the
-   form and the result are side by side. */
+   below stays the ledger; this is its total. A screen reader hears the one sentence in #calc-said,
+   after a pause, rather than every row and the fine print on every keystroke.
+   Hidden where the form and the result are side by side. */
 .calc-total { display: none; }
 @media (max-width: 859px) {
   .calc-total { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 2px 12px; position: sticky; top: calc(var(--head-h) + var(--toc-h) + 10px); z-index: 4; margin: 0 0 20px; padding: 10px 14px; border: 1px solid var(--k-line-control); border-radius: var(--k-r-md); background: var(--panel); box-shadow: var(--lift); color: var(--ink); font-size: .9375rem; font-weight: 650; font-variant-numeric: tabular-nums; }
@@ -679,6 +680,9 @@ main:has(.hero) .section-head .eyebrow::before { counter-increment: sec; content
 .field input[type=number]:hover, .field select:hover, .doc-filter input:hover { border-color: var(--muted); }
 .field input[type=number]:focus, .field select:focus, .doc-filter input:focus { outline: none; border-color: var(--accent); box-shadow: var(--k-ring); }
 .field .hint { margin-top: 6px; color: var(--muted); font-size: .875rem; }
+/* A number the estimate could not use is said under its field, in the site's refusal colour, at the hint's size: the
+   field is marked aria-invalid and its description names the figure the estimate used instead. */
+.field-error { margin: 6px 0 0; color: var(--k-bad); font-size: .875rem; line-height: 1.45; }
 .field-check { display: flex; gap: 12px; align-items: center; min-height: 44px; }
 .field-check input { flex: none; width: 24px; height: 24px; margin: 0; accent-color: var(--accent); cursor: pointer; }
 .field-check label { display: flex; flex: 1; align-items: center; min-height: 44px; margin: 0; font-weight: 500; cursor: pointer; }

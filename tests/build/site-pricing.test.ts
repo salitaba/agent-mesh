@@ -13,12 +13,14 @@ import { SITE } from "./site-pages";
 
 const SCRIPT = fs.readFileSync(path.join(SITE, "assets", "pricing.js"), "utf8");
 const PAGE = fs.readFileSync(path.join(SITE, "pricing", "index.html"), "utf8");
+const CSS = fs.readFileSync(path.join(SITE, "assets", "site.css"), "utf8");
 const DATA = /<script type="application\/json" id="plans-data">([\s\S]*?)<\/script>/.exec(PAGE)![1]!;
 
 class El {
   children: El[] = [];
   className = "";
   hidden = false;
+  attrs = new Map<string, string>();
   private text = "";
   constructor(readonly tagName: string) {}
   set textContent(value: string) {
@@ -32,25 +34,44 @@ class El {
     this.children.push(node);
     return node;
   }
+  setAttribute(name: string, value: string): void {
+    this.attrs.set(name, value);
+  }
+  removeAttribute(name: string): void {
+    this.attrs.delete(name);
+  }
+  getAttribute(name: string): string | null {
+    return this.attrs.get(name) ?? null;
+  }
   addEventListener(): void {
     // The script wires events for a browser; the test calls calc through the one run at load.
   }
 }
 
-function run(values: { projects: string; seats: string; missions: string; reports?: boolean }): { result: El; cells: string[][]; pinned: string[] } {
+function run(values: { projects: string; seats: string; missions: string; reports?: boolean }): { result: El; cells: string[][]; pinned: string[]; said: string; errors: Record<string, { hidden: boolean; text: string }>; invalid: Record<string, string | null> } {
   const result = new El("div");
   const pinnedPlan = new El("span");
   const pinnedFigure = new El("span");
+  const said = new El("p");
   const field = (value: string): El & { value: string } => Object.assign(new El("input"), { value });
+  const projects = field(values.projects);
+  const seats = field(values.seats);
+  const missions = field(values.missions);
+  const error = (): El => Object.assign(new El("p"), { hidden: true });
+  const errors = { projects: error(), seats: error(), missions: error() };
   const nodes: Record<string, unknown> = {
     "plans-data": Object.assign(new El("script"), { textContent: DATA }),
     calc: new El("form"),
     result,
     "calc-total-plan": pinnedPlan,
     "calc-total-figure": pinnedFigure,
-    "c-projects": field(values.projects),
-    "c-seats": field(values.seats),
-    "c-missions": field(values.missions),
+    "calc-said": said,
+    "c-projects": projects,
+    "c-projects-error": errors.projects,
+    "c-seats": seats,
+    "c-seats-error": errors.seats,
+    "c-missions": missions,
+    "c-missions-error": errors.missions,
     "c-reports": Object.assign(new El("input"), { checked: values.reports ?? false }),
     "c-model": Object.assign(new El("select"), { value: "claude-haiku-4-5" }),
   };
@@ -63,7 +84,14 @@ function run(values: { projects: string; seats: string; missions: string; report
   };
   vm.runInNewContext(SCRIPT, { document }, { filename: "pricing.js" });
   const rows = result.children.filter((n) => n.className === "row");
-  return { result, cells: rows.map((row) => row.children.map((cell) => cell.textContent.trim())), pinned: [pinnedPlan.textContent.trim(), pinnedFigure.textContent.trim()] };
+  return {
+    result,
+    cells: rows.map((row) => row.children.map((cell) => cell.textContent.trim())),
+    pinned: [pinnedPlan.textContent.trim(), pinnedFigure.textContent.trim()],
+    said: said.textContent.trim(),
+    errors: { projects: { hidden: errors.projects.hidden, text: errors.projects.textContent }, seats: { hidden: errors.seats.hidden, text: errors.seats.textContent }, missions: { hidden: errors.missions.hidden, text: errors.missions.textContent } },
+    invalid: { projects: projects.getAttribute("aria-invalid"), seats: seats.getAttribute("aria-invalid"), missions: missions.getAttribute("aria-invalid") },
+  };
 }
 
 test("a quoted plan ends on what the total is made of, not on a blank figure", () => {
@@ -108,4 +136,53 @@ test("the figure pinned over the fields is the ledger's own total, on every kind
     const r = run(values);
     assert.equal(money(r.pinned[1]!), money(r.cells[3]![1]!), `${JSON.stringify(values)}: the pinned figure and the ledger agree`);
   }
+});
+
+/**
+ * The ledger is several rows and a paragraph of fine print; announcing it on every keystroke flooded a screen reader
+ * with the same words and buried the figure. One sentence now carries the same answer, and the ledger is read at
+ * leisure. The fields' hints were visible only: a description of the field is where a screen reader looks for them.
+ */
+test("the estimate is announced in one sentence, and each field's hint is its description", () => {
+  const free = run({ projects: "1", seats: "7", missions: "25" });
+  assert.equal(free.said, "Community: $138 a month, including model usage", "the initial figure, in words rather than the ledger's '/' and fine print");
+  const team = run({ projects: "3", seats: "7", missions: "25" });
+  assert.equal(team.said, "Team: $262 a month, billed annually");
+  const quoted = run({ projects: "1000", seats: "1000", missions: "10" });
+  assert.equal(quoted.said, "Enterprise: quoted, plus model usage");
+  // The page, not just the script: the hints are named by the fields, the errors are beside them, and the live region is one sentence.
+  assert.match(PAGE, /<input id="c-projects" type="number" min="1" max="1000" step="1" value="1" inputmode="numeric" aria-describedby="c-projects-hint c-projects-error">/);
+  assert.match(PAGE, /<div class="hint" id="c-projects-hint">/);
+  assert.match(PAGE, /<input id="c-missions"[^>]*aria-describedby="c-missions-hint c-missions-error">/);
+  assert.match(PAGE, /<div class="hint" id="c-missions-hint">/);
+  assert.match(PAGE, /<p class="field-error" id="c-projects-error" role="alert" hidden><\/p>/);
+  assert.match(PAGE, /<p class="field-error" id="c-seats-error" role="alert" hidden><\/p>/);
+  assert.match(PAGE, /<p class="field-error" id="c-missions-error" role="alert" hidden><\/p>/);
+  assert.match(PAGE, /<p class="sr" id="calc-said" role="status"><\/p>/);
+  assert.ok(!/<div class="result" id="result" aria-live=/.test(PAGE), "the ledger is not read out row by row on every keystroke");
+  assert.match(CSS, /\.field-error \{[^}]*color: var\(--k-bad\);[^}]*font-size: \.875rem;/, "the refusal is the site's refusal colour, at the hint's size");
+});
+
+/**
+ * A number field used to be made usable in silence: 0 projects was replaced with 1, the field was left invalid, and
+ * the browser's message was never seen because the form is never submitted. The estimate now says which figure it
+ * used, on the field, and marks the field invalid for a screen reader.
+ */
+test("a number outside its field's range says what the estimate used, and the field is marked invalid", () => {
+  const zero = run({ projects: "0", seats: "7", missions: "25" });
+  assert.deepEqual(zero.errors.projects, { hidden: false, text: "Enter 1 or more. The estimate uses 1." });
+  assert.equal(zero.invalid.projects, "true");
+  assert.deepEqual(zero.cells[0], ["Plan", "Community"], "the estimate is the one it says it used");
+  assert.deepEqual(zero.cells[3], ["Roughly", "$138 / month"]);
+  const high = run({ projects: "1001", seats: "7", missions: "25" });
+  assert.equal(high.errors.projects.text, "Enter 1,000 or less. The estimate uses 1,000.");
+  assert.deepEqual(high.cells[0], ["Plan", "Enterprise"]);
+  const fraction = run({ projects: "1.5", seats: "7", missions: "25" });
+  assert.equal(fraction.errors.projects.text, "Enter a whole number. The estimate uses 2.");
+  const many = run({ projects: "1", seats: "7", missions: "100001" });
+  assert.equal(many.errors.missions.text, "Enter 100,000 or less. The estimate uses 100,000.");
+  assert.deepEqual(many.cells[3], ["Roughly", "$552,000 / month"]);
+  const valid = run({ projects: "1", seats: "7", missions: "25" });
+  assert.deepEqual(valid.errors, { projects: { hidden: true, text: "" }, seats: { hidden: true, text: "" }, missions: { hidden: true, text: "" } });
+  assert.deepEqual(valid.invalid, { projects: null, seats: null, missions: null });
 });

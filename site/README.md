@@ -52,7 +52,9 @@ the chips do not fit, so it is as tall where it rests as where it stays and noth
 position is looked at when a section's top crosses the line (an IntersectionObserver) and as the window scrolls, once a frame, so a
 jump that passes whole sections at once (Back to top under reduced motion) clears the mark and brings the row back to its first chips. A followed link
 lands below the header and the bar: `--head-h` and `--toc-h` in `assets/site.css` are their heights, and
-`tests/build/site-script.test.ts` checks them against the rules that make them.
+`tests/build/site-script.test.ts` checks them against the rules that make them. A chip that takes the keyboard's focus is
+brought wholly into the row, with 24px beside it, rather than the sliver the browser leaves when it considers a partly
+visible chip to be in view.
 
 Wherever the script finds a clipboard it adds a Copy button to each block of commands, and one beside each address on the contact
 page (`a[data-mail]`, when the text is an address): one click writes it to the clipboard and says "Copied", to a screen reader
@@ -73,6 +75,12 @@ of the map, so its filter leaves them alone. The page also has a filter over its
 it: what is typed keeps the documents that have every word somewhere in their title, description, label (Guide, Reference, Short,
 Log), path or group, hides a group that has none left, and says how many are left in a polite live region after a pause in the
 typing. When nothing matches it says so, with a button that clears the filter; Escape clears it too. It reads only the page.
+
+The pricing page's calculator says its answer twice: the ledger under the fields for reading, and one polite sentence after
+a pause for a screen reader (`#calc-said`, `role="status"`; the ledger itself is not a live region, so it is not read out row
+by row on every keystroke). Each number field's visible hint is its description, and a number that is empty, not a whole
+number or outside its range is said under the field — "Enter 1 or more. The estimate uses 1." — with `aria-invalid` on the
+field, and the estimate uses the figure the message names. A number is never replaced in silence.
 
 ## How it is drawn
 

@@ -56,7 +56,7 @@ editing CSS or JS.
 | View | Empty | Loading | Failed | Refused / next |
 |---|---|---|---|---|
 | Home | n/a | first image `fetchpriority=high`, lazy below | alt text on every capture | both Cloud states, and the self-hosted state, are written into the page |
-| Pricing | calculator always has a plan | inputs update on `input` | quoted plan says "Quoted, plus model usage", never an empty figure | Cloud visitor is told the estimate is a licence, and where Cloud's price lives |
+| Pricing | calculator always has a plan | inputs update on `input` | quoted plan says "Quoted, plus model usage", never an empty figure; a number out of range says the figure the estimate used | Cloud visitor is told the estimate is a licence, and where Cloud's price lives |
 | Docs | filter with no match says what was typed and offers Clear | filter counts after a pause | n/a | every card names the one document to open |
 | Security | n/a | n/a | n/a | what it does not do is a section, not a footnote |
 | Contact | n/a | copy button says Copied | clipboard refused says where to look | three addresses, each with what it is for |
@@ -851,3 +851,78 @@ sections the bar has a chip for.
   pricing page's opening, left as the last pass left them.
 - **The security page's At a glance box is still 1,074px at 360**; only its chip is new.
 - **No capture was retaken**, and `site/ux/` was not edited.
+
+## 2026-10-25, fourth pass: the chip the keyboard can read, and one sentence from the estimate
+
+Measured with the same probe (Chrome 156 over CDP, reduced motion, light unless said, touch at 320/360/390, a coarse
+pointer at 768 and 1440, print at 794 for A4). The before column is the site at `16afb3e`, extracted again and served on
+a second port and measured today; no number is copied from an earlier pass.
+
+### What changed
+
+- **A chip that takes the keyboard's focus is brought wholly into the row.** The browser scrolls a focused element only
+  until some part of it is visible, so at 360 the security page's third chip — "What leaves your environment", 280px wide
+  in the DPR1 measurement (277.11px in the DPR2 capture) — stayed with **41 of its 280px** in the row, its name cut
+  mid-word, and at 320 with **1 of 280px**. The row now listens for `focusin` and uses the same 24px reveal as the mark:
+  at 360 the chip is **280 / 280** with the row at `scrollLeft 263` (in the DPR2 capture, 277.11 / 277.11 at 259); at 320
+  **280 / 280** (303); at 390 **280 / 280** (233). On the security page at 768 the fourth chip is **192 / 192** (70, was
+  146.28 of 192), the pricing page's "Licences" at 768 is **102 / 102** (46, was 80.28) and the legal page's "Terms" at
+  320 is **82 / 82** (26, was 72). A chip already wholly in view moves nothing, and focusing the same chip again moves
+  nothing.
+- **The estimate is one sentence to a screen reader, not the ledger on every keystroke.** The result was a
+  `aria-live="polite"` region of **504 characters** at the default fields, and every input cleared and rebuilt it
+  (seven child-list mutations). The result is no longer a live region; a 46-character `#calc-said` (`role="status"`)
+  is updated **400ms after the last change**: "Community: $138 a month, including model usage" at the default, "Team:
+  $262 a month, billed annually" on Team, "Enterprise: quoted, plus model usage" on Enterprise. The ledger still
+  updates at once for a sighted reader, and the pinned total is the same figure as before.
+- **The two hints are the fields' descriptions.** The pricing calculator's "A project is one team's mesh…" and "A
+  mission like the one we measured…" were visible only: the fields' descriptions in the accessibility tree were
+  **null**. The inputs now name them with `aria-describedby`, and the descriptions are **95** and **73 characters**.
+  The seats field has no visible hint and is unchanged.
+- **A number out of range says what the estimate used.** With 0 in "Projects open at the same time" the field was
+  invalid in the browser, but the estimate replaced it with 1 in silence: no message, no `aria-invalid`, and the ledger
+  read **$138 / month** as if nothing had happened. The field now takes `aria-invalid="true"` and a 20px `role="alert"`
+  line: **"Enter 1 or more. The estimate uses 1."** A fraction says "Enter a whole number. The estimate uses 2.", 1001
+  says "Enter 1,000 or less. The estimate uses 1,000.", and 100,001 missions says "Enter 100,000 or less. The estimate
+  uses 100,000." The line is 14px in the refusal colour, **6.35:1** in light and **6.66:1** in dark, and it adds 26px
+  only while it is shown (pricing **14,075 → 14,101** at 360, 15,075 → 15,101 at 320, 10,931 → 10,958 at 768,
+  9,417 → 9,443 at 1440). The default page is unchanged.
+
+### Measurements after this pass
+
+| Page at 320 / 360 / 390 / 768 / 1440 | Before | After |
+|---|---|---|
+| Home | 14,258 / 13,550 / 12,948 / 13,172 / 12,282 | **14,258 / 13,550 / 12,948 / 13,172 / 12,282** |
+| Pricing | 15,075 / 14,075 / 13,433 / 10,931 / 9,417 | **15,075 / 14,075 / 13,433 / 10,931 / 9,417** |
+| Documentation | 9,356 / 8,746 / 8,426 / 5,770 / 4,455 | **9,356 / 8,746 / 8,426 / 5,770 / 4,455** |
+| Security | 12,823 / 11,916 / 11,178 / 8,331 / 7,668 | **12,823 / 11,916 / 11,178 / 8,331 / 7,668** |
+| Contact | 4,996 / 4,698 / 4,490 / 3,883 / 2,860 | **4,996 / 4,698 / 4,490 / 3,883 / 2,860** |
+| Legal | 5,741 / 5,267 / 4,941 / 3,863 / 3,317 | **5,741 / 5,267 / 4,941 / 3,863 / 3,317** |
+| 404 | 2,443 / 2,348 / 2,301 / 1,915 / 1,524 | **2,443 / 2,348 / 2,301 / 1,915 / 1,524** |
+
+- The On this page row is **1,344px** wide on the security page at 360 (984px hidden) and 913 on pricing (553 hidden);
+  the focus reveal only changes where the row is while a chip has the keyboard, not its width or the page height.
+- The estimate's error state adds one 20px line under the field; with all three fields invalid the pricing page is
+  14,174 at 360 and 15,194 at 320, still with no horizontal overflow.
+- No page scrolls sideways at 320, 360, 390, 768 or 1440 in either theme (**0** on all 70 page/width/theme pairs), the
+  probe reports **0** console errors, **0** axe-core violations (also with the three error lines shown, at 320/360/768/
+  1440 in both schemes), the smallest computed text is **12px**, and the target census is the same **116 entries** across
+  320/360/390 and both schemes (the inline links in sentences and the 1×1 radios whose labels are 44).
+- Print at A4 is **0** over on all seven pages, with the error shown it is 10,326 on pricing (10,300 without) and the
+  message prints under its field. Without a script the form and the filter are hidden as before (pricing 12,836 at 360)
+  and the errors are inside the hidden form. With `forcedColors: active` the error is CanvasText, the rate card keeps its
+  ground, and the page is 0 over.
+
+### What this pass deliberately left
+
+- **The row still scrolls in silence where the chips do not fit.** The keyboard now brings its chip wholly into view,
+  but a finger sees only the cut word at the row's edge; a fade needs a class the script sets when the row overflows, as
+  the last pass said. This pass is the keyboard, not the touch.
+- **The Annual/Monthly switch is 6,884px above the estimate at 360** (the switch ends at 777.27, the first field starts
+  at 7,661.2). The estimate names its period in the fee row and the pinned total, and a second segmented control would be
+  two controls for one fact; a period shortcut in the estimate is a product decision, not a repair.
+- **The contact page's Copy still moves its line when the word grows** — 169.38 → 179.75px for "Copied" — as the
+  previous pass recorded. The button's width is the word's, and the email re-wraps for 2.2 seconds.
+- **The pricing comparison still stacks below 720**, the first plan amount is still at y=950 at 360, and the docs page
+  still has no On this page bar. None of these changed.
+- `site/ux/` was not edited.

@@ -287,6 +287,14 @@ var IMAGE_NAME = "ghcr.io/salitaba/curule";
       window.clearTimeout(holding);
       holding = window.setTimeout(release, 3000);
     });
+    // A chip reached with the keyboard is brought wholly into the row. The browser only scrolls a focused element the
+    // smallest distance that makes any part of it visible, so at 360 the third chip of the security page ("What leaves
+    // your environment", 277px wide) stayed at x=318 with 42px of it in the row, its name cut mid-word. The same
+    // reveal the mark uses keeps the chip and 24px of its neighbour in view, and does not move a chip already in view.
+    row.addEventListener("focusin", function (event) {
+      var chip = event.target && event.target.closest ? event.target.closest("a") : null;
+      if (chip && chips.indexOf(chip) >= 0) reveal(chip);
+    });
     window.addEventListener("scrollend", function () { if (held >= 0) release(); });
     // The observer says when a section's top crosses the line, which is not said when a jump passes whole sections at once (Back to top
     // under reduced motion goes from the last section to the top in one step), so the reading position is looked at as the window
