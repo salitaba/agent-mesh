@@ -447,7 +447,7 @@ test("a confirmation link is spent once: the token is sent, then removed from th
   assert.deepEqual(v.to("POST", "/api/verify"), [{ method: "POST", path: "/api/verify", body: { token: "abc123" } }]);
   assert.deepEqual(v.history, ["/verify"], "the token is not left in the address bar or the history");
   assert.equal(v.text("status"), "Your address is confirmed. Taking you to your account.");
-  assert.deepEqual(v.navigations, ["replace /account"]);
+  assert.deepEqual(v.navigations, ["replace /account?confirmed=1"], "and the account page is the one that says so, in a sentence that is not replaced by the navigation");
   assert.equal(v.$("again").hidden, true);
 });
 
@@ -755,7 +755,7 @@ test("a person at a keyboard starts at the first field; a phone is left alone, b
 test("the account page sends a visitor to sign in and remembers where they were going", async () => {
   const w = world((x) => (x.signedIn = false));
   const v = await visit("account", { routes: w.routes });
-  assert.deepEqual(v.navigations, ["replace /login?next=/account"]);
+  assert.deepEqual(v.navigations, ["replace /login?next=/account&signedout=1"]);
   assert.deepEqual(v.calls.map((c) => c.path), ["/api/session"], "nothing else is asked of the service");
 
   // A session that ends while the page is open does the same on the next thing the person does.
@@ -767,7 +767,7 @@ test("the account page sends a visitor to sign in and remembers where they were 
   s.answers.set("POST /api/workspaces/ws_1/suspend", failure(401, "not_signed_in", "Sign in to continue."));
   open.click(open.button("workspaces", "Pause"));
   await open.idle();
-  assert.deepEqual(open.navigations, ["replace /login?next=/account"]);
+  assert.deepEqual(open.navigations, ["replace /login?next=/account&signedout=1"]);
 });
 
 test("the account page says the service cannot be reached, offers the same read again, and does not send a person to sign in again for nothing", async () => {
@@ -790,7 +790,22 @@ test("the account page says the service cannot be reached, offers the same read 
   assert.deepEqual(half.navigations, []);
 
   const ended = await visit("account", { routes: (c) => (c.path === "/api/session" ? failure(401, "not_signed_in", "Sign in to continue.") : undefined) });
-  assert.deepEqual(ended.navigations, ["replace /login?next=/account"], "a session that has ended goes where a signed-out page goes, not to a retry");
+  assert.deepEqual(ended.navigations, ["replace /login?next=/account&signedout=1"], "a session that has ended goes where a signed-out page goes, not to a retry");
+
+  // The sign-in page the account sends them to says why they are there, so the form does not meet them as if they had just arrived.
+  const anonymous = world((x) => (x.signedIn = false));
+  const out = await visit("login", { routes: anonymous.routes, search: "?next=/account&signedout=1" });
+  assert.equal(out.text("status"), "You are signed out. Sign in to see your account.");
+  // Someone who is signed in is sent on, and is not told they are signed out.
+  const already = await visit("login", { routes: w.routes, search: "?next=/account&signedout=1" });
+  assert.deepEqual(already.navigations, ["replace /account"]);
+});
+
+test("a confirmation link that has just been opened is confirmed where the person can read it", async () => {
+  const w = world(paid);
+  const v = await visit("account", { routes: w.routes, search: "?confirmed=1" });
+  assert.equal(v.text("notice"), "Your address is confirmed.");
+  assert.deepEqual(v.history, ["/account"], "and the query leaves the address");
 });
 
 test("a new account sees what to do first: choose a plan, and nothing to create, open, pay for or use yet", async () => {
@@ -880,7 +895,7 @@ test("a payment page that cannot be opened is said, with the button back, and an
   w.answers.set("POST /api/checkout", failure(401, "not_signed_in", "Sign in to continue."));
   v.click(v.button("plan", "Choose Team"));
   await v.idle();
-  assert.deepEqual(v.navigations, ["replace /login?next=/account"]);
+  assert.deepEqual(v.navigations, ["replace /login?next=/account&signedout=1"]);
 });
 
 test("an account on a plan shows it once, with what it costs and includes and when it is paid until, and the other plans behind a button", async () => {
@@ -1085,7 +1100,11 @@ test("naming a workspace creates it, and a workspace that is starting is watched
   await v.send(v.$("create"));
   assert.equal(v.text("create-note"), "Give the workspace a name.");
   assert.equal(v.$("workspace-name").getAttribute("aria-invalid"), "true");
+  assert.equal(v.$("workspace-name").getAttribute("aria-describedby"), "create-note", "the reason is attached to the field it is about");
+  assert.equal(v.doc.activeElement, v.$("workspace-name"));
   assert.deepEqual(v.to("POST", "/api/workspaces"), []);
+  v.type("workspace-name", "R");
+  assert.equal(v.text("create-note"), "", "and the sentence goes when the field it names is changed");
 
   v.type("workspace-name", "  Research  ");
   await v.send(v.$("create"));
@@ -1254,8 +1273,12 @@ test("a confirmation that is open stays open, with what was typed, when the page
   assert.equal(v.$("confirm-ws_1").value, "Resea", "what was typed survives the page being redrawn");
   assert.equal(v.doc.activeElement, v.$("confirm-ws_1"), "and so does the cursor");
   v.type("confirm-ws_1", "Research");
-  await v.send(v.doc.querySelector("form.confirm")!);
-  assert.equal(v.to("POST", "/api/workspaces/ws_1/delete").length, 1);
+  const form = v.doc.querySelector("form.confirm")!;
+  assert.equal(v.button(first(), "Delete workspace").getAttribute("data-busy"), "Deleting it", "the button says what it is doing while it does it");
+  v.submit(form);
+  v.submit(form);
+  await v.idle();
+  assert.equal(v.to("POST", "/api/workspaces/ws_1/delete").length, 1, "a form sent twice deletes once");
 });
 
 // ---- credit ----
@@ -1497,10 +1520,19 @@ test("usage that cannot be read says so and can be asked for again", async () =>
   w.answers.set("GET /api/usage", failure(502, "usage_unavailable", "Usage could not be read just now. Try again in a moment."));
   const v = await visit("account", { routes: w.routes });
   assert.equal(v.text("usage"), "Usage could not be read just now. Try again in a moment. Try again");
+  const again = v.button("usage", "Try again");
+  assert.equal(again.getAttribute("aria-describedby"), "usage-fail", "the button that asks again carries the reason beside it");
+  w.answers.set("GET /api/usage", failure(502, "usage_unavailable", "Usage could not be read just now. Try again in a moment."));
+  v.click(again);
+  await v.idle();
+  assert.equal(v.doc.activeElement, v.button("usage", "Try again"), "a retry that fails again leaves the cursor on the way to retry");
+  assert.equal(v.text("usage-fail"), "Usage could not be read just now. Try again in a moment.");
   w.answers.set("GET /api/usage", { json: NO_USAGE });
   v.click(v.button("usage", "Try again"));
   await v.idle();
   assert.match(v.text("usage"), /^Nothing has been used yet\./);
+  assert.equal(v.doc.activeElement, v.$("usage-h"), "an answer that arrives takes the cursor to the section it answers for");
+  assert.equal(v.$("usage-h").getAttribute("tabindex"), "-1", "so that a heading can hold the cursor, as the plan section does");
 });
 
 // ---- the password ----

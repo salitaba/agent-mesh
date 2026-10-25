@@ -925,3 +925,85 @@ to one fixed empty answer** and every height below is the same fixture on both s
   scroll of the unmodified page can put a button there too. A fix is the strip's, not this card's.
 - **The address strip's Copy still takes its own line at 360** (313px in 286); the steps still wrap
   at 320; the plan-less page still starts its numbered sections at 02.
+
+## 2026-10-25: the answer after the answer
+
+Same harness: Chromium 156 through `playwright-core` against this worktree's trial
+(`trial --port 7581`), 320 / 360 / 390 / 768 / 1440 in light and dark,
+`prefers-reduced-motion: reduce`, a touch pointer below 721, and the pair at 360 light with
+`deviceScaleFactor: 2`. "Before" is the base commit's own pages served by the same trial on the
+same fixtures, measured again today: a Team account with one running workspace and an empty usage
+table, a fresh account with no plan, and a Team account with no workspace yet. Heights are
+`document.documentElement.scrollHeight`; positions are `getBoundingClientRect` plus `scrollY`;
+the accessibility runs are axe-core over the same 64 views.
+
+- **A retry's answer takes the cursor to the answer.** `/api/usage` answered 503, and pressing
+  **Try again** from the keyboard left `document.activeElement` on **BODY** at scrollY 1,904:
+  the button went with the answer it asked for, the new sentence ("The usage could not be read
+  just now.") was not attached to anything, and a retry that did answer said "Nothing has been
+  used yet." with the cursor on BODY again (page 2,831). A failed retry now focuses the new
+  **Try again** (44px tall at 2,461) with `aria-describedby="usage-fail"`, so the button and the
+  reason beside it are read together; a retry that answers focuses **`#usage-h`** ("Usage", at
+  2,227), whose next Tab is the table's region. The page is 2,724 with the failure and 2,831
+  with the empty table, before and after: the fix moves the cursor and attaches the sentence,
+  and adds no height.
+- **The name a workspace needs is the field's own refusal, and it stops when the field is
+  changed.** An empty **Create workspace** wrote "Give the workspace a name." into
+  `#create-note` (50px at y = 765) and set `aria-invalid="true"` on `#workspace-name`, but the
+  field described nothing, and typing one character into it cleared the mark while the sentence
+  and its 50px stayed: the page was 2,395 before and after. It now goes through `invalid()`, as
+  the other forms do: the field is described by `create-note`, and changing it clears both — the
+  note is 0px and the page **2,333** (**−62**). The sentence itself did not change.
+- **A deletion is one request, and says it is working.** With the delete answer held 900ms, two
+  presses 100ms apart sent **2** `POST /api/workspaces/…/delete`: the confirmation form was the
+  one form on the page not sent through `onSubmit`, so it had no double-send guard. It is sent
+  through it now: one request for **2 → 1** presses, the button reads **"Deleting it"** and is
+  disabled while the answer is out (the form is `aria-busy`), and a failure gives the label and
+  the cursor back to the button. The card's own status still says "The workspace could not be
+  deleted just now."; no height changed.
+- **A redirect no longer loses the sentence it had to carry.** A 401 from `/api/session` or from
+  an action replaced the page with `/login?next=/account`, whose status was empty (page 1,285 at
+  360, the submit 478–522): a person was signed out with nothing saying so. It now goes to
+  `/login?next=/account&signedout=1`, and the status reads **"You are signed out. Sign in to see
+  your account."** — 74px at y = 289, the page **1,375** and the submit 568–612 (320: 98px, page
+  1,495, submit 592–636), all inside an 800px screen. A confirmed address had the same gap:
+  `/verify` replaced itself with `/account` before its own sentence could be read, and the
+  account's notice was empty. The link now lands on **`/account?confirmed=1`**, the notice says
+  **"Your address is confirmed."** (50px at y = 176 at 360), and the address returns to
+  `/account`. The sentence costs the account the 50px note and its 16px gap: 2,831 → **2,897**
+  paid, 1,597 → **1,663** plan-less (at 320: 2,927 → 2,993 and 1,757 → 1,823), and it is read
+  and shown before the stage card.
+- **Widths, schemes and the floor.** The paid account is **2,927 / 2,831 / 2,635 / 2,136 /
+  2,172** and the plan-less one **1,757 / 1,597 / 1,526 / 1,078 / 1,036** at 320 / 360 / 390 /
+  768 / 1440, unchanged by this pass; the confirmed and signed-out states are the ones above.
+  No view scrolls sideways, nothing computes below **12px**, no control is under 44 × 44 below
+  721, and **64 axe-core runs** (20 account, 12 sign-in/404, 20 confirmed, 10 signed-out, 2
+  forced colours) find **no violation**. Forced colours draws the note, the status and the
+  buttons as the system's own; with scripts off every page still shows what it showed, and the
+  login note (which is set by the script) is absent.
+- **The budget.** `app.css` is untouched at **40,938 bytes of 40,960**: the note, the status and
+  the buttons are the classes the pages already draw, and the two messages are one string
+  passed in the address and one `say()`.
+- **Tests.** `tests/cloud/pages-app.test.ts` now pins the once-only deletion (`2` submits →
+  `1` request), the create field's `aria-describedby` and the sentence going on `input`, the
+  usage retry's two cursors and the described retry button, the signed-out status on the login
+  page, and the confirmation notice on the account; `pages.test.ts` finds `#usage-h` in
+  `NEEDS`. `node --test dist/tests/cloud/*.test.js` — **864 pass, 0 fail**; the six
+  page-related `dist/tests/build/*.test.js` — **28 pass, 0 fail**.
+
+### What this pass leaves
+
+- **A sign-out that fails still drops the cursor to BODY.** The header button says "Try signing
+  out again" but the button is disabled while the request is out and nothing restores the
+  cursor or announces the failure. It is the only action on the page that is not a form's.
+- **A dead reset link is still discovered only on submit.** No `GET` token check exists in the
+  control plane, so the form still appears for a link that cannot work.
+- **The usage read's first failure is still not a live region.** Its retry now carries the
+  reason, which is the repeat a person hears; the first sentence is read by browsing to it.
+- **The sticky section strip can still cover a target that scrolls under it** at 768, the
+  property the previous pass recorded.
+- **The delete's busy window takes the cursor to BODY** while its button is disabled, as every
+  form on the page does; a failure puts it back on the button.
+- **With scripts off `/verify` still says "Checking the link."** beside its `noscript`
+  sentence, unchanged.
+
