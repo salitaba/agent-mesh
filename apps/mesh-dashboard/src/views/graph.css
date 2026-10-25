@@ -102,28 +102,33 @@
 
 /* On a phone the key and the rows are touch targets. After the rules they override, so the order does not undo them. */
 @media (max-width: 620px) {
-  .gr-key, .gr-plain { min-height: 44px; }
+  .gr-key { min-height: 44px; }
   .gr-link, button.gr-open { min-height: 44px; }
   .gr-link { grid-template-columns: 20px minmax(0, 1fr) 40px; row-gap: var(--s1-5); padding-block: var(--s2); }
   .gr-bar { grid-column: 2 / 4; grid-row: 2; }
   /* The way to a line's messages is an arrow here: a labelled button on every row is a wall of boxes, and its name is still its label. */
   .gr-open { width: 44px; padding: 0; }
   .gr-open-t { position: absolute; width: 1px; height: 1px; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
-  .gr-foot { margin-left: calc(var(--s4) * -1); margin-right: calc(var(--s4) * -1); padding-left: var(--s4); padding-right: var(--s4); }
 }
 
 /* ---- a phone's seat rows ----
-   One row per seat: who, what it is doing, and the messages it exchanged, with the busiest partner named. The whole row opens
-   the seat, so the name is not a 21px text target. The number at the right is a count, not colour alone. */
+   One row per seat: who, what it is doing, and the messages it exchanged, with the busiest partners named. The whole row opens
+   the seat, so the name is not a 21px text target. The count is the row's own column, on the line of the name, so seven seats'
+   counts are read down one edge; the sentence under it names who the messages were with and does not print the number again.
+   The role line is left out when the role is the seat's own name (roleLabel, agents.ts): it earns its line only when it says
+   something the name does not. */
 .gr-seat-list { margin: 0; padding: 0; list-style: none; }
 .gr-seat-list li { border-top: 1px solid var(--line); }
 .gr-seat-list li:first-child { border-top: 0; }
 .gr-seat-row { display: flex; align-items: center; gap: var(--s3); width: 100%; min-height: 60px; padding: var(--s2) 0; background: none; border: 0; color: var(--text); text-align: left; cursor: pointer; }
 .gr-seat-row:is(:hover, .is-hover) { background: var(--wash); }
 .gr-seat-row:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; border-radius: var(--r-sm); }
-.gr-seat-main { display: grid; flex: 1 1 auto; gap: 1px; min-width: 0; }
-.gr-seat-main b { overflow: hidden; font: 650 16px/1.3 var(--sans); letter-spacing: var(--k-track-tight); text-overflow: ellipsis; white-space: nowrap; }
-.gr-seat-meta { font: var(--tx-meta); color: var(--muted); }
-.gr-seat-ties { font-size: 13px; line-height: 1.4; color: var(--text-dim); overflow-wrap: anywhere; }
-.gr-seat-n { flex: none; text-align: right; font: 650 15px/1.2 var(--sans); font-variant-numeric: tabular-nums; }
+.gr-seat-main { display: grid; flex: 1 1 auto; grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "name count" "meta meta" "ties ties"; align-items: baseline; gap: 1px var(--s3); min-width: 0; }
+.gr-seat-main b { grid-area: name; overflow: hidden; font: 650 16px/1.3 var(--sans); letter-spacing: var(--k-track-tight); text-overflow: ellipsis; white-space: nowrap; }
+.gr-seat-meta { grid-area: meta; font: var(--tx-meta); color: var(--muted); }
+.gr-seat-ties { grid-area: ties; font-size: 13px; line-height: 1.4; color: var(--text-dim); overflow-wrap: anywhere; }
+.gr-seat-n { grid-area: count; text-align: right; font: 650 15px/1.2 var(--sans); font-variant-numeric: tabular-nums; }
 .gr-seat-n small { display: block; font: 500 12px/1.3 var(--sans); font-variant-numeric: normal; color: var(--muted); }
+
+/* The key, above the list it filters. A rule under it sets the chips apart from the rows; the card's head says what the list is. */
+.gr-keyrow { margin: 0 0 var(--s3); padding: 0 0 var(--s3); border-bottom: 1px solid var(--line); }
