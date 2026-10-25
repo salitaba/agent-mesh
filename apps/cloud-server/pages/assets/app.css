@@ -684,7 +684,7 @@ body[data-page="home"] main { background: var(--k-glow) top / 100% 520px no-repe
 .ws-key { display: grid; gap: 10px; padding: 16px 0 0; border-top: 1px solid var(--k-line); }
 .ws-key > p, .ws-key form .field, .ws-key form > p { margin: 0; }
 .ws-key form { display: grid; gap: 14px; max-width: 34rem; }
-/* A workspace's plan and the offer to move it: quiet, on its own line. */
+/* A workspace's plan and the offer to move it: one row. */
 .ws-plan { display: grid; gap: 10px; }
 .ws-plan > p { margin: 0; }
 .inline-form .hint { display: block; }
