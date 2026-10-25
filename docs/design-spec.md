@@ -427,6 +427,64 @@ Known debt, so it is not rediscovered:
 The changes to the console that were measured against rendered screens, newest first. A pass is only in this list with the run
 that produced it, the before and the after, and what it deliberately did not change.
 
+### 2026-10-25 — the step drawer is pressed and read like the rest of the console
+
+Run against `examples/demo-stub/mesh.yaml` at **Parked**, **Running** and **Delivered** (the scripted demo, no model calls) on the
+production build from the worktree: a fresh state, the mission started from the console, every reading taken on the same build
+and, for the before/after comparison, on the same delivered state (the build was reverted and rebuilt between the two readings,
+so no event count differs). 320, 390, 768 and 1440 in light, 390 in dark; `prefers-reduced-motion: reduce`; Chromium 1248 with
+axe-core 4.14 injected into the page, over the shared CDP browser.
+
+**What changed.**
+
+- **A phone's step drawer presses at 44 px.** The drawer is where every turn is read, and it was the console's only surface with
+  a pressed thing under the floor (§6b): at 390 the turn walk's two arrows measured **30 × 28** and four of its rows — the
+  Outcome row (40), a tool (31) and two events (36, 37) — were **31–40 px**, while all ten views at the same width measured
+  **0**. Two mechanisms let them through: `.sv-walk > button` sets its 30 × 28 at a specificity above `styles.css`'s `:where()`
+  floor, and the rows are `role="button"` divs, which no `button` selector names. `views/drawers.css` now says the floor in its
+  own phone block (`.sv-walk > button:not(.linklike)` at 44 × 44, and `.sv-op, .sv-tool, .sv-ev[role]` at `min-height: 44px`,
+  content centred), because the sheet owns those shapes and the shared floor cannot outrank them. A static event row (no
+  `role`) is read, not pressed, and keeps its compact height.
+- **The bodies the drawer scrolls take a tab stop when they scroll.** Every `pre` in the drawer is capped (`#drawer pre`,
+  `max-height: 340px`), so the prompt the runtime assembled (5,826 px of text in a 418 px box on this run), the model's output
+  and the turn record are read by scrolling a box *inside* the drawer's own scroll. A wheel reached them; a keyboard did not,
+  because an `overflow: auto` element with no `tabIndex` is not a stop (§1.2, §6 — "a dialog body that scrolls is a tab stop",
+  which the dialog's body and the file reader already honour). `ScrollPre` in `ui/scroll-stop.tsx` gives the stop exactly when
+  the body holds more than it shows (the same `useScrolls` hook), and `#drawer pre:focus-visible` draws the ring every other
+  control draws, inset by 2 px so the drawer's scroll does not clip it.
+
+**Measured.** Same delivered state for every pair; the drawer is the first turn of the run, opened from Steps.
+
+| | Before | After |
+|---|---|---|
+| Pressed things under 44 × 44 in the step drawer, 390 and 320 | 6 of 16 (arrows 30 × 28; rows 40 / 31 / 36 / 37) | 0 of 16 (all 44 × 44) |
+| The turn walk's arrows, 390 / 320 | 30 × 28 | 44 × 44 |
+| A pressed row's height, 390 (`sv-op` / `sv-tool` / `sv-ev`) | 40 / 31 / 36 | 44 / 44 / 44 |
+| Scrolling bodies in the drawer with a tab stop, 390 | 0 of 2 (5,826 px in 418; 414 in 338) | 2 of 2 |
+| Tab stops in the drawer, any width | 18 | 20 |
+| The drawer's own scrollHeight, 390 / 320 | 1,768 / 1,873 px | 1,808 / 1,913 px (+40) |
+| The drawer's scrollHeight, 768 / 1440 | 1,555 / 1,224 px | unchanged |
+| The turn walk's arrows, 768 / 1440 (a mouse) | 30 × 28 | 30 × 28 |
+| axe-core, the drawer at 390 light/dark, 320, 768, 1440 | 0 violations | 0 violations |
+| The ten views, 320 / 390 / 768 / 1440 light and 390 / 1440 dark | Overview 4,023 / 1,750 · Steps 3,371 / 2,484 · Events 736 / 836 · Files 1,135 / 910 · Cost 1,545 / 1,179 · Graph 1,778 / 1,494 px | identical |
+| Pressed things under 44 × 44 in those views, 320 and 390 | 0 (the Steps switch's 18 px checkbox sits in a 44 px label) | 0 |
+| Horizontal page scroll, both themes | none | none |
+| Smallest text | 11 px (a capital label) | 11 px |
+
+`npm run typecheck`, `npx eslint` on the changed files and `npm run build` pass; `node --test "dist/tests/dashboard/*.test.js"
+"dist/tests/build/console-palette.test.js" "dist/tests/build/icons.test.js"` passes **1,159 tests**, including the new
+`drawer-phone.test.ts`. Each of its three rules was mutation-checked (the arrow width put back to 30, the tab stop made
+unconditional, the focus ring removed — each seen to fail, then restored).
+
+**Left.** The drawer's section jump row (`Outcome · Reasoning · Tools · Events · Brief · Raw`) still scrolls sideways on a phone
+with its scrollbar hidden, as the console's tabs do; on this run `Brief` and `Raw` sat past the edge at 390, with the cut
+`Events` pill as the only cue. Making all six visible means two rows (44 px) in a sticky head that is already 231 px of an
+800 px screen — a layout decision this pass did not take. The dialog's title row is still a `<header>` and so a second `banner`
+landmark while a dialog is open (`landmark-no-duplicate-banner`, one node, on every confirm); §6b asks for a `div`, as the
+drawer's row already is, and that is a separate surface. The step drawer's sticky head still takes 204 px after scrolling
+(25 % of a phone screen), because its identity and metrics are information about the turn being read. No real phone, screen
+reader, Safari, Firefox or High Contrast run this pass.
+
 ### 2026-10-25 — the seats say each fact once, and a phone's Graph key goes with the list it filters
 
 Run against `examples/demo-stub/mesh.yaml` at **Parked**, **Running** and **Delivered** (the scripted demo, no model calls), on the

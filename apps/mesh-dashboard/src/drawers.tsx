@@ -11,6 +11,7 @@ import { Icon } from "./icons";
 import { messageTypeLabel, recipientsOf, toggleRecipient } from "./message-form";
 import { actionNote, controlsHint, controlsOf, memoryKey, pauseWarning, unstartedText } from "./agents";
 import { useMission } from "./useMission";
+import { ScrollPre } from "./ui/scroll-stop";
 import { CopyBtn, SandboxStrip, StepSkeleton, StepStatusBlock, envLine, stateMeta, textStats, useSandboxPerms } from "./stepdetail";
 import { ArtifactReader } from "./artifactreader";
 import { baselineOf, vitalsOf, type TurnPhases } from "./vitals";
@@ -460,7 +461,7 @@ export function AgentDrawer({ id }: { id: string }): React.JSX.Element {
               <DeadlineBar turnId={String(json.currentTurnId)} phases={currentStops} />
               <PhaseRail phases={current?.phases} running />
               <Button variant="small" onClick={() => openStep(String(json.currentTurnId))}>open this step →</Button>
-              {buf?.text ? <pre className="token-stream live agent-peek">{buf.text.slice(-900)}<span className="caret">▍</span></pre> : null}
+              {buf?.text ? <ScrollPre className="token-stream live agent-peek">{buf.text.slice(-900)}<span className="caret">▍</span></ScrollPre> : null}
             </>
           ) : (
             <div className="idle-box muted">
@@ -1284,7 +1285,7 @@ export function StepDrawer({ turnId: openedId, steps, routed }: { turnId: string
               </div>
               <details className="sv-fold">
                 <summary>the prompt the runtime assembled for this turn, inbox and all</summary>
-                <pre className="token-stream">{(String(t.instructions).slice(0, 8000))}{String(t.instructions).length > 8000 ? "\n… [truncated at 8k chars — copy for the full text]" : ""}</pre>
+                <ScrollPre className="token-stream">{(String(t.instructions).slice(0, 8000))}{String(t.instructions).length > 8000 ? "\n… [truncated at 8k chars — copy for the full text]" : ""}</ScrollPre>
               </details>
             </section>
           ) : null}
@@ -1297,12 +1298,12 @@ export function StepDrawer({ turnId: openedId, steps, routed }: { turnId: string
             <details className="sv-fold">
               <summary>model output</summary>
               {t.text || liveText
-                ? <pre className="token-stream">{(t.text || liveText)}</pre>
+                ? <ScrollPre className="token-stream">{(t.text || liveText)}</ScrollPre>
                 : <div className="step-empty"><b>Nothing captured.</b><span>No text was stored for this turn.</span></div>}
             </details>
             <details className="sv-fold">
               <summary>turn record (JSON)</summary>
-              <pre>{(JSON.stringify({ turn: { ...t, text: t.text ? `${String(t.text).slice(0, 500)}… [truncated in details]` : t.text } }, null, 2).slice(0, 4000))}</pre>
+              <ScrollPre>{(JSON.stringify({ turn: { ...t, text: t.text ? `${String(t.text).slice(0, 500)}… [truncated in details]` : t.text } }, null, 2).slice(0, 4000))}</ScrollPre>
             </details>
           </section>
         </div>
