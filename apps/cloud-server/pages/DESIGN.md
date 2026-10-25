@@ -843,3 +843,85 @@ positions are `getBoundingClientRect` plus `scrollY`.
   changes that section.
 - **The address strip's Copy still takes its own line at 360** (313px in 286), for the reason
   the 2026-10-25 record gives. **The steps still wrap at 320.**
+
+## 2026-10-25: the credit that could not be bought
+
+Same harness: Chromium 156 through `playwright-core` over CDP against this worktree's trial
+(`trial --port 7812`), 320 / 360 / 390 / 768 / 1440 in light and dark,
+`prefers-reduced-motion: reduce`, a touch pointer below 721, and the pair at 360 light with
+`deviceScaleFactor: 2`. "Before" is the base commit's own pages, served by the same trial and
+measured again today; no figure is copied from an earlier record. The failed state is the paid
+account with `/api/plans` answered **503**; the normal state is the same account with the plans
+up. The trial limits `/api/usage` to 60 reads an hour per session and two runs of the same page
+differed by the 106px of the empty usage card when it tripped, so **both halves hold `/api/usage`
+to one fixed empty answer** and every height below is the same fixture on both sides. Heights are
+`document.documentElement.scrollHeight`; positions are `getBoundingClientRect` plus `scrollY`.
+
+- **The balance card no longer offers a credit form it cannot fill.** The amounts to add, the
+  caption above them and the field's limits are all read from the plans. With that read failed the
+  card drew a caption-less, amount-less trough — its 3px padding either side of nothing, a 286 × 6
+  pale bar under the rule at 360 — then "Another amount" and **Pay**. Pressing it wrote
+  "Credit cannot be bought just now. Reload the page to try again." (98px at 360, 50 at 768),
+  put the sentence in the card's status, marked the **amount field** `aria-invalid="true"` and sent
+  the cursor into it, and left the card with **no control at all** while the only retry on the page
+  was about **400px above**, in the Plan section (y = 1,432 against the Pay's 1,834). The caption,
+  the trough, the form and its hint are now not drawn, and a warn note in their place says **"The
+  amounts could not be loaded just now, so no amount is shown."** with a **107 × 44 Try again**
+  (107 × 40 for a pointer) 15px under it. Measured
+  at 360: the note **157px** (three lines), the card **362 → 434**, the page **2,573 → 2,646**;
+  320 **362 → 434** (page 2,696 → 2,769), 390 **362 → 410** (2,519 → 2,568), 768 **282 → 306**
+  (2,053 → 2,077), 1440 **284 → 309** (2,089 → 2,113). The only visible control in the card goes
+  from `Pay` to `Try again`.
+- **The note's Try again fills the card in place, and leaves the cursor on the amounts.** The read
+  is the page's own, so the answer is drawn where the card is: with `/api/plans` still down, the
+  button is held, answers "Trying again", comes back saying what it said, and the cursor is on
+  **`Try again`** with the page unchanged (2,646 at 360). When it answers, the three amounts
+  ("Add $10.00", "Add $25.00", "Add $100.00"), the caption, the **74px** form and the 67px hint
+  return, the note is emptied and hidden, and `document.activeElement` is **"Add $10.00"** — the
+  first of the things that arrived. The page is then the normal load exactly: **2,808** at 360,
+  2,952 at 320, 2,665 at 390, 2,136 at 768, 2,172 at 1440, the same figures a plain load of the
+  same fixture gives.
+- **The plan section's failed retry no longer puts the cursor on Manage billing.** Its failure
+  branch focused `$("#plan").querySelector("button")`, and for a paid account the first button in
+  that section is the plan row's **Manage billing**, not the note's Try again 42px below it. It now
+  takes the note's own button. Measured at every width and in both schemes, with the plans still
+  down: `document.activeElement` is **BUTTON "Try again"** (was **BUTTON "Manage billing"**).
+- **A service that sells no credit is not a failure.** The note is drawn only when the plans were
+  not read (`state.plansKnown` false). With `topups: null` and the plans read, nothing failed: the
+  balance panel is not drawn at all, and the note keeps no children to say otherwise.
+- **Widths, schemes and the floor.** 320, 360, 390, 768 and 1440 in light and dark, in the failed
+  state and in the normal one: no sideways page scroll (320: 320; 360: 360; 390: 390; 768: 768;
+  1440: 1440), nothing under **12px**, no control under 44 × 44 below 721, **20 axe-core runs with
+  no violation**, no console error. Forced colours draws the note's border, its warning mark, the
+  sentence and the button; scripts off still shows the page's `noscript` sentence and the settings
+  form, and the note stays hidden. The plan-less account is **1,757 / 1,574 / 1,526 / 1,054 /
+  1,036** before and after (320/360/390/768/1440).
+- **Nothing else moved.** The normal paid account is the same height at every width before and
+  after — **2,952 / 2,808 / 2,665 / 2,136 / 2,172** — with every section at the same `y` and the
+  same height; sign-up **1,620 / 1,448 / 1,448 / 1,433 / 956**, login 1,389 / 1,293 / 1,263 / 1,256
+  / 900, forgot 1,169 / 1,169 / 1,089 / 1,064 / 900, reset 1,029 / 981 / 950 / 905 / 900 and the
+  front page 4,622 / 4,311 / 4,114 / 3,073 / 2,701 are unchanged down to the pixel. **`app.css` is
+  untouched at 40,938 bytes of 40,960**: the note and the button are the `.note note-warn` and
+  `.btn` the plan section already draws, and the new element is one hidden line of markup.
+- **Tests.** `node --test dist/tests/cloud/pages-app.test.js dist/tests/cloud/pages.test.js
+  dist/tests/build/pages-workflow.test.js dist/tests/build/ui-kit-tokens.test.js` — **118 pass, 0
+  fail**. `pages.test.ts` reads `#topup-fail` from `NEEDS` and finds it once on the account page;
+  the card's last four children are still `topup-options`, `topup-status`, `topup`, `topup-hint`.
+
+### What this pass leaves
+
+- **The note is three lines at 360.** "The amounts could not be loaded just now, so no amount is
+  shown." repeats the Plan section's own sentence shape, and that shape costs 157px against the 102
+  it replaced — the card is 72px taller while the read is failed. A shorter sentence would be
+  shorter, and would stop being the same sentence the site says elsewhere.
+- **A failed read still leaves nothing to buy.** The card's one way forward is the read; a person
+  who wants credit at that moment waits for it, as they do in the Plan section.
+- **The usage read's `Try again` still ends on BODY** — the defect the last pass recorded is
+  untouched, because it belongs to that section, not this one.
+- **The sticky section strip can cover a target that scrolls under it.** After the balance's retry
+  scrolls the page to the card at 768, "Manage billing" sits at 81–113 under the `sticky` subnav
+  (61–110), and axe reports `target-size` on it and on "Change plan". It is a property of the strip
+  and of where the page happens to be scrolled, not of this card: at scroll 0 there is none, and a
+  scroll of the unmodified page can put a button there too. A fix is the strip's, not this card's.
+- **The address strip's Copy still takes its own line at 360** (313px in 286); the steps still wrap
+  at 320; the plan-less page still starts its numbered sections at 02.
