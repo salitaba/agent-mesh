@@ -868,7 +868,7 @@ test("a new account sees what to do first: choose a plan, and nothing to create,
   assert.equal(v.text("stage-steps"), "1 Plan (you are here) 2 Workspace (still to do) 3 Open (still to do)");
   assert.equal(v.shows(v.$("workspaces-panel")), false, "there is no workspace to list");
   assert.equal(v.shows(v.$("create")), false);
-  assert.equal(v.text("plan-h"), "Choose a plan");
+  assert.equal(v.text("plan-h"), "Plans");
   assert.equal(v.$("plan").querySelectorAll("article").length, 2);
   assert.deepEqual(v.labels("plan"), ["Choose Team", "Choose Business"]);
   assert.equal(v.shows(v.$("balance-panel")), false, "a balance means nothing before a plan, whatever the gateway holds");
@@ -1029,7 +1029,7 @@ test("a payment that has failed is said at the top with the day the workspaces s
   assert.equal(e.text("stage-title"), "Choose a plan to start again");
   assert.equal(e.text("stage-text"), "Your subscription has ended and your workspaces are stopped. They are deleted 30 days after it ended. Choose a plan again before then and they start again.");
   assert.equal(e.$("stage").className, "stage stage-warn");
-  assert.equal(e.text("plan-h"), "Choose a plan");
+  assert.equal(e.text("plan-h"), "Plans");
   assert.equal(e.text(e.$("plan").querySelector(".row")!), "Team Ended");
   assert.deepEqual(e.labels("plan"), ["Choose Team", "Choose Business"], "a plan that ended is a plan that can be chosen again");
 
@@ -1655,13 +1655,13 @@ test("usage is a table by day and one by workspace, with a total, the charge in 
   assert.equal(tables.length, 2);
   const rows = (t: (typeof tables)[number]) => t.querySelectorAll("tr").map((r) => v.text(r));
   assert.deepEqual(rows(tables[0]!), [
-    "Day Calls Input tokens Output tokens Charged",
-    "Oct 5, 2026 3 300 60 $0.0084",
-    "Oct 4, 2026 1 100 20 $0.0004",
-    "Oct 3, 2026 2 200 40 $0.0008",
-    "Total 6 600 120 $0.0096",
+    "Day Charged Calls Input tokens Output tokens",
+    "Oct 5, 2026 $0.0084 3 300 60",
+    "Oct 4, 2026 $0.0004 1 100 20",
+    "Oct 3, 2026 $0.0008 2 200 40",
+    "Total $0.0096 6 600 120",
   ]);
-  assert.deepEqual(rows(tables[1]!), ["Workspace Calls Input tokens Output tokens Charged", "Research 4 400 80 $0.009", "A deleted workspace 2 200 40 $0.0006", "No workspace 0 0 0 $0.00"]);
+  assert.deepEqual(rows(tables[1]!), ["Workspace Charged Calls Input tokens Output tokens", "Research $0.009 4 400 80", "A deleted workspace $0.0006 2 200 40", "No workspace $0.00 0 0 0"]);
   const wrap = v.$("usage").querySelector(".table-wrap")!;
   assert.equal(wrap.getAttribute("tabindex"), "0", "a table that scrolls sideways can be reached by keyboard");
   assert.equal(wrap.getAttribute("role"), "region");
@@ -1680,8 +1680,8 @@ test("usage shows only the last fourteen days, newest first, and a Failed column
   assert.equal(rows.length, 14);
   assert.match(v.text(rows[0]!), /^Sep 20, 2026 /);
   assert.match(v.text(rows[13]!), /^Sep 7, 2026 /);
-  assert.equal(v.text(first.querySelector("thead tr")!), "Day Calls Failed Input tokens Output tokens Charged");
-  assert.equal(v.text(first.querySelector("tfoot tr")!), "Total 20 1 200 100 $0.002");
+  assert.equal(v.text(first.querySelector("thead tr")!), "Day Charged Calls Failed Input tokens Output tokens");
+  assert.equal(v.text(first.querySelector("tfoot tr")!), "Total $0.002 20 1 200 100");
 });
 
 test("a usage read that fails while the page draws is said to a reader, not only drawn", async () => {
@@ -1771,7 +1771,8 @@ test("names and addresses are shown as text: a workspace named like markup is a 
   });
   const v = await visit("account", { routes: w.routes });
   assert.equal(v.text("who"), "Signed in as <b>ada</b>@example.com");
-  assert.equal(v.$("who").children.length, 1, "the address is one text node");
+  const at = v.$("who").children[2]!;
+  assert.deepEqual([v.$("who").children.length, at.className, at.children.length, at.children[0]!.isText], [3, "who-a", 1, true], "a caption, a space, and the address as one text node");
   assert.ok(v.text("workspaces").startsWith(`${evil} Running `), v.text("workspaces"));
   assert.ok(v.text("workspaces").includes("<i>why</i>. Delete it and make a new one."), "a reason is text too");
   assert.ok(v.text("usage").includes(evil), "and so is a name in the usage tables");

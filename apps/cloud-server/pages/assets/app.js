@@ -1592,7 +1592,7 @@
       }
       if (card.addressShape !== w.host) {
         card.addressShape = w.host;
-        card.address.replaceChildren("Address ", el("code", null, w.host), ...(canCopy() ? [copyButton(w, card)] : []));
+        card.address.replaceChildren(el("span", { class: "ws-address-l" }, "Address"), " ", el("code", null, w.host), ...(canCopy() ? [" ", copyButton(w, card)] : []));
       }
       return card;
     }
@@ -2040,8 +2040,8 @@
       const live = holdsPlan(sub);
       const plan = planOf();
       $("plan-panel").hidden = false;
-      // A person with no plan is at the step of choosing one, and the panel says so; a customer's is their plan.
-      $("plan-h").textContent = live ? "Plan" : "Choose a plan";
+      // A person with no plan is at the step of choosing one, and the panel is the list to choose from: the card at the top already says the words of the step.
+      $("plan-h").textContent = live ? "Plan" : "Plans";
       const checkout = (p) => (event) => leaveFor(event.currentTarget, () => call("POST", "/api/checkout", { purpose: "subscription", plan: p.id }), (r) => failedHere(r, p.id), rememberBefore);
       const parts = [];
       if (sub) {
@@ -2180,8 +2180,8 @@
     // -- usage --
 
     function usageTable(caption, heading, rows, total, showFailed, bars) {
-      const head = [heading, "Calls", ...(showFailed ? ["Failed"] : []), "Input tokens", "Output tokens", "Charged"];
-      const cells = (row, label) => [label, count(row.calls), ...(showFailed ? [count(row.failed)] : []), count(row.inputTokens), count(row.outputTokens), usageMoney(row.chargedMicros, state.usageCurrency)];
+      const head = [heading, "Charged", "Calls", ...(showFailed ? ["Failed"] : []), "Input tokens", "Output tokens"];
+      const cells = (row, label) => [label, usageMoney(row.chargedMicros, state.usageCurrency), count(row.calls), ...(showFailed ? [count(row.failed)] : []), count(row.inputTokens), count(row.outputTokens)];
       // A bar beside what a day was charged is that day against the busiest of the days shown: for the eye, the figure is the one that is read.
       const busiest = bars ? Math.max(0, ...rows.map((r) => r.chargedMicros)) : 0;
       const line = (values, tag, row) =>
@@ -2190,7 +2190,7 @@
           null,
           values.map((v, i) => {
             if (i === 0) return el("th", { scope: "row" }, v);
-            const bar = row && busiest > 0 && i === values.length - 1 ? el("meter", { min: 0, max: busiest, value: row.chargedMicros, "aria-hidden": "true" }) : null;
+            const bar = row && busiest > 0 && i === 1 ? el("meter", { min: 0, max: busiest, value: row.chargedMicros, "aria-hidden": "true" }) : null;
             return el(tag, { class: "num" }, bar ? el("span", { class: "bar-cell" }, bar, v) : v);
           }),
         );
@@ -2261,7 +2261,7 @@
     // -- everything that is drawn from the account --
 
     function renderAll() {
-      $("who").textContent = `Signed in as ${account().email}`;
+      $("who").replaceChildren(el("span", { class: "who-l" }, "Signed in as"), " ", el("span", { class: "who-a" }, account().email));
       const sections = sectionsOf(viewOf());
       renderNotice();
       renderStage();

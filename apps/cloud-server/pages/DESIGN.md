@@ -1202,3 +1202,106 @@ with scripts off. Heights are `document.documentElement.scrollHeight`; positions
   both are reading rather than doing, and both are left for a pass that changes the strip or the legal measure.
   The usage read's first failure was measured again and is announced: `#usage-say` has the sentence on the first
   failed read, so that item is closed and not repeated here.
+
+## 2026-10-26: the account's captions, and the charge beside the day
+
+Same harness: Chromium 156 through `playwright-core` over CDP against this worktree's trial
+(`trial --port 7531`, whose plans are the trial's own fixtures), 320 / 360 / 390 / 768 / 1440 in light and dark,
+`prefers-reduced-motion: reduce`, a touch pointer below 721, forced colours at 360, the root raised to 24px and 32px
+for the large-text checks, and axe-core 4.14 over eight of the views. "Before" is the base commit's own page files,
+served by the same trial through request interception and measured in the same browser session as the after — not a
+figure copied from an earlier record. The fixtures are a Team account with one running workspace and an empty usage
+table, the same account with a 41-character workspace host, a Team account with no workspace yet, and a fresh account
+with no plan. Heights are `document.documentElement.scrollHeight`; positions are `getBoundingClientRect` plus
+`scrollY`; names are Chromium's own `document.activeElement`.
+
+- **The identity is a caption line, not a capsule.** `#who` was a bordered, rounded, filled pill with 4px 8px of
+  padding and 14px text: at 360 a 30-character address made it a 328 × **55px** box and broke the address after
+  "acct-" ("Signed in as acct-" / "1793…@example.com") — a card drawn around a fact the page does not act on. It is a
+  caption and the address in the record's monospace now, with no border, fill or radius: **55 → 22px** at 360,
+  **55 → 42** at 320 (two lines), **32 → 22** at 390, and the same 22 at 768 and 1440, where it sits at the right of
+  the h1 and the head keeps the h1's height. The stage card moves from y = **198** to **165** and the account is
+  **2,546 → 2,507** at 360 with the usage answer held to its empty one, as every height below is. The pin in
+  `pages-app.test.ts` that wanted `#who` to be one text node now asserts that the
+  text node is inside `.who-a`: an address that looks like markup is still one text node, and the caption is the page's
+  own word.
+- **The address strip is a caption, and Copy never falls onto a line of its own.** At 360 the 25-character host and the
+  label could not share a line, so "Copy" sat alone under the host at **x = 25**, and the strip was **94px** of a
+  270px card; at 320 the label, the host and Copy were three rows (**119px**). At 720 and narrower "Address" is a 12px
+  caption on its own row and the host and Copy share the row under it: the strip is **94 → 88** at 360
+  (**119 → 90** at 320, 94 → 88 at 390) and Copy is at **x = 263**, level with the host's chip, instead of x = 25 under
+  it. The case the fixture did not have is the one that made this a layout rather than a nudge: with a **41-character**
+  host the strip was **140 → 90px**, Copy stays on the host's row while the host wraps to two lines inside its own
+  column, the card **372 → 322** and the page **2,675 → 2,612**. At 768 and 1440 nothing moves: the label stays
+  inline, the strip is **53px**, the card 213 and the page 2,021 / 2,058, as before.
+- **A day's charge is the second column.** At 360 the by-day table is 722px in a 326px box and "Charged" began at
+  **x = 543**, 217px past the right edge: the one figure the section promises — what the calls were charged to the
+  balance — could not be read without a sideways swipe, while the days stayed pinned at the left. The columns are now
+  **Day, Charged, Calls, Failed, Input tokens, Output tokens**: the charge cell begins at **x = 115** and ends at 295,
+  wholly inside the box, and the tokens still scroll (722). The bar that compares a day with the busiest one is in the
+  charged cell, which puts it beside the day it belongs to. Measured with a four-day answer at 360; the by-workspace
+  table takes the same order, and the day, `Total` and every row's name stay sticky at the left.
+- **A plan-less page says "Choose a plan" once.** The stage card and the Plan panel both carried the heading
+  "Choose a plan" (the panel's 316px below the card's), so the page's heading list said the step twice and a reader
+  could not tell the step from the list it points at. The panel now reads **"02 Plans"** — the list, the word the front
+  page uses for the same thing — while the card keeps the step's words and its button, which still lands on that
+  heading: measured 360, `#plan-h` focused at `scrollY` 440 with the heading at 124. The page is **1,549 → 1,535**
+  (the identity line's 14px).
+- **Widths, schemes and the floor.** The paid account at 320 / 360 / 390 / 768 / 1440 in light: no sideways page
+  scroll (320: 320; 360: 360; 390: 390; 768: 768; 1440: 1440), nothing computes below **12px**, no control under
+  44 × 44 below 721, no console error; dark and forced colours at 360 are the same 2,507 with no overflow. Ten pages
+  (account, front, 404, terms, privacy, sign-up, sign-in, forgot, reset, verify) at the same five widths: no sideways
+  scroll, the floor at 12px, and the only small controls are the two the record already names (the 20px consent tick
+  whose sentence is 108px, and the Terms page's prose link). The **eight axe-core runs** (320/360/768/1440, before and
+  after) find no violation but the one the last two passes recorded: at 768, scrolled to 966, the sticky strip covers
+  the top of **Manage billing** and **Change plan**, in both halves.
+- **The budget.** `app.css` is **40,929 bytes of 40,960** (was 40,851, a net **+78**): the caption rules, the phone
+  rules that put the label on its own row and let a long host shrink, and the mono identity cost about 200 bytes; the
+  pill's chrome, the Copy button's negative margin, the address's place in the margin reset and the shortening of three
+  comments paid for the rest. Thirty-one bytes remain.
+
+| measured at 360, light | before | after |
+| --- | --- | --- |
+| The identity line | 55px, a bordered pill, the address broken after "acct-" | **22px**, a caption and the address in monospace |
+| … at 320 / 390 / 768 / 1440 | 55 / 32 / 32 / 32 | **42 / 22 / 22 / 22** |
+| The stage card begins at | y = 198 | **y = 165** |
+| The account (empty usage held) | 2,546px | **2,507px** |
+| … at 320 / 390 / 768 / 1440 | 2,811 / 2,524 / 2,021 / 2,058 | **2,769 / 2,507 / 2,021 / 2,058** |
+| The address strip | 94px, Copy alone at x = 25 | **88px**, Copy at x = 263 on the host's row |
+| … 320 / 390 | 119 / 94 | **90 / 88** |
+| … with a 41-character host | 140px, Copy on a third row, card 372 | **90px**, Copy beside a two-line host, card **322** |
+| The usage table at 360 | 722px in a 326px box, "Charged" at x = 543 | **"Charged" at x = 115–295**, the tokens scroll |
+| A plan-less page's headings | "Choose a plan" twice | **"Choose a plan", "Plans"** |
+| The plan-less page | 1,549px | **1,535px** |
+| At 200% text | 5,084px, the identity 144px | **5,102px**, the identity 166px, no overflow |
+
+### What this pass leaves
+
+- **The identity costs four lines at 200% text.** Raising the root to 32px at 360 makes the address 166px against the
+  pill's 144, because the monospace face is wider per character; the page is 18px taller and still does not scroll
+  sideways. The alternative — the address in the body face — would take the one place on the page where the record's
+  own type rule (addresses in monospace) applies.
+- **The strip still starts at 02 on a plan-less page.** "01 Workspaces" is not shown, so the first numbered heading is
+  "02 Plans". The numbers are the section's place in the record, not the count of what is visible; the heading now
+  names the list, which is the part a reader can act on.
+- **A four-plus-one wrap on the phone.** At 360 the section strip now fits "Workspaces Plan Balance Usage" on one row
+  and leaves "Settings" alone on the second (109px). The items' widths are the font's, not this pass's; the strip still
+  wraps rather than hiding the last one past the edge, which was the 2026-10-20 fix.
+- **The sticky section strip still covers a control at a scroll a person chose by hand.** At 768, scroll 966,
+  **Manage billing** sits at 80.5–112.5 under the strip at 61–110 and axe reports `target-size` on it and on
+  **Change plan** — before and after this pass, the property the 2026-10-25 and 2026-10-26 records describe. Removing
+  it means giving up the strip's stickiness on a wide screen, which is a larger trade than this pass makes.
+- **The address strip is still a strip.** On a phone it is 88px under a 20px card padding, and its caption is 12px:
+  the host is the one thing a person copies, and it is now on one row with the control, but the address is still the
+  card's quietest line rather than something the card is about.
+- **Nothing was added for the checkout stand-in, the usage read's rate limit, or the prose links.** They are the
+  previous passes' entries, unchanged and still true.
+
+### Next pass
+
+- Give the sticky strip a way not to cover a target at a hand-chosen scroll — a scroll-aware inset, or giving up
+  `position: sticky` above 1000px — and re-run the 768 axe case that has now failed three passes.
+- Look at the account's first screen with a 200% text profile again: the identity is the one thing this pass made
+  taller there, and the glance, stage and strip have not been re-measured at that size since 2026-10-23.
+- A real usage table with a model key behind it, to see the charged column and its bars with more than a fixture's
+  four rows.

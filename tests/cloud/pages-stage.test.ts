@@ -429,7 +429,7 @@ test("the account is as long as the person's stage needs: only what they can use
 
   const visitor = await visit("account", { routes: world().routes });
   assert.deepEqual(shown(visitor), ["plan-panel"]);
-  assert.equal(visitor.text("plan-h"), "Choose a plan");
+  assert.equal(visitor.text("plan-h"), "Plans");
 
   const first = await visit("account", { routes: world(paid).routes });
   assert.deepEqual(shown(first), ["plan-panel", "balance-panel"], "a plan that sells usage has a balance and no usage to show before there is a workspace");

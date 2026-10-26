@@ -191,7 +191,7 @@ test("a bar for each day is the day against the busiest of the days shown, for t
   assert.deepEqual(bars, [["8400", "8400", "true"], ["0", "8400", "true"], ["800", "8400", "true"]], "newest first, each against the busiest, and the figure beside it is the one that is read");
   assert.equal(days!.querySelectorAll("tfoot meter").length, 0, "the total is not a day");
   assert.equal(spaces!.querySelectorAll("meter").length, 0, "and a workspace's share is not drawn as one");
-  assert.equal(v.text(days!.querySelectorAll("tbody tr")[0]!), "Oct 5, 2026 3 300 60 $0.0084");
+  assert.equal(v.text(days!.querySelectorAll("tbody tr")[0]!), "Oct 5, 2026 $0.0084 3 300 60");
 
   const free = world((x) => { paid(x); x.workspaces = [workspace()]; x.usage = { currency: "USD", byDay: [row("2026-10-03", 2, 0)], byWorkspace: [], total: { calls: 2, failed: 0, inputTokens: 200, outputTokens: 40, cachedTokens: 0, chargedMicros: 0 } }; });
   const f = await visit("account", { routes: free.routes });
