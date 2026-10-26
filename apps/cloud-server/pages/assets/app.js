@@ -23,16 +23,16 @@
   const CONTACT = "mailto:ali79taba@gmail.com";
 
   const NEEDS = {
-    home: ["plans", "topups"],
-    signup: ["card", "form", "status", "title", "lede", "email", "password", "agree", "agree-error"],
-    login: ["form", "status", "email", "password", "resend-form", "resend", "resend-wait", "resend-status"],
-    verify: ["status", "title", "again", "resend-form", "resend", "resend-wait", "resend-status", "email"],
-    forgot: ["form", "status", "email"],
-    reset: ["card", "form", "status", "title", "lede", "ask", "password"],
-    account: ["who", "notice", "retry-row", "skeleton", "glance", "glance-list", "subnav", "settings-panel", "stage", "stage-steps", "stage-title", "stage-text", "stage-status", "stage-actions", "stage-live", "workspaces-panel", "workspaces", "create-slot", "create-box", "create", "workspace-name", "create-plan-field", "workspace-plan", "create-note", "plan-panel", "plan-h", "plan-status", "plan", "balance-panel", "usage-panel", "usage-h", "figures", "topup-fail", "topup", "topup-amount", "topup-unit", "topup-hint", "topup-status", "topup-add", "topup-options", "usage", "password-form", "password-status", "current", "next"],
-    terms: [],
-    privacy: [],
-    notfound: [],
+    home: ["bar-say", "plans", "topups"],
+    signup: ["bar-say", "card", "form", "status", "title", "lede", "email", "password", "agree", "agree-error"],
+    login: ["bar-say", "form", "status", "email", "password", "resend-form", "resend", "resend-wait", "resend-status"],
+    verify: ["bar-say", "status", "title", "again", "resend-form", "resend", "resend-wait", "resend-status", "email"],
+    forgot: ["bar-say", "form", "status", "email"],
+    reset: ["bar-say", "card", "form", "status", "title", "lede", "ask", "password"],
+    account: ["bar-say", "who", "notice", "retry-row", "skeleton", "glance", "glance-list", "subnav", "settings-panel", "stage", "stage-steps", "stage-title", "stage-text", "stage-status", "stage-actions", "stage-live", "workspaces-panel", "workspaces", "create-slot", "create-box", "create", "workspace-name", "create-plan-field", "workspace-plan", "create-note", "plan-panel", "plan-h", "plan-status", "plan", "balance-panel", "usage-panel", "usage-h", "usage-say", "figures", "topup-fail", "topup", "topup-amount", "topup-unit", "topup-hint", "topup-status", "topup-add", "topup-options", "usage", "password-form", "password-status", "current", "next"],
+    terms: ["bar-say"],
+    privacy: ["bar-say"],
+    notfound: ["bar-say"],
   };
 
   // ---- numbers, money, dates and addresses ----
@@ -430,10 +430,12 @@
     node.removeAttribute("aria-busy");
   }
 
-  /** The quiet line under a form, which turns into a note when there is something to say. */
+  /** The quiet line under a form, which turns into a note when there is something to say. A line that says the same is not written again: it is read out where it is a status, and a page that looks at itself must not say it twice. */
   function hint(node, kind, text) {
+    const said = text || "";
+    if (node.className === (kind ? `note note-${kind}` : "muted small") && node.textContent === said) return;
     node.className = kind ? `note note-${kind}` : "muted small";
-    node.textContent = text || "";
+    node.textContent = said;
   }
 
   /** A field that cannot be sent as it is: say why, mark it, and put the cursor in it. Returns false, so a check can `return invalid(...)`. */
@@ -678,14 +680,21 @@
     }
     for (const out of doc.querySelectorAll('[data-action="signout"]')) {
       out.addEventListener("click", async () => {
-        out.disabled = true;
+        // Held, not disabled: a disabled button loses the cursor, and this one is in the bar above whatever the person was reading, so
+        // losing it would send the next Tab to the top of the page for a sign-out that did not happen.
+        if (isHeld(out)) return;
+        hold(out, true);
         const r = await call("POST", "/api/logout");
         if (r.ok || signedOut(r)) {
           location.assign("/");
           return;
         }
-        out.disabled = false;
+        hold(out, false);
         out.textContent = "Try signing out again";
+        // The bar has no room for a sentence on a phone, so the failure is said in the header's own line: a button whose name changed
+        // under a cursor that never left it is not read out, and "still signed in" is the part the person has to know.
+        const said = $("bar-say");
+        if (said) said.textContent = `You are still signed in. ${r.error.message}`;
       });
     }
     if (/^(mailto:|https:)/.test(CONTACT)) {
@@ -1275,6 +1284,37 @@
       return true;
     }
 
+    /**
+     * A look at the account that came back with nothing, after the change it followed had gone through: the change was made — the
+     * service said so — and the page is still showing what it showed before it. It is said where the change was asked, with the way to
+     * ask for the look again, because the page can make that read itself and a reload would lose the person's place. `sayAt` writes the
+     * sentence in the words of the place it goes in and returns that element, `clear` takes it away, and `focus` names what the cursor
+     * goes to when the read answers.
+     */
+    function readBackFailed(sayAt, clear, focus) {
+      const at = sayAt("That worked, but your account could not be read again just now, so this page is out of date.");
+      const again = button("Try again", {
+        small: true,
+        onclick: async () => {
+          hold(again, true);
+          again.textContent = "Trying again";
+          const ok = await refresh();
+          if (!ok) {
+            // A read that failed again leaves the sentence, the button and the cursor on it: the way to ask is still the way.
+            hold(again, false);
+            again.textContent = "Try again";
+            return;
+          }
+          // The answer takes the sentence and this button with it, and the cursor goes to what the read brought.
+          clear();
+          renderAll();
+          const to = focus();
+          if (to) to.focus();
+        },
+      });
+      at.append(" ", again);
+    }
+
     /** One thing a person asked of a workspace: the row says it is under way, the request goes, and the page shows what is now true. `from` is where it was asked: a
      * thing asked from the card at the top answers in that card, because the workspace it is about is a card-length below it. */
     async function act(w, doing, request, after, from) {
@@ -1299,6 +1339,21 @@
       if (!(await refresh())) {
         renderWorkspaces();
         renderStage();
+        const at = from === "stage" ? $("stage-status") : cardFor(w.workspaceId).note;
+        readBackFailed(
+          (text) => {
+            if (from !== "stage") {
+              setNote(w.workspaceId, "bad", text);
+              renderWorkspaces();
+            } else say(at, "bad", text);
+            return at;
+          },
+          () => {
+            if (from === "stage") say(at, "", "");
+            else state.notes.delete(w.workspaceId);
+          },
+          () => (from === "stage" ? $("stage-actions") : cardFor(w.workspaceId).boxes.actions).querySelector("button, a"),
+        );
       }
     }
 
@@ -2133,10 +2188,15 @@
 
     async function loadUsage(asked) {
       const box = $("usage");
+      // The page's own look at the usage is not a button anyone pressed: a failure of it is said in the panel's own line, because the
+      // sentence below is for a person looking at the panel and a reader who is not looking at it would hear nothing otherwise.
+      const said = $("usage-say");
+      said.textContent = "";
       box.replaceChildren(el("div", { class: "sk sk-card", "aria-hidden": "true" }), el("p", { class: "sr" }, "Loading."));
       const r = await call("GET", "/api/usage");
       if (signInAgain(r)) return;
       if (!r.ok) {
+        if (!asked) said.textContent = `Usage. ${r.error.message}`;
         // The button that asked goes with the answer it asked for: the cursor goes to the new one, and that button carries the reason
         // beside it, so a reader who comes back to it hears what failed as well as what to press.
         const note = el("p", { class: "note note-warn", id: "usage-fail" }, r.error.message);
@@ -2219,7 +2279,18 @@
       }
       input.value = "";
       hint(note, "", "");
-      if (!(await refresh())) renderWorkspaces();
+      if (!(await refresh())) {
+        renderWorkspaces();
+        // The name was accepted: the page could not read the account again, so the workspace that was made is not drawn yet.
+        readBackFailed(
+          (text) => {
+            say(note, "bad", text);
+            return note;
+          },
+          () => hint(note, "", ""),
+          () => ($("create").hidden ? $("stage-title") : $("workspace-name")),
+        );
+      }
     });
 
     onSubmit($("topup"), $("topup-status"), async () => {

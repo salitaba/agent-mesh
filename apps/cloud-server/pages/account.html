@@ -22,6 +22,7 @@
       <button type="button" data-action="signout" data-when="in" hidden>Sign out</button>
     </nav>
   </div>
+  <p class="sr" id="bar-say" role="status" aria-live="polite"></p>
 </header>
 
 <main id="main" tabindex="-1">
@@ -82,7 +83,7 @@
           </div>
           <button class="btn btn-primary" type="submit" data-busy="Creating">Create workspace</button>
         </form>
-        <p id="create-note" class="muted small"></p>
+        <p id="create-note" class="muted small" role="status" aria-live="polite"></p>
       </div>
     </div>
   </section>
@@ -115,6 +116,7 @@
   <section class="panel" id="usage-panel" aria-labelledby="usage-h" hidden>
     <h2 id="usage-h" data-entry="04">Usage</h2>
     <p class="muted small">Every call your agents made, by day and by workspace, and what each one was charged to your balance. The text of the calls is not kept.</p>
+    <p class="sr" id="usage-say" role="status" aria-live="polite"></p>
     <div id="usage"></div>
   </section>
 
