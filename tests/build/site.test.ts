@@ -171,7 +171,7 @@ test("the scripts make no network call, store nothing, and no page runs a script
   const site = code.get("assets/site.js")!;
   const writes = [...site.matchAll(/navigator\.clipboard\.writeText\(/g)].length;
   assert.equal(writes, 1);
-  assert.ok(/addEventListener\("click", function \(\) \{\s*navigator\.clipboard\.writeText/.test(site), "and only from a click");
+  assert.ok(/addEventListener\("click", function \(\) \{\s*(?:if \(note\) note\.hidden = true;\s*)?navigator\.clipboard\.writeText/.test(site), "and only from a click");
 });
 
 test("every page tells the browser to load nothing from anywhere else, and carries no inline style or handler", () => {
@@ -737,8 +737,8 @@ test("an address line stays one line on a phone, a card's title sits below its s
   const css = fs.readFileSync(path.join(SITE, "assets", "site.css"), "utf8");
   assert.match(css, /\n\.address-row \.address \{ display: flex; flex-wrap: nowrap;/, "the address and its button are one line");
   assert.match(css, /\n\.address-row \.address a \{[^}]*min-width: 0;[^}]*min-height: 44px;[^}]*overflow-wrap: anywhere; \}/, "the address shrinks and breaks inside itself before the button moves, and stays a thumb's height");
-  assert.match(css, /\n\.address-row \.address \.copy \{ flex: none; \}/, "the button keeps its size");
-  assert.match(css, /@media \(max-width: 420px\) \{ \.address-row \.address \{ gap: 4px 8px; \} \}/, "at a phone's width the line's gap gives the email its last 4px");
+  assert.match(css, /\n\.address-row \.address \.copy \{ flex: none; width: 76px;/, "the button keeps one width, so the address does not re-wrap when its word changes");
+  assert.match(css, /@media \(max-width: 420px\) \{ \.address-row \{ padding-inline: 16px; \} \.address-row \.address \{ gap: 4px 4px; \} \}/, "at a phone's width the row gives the button and the email their room");
   // The rank: the contact page's card title is a card's title, and a page section's title is the page's.
   assert.match(css, /\n\.contact h3 \{ margin-bottom: 8px; font-size: 1\.1875rem; line-height: 1\.3; \}/);
   assert.match(css, /\n\.section > \.wrap > h2\.legend-title \{ font-size: clamp\(1\.75rem, 1\.1rem \+ 2\.5vw, 3rem\);/, "the section rank, 28 at 360 and 48 at 1440");

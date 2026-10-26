@@ -563,12 +563,20 @@ main:has(.hero) .section-head .eyebrow::before { counter-increment: sec; content
 .address-row b { display: block; font-size: 1.0625rem; }
 /* The address and its Copy are one line at every phone width. At 360 the two wanted 280px in the row's 278, so the button
    wrapped under the address and each row was 217px where a row is 168. The address gives way (it may break inside itself)
-   before the button moves. */
+   before the button moves. The button's word changes (Copy, Copied, Not copied), so it keeps one width — the width of
+   "Copied" — and the row keeps the room for it: at 360 "Copied" used to take the address from 205px to 194 and onto a
+   second line, and the row grew by 10.4px for the 2.2 seconds the word was shown. The longer refusal wraps inside the
+   button instead of taking the address's width. */
 .address-row .address { display: flex; flex-wrap: nowrap; align-items: center; gap: 4px 12px; margin: 0; font-size: 1.0625rem; font-weight: 600; overflow-wrap: anywhere; }
-.address-row .address .copy { flex: none; }
-/* The line's gap gives the email its last 4px: at 360 the address is 206 and its button 62, and the row has 278, so a
-   12px gap broke "ali79taba@gmail.com" over two lines. At 8 the line is one, and the row keeps its 168. */
-@media (max-width: 420px) { .address-row .address { gap: 4px 8px; } }
+.address-row .address .copy { flex: none; width: 76px; justify-content: center; text-align: center; line-height: 1.15; white-space: normal; }
+/* The line's gap and the row's padding give the reserved button its room: at 360 the address is 205 and the button 76, so
+   the row needs 285 of its 294. At 350 and below the address wraps, as it already did. */
+@media (max-width: 420px) { .address-row { padding-inline: 16px; } .address-row .address { gap: 4px 4px; } }
+/* A refusal says what to do next, in words a sighted reader can see as well as in the live region. It appears only when the
+   browser will not copy; under the address it costs the row a line, and in a code block a line at its end. */
+.copy-note { margin: 6px 0 0; color: var(--k-bad); font-size: .875rem; line-height: 1.45; }
+@media (min-width: 760px) { .address-row > .copy-note { grid-column: 2; } }
+.code > .copy-note { padding: 0 18px 14px; }
 .address-row .address a { display: inline-flex; align-items: center; min-width: 0; min-height: 44px; overflow-wrap: anywhere; }
 .address-row:target { background: var(--panel); box-shadow: inset 4px 0 0 var(--accent); }
 
@@ -815,7 +823,7 @@ main:has(.hero) .section-head .eyebrow::before { counter-increment: sec; content
   .toc a[aria-current="true"]::before { forced-color-adjust: none; background: Highlight; }
 }
 @media print {
-  .site-header, .skip, .tabs, .billing, .copy, .doc-filter, .foot-grid, .hero::before, .hero::after, .cta::after, .to-top-dock { display: none; }
+  .site-header, .skip, .tabs, .billing, .copy, .copy-note, .doc-filter, .foot-grid, .hero::before, .hero::after, .cta::after, .to-top-dock { display: none; }
   .calc-total { display: none; }
   .stack-table { display: none !important; }
   #compare .table-wrap, #calculator .table-wrap { display: block !important; }
