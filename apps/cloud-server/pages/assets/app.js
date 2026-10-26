@@ -411,7 +411,10 @@
    * the cursor away from a person at a keyboard, in a browser that does not leave it on a control that cannot be used.
    */
   const isHeld = (node) => node.getAttribute("aria-disabled") === "true";
+  /** The buttons a form is holding only while its request is out. A handler that takes a longer hold (a wait before asking again) drops its mark, so that the form does not release it when the answer comes. */
+  const formHeld = new WeakSet();
   function hold(node, on) {
+    formHeld.delete(node);
     if (on) node.setAttribute("aria-disabled", "true");
     else node.removeAttribute("aria-disabled");
   }
@@ -512,7 +515,12 @@
       busy = true;
       const focused = doc.activeElement && node.contains(doc.activeElement) ? doc.activeElement : null;
       const buttons = [...node.querySelectorAll("button")];
-      for (const b of buttons) b.disabled = true;
+      // Held, not disabled: a disabled control takes the cursor off it in most browsers, and this page puts it back only after the answer.
+      // The busy guard above is what stops a second send, so the button can keep the cursor while it says what it is doing.
+      for (const b of buttons) {
+        hold(b, true);
+        formHeld.add(b);
+      }
       const label = main ? main.textContent : "";
       if (main) {
         main.textContent = main.dataset.busy;
@@ -529,7 +537,7 @@
         say(status, "bad", "Something went wrong in this page. Reload it and try again.");
       } finally {
         busy = false;
-        for (const b of buttons) b.disabled = false;
+        for (const b of buttons) if (formHeld.has(b)) hold(b, false);
         if (main) {
           main.textContent = label;
           main.removeAttribute("aria-busy");
@@ -963,6 +971,9 @@
       failed("This link is incomplete. Open the link in the email again.");
       return;
     }
+    // The markup says nothing while it waits, so that a page without a script does not say "Checking the link" beside the sentence that
+    // explains it needs one. The word is written here, where something is checking.
+    status.textContent = "Checking the link.";
     const r = await call("POST", "/api/verify", { token });
     // The link is spent now, or was no good: either way it has no place in the address bar or the history.
     history.replaceState(null, "", "/verify");
@@ -1007,9 +1018,21 @@
       dead("This link is incomplete. Open the link in the email again, or ask for a new one.");
       return;
     }
-    // The form is hidden in the markup, so that nobody sees one that has no link to go with it.
-    $("form").hidden = false;
-    focusFirst(password);
+    // The page asks whether the link can still be used before it draws a form for it. A check that cannot be answered — the service is
+    // unreachable, or this address has asked too often — is not a refusal of the link: the form is shown, and the submit says what it says.
+    status.textContent = "Checking the link.";
+    status.setAttribute("aria-busy", "true");
+    call("GET", `/api/reset/check?token=${encodeURIComponent(token)}`).then((r) => {
+      if (r.ok && r.data && r.data.ok === false) {
+        // The same sentence the confirmation page uses, said before a password is typed, with the way to a working link in reach.
+        dead(r.data.message).focus();
+        return;
+      }
+      say(status, "", "");
+      // The form is hidden in the markup, so that nobody sees one that has no link to go with it.
+      $("form").hidden = false;
+      focusFirst(password);
+    });
     onSubmit($("form"), status, async () => {
       say(status, "", "");
       if (password.value.length < 10) return invalid(password, status, "Choose a password of at least 10 characters.");
@@ -2220,7 +2243,7 @@
         to.focus();
       };
       if (u.total.calls === 0) {
-        box.replaceChildren(el("div", { class: "empty" }, el("div", { class: "tile tile-bars", "aria-hidden": "true" }), el("p", { class: "empty-t" }, "Nothing has been used yet."), el("p", { class: "muted" }, "Calls appear here when a team in one of your workspaces asks a model for something.")));
+        box.replaceChildren(el("div", { class: "empty" }, el("p", { class: "empty-t" }, "Nothing has been used yet."), el("p", { class: "muted small" }, "Calls appear here when a team in one of your workspaces asks a model for something.")));
         arrived();
         return;
       }

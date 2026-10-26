@@ -506,8 +506,10 @@ test("choosing a new password: the form is not there without a link, and with on
   assert.equal(none.doc.title, "That link did not work – Curule Cloud");
   assert.equal(none.shows(none.$("lede")), false, "and the line about a link that works once goes with the form");
 
+  w.answers.set("GET /api/reset/check?token=t0k3n", { json: { ok: true } });
   w.answers.set("POST /api/reset", { json: { ok: true } });
   const v = await visit("reset", { routes: w.routes, search: "?token=t0k3n" });
+  assert.deepEqual(v.to("GET", "/api/reset/check?token=t0k3n"), [{ method: "GET", path: "/api/reset/check?token=t0k3n", body: undefined }], "the link is checked, without being used, before the form is drawn");
   assert.equal(v.text("title"), "Choose a new password");
   assert.equal(v.shows(v.$("form")), true);
   assert.equal(v.text("status"), "");
@@ -526,8 +528,30 @@ test("choosing a new password: the form is not there without a link, and with on
   assert.equal(v.$("card").getAttribute("tabindex"), "-1");
 });
 
+test("a reset link that cannot work is refused before a password is typed, and a check that could not answer refuses nothing", async () => {
+  const w = world((x) => (x.signedIn = false));
+  w.answers.set("GET /api/reset/check?token=old", { json: { ok: false, message: "That link is not valid, or it has expired. Ask for a new one." } });
+  const v = await visit("reset", { routes: w.routes, search: "?token=old" });
+  assert.equal(v.to("GET", "/api/reset/check?token=old").length, 1, "the page asks before it draws the form");
+  assert.equal(v.text("title"), "That link did not work");
+  assert.equal(v.text("status"), "That link is not valid, or it has expired. Ask for a new one.", "the same sentence the confirmation page uses");
+  assert.equal(v.shows(v.$("form")), false, "there is nothing to type into for a link that cannot work");
+  assert.deepEqual(v.to("POST", "/api/reset"), [], "and nothing is sent");
+  assert.equal(v.link("card", "Send a new link").getAttribute("href"), "/forgot");
+  assert.equal(v.doc.activeElement, v.link("card", "Send a new link"), "the cursor is on the way to a working link");
+  assert.equal(v.$("status").getAttribute("aria-busy"), null);
+
+  const busy = world((x) => (x.signedIn = false));
+  busy.answers.set("GET /api/reset/check?token=fresh", failure(429, "rate_limited", "Too many attempts. Try again in 3 minutes."));
+  const f = await visit("reset", { routes: busy.routes, search: "?token=fresh" });
+  assert.equal(f.shows(f.$("form")), true, "a check that could not be answered is not a refusal of the link");
+  assert.equal(f.text("status"), "");
+});
+
 test("a reset link that has been used sends the person to a new one; a password that is too weak keeps the link, which is fine", async () => {
   const w = world((x) => (x.signedIn = false));
+  // The link was good when the page opened, and the service refuses it when the password is sent: the same refusal, from the submit.
+  w.answers.set("GET /api/reset/check?token=used", { json: { ok: true } });
   w.answers.set("POST /api/reset", failure(400, "invalid_token", "That link is not valid, or it has expired. Ask for a new one."));
   const v = await visit("reset", { routes: w.routes, search: "?token=used" });
   v.type("password", "a perfectly good password");
@@ -541,6 +565,7 @@ test("a reset link that has been used sends the person to a new one; a password 
   assert.equal(v.doc.querySelectorAll("a").filter((a) => a.textContent === "Send a new link").length, 1, "the way out was already on the page: the refusal does not add a second one");
 
   const weak = world((x) => (x.signedIn = false));
+  weak.answers.set("GET /api/reset/check?token=fresh", { json: { ok: true } });
   weak.answers.set("POST /api/reset", failure(400, "weak_password", "That password is too easy to guess."));
   const u = await visit("reset", { routes: weak.routes, search: "?token=fresh" });
   u.type("password", "password123456");
@@ -692,12 +717,20 @@ test("the page that says the link was sent has an icon for what it is, which is 
   assert.equal(v.link("card", "Use another address").className, "btn btn-ghost", "the way back is quieter than the button that sends the link again");
 });
 
-test("a status that was drawn as a wait stops waiting once it has said something", async () => {
-  assert.match(fs.readFileSync(`${PAGES_DIR}/verify.html`, "utf8"), /id="status"[^>]*aria-busy="true"[^>]*>Checking the link\./, "the page that checks a link says so, and is drawn as a wait");
+test("the page that checks a link says so while it is checking, and says nothing there without a script", async () => {
+  // With no script the status is empty: the noscript sentence explains the page, and "Checking the link." beside it would contradict it.
+  assert.match(fs.readFileSync(`${PAGES_DIR}/verify.html`, "utf8"), /id="status"[^>]*aria-busy="true"[^>]*><\/div>/, "the waiting line is not in the markup");
+  let during = "";
   const w = world((x) => (x.signedIn = false));
-  w.answers.set("POST /api/verify", failure(400, "invalid_token", "That link is not valid, or it has expired. Ask for a new one."));
-  const v = await visit("verify", { routes: w.routes, search: "?token=old" });
-  assert.equal(v.$("status").getAttribute("aria-busy"), null);
+  w.answers.set("POST /api/verify", () => {
+    during = v.text("status");
+    return failure(400, "invalid_token", "That link is not valid, or it has expired. Ask for a new one.");
+  });
+  // Built first, then started, so the answer can read the page while the request is out.
+  const v = new Visit("verify", { routes: w.routes, search: "?token=old" });
+  await v.start();
+  assert.equal(during, "Checking the link.", "the script writes it, while it is waiting for the answer");
+  assert.equal(v.$("status").getAttribute("aria-busy"), null, "and a status that has said something stops waiting");
 });
 
 test("a button that was pressed has the cursor again when its call is done, unless the page put it somewhere on purpose", async () => {
@@ -707,9 +740,12 @@ test("a button that was pressed has the cursor again when its call is done, unle
   v.type("email", "ada@example.com");
   const send = v.button("form", "Send the link");
   v.click(send);
-  assert.equal(v.doc.activeElement, null, "while the call is out the button is disabled, and a browser takes the cursor from it");
+  // Held, not disabled: the cursor stays on the button while its request is out, so the next Tab goes on from where the person is.
+  assert.equal(v.doc.activeElement, send, "while the call is out the cursor stays on the button that was pressed");
+  assert.equal(send.getAttribute("aria-disabled"), "true", "and the button says it is held");
   await v.idle();
-  assert.equal(v.doc.activeElement, send, "and when it is done the cursor is on it again");
+  assert.equal(v.doc.activeElement, send, "and when it is done the cursor is still on it");
+  assert.equal(send.getAttribute("aria-disabled"), null, "and it can be pressed again");
 
   const refusing = world((x) => (x.signedIn = false));
   refusing.answers.set("POST /api/login", failure(401, "invalid_credentials", "That email and password do not match an account."));

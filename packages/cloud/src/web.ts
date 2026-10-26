@@ -220,6 +220,7 @@ export class ControlWeb {
     { method: "POST", pattern: /^\/api\/logout$/, run: (req, _m, who) => this.logout(req, who) },
     { method: "POST", pattern: /^\/api\/forgot$/, run: (req) => this.forgot(req) },
     { method: "POST", pattern: /^\/api\/reset$/, run: (req) => this.reset(req) },
+    { method: "GET", pattern: /^\/api\/reset\/check$/, run: (req) => this.checkReset(req) },
     { method: "POST", pattern: /^\/api\/password$/, run: (req, _m, who) => this.password(req, this.needSession(who)) },
     { method: "GET", pattern: /^\/api\/session$/, run: (_req, _m, who) => this.sessionView(who) },
     { method: "GET", pattern: /^\/api\/me$/, run: (_req, _m, who) => this.me(this.needSession(who)) },
@@ -347,6 +348,22 @@ export class ControlWeb {
     if (typeof body.email === "string") this.limit("forgotEmail", body.email.trim().toLowerCase());
     await this.o.plane.accounts.requestReset(body.email);
     return this.json(202, { ok: true, message: "If that address has an account, a link to choose a new password is on its way." });
+  }
+
+  /**
+   * Whether a reset link is still good, read-only and before a password is typed: the page shows the form only for a link that can work.
+   * A dead link is a successful read whose answer is no, so it is a 200 with `ok: false` and the same sentence the reset gives: the
+   * browser treats a 400 here as a failed request in its console, on a page where nothing failed.
+   */
+  private async checkReset(req: WebRequest): Promise<WebResponse> {
+    this.limit("tokenIp", req.ip);
+    try {
+      this.o.plane.accounts.checkReset(req.query.get("token"));
+    } catch (err) {
+      if (err instanceof ServiceError && err.code === "invalid_token") return this.json(200, { ok: false, message: err.message });
+      throw err;
+    }
+    return this.json(200, { ok: true });
   }
 
   private async reset(req: WebRequest): Promise<WebResponse> {

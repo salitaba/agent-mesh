@@ -1105,3 +1105,100 @@ Heights are `document.documentElement.scrollHeight`; positions are
   that is no longer drawn.
 - **Nothing was added for the dead reset link, the sticky strip over a target at 768, or the delete's busy
   window.** They are the previous passes' entries, unchanged.
+
+## 2026-10-26: the dead link refused before the password, and the empty usage that was a card
+
+Same harness: Chromium 156 (playwright-core 1.64, the headless shell) over CDP against this worktree's trial
+(`trial --port 7531`, whose plans are the trial's own fixtures), 320 / 360 / 390 / 768 / 1440 in light and dark,
+`prefers-reduced-motion: reduce`, a touch pointer below 721, and axe-core 4.14 over the same views. "Before" is the
+base commit's own page files (`6102779`), rendered at the same address against the same trial on the same fixtures and measured again today:
+a Team account with one running workspace and an empty usage table, a reset page holding a dead token, and `/verify`
+with scripts off. Heights are `document.documentElement.scrollHeight`; positions are `getBoundingClientRect` plus
+`scrollY`; names are Chromium's own `document.activeElement`.
+
+- **A dead reset link is refused before a password is typed.** The page could only learn that its token was no
+  good by sending a password: at 360 with `?token=dead-token` it was titled **"Choose a new password"**, drew the
+  form, and had an empty status, so a reader typed before the service refused them. The control plane now has a
+  read-only `GET /api/reset/check?token=…`: it runs the same check as the reset itself, writes no event, spends
+  nothing, and answers **200 `{ok: true}`** or a **200 `{ok: false, message}`** with the same sentence the
+  confirmation page uses. A dead link is a successful read whose answer is no, so the page's console does not
+  record a failed request on a page where nothing failed. The page asks before it draws the form. After: title
+  **"That link did not work"**, the refusal at
+  **y = 226** (a 74px note), the form hidden, the way out at **y = 316**, the cursor on **"Send a new link"**, the
+  page **1,173 → 949**, one `GET` and **no `POST`**. A check that cannot answer (429, offline, a 5xx) is not a
+  refusal of the link: the form is drawn and the submit says what the service says. The route is held by
+  `web-accounts.test.ts`: asked twice, the
+  link still resets; after it is used, the check says no with the same sentence; a confirmation token is not a
+  reset link; and `POST /api/reset/check` is a **405 with `Allow: GET`**.
+- **A button that is working keeps the cursor.** `onSubmit` disabled every button in its form, and a disabled
+  control loses the cursor in most browsers, so through a deletion's busy window `document.activeElement` was
+  **BODY** at 360: the next Tab started again above the page, and the only sign of work was a word change under a
+  cursor that had gone. The buttons are **held** now (`aria-disabled`, the idiom the sign-out and the stage
+  already use); the busy guard is what stops a second send. Measured with the delete answer held 1,000ms: the
+  cursor is on **BUTTON "Deleting it"** with `aria-disabled="true"` (was **BODY**), two presses still send **1**
+  `POST`, and a success puts the cursor on `#stage-title` as before. Every form goes through the same helper;
+  forgot measures the same cursor on its **"Send the link"**, and the resend form's one-minute hold survives the
+  answer, so the button is still held for the wait it asked for.
+- **With scripts off, `/verify` no longer says "Checking the link." beside the sentence that says it cannot
+  check.** The status was in the markup with `aria-busy="true"`, so a browser with no script drew both. The
+  markup's status is empty and the script writes **"Checking the link."** where something is checking: with
+  scripts off the page is **963 → 897** at 360, the status has no text, and `aria-busy` stays for the script; with
+  a script the answer function sees **"Checking the link."** while the `POST` is out (pinned in `pages-app.test.ts`).
+- **An empty usage panel is a ruled entry, not a 240px card with a picture.** The state was a dashed card with a
+  56px bars tile, 32px of padding and centred text: **240px** at 360 for zero calls, and the decor was the only
+  thing in it that was not a sentence. A card is for something a reader acts on; this has no action. It is now a
+  **99px** ruled entry under the section's own line — **"Nothing has been used yet."** and when calls will appear —
+  with no tile and no box. At 360 the Usage panel is **384 → 243px**, the page **2,831 → 2,690** and Settings
+  **2,652 → 2,511**. At the same scroll of **1,800** on a 360 × 800 screen, Settings was at **y = 852**, below the
+  screen; it is at **y = 711**, inside it. At 320 the entry is **122px** (three lines) and the page **2,952 →
+  2,834**; at 390 **2,687 → 2,546**; at 768 **2,136 → 2,020** and at 1440 **2,172 → 2,057**, where the entry is
+  **99px**. The sentence still says what would be here and why it is not, as the empty-state row
+  of the design table asks; only the card and its picture are gone.
+- **Widths, schemes and the floor.** The paid account at 320 / 360 / 390 / 768 / 1440 in light, at 360, 768 and
+  1440 in dark, and at 360 in forced colours: no sideways page scroll (320: 320; 360: 360; 390: 390; 768: 768;
+  1440: 1440), nothing computes below **12px**, and no control is under 44 × 44 below 721 (at 768 and 1440 the strip's 32px links and
+  the 40px buttons are the pointer's own sizes, as before). The dead reset page at the same five widths and at 360
+  in dark: no overflow, smallest text **12px**, no target under 44 below 721, and the button that takes the cursor
+  is 44px. **16 axe-core runs** (9 account, 7 reset) find **no violation** and there is no console error; forced
+  colours draws the empty entry's top rule. With scripts off the account and reset still show their `noscript`
+  sentences and settings form, and `/verify` now shows one sentence, not two that disagree.
+- **The budget.** `app.css` is **40,851 bytes of 40,960** (was 40,938, a net **−87**): `.empty` left the card
+  list, its dashed chrome and centring became one top rule and start alignment, and the now-unused
+  `.tile-bars` rule went. 109 bytes remain.
+- **Tests.** `dist/tests/cloud/pages*.test.js` and `web-accounts.test.js` — **210 pass, 0 fail**; typecheck and
+  lint are clean (0 errors). The new reset test fails when the check's refusal branch is removed, and the held
+  button test fails when `onSubmit` disables its buttons again.
+
+| measured at 360, light | before | after |
+| --- | --- | --- |
+| A dead reset link on load | "Choose a new password", the form shown, status empty, page 1,173 | "That link did not work", the form hidden, the sentence, cursor on **Send a new link**, page 949 |
+| … requests on that load | 0 (the token is only tried on submit) | 1 read (`GET /api/reset/check`), 0 writes |
+| A deletion while its answer is held | cursor **BODY**, the button disabled, 1 request of 2 presses | cursor **BUTTON "Deleting it"**, `aria-disabled`, 1 request of 2 presses |
+| `/verify` with scripts off | 963px, "Checking the link." beside the noscript sentence | 897px, the status empty |
+| The account with one running workspace | 2,831px | **2,690px** |
+| The empty Usage entry | 240px dashed card with a 56px icon | **99px** ruled entry |
+| The Usage panel | 384px | **243px** |
+| Settings begins at | y = 2,652 | **y = 2,511** |
+| At scroll 1,800, Settings | y = 852, below an 800px screen | **y = 711**, inside it |
+| The account at 320 / 390 / 768 / 1440 | 2,952 / 2,687 / 2,136 / 2,172 | **2,834 / 2,546 / 2,020 / 2,057** |
+| The empty entry at 320 / 390 / 768 / 1440 | 240 / 240 / 215 / 215 | **122 / 99 / 99 / 99** |
+
+### What this pass leaves
+
+- **The sticky section strip still covers a control at a scroll a person chose by hand.** Re-measured today at 768
+  with the page at scroll 966: **Manage billing** is at 80.5–112.5 under the strip at 61–110, and axe reports
+  `target-size` on it and on **Change plan**. It is the property the 2026-10-25 entry recorded; removing it means
+  giving up the strip's stickiness on a wide screen, so it was left rather than traded in this pass. A keyboard
+  still reaches the button; a hand aiming at its top 29.5px hits the strip.
+- **The check is a second request, and it shares the token's limit.** `GET /api/reset/check` counts against
+  `tokenIp` (30 an hour per address, the counter the submit uses), so a person who reloads the reset page many
+  times can meet the limit at the check; the page then draws the form, because a limit is not a refusal of the
+  link, and the submit says the limit in the service's words. The check also cannot promise the link will still be
+  good when the password is sent: an expiry in between is refused on submit, with the same sentence.
+- **The empty usage is still 243px, and 90px of it is the section's standing line.** Folding the whole section
+  behind a disclosure would hide that explanation and make the count of calls the only thing a folded row says;
+  the two sentences are what the empty-state row asks for, and the card was the part that was not information.
+- **Prose-only inline links remain 18–19px tall**, and the answer to the sticky strip is the same entry it was:
+  both are reading rather than doing, and both are left for a pass that changes the strip or the legal measure.
+  The usage read's first failure was measured again and is announced: `#usage-say` has the sentence on the first
+  failed read, so that item is closed and not repeated here.

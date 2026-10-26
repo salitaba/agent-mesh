@@ -171,7 +171,7 @@ td, th, dd, .price, .num, .badge, .auth-points li::before { font-variant-numeric
   mask: var(--sprite) calc(var(--n, 0) * var(--s, 20px) * -1) 0 / calc(9 * var(--s, 20px)) var(--s, 20px) no-repeat;
 }
 /* Cards: a hairline, a lit top edge, the first rung of shadow. */
-.card, .row, .plan, .stat, .table-wrap, .panel-quiet details, .empty {
+.card, .row, .plan, .stat, .table-wrap, .panel-quiet details {
   border: 1px solid var(--k-line);
   border-radius: var(--k-r-lg);
   background: var(--k-surface);
@@ -434,7 +434,6 @@ meter::-moz-meter-bar { border-radius: var(--k-r-pill); background: currentColor
 }
 .tile::before { --s: 24px; }
 .tile-mail::before { --n: 8; }
-.tile-bars::before { --n: 6; }
 
 /* ---- sign-in family: a form, and the way through its job */
 .auth { padding-block: clamp(24px, 4vh, 56px); }
@@ -766,17 +765,9 @@ tbody th, tfoot th { color: var(--k-ink-2); font-weight: 500; }
 tbody tr:hover > * { background: var(--k-surface-2); }
 tfoot > tr > * { background: var(--k-surface-2); font-weight: 650; }
 .bar-cell { display: inline-grid; grid-template-columns: 72px minmax(8ch, max-content); align-items: center; justify-content: end; gap: 12px; }
-.empty {
-  display: grid;
-  justify-items: center;
-  gap: 4px;
-  padding: 32px 16px;
-  border-style: dashed;
-  border-color: var(--k-line-strong);
-  text-align: center;
-}
+/* No result yet: a ruled entry, not a card. */
+.empty { display: grid; justify-items: start; gap: 4px; padding: 12px 0; border-top: 1px solid var(--k-line); }
 .empty p { max-width: 44ch; margin: 0; }
-.empty .tile { margin-bottom: 8px; }
 .empty-t { font-weight: 600; }
 .panel-quiet summary {
   display: flex;

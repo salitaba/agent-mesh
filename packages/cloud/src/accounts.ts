@@ -12,6 +12,9 @@ import type { Mailer } from "./mailer";
 import { burnPasswordTime, hashPassword, passwordProblem, verifyPassword } from "./passwords";
 import type { Account, ControlLog } from "./store";
 
+/** One refusal for any link that cannot be used, whether it is checked or tried: the confirmation and reset pages say the same sentence. */
+const INVALID_LINK = "That link is not valid, or it has expired. Ask for a new one.";
+
 export interface AccountsOptions {
   log: ControlLog;
   mailer: Mailer;
@@ -154,7 +157,7 @@ export class Accounts {
 
   /** A link from mail: it confirms the address, and signs in whoever holds it. Once. */
   async verify(token: unknown, meta: { ip?: string; userAgent?: string } = {}): Promise<SessionResult> {
-    const invalid = new ServiceError(400, "invalid_token", "That link is not valid, or it has expired. Ask for a new one.");
+    const invalid = new ServiceError(400, "invalid_token", INVALID_LINK);
     if (typeof token !== "string" || token === "") throw invalid;
     const tokenHash = hashToken(token);
     const v = this.state.verifications.get(tokenHash);
@@ -268,14 +271,25 @@ export class Accounts {
     if (account && account.verifiedAt !== undefined && account.disabledAt === undefined) await this.issue(account.accountId, email, "reset");
   }
 
-  async completeReset(token: unknown, password: unknown): Promise<{ email: string }> {
-    const invalid = new ServiceError(400, "invalid_token", "That link is not valid, or it has expired. Ask for a new one.");
+  /** The account a reset link still belongs to, without using it: a page can tell a person the link is dead before they type. Nothing is written. */
+  private resetLink(token: unknown): { tokenHash: string; account: Account } {
+    const invalid = new ServiceError(400, "invalid_token", INVALID_LINK);
     if (typeof token !== "string" || token === "") throw invalid;
     const tokenHash = hashToken(token);
     const v = this.state.verifications.get(tokenHash);
     if (!v || v.used || v.purpose !== "reset" || Date.parse(v.expiresAt) <= this.clock().getTime()) throw invalid;
     const account = this.state.accounts.get(v.accountId);
     if (!account || account.disabledAt !== undefined) throw invalid;
+    return { tokenHash, account };
+  }
+
+  /** Whether a reset link can still be used, answered without using it or writing anything. */
+  checkReset(token: unknown): void {
+    this.resetLink(token);
+  }
+
+  async completeReset(token: unknown, password: unknown): Promise<{ email: string }> {
+    const { tokenHash, account } = this.resetLink(token);
     if (typeof password !== "string") throw new ServiceError(400, "weak_password", "Choose a password.");
     const problem = passwordProblem(password, account.email);
     if (problem) throw new ServiceError(400, "weak_password", problem);
