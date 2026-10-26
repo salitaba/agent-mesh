@@ -171,7 +171,7 @@ td, th, dd, .price, .num, .badge, .auth-points li::before { font-variant-numeric
   mask: var(--sprite) calc(var(--n, 0) * var(--s, 20px) * -1) 0 / calc(9 * var(--s, 20px)) var(--s, 20px) no-repeat;
 }
 /* Cards: a hairline, a lit top edge, the first rung of shadow. */
-.card, .row, .plan, .stat, .table-wrap, .panel-quiet details {
+.card, .row, .plan, .table-wrap, .panel-quiet details {
   border: 1px solid var(--k-line);
   border-radius: var(--k-r-lg);
   background: var(--k-surface);
@@ -597,25 +597,22 @@ body[data-page="home"] main { background: var(--k-glow) top / 100% 520px no-repe
 .steps .now { color: var(--k-ink); }
 .steps .now .num { border-color: var(--k-accent); background: var(--k-accent); color: var(--k-on-accent); }
 .glance { margin-top: 16px; }
-.glance dl { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin: 0; }
-.stat { padding: 16px 20px; }
+/* Three facts, ruled as the entries below them are: a card is for what a person acts on. */
+.glance dl { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 0; margin: 0; border-bottom: 1px solid var(--k-line); }
+.stat { padding: 10px 0; border-top: 1px solid var(--k-line); }
 .stat dd { margin: 0; }
 .stat-v { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; margin-top: 6px !important; }
 .stat .n { font-size: 1.625rem; font-weight: 650; letter-spacing: var(--k-track-title); line-height: 1.15; }
 .stat .u, .stat-n { color: var(--k-muted); font-size: .875rem; }
 .stat-n { margin-top: 2px !important; font-size: .8125rem; }
-/* The page's sections: sticky, marking the one in view. */
+/* The page's sections: a contents line in the flow, marking the one in view. A bar that stays on screen covers the button under it. */
 .subnav {
-  position: sticky;
-  top: 61px;
-  z-index: 30;
   display: flex;
   flex-wrap: wrap;
   gap: 4px;
   margin-top: 20px;
   padding: 8px 0;
   border-bottom: 1px solid var(--k-line);
-  background: var(--k-bg);
 }
 .subnav a {
   display: inline-flex;
@@ -833,17 +830,15 @@ tfoot > tr > * { background: var(--k-surface-2); font-weight: 650; }
 
 /* ---- phones and fingers */
 @media (max-width: 720px) {
-  .stat { display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "l v" "n v"; align-items: center; padding: 10px 0; border: 0; border-radius: 0; border-top: 1px solid var(--k-line); background: none; box-shadow: none; }
+  /* A phone stacks the facts; a wider page puts them in columns. */
+  .stat { display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "l v" "n v"; align-items: center; }
   .stat dt { grid-area: l; }
   .stat-v { grid-area: v; justify-content: flex-end; margin: 0 !important; }
   .stat-n { grid-area: n; }
-  /* Ruled entries, not cards. */
-  .glance dl { gap: 0; border-bottom: 1px solid var(--k-line); }
   .sk-tiles { grid-template-columns: 1fr; }
   .sk-tiles .sk { height: 60px; }
   .figures { grid-template-columns: 1fr 1fr; }
   .figures > div:first-child { grid-column: 1 / -1; }
-  .subnav { position: static; }
   .subnav a { min-height: 44px; }
   /* The steps are a row of numbers: the rule needs 30px a phone has not got. */
   .steps { column-gap: 12px; }
