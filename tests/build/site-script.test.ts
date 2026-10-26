@@ -49,6 +49,7 @@ interface Pure {
   withClass(names: string, name: string, on: boolean): string;
   withoutArrival(names: string): string;
   copyName(label: string, shown: string): string;
+  tocEdges(left: number, client: number, total: number): { back: boolean; more: boolean };
 }
 
 /** The script's pure parts, as it exports them when it is loaded as a module (in a browser nothing is exported). */
@@ -97,6 +98,8 @@ interface Reading {
   fire: (type: string) => void;
   /** The keyboard's focus arriving on a chip, as the row hears it. */
   focus: (i: number) => void;
+  /** Put the row where a scroll would leave it, and let its own scroll listener see it. */
+  scrollRow: (left: number) => void;
   runTimers: () => void;
   rowScrolls: number[];
   observer: () => FakeObserver;
@@ -120,6 +123,9 @@ function read(rel: string, height = 800, reduce = true): Reading {
     row.scrollLeft = left;
   };
   row.getBoundingClientRect = () => ({ top: 69, bottom: 130, left: 0, right: 390 });
+  // The security page's seven chips are 1,333px in a 390px row: the widths the script reads to decide which edges to shadow.
+  Object.defineProperty(row, "clientWidth", { get: () => 390, configurable: true });
+  Object.defineProperty(row, "scrollWidth", { get: () => 1333, configurable: true });
   chips.forEach((chip, i) => {
     chip.getBoundingClientRect = () => ({ top: 77, bottom: 121, left: 16 + i * 168 - row.scrollLeft!, right: 16 + i * 168 + 160 - row.scrollLeft! });
     chip.closest = () => chip;
@@ -155,6 +161,10 @@ function read(rel: string, height = 800, reduce = true): Reading {
       const chip = chips[i]!;
       for (const fn of row.listeners.get("focusin") ?? []) fn({ type: "focusin", target: chip, currentTarget: row, defaultPrevented: false, preventDefault() {} });
     },
+    scrollRow: (left) => {
+      row.scrollTo!({ left, behavior: "auto" });
+      for (const fn of row.listeners.get("scroll") ?? []) fn({ type: "scroll", target: row, currentTarget: row, defaultPrevented: false, preventDefault() {} });
+    },
     runTimers: () => timers.splice(0).forEach((fn) => fn()),
     rowScrolls,
     observer,
@@ -170,7 +180,7 @@ function click(r: Reading, i: number): void {
 
 test("the long pages carry an On this page bar right under their heading, and each chip names a section of the page, in order", () => {
   const withBar = pages.filter((p) => p.markup.includes('class="toc-bar"'));
-  assert.deepEqual(withBar.map((p) => p.rel), ["legal/index.html", "pricing/index.html", "security/index.html"]);
+  assert.deepEqual(withBar.map((p) => p.rel), ["docs/index.html", "legal/index.html", "pricing/index.html", "security/index.html"]);
   for (const p of withBar) {
     // The bar follows the page's heading inside <main>, so that it can stay under the header through the whole of the page (a
     // sticky element never leaves the box it is in), and it is one navigation landmark with a name.
@@ -276,6 +286,36 @@ test("a chip that takes the keyboard's focus is brought wholly into the row, and
   assert.deepEqual(r.rowScrolls, [146], "focusing the same chip again moves nothing");
   r.focus(0);
   assert.deepEqual(r.rowScrolls, [146, 0], "the first chip, out of view after the scroll, comes back");
+});
+
+test("the row says at which edge it has more, from its own widths, and the bar draws the shadow there", () => {
+  const { tocEdges } = pure();
+  const edges = (left: number, client: number, total: number): boolean[] => {
+    const edge = tocEdges(left, client, total);
+    return [edge.back, edge.more];
+  };
+  assert.deepEqual(edges(0, 360, 908), [false, true], "at the start there is more to the right");
+  assert.deepEqual(edges(300, 360, 908), [true, true], "in the middle there is more at both edges");
+  assert.deepEqual(edges(548, 360, 908), [true, false], "at the end only the left");
+  assert.deepEqual(edges(0, 360, 360), [false, false], "a row that fits says nothing");
+  assert.deepEqual(edges(0, 0, 0), [false, false], "no widths yet is not an edge");
+  assert.deepEqual(edges(1, 360, 908), [false, true], "a pixel of slack is not an edge");
+  const r = read("security/index.html");
+  const bar = r.doc.querySelector(".toc-bar")!;
+  assert.match(bar.className, /\bis-more\b/, "the security page's seven chips are 1,333px in a 390px row");
+  assert.ok(!/\bis-back\b/.test(bar.className));
+  r.scrollRow(300);
+  assert.match(bar.className, /\bis-back\b/, "scrolled into the row, both edges have content beyond them");
+  assert.match(bar.className, /\bis-more\b/);
+  r.scrollRow(943);
+  assert.ok(!/\bis-more\b/.test(bar.className), "at the end the right edge has nothing beyond it");
+  assert.match(bar.className, /\bis-back\b/);
+  r.scrollRow(0);
+  assert.match(bar.className, /\bis-more\b/);
+  assert.ok(!/\bis-back\b/.test(bar.className), "back at the start the left edge has nothing behind it");
+  // The shadow is a background: a forced-colour mode gets a 2px line instead, and a printed row gets none.
+  assert.match(CSS, /@media \(forced-colors: active\) \{[\s\S]*?\.toc-bar\.is-back::before, \.toc-bar\.is-more::after \{ forced-color-adjust: none; width: 2px; background: CanvasText; \}/, "the edge is a line of the system's ink in High Contrast");
+  assert.match(CSS, /@media print \{[\s\S]*?\.toc-bar::before, \.toc-bar::after \{ display: none; \}/, "a printed page has no row to scroll and no edge");
 });
 
 test("a jump that passes whole sections at once (Back to top under reduced motion) clears the mark and brings the row back to its first chips", () => {

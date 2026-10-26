@@ -1017,3 +1017,112 @@ an earlier pass.
 - **The On this page row still scrolls in silence where the chips do not fit**, the pricing page's first plan amount is
   still at y=950 at 360, and the docs page still has no On this page bar; none of these changed.
 - `site/ux/` and the captures were not touched.
+
+## 2026-10-26, second pass: the map's own index, the row's edge, and the page you are on
+
+Measured with the same probe (Chrome for Testing 156 over CDP; reduced motion; light unless said; touch at 320/360/390; a
+mouse at 768 and 1,440; print at 794; forced colours at 360). The before column is the site at `6102779`, served from this
+worktree before the edits and measured today; no number is copied from an earlier pass.
+
+### What changed
+
+- **The documentation page has the On this page row the other long pages have.** The page is **8,722px at 360** and the map
+  of documents alone is **4,991px** of it (57%); its closing band, "Something missing?", began at **7,258** with no way to it
+  but the scroll. The heading now carries `has-toc` and a 61px row with three chips — **Start here**, **The documents**,
+  **Something missing** — and the closing band has the `id="missing"` its chip points at. At 360 the row is at **423–484**;
+  `#start` moves **432 → 484**, the filter **2,360 → 2,412**, the first document card **2,820 → 2,872**, and the closing band
+  **7,258 → 7,311**. Each chip lands its section at **150**, the header and the row and the 20px under them. The page is
+  **52px** taller at 320/360/390, 49 at 768 and 40 at 1,440.
+- **The On this page row shadows the edge that has more.** At 360 the pricing row's seven chips are **908px in 360** (548
+  hidden), the security row's **1,333px** (973 hidden), and at 1,440 the security row still has **1,621px in 1,440** (181
+  hidden). Before, the third chip was cut mid-word and nothing said the row went on. The script reads the row's own
+  `scrollWidth`, `clientWidth` and `scrollLeft` (`tocEdges`) and sets `is-more` and `is-back` on the bar; a 28px shadow in the
+  site's own `--edge` is drawn at the edge that has more, both edges in the middle, and only the left at the end. Measured at
+  360: pricing `is-more` at `scrollLeft` 0, both at 274, `is-back` at 548; security 0 / 487 / 973; the documentation row
+  0 / 71 / 142; at 1,440 security 0 / 91 / 181, and the documentation row fits with neither class. The bar stays **61px** and
+  the shadow takes no room. A forced-colour mode draws a 2px `CanvasText` line instead (a 28px gradient of the system's ink
+  was a black band over the last chip), and print draws no edge at all.
+- **At a 150% user text size the pricing page was 29px wider than a 360px viewport.** The figure pinned over the estimate was
+  `white-space: nowrap`: at a 24px root it was one **358.4px** line in a 300px line, so the pricing page was **389px wide on
+  a 360 screen** (29 over) and **389 on a 320 one** (69 over). The figure now wraps (`white-space: normal; text-align:
+  right`): it is **298px** at 360 and **258** at 320, the page is **360** and **320** with **0px over** on all seven pages,
+  and the pinned total is **96 → 132px** at 360 (two lines), the page **22,986 → 23,022** (320: **25,276 → 25,312**).
+- **The page you are on is marked by a line as well as a tint.** With `forcedColors: active` at 768 the header's current link
+  measured `background rgb(255, 255, 255)` (Canvas) and `color rgb(0, 0, 159)` (LinkText) on the white page, the same as the
+  three links beside it, and `text-decoration: none`: the current page was not visibly marked. The current link — in the
+  header nav, the phone menu (which holds the same link at 360) and the footer — now takes an underline (1.5px,
+  `text-underline-offset: .22em`); measured at 768 the current pill is **72.88 × 36** with the line, and in forced colours
+  `text-decoration-line` is `underline`. No page changes height.
+
+### Measurements after this pass
+
+| Page, height at 320 / 360 / 390 / 768 / 1440 | Before | After |
+|---|---|---|
+| Home | 14,285 / 13,526 / 12,999 / 13,156 / 12,258 | **14,285 / 13,526 / 12,999 / 13,156 / 12,258** |
+| Pricing | 15,075 / 14,030 / 13,408 / 10,887 / 9,393 | **15,075 / 14,030 / 13,408 / 10,887 / 9,393** |
+| Documentation | 9,310 / 8,722 / 8,444 / 5,790 / 4,473 | **9,362 / 8,774 / 8,496 / 5,839 / 4,513** |
+| Security | 12,799 / 11,844 / 11,105 / 8,327 / 7,620 | **12,799 / 11,844 / 11,105 / 8,327 / 7,620** |
+| Contact | 4,948 / 4,698 / 4,490 / 3,883 / 2,860 | **4,948 / 4,698 / 4,490 / 3,883 / 2,860** |
+| Legal | 5,793 / 5,267 / 4,943 / 3,863 / 3,317 | **5,793 / 5,267 / 4,943 / 3,863 / 3,317** |
+| 404 | 2,443 / 2,348 / 2,301 / 1,911 / 1,524 | **2,443 / 2,348 / 2,301 / 1,911 / 1,524** |
+
+| The documentation page at 360 | Before | After |
+|---|---|---|
+| The page | 8,722 | **8,774** |
+| Its heading | 69–432 | **69–423** |
+| On this page row | none | **423–484** (61px, 3 chips) |
+| `#start` | 432 | **484** |
+| The filter | 2,360 | **2,412** |
+| The first document card | 2,820 | **2,872** |
+| The closing band | 7,258 | **7,311** |
+| The row's width | — | **502px in 360**; the third chip 184.95px with 59px visible |
+
+| The On this page row at 360 | Before | After |
+|---|---|---|
+| Pricing | 908 in 360, no cue | **`is-more` at 0, both at 274, `is-back` at 548** |
+| Security | 1,333 in 360, no cue | **`is-more` at 0, both at 487, `is-back` at 973** |
+| Documentation | — (no row) | **`is-more` at 0, both at 71, `is-back` at 142** |
+| Security at 1,440 | 1,621 in 1,440, no cue | **`is-more` at 0, both at 91, `is-back` at 181** |
+| Documentation at 1,440 | — | **502px of chips in 1,440; no class** |
+
+| Pricing at a 24px root | Before | After |
+|---|---|---|
+| The page at 360 | **389px wide** (29 over) | **360** |
+| The page at 320 | **389px wide** (69 over) | **320** |
+| The pinned figure at 360 / 320 | **358.4 / 358.4** | **298 / 258** |
+| The pinned total | **96px** | **132px** |
+| The page at 360 / 320 | **22,986 / 25,276** | **23,022 / 25,312** |
+
+| The current page | Before | After |
+|---|---|---|
+| Forced colours, 768: the nav's current link | Canvas fill, LinkText, no line | **1.5px underline** |
+| Forced colours, 768: the other three links | LinkText, no line | unchanged |
+| Normal, 768: the current pill | tint only | **72.88 × 36, tint and line** |
+
+- No page scrolls sideways at 320, 360, 390, 768 or 1,440 in light or dark (**0** on all 70 page/width/theme pairs), and the
+  probe reports **0** console errors. **0 axe-core violations** on the seven default views and on the eight interactive
+  states (docs empty and matching filter, legend open, phone menu open, calculator error, Monthly, the row at its end, a
+  copied address). The smallest computed text is **12px** on every page; the new chips are 44px tall.
+- At a 24px user default every page is **0px over** at 320 and 360 (before, pricing was 389 at both). At 720 (the 200% zoom
+  stand-in) every page is **0px over**. Print at 794: every page **0px over**; the documentation page is **4,761px** with
+  its row (the row's three chips fit one line; the edge shadow is not printed).
+- Without a script the documentation page is **8,685px** at 360 with its three chips as plain links and its filter hidden,
+  and no page overflows; the current page's underline is CSS, and the row has no shadow (that is the script's).
+- With `forcedColors: active` at 360 every page is 0px over and the smallest text is 12px; the current page is underlined,
+  and the row's edge is a 2px line while it has more.
+
+### What this pass deliberately left
+
+- **The documentation row cuts its third chip at 360** (502px in 360; 142 hidden) and the shadow is the only cue that it
+  goes on. A shorter chip or a chevron would name the closing band in full; the row is the same one-line shape as the other
+  pages' and stays 61px.
+- **The documentation page is 52px taller at a phone for its row.** The row names the map and the closing band; the
+  alternative is the 7,000px of scroll the page had before.
+- **The cue is the script's.** Without one, the row is plain links in one scrolled row: the chips and the cut third chip are
+  there, but the edge shadow, like the pinned bar itself, is progressive.
+- **The pricing page's opening is unchanged**: its first plan amount is still at y=950 at 360, and the comparison still
+  stacks below 720. The billing switch and the section head are where the last pass left them.
+- **The pinned figure wraps only where it must.** At normal text the total is 72px as it was; at a 24px root it is two lines
+  and 132px, 36px more, which is the cost of not widening the page.
+- **The current-page line is in the footer too.** The footer's current page was a weight and a colour; it is now underlined
+  as well, and no page height moves.

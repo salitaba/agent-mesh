@@ -14,7 +14,7 @@ python3 -m http.server --directory site 8080      # then open http://127.0.0.1:8
 |---|---|---|
 | `index.html` | `/` | The tagline, what Curule is and a picture of it beside the first actions (a product frame: overview, events, designer), the two ways in (we run it, or you do), why it is not a group chat, how a mission goes, a tour of the console in six views, the commands that run the demo today, security in brief, the plans in a line (four rows of one rate card on a phone), and the questions |
 | `pricing/index.html` | `/pricing/` | The two ways to pay (while Curule Cloud is open), the plans with the Annual/Monthly choice, the comparison table, what a plan pays for, a calculator, how licences work, and questions |
-| `docs/index.html` | `/docs/` | "Start here": a card for each thing a visitor comes to do (run the demo, deploy it, describe a team and its rules, use Curule Cloud), each naming the one document to open first; then a map of the documents in the repository: what each is for, and whether it is reference, a guide, short, or a log, with a filter over them |
+| `docs/index.html` | `/docs/` | "Start here": a card for each thing a visitor comes to do (run the demo, deploy it, describe a team and its rules, use Curule Cloud), each naming the one document to open first; then a map of the documents in the repository: what each is for, and whether it is reference, a guide, short, or a log, with a filter over them. An On this page row under the heading names the three sections, as on the other long pages |
 | `security/index.html` | `/security/` | An At a glance box (what it protects, what leaves your environment, what it does not do: one line each, from the page's own sentences, each linking to its section, with a mark that says what kind of answer it is), then the three in full, a hardening checklist, assurance, and how to report a problem |
 | `contact/index.html` | `/contact/` | Which address is for what, in three rows (the place the links to sales, support and security land, each with a copy button that the script adds), and what to put in the message |
 | `legal/index.html` | `/legal/` | The source licence in plain words, privacy (this site collects nothing), and the terms |
@@ -43,12 +43,16 @@ the plan cards and tables are in the markup, and the contact addresses are text.
 copy buttons, and the links to the documents and the source (which live on GitHub, so they cannot be written into the pages: see
 the next section).
 
-The long pages (pricing, security, legal) have an *On this page* bar under their heading: a row of chips, one for each section —
-the security page's summary box and the pricing page's two ways in included, and a section the Curule Cloud switch hides takes its
-chip with it, so the bar never marks a section the reader is not in or offers a link to something that is not there.
+The long pages (pricing, documentation, security, legal) have an *On this page* bar under their heading: a row of chips, one for
+each section — the security page's summary box, the pricing page's two ways in and the documentation page's map included, and a
+section the Curule Cloud switch hides takes its chip with it, so the bar never marks a section the reader is not in or offers a
+link to something that is not there.
 Without a script it is a row of plain links. With one, the bar stays under the header while the page is read, and the chip of the
 section being read is marked (`aria-current`, and a filled chip with a dot). It is one row at every width, scrolled sideways when
-the chips do not fit, so it is as tall where it rests as where it stays and nothing moves when it starts to stay. The reading
+the chips do not fit, so it is as tall where it rests as where it stays and nothing moves when it starts to stay. Where the
+chips do not fit (the pricing page's seven are 908px at 360, the security page's 1,333), the script shadows the edge that has
+more behind it and moves the shadow to the other edge once the row is scrolled; a row that fits has no shadow, and a printed
+row wraps instead of scrolling. The reading
 position is looked at when a section's top crosses the line (an IntersectionObserver) and as the window scrolls, once a frame, so a
 jump that passes whole sections at once (Back to top under reduced motion) clears the mark and brings the row back to its first chips. A followed link
 lands below the header and the bar: `--head-h` and `--toc-h` in `assets/site.css` are their heights, and

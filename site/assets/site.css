@@ -181,6 +181,11 @@ main:has(.hero) .section-head .eyebrow::before { counter-increment: sec; content
 .nav-main a, .signin { display: inline-flex; align-items: center; min-height: 36px; padding: 0 12px; border-radius: var(--k-r-pill); color: var(--ink2); font-size: 14.5px; font-weight: 500; text-decoration: none; white-space: nowrap; }
 .nav-main a:hover, .signin:hover { background: color-mix(in srgb, var(--ink) 6%, transparent); color: var(--ink); }
 .nav-main a[aria-current="page"], .menu-panel a[aria-current="page"] { background: var(--soft); color: var(--link); }
+/* The page you are on is said in a line as well as in a tint. A forced-colour mode drops both the tint and the colour, so in
+   High Contrast the current page was one of four identical links: measured at 768 with forcedColors: active (and in the phone
+   menu at 360), every nav link was rgb(0, 0, 159) on Canvas, and the current one had only a white pill on a white page. The
+   line is not a colour choice and stays where the fill cannot. */
+.nav-main a[aria-current="page"], .menu-panel a[aria-current="page"], .foot-col a[aria-current="page"] { text-decoration: underline; text-decoration-thickness: 1.5px; text-underline-offset: .22em; }
 .bar-actions { display: flex; align-items: center; gap: 8px; margin-left: auto; }
 .menu summary { gap: 8px; min-height: 40px; padding: 0 14px; border-radius: var(--k-r-md); font-size: 14px; list-style: none; user-select: none; }
 .menu summary:hover { background: var(--panel2); }
@@ -503,8 +508,15 @@ main:has(.hero) .section-head .eyebrow::before { counter-increment: sec; content
 .prose li { margin-bottom: .45em; }
 /* On this page: one row of chips (plain links without the script); the script pins it and marks the section being read. One row at every width: as tall pinned as at rest. */
 .page-head.has-toc { padding-bottom: 20px; border-bottom: 0; }
-.toc-bar { border-bottom: 1px solid var(--line); background: var(--bg); }
+.toc-bar { position: relative; border-bottom: 1px solid var(--line); background: var(--bg); }
 .toc-bar.is-live { position: sticky; top: var(--head-h); z-index: 30; }
+/* The row is one line and scrolls sideways: at 360 the pricing page's seven chips are 908px and the security page's 1,333px, and
+   the third chip is cut mid-word with nothing saying the row goes on. The script sets .is-more and .is-back from the row's own
+   scroll widths, so the edge is shadowed while there is more to read and the other edge once the reader has moved. It is the
+   same `--edge` shadow the code blocks and tables use, and it takes no room, so the row is 61px pinned or at rest. */
+.toc-bar::before, .toc-bar::after { content: ""; position: absolute; top: 0; bottom: 1px; z-index: 1; width: 28px; pointer-events: none; }
+.toc-bar.is-back::before { left: 0; background: linear-gradient(to right, var(--edge), transparent); }
+.toc-bar.is-more::after { right: 0; background: linear-gradient(to left, var(--edge), transparent); }
 .toc { display: flex; gap: 8px; padding: 8px max(var(--gutter), (100% - var(--max)) / 2); overflow-x: auto; scrollbar-width: none; }
 .toc::-webkit-scrollbar { display: none; }
 .toc li { flex: none; }
@@ -680,7 +692,10 @@ main:has(.hero) .section-head .eyebrow::before { counter-increment: sec; content
 @media (max-width: 859px) {
   .calc-total { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 2px 12px; position: sticky; top: calc(var(--head-h) + var(--toc-h) + 10px); z-index: 4; margin: 0 0 20px; padding: 10px 14px; border: 1px solid var(--k-line-control); border-radius: var(--k-r-md); background: var(--panel); box-shadow: var(--lift); color: var(--ink); font-size: .9375rem; font-weight: 650; font-variant-numeric: tabular-nums; }
   .calc-total-plan { color: var(--muted); font-weight: 500; }
-  .calc-total-figure { white-space: nowrap; }
+  /* The figure wraps rather than widening the page. At a 24px user default its one line was 358.4px in a 300px line at 360, and
+     the pricing page was 389px wide on a 360 screen (29px over); the plan and the figure already wrap as a pair, and this lets
+     the figure itself take two lines where its own line is too narrow. */
+  .calc-total-figure { white-space: normal; text-align: right; }
 }
 .field { margin-bottom: 20px; }
 .field label, .doc-filter label { display: block; margin-bottom: 6px; font-size: .875rem; font-weight: 600; }
@@ -744,7 +759,7 @@ main:has(.hero) .section-head .eyebrow::before { counter-increment: sec; content
 @media (min-width: 1040px) { .doc-grid { grid-template-columns: var(--c3); } }
 .doc-card, .start { gap: 6px; padding: 24px; }
 .doc-card { display: flex; flex-direction: column; }
-.doc-card h2, .doc-card h3, .start h3 { font-size: 1.1875rem; line-height: 1.3; }
+.doc-card h3, .start h3 { font-size: 1.1875rem; line-height: 1.3; }
 /* Start here: four cards, or three without Curule Cloud; a card's rows are its neighbours' rows. */
 .starts { gap: 0 16px; }
 .start { display: grid; grid-row: span 5; grid-template-rows: subgrid; margin-bottom: 16px; }
@@ -821,6 +836,9 @@ main:has(.hero) .section-head .eyebrow::before { counter-increment: sec; content
   .address-row:target { outline: 2px solid Highlight; outline-offset: -2px; }
   /* The dot is the second cue that a chip is the section being read; keep it in High Contrast. */
   .toc a[aria-current="true"]::before { forced-color-adjust: none; background: Highlight; }
+  /* The row's edge shadow is a background; a forced-colour mode cannot fade the system's ink, so the edge is a 2px line
+     instead (a 28px gradient of CanvasText was a black band over the last chip). */
+  .toc-bar.is-back::before, .toc-bar.is-more::after { forced-color-adjust: none; width: 2px; background: CanvasText; }
 }
 @media print {
   .site-header, .skip, .tabs, .billing, .copy, .copy-note, .doc-filter, .foot-grid, .hero::before, .hero::after, .cta::after, .to-top-dock { display: none; }
@@ -832,6 +850,8 @@ main:has(.hero) .section-head .eyebrow::before { counter-increment: sec; content
      them is not cut off at the paper's edge. The security page's six chips take 1,245px in a 794px page, and two of
      them did not print at all. */
   .toc { flex-wrap: wrap; }
+  /* A printed page has no row to scroll: no edge shadow either. */
+  .toc-bar::before, .toc-bar::after { display: none; }
   .rv { opacity: 1 !important; transform: none !important; }
   body { background: #fff; color: #000; }
   .cta, .cta .lede { background: none; color: #000; }
