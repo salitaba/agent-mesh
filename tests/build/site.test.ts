@@ -659,6 +659,9 @@ test("the phone's bar fits: the wordmark at its own proportions, one Sign in, an
   assert.match(css, /@media \(max-width: 719px\), \(pointer: coarse\) \{ \.btn, \.signin, \.menu summary, \.nav-main a \{ min-height: 44px; \} \}/, "the four sections are a thumb's height on a coarse pointer");
   assert.match(css, /\n\.menu-icon \{[^}]*border-block: 2px solid currentColor;/, "the icon is three bars, since on a phone the word is not beside it");
   assert.match(css, /@media \(forced-colors: active\) \{[\s\S]*?\.menu-icon::before \{ background: CanvasText; \}/, "and the middle bar survives a forced-colour mode, where a background is dropped");
+  // The current page is a tint in the navigation and a line as well: in a forced-colour mode the tint is Canvas over Canvas and
+  // the colour is LinkText on every link, so the line is the mark that is left. Measured at 360 with forcedColors: active.
+  assert.match(css, /\n\.nav-main a\[aria-current="page"\], \.menu-panel a\[aria-current="page"\], \.foot-col a\[aria-current="page"\] \{ text-decoration: underline;/, "the page you are on keeps a line in High Contrast");
   // One Sign in on screen at every width: the bar's from 600 up, the menu's below it, never both in the same bar.
   for (const p of pages) {
     const bar = /<div class="bar-actions">([\s\S]*?)<details class="menu">/.exec(p.html)?.[1] ?? "";
@@ -757,6 +760,14 @@ test("an address line stays one line on a phone, a card's title sits below its s
   assert.ok(parsePage(docs).querySelectorAll(".doc-card h3").length >= 10, "each area is a card's title under it");
   assert.ok(docs.indexOf('id="doc-filter"') < docs.indexOf('<details class="legend-more'), "the filter comes before the legend it filters by");
   assert.match(docs, /<summary>What each label means<\/summary>\s*<p class="muted mt-s">Each label says what a document is,/, "and the legend keeps the sentence that explains it");
+  // The page is 8,722px at 360 and the map alone is 4,991 of them: it carries the On this page row the other long pages have,
+  // with one chip for each of its three sections, and the closing band is a section the row can name.
+  assert.match(docs, /<section class="page-head has-toc">/);
+  assert.ok(docs.indexOf('class="toc-bar"') < docs.indexOf('id="start"'), "the row follows the heading, before the first section");
+  const bar = /<nav class="toc-bar" aria-label="On this page">([\s\S]*?)<\/nav>/.exec(docs)?.[1] ?? "";
+  assert.deepEqual([...bar.matchAll(/<a href="#([\w-]+)">([^<]+)<\/a>/g)].map((m) => [m[1]!, m[2]!]), [["start", "Start here"], ["documents", "The documents"], ["missing", "Something missing"]]);
+  assert.match(docs, /<section class="section band" id="missing">/, "the closing band has the id its chip points at");
+  assert.ok(!/\.doc-card h2/.test(css), "the areas are h3, and the stylesheet keeps no title rule for an h2 in a card");
   assert.match(page(pages, "security/index.html").markup, /<h2 class="legend-title" id="glance-title">At a glance<\/h2>/, "a title in a box keeps its own size");
   // Forced colours: the line is the ground the cells sit on, and the cells over it keep their forced colours.
   const forced = /@media \(forced-colors: active\) \{[\s\S]*?\n\}/.exec(css)![0];

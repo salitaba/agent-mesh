@@ -59,10 +59,15 @@ var IMAGE_NAME = "ghcr.io/salitaba/curule";
   var copyName = function (label, shown) {
     return shown === "Copy" ? label : shown + ": " + String(label).replace(/^Copy /, "");
   };
+  // Which edges of the On this page row have content beyond them: the row scrolls sideways where its chips do not fit, and a
+  // reader is otherwise left with a word cut at the edge and no sign that there is more. A pixel of slack is not an edge.
+  var tocEdges = function (left, client, total) {
+    return { back: left > 1, more: total - client > 1 && left + client < total - 1 };
+  };
 
   // The pure parts, for the tests, when the file is loaded as a module; in a browser nothing is exported.
   if (typeof module === "object" && module !== null && typeof module.exports === "object") {
-    module.exports = { readingAt: readingAt, docMatches: docMatches, scrolledOff: scrolledOff, staggerOf: staggerOf, startsHidden: startsHidden, withClass: withClass, withoutArrival: withoutArrival, copyName: copyName };
+    module.exports = { readingAt: readingAt, docMatches: docMatches, scrolledOff: scrolledOff, staggerOf: staggerOf, startsHidden: startsHidden, withClass: withClass, withoutArrival: withoutArrival, copyName: copyName, tocEdges: tocEdges };
   }
   if (typeof document === "undefined") return;
 
@@ -339,12 +344,21 @@ var IMAGE_NAME = "ghcr.io/salitaba/curule";
       watcher = new window.IntersectionObserver(spy, { rootMargin: "0px 0px " + (line - window.innerHeight) + "px 0px" });
       sections.forEach(function (s) { if (s) watcher.observe(s); });
     };
+    // The row's edges are read from its own widths, not from the number of chips: at 360 the pricing row is 908px and the
+    // security row 1,333px, and at 1,440 the security row still has 181px beyond the fold. The classes draw the shadow and
+    // are taken off at the end, so a row that fits or has been read to its end says nothing.
+    var edgesNow = function () {
+      var edge = tocEdges(row.scrollLeft || 0, row.clientWidth || 0, row.scrollWidth || 0);
+      tocBar.className = withClass(withClass(tocBar.className, "is-back", edge.back), "is-more", edge.more);
+    };
+    row.addEventListener("scroll", edgesNow, { passive: true });
     window.addEventListener("resize", function () {
       window.clearTimeout(resizing);
-      resizing = window.setTimeout(watch, 150);
+      resizing = window.setTimeout(function () { watch(); edgesNow(); }, 150);
     });
     watch();
     tocBar.className += " is-live";
+    edgesNow();
   }
 
   // Back to top: once the reader is about two screens down a page and turns back (scrolls up), or has come to the end of the content,

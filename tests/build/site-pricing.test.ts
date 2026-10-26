@@ -186,3 +186,13 @@ test("a number outside its field's range says what the estimate used, and the fi
   assert.deepEqual(valid.errors, { projects: { hidden: true, text: "" }, seats: { hidden: true, text: "" }, missions: { hidden: true, text: "" } });
   assert.deepEqual(valid.invalid, { projects: null, seats: null, missions: null });
 });
+
+/**
+ * At a 24px user default (150% of 16px) the pinned figure was one 358.4px line in a 300px line at 360, and the pricing page
+ * was 389px wide on a 360 screen: 29px of page sideways, which the design says no page may have. The plan and the figure
+ * already wrap as a pair; the figure itself now takes a second line instead of widening the page.
+ */
+test("the figure pinned over the estimate wraps instead of widening the page at a large user text size", () => {
+  assert.match(CSS, /\.calc-total-figure \{ white-space: normal; text-align: right; \}/);
+  assert.match(CSS, /\.calc-total \{[^}]*flex-wrap: wrap;/, "the plan and the figure can take a line each");
+});
