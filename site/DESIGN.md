@@ -1265,3 +1265,77 @@ measured in the same run; no number is copied from an earlier pass.
 The next pass's first job is the pricing page's first amount at 950 at 360; after it, the plan stack's repetition of the
 limits and support (the exporter's), and the documentation row's third chip.
 
+## 2026-10-26, fourth pass: the price on the first screen, and the demo's commands where a phone can read them
+
+Measured with the same probe (Chrome over CDP, touch, reduced motion, light) at 320, 360 and 1,440. The before column is
+the record of the third pass, re-measured from that commit's site.
+
+### What changed
+
+- **The price stands with the promise.** The hero was 1,296.4px at 360, the contents row 194 and the pricing head 323, so
+  the first amount on the home page was at **y = 1,882.7** — 1,083px below an 800px screen, with the contents row and a
+  pricing head between the action and the figure. A ruled line of figures now stands between the actions and the picture,
+  **written from the plan table** by `scripts/export-pricing.mjs` (the `hero-price` block, like the teaser), so it cannot
+  drift from `packages/licensing/src/plans.ts`: *Community is free; Team is $149 a month; Business is $599 a month;
+  Enterprise is quoted.* with the way to the plans. The first price is **1,882.7 → 522.8** at 360 (320: 2,070.2 → 638.4;
+  1,440: 2,142.7 → 496), and the action at 458.8 is still in the first screen with it.
+- **The demo's commands read whole.** The three blocks of `#try` were 270px wide at 360 with 404, 498 and 498px of text, so
+  **134, 228 and 228px** of the token, clone and run commands lay behind a sideways drag — 46% of the last two — and the run
+  command's last **32px** were cut even at 1,440, where the two-column layout leaves the block 466px. They wrap now
+  (`#try .code pre { white-space: pre-wrap; overflow-wrap: anywhere }`): **0px hidden at 320, 360 and 1,440**, block heights
+  72/92/92 → **113/134/176** at 360 and 72/92/92 → **72/113/113** at 1,440. The Copy button still copies the exact text; the
+  blocks are taller by the lines they no longer hide (`#try` 1,847.3 → 2,033.5 at 360).
+- **The caveat sits with the step it explains.** "There is no published container image yet, so the second step builds it
+  from the source" stood in the preamble, above the first command, and said "the second step" from outside it. It is now
+  inside step 2, the one that builds the image, and reads "so this step builds it". A phone reaches the first command
+  **83.2px** sooner: step 1 stands **640.8 → 557.6** from the section's top at 360 (320: 640.0 → 556.8). At 1,440 the steps
+  are the right column and nothing moved.
+
+The three together cost **297px** at 360 (12,991 → 13,288), 318 at 320 and 193 at 1,440, and they buy the price 1,360px
+higher and every command whole. The cost of the price line is the picture: its first **166.2px** were inside the first 800px
+at 360 and its first **55.2px** are now, because 81px of ruled figures stand above the frame. The frame bar, the three tabs
+and the top of the capture are still on the first screen, and the capture is 326 × 204 at that width — 0.23 of the 1,440px
+art it is cut from — so the figures are the thing a thumb can use and the picture is one scroll away.
+
+### Measurements after this pass
+
+| Page, height at 320 / 360 / 1,440 | Before | After |
+|---|---|---|
+| Home | 13,791 / 12,991 / 12,080 | **14,109 / 13,288 / 12,273** |
+| Pricing (content untouched) | 13,485 / 9,206 (360/1,440) | unchanged |
+
+| The first screen at 360 | Before | After |
+|---|---|---|
+| The hero | 1,296.4 | **1,407.4** |
+| The primary action | y = 458.8 | y = 458.8 |
+| The first price on the page | **y = 1,882.7** | **y = 522.8** |
+| The picture's first line | y = 633.8 (166.2px in an 800px screen) | y = 744.8 (**55.2px**) |
+| The contents row | y = 1,365.4 | y = 1,476.4 |
+
+| The demo's three commands | 320 | 360 | 1,440 |
+|---|---|---|---|
+| Hidden behind a sideways drag, token / clone / run | 174 / 268 / 268 → **0 / 0 / 0** | 134 / 228 / 228 → **0 / 0 / 0** | 0 / 32 / 32 → **0 / 0 / 0** |
+| Block heights | — | 72 / 92 / 92 → **113 / 134 / 176** | 72 / 92 / 92 → **72 / 113 / 113** |
+| From the section's top to step 1 | 640.0 → **556.8** | 640.8 → **557.6** | 100.8 → 100.8 |
+| The section | 1,919.2 → **2,126.2** | 1,847.3 → **2,033.5** | 1,166.7 → **1,263.3** |
+
+- No page scrolls sideways at 320, 360 or 1,440 (**0** on each), axe-core reports **0** violations on the home page at 360
+  and 1,440 and on pricing at both (WCAG 2.0/2.1 A and AA), and no text computes under **12px**.
+- Four controls are under 44px at 360 and all four are inline links in a sentence (WCAG's exception): the new "Compare the
+  plans" (132 × 19) joins the security caveat's link and the answer's two. No standalone control is under 44.
+- `tests/build/site-copy.test.ts` holds the price between the actions and the picture, names all four plans with the plan
+  table's figures, and holds the image caveat to step 2 and the wrap rule in the stylesheet.
+
+### What this pass deliberately left
+
+- **The contents row already lands where it says.** Every one of the eight entries puts its section at y = 88 under the 69px
+  header, and no section's first line is below the fold after landing (the heads land at 88–137); at 1,440 the row is two
+  columns of four, 98px. It was measured and not changed.
+- **The pricing page's first amount is still at 950 at 360.** The calculator was read-only for this pass and is sound: 0
+  console errors, every field 44px, the total and the quoted plan intact at 360 and 1,440. The page's own head (432px at
+  320) and its plans head own the 150px; that is still the next pass's first job.
+- **The FAQ was measured and left.** Its ten summaries are 64–86px, its answers 16px/25.6 at 328px wide, and the first three
+  questions are the model account, your code, and the free plan. Nothing there was wrong enough to change.
+- **A 720px capture of the hero would still read better than 326 × 204.** The console is being redesigned in parallel, so
+  the captures were not retaken, and no CSS crop makes 1,440px of art legible in 326.
+- `site/ux/` was not edited.

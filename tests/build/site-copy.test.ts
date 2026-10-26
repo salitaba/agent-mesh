@@ -181,6 +181,14 @@ test("the home page says what it is, and the 'Try it' commands are the ones that
   assert.ok(read("README.md").includes("docker build -t curule .") && read("README.md").includes("-e MESH_API_TOKEN=\"$(openssl rand -hex 32)\" curule demo"), "README.md gives the same commands");
   assert.ok(read("deploy", "docker", "entrypoint.sh").includes("demo)"), "the image's entrypoint has the demo command");
   assert.ok(home.copy.includes("Open the demo-stub project and press Start mission"), "and the steps in the dashboard");
+  // The caveat about the container image explains the step that builds it, and stands there: above the first command it sat
+  // 83.2px of preamble a phone read before it could copy anything.
+  const demo = /<section class="section" id="try">[\s\S]*?\n<\/section>/.exec(home.html)![0];
+  const steps = [...demo.matchAll(/<li>\n\s+<h3>([^<]+)<\/h3>([\s\S]*?)<\/li>/g)];
+  assert.equal(steps.length, 4, "four steps");
+  assert.match(steps[1]![2]!, /data-image-off/, "the image caveat is in the step that builds the image");
+  assert.ok(!demo.slice(0, demo.indexOf("<ol class=\"try\">")).includes("data-image-off"), "and not in the preamble above the first command");
+  assert.match(read("site", "assets", "site.css"), /#try \.code pre \{ white-space: pre-wrap; overflow-wrap: anywhere; \}/, "the demo's commands wrap rather than hide their ends");
 });
 
 test("the two ways in say what is paid in words, and write no figure of their own: the licences' prices are in the generated blocks and Curule Cloud's are the account pages'", () => {
@@ -484,16 +492,30 @@ test("the pages say what they must: the plans, how licences work, the security s
   assert.ok(fs.existsSync(path.join(SITE, "404.html")));
 });
 
-test("the hero is one grid that the stylesheet places: the statement, the claims, the actions of both states in one group, and the picture, in the order a phone shows them", () => {
+test("the hero is one grid that the stylesheet places: the statement, the price, the claims, the actions of both states in one group, and the picture, in the order a phone shows them", () => {
   const hero = /<section class="hero" id="top">[\s\S]*?\n<\/section>/.exec(page(pages, "index.html").html)![0];
   const at = (needle: string): number => hero.indexOf(needle);
-  const order = ['<div class="hero-grid">', '<p class="eyebrow">', "<h1>", '<p class="lede">', '<div class="hero-cta">', '<div class="hero-visual">', '<ul class="proof">'].map(at);
+  const order = ['<div class="hero-grid">', '<p class="eyebrow">', "<h1>", '<p class="lede">', '<div class="hero-cta">', '<p class="hero-price">', '<div class="hero-visual">', '<ul class="proof">'].map(at);
   assert.ok(order.every((n) => n >= 0), "every part is there");
-  assert.deepEqual(order, [...order].sort((a, b) => a - b), "in reading order: a statement, what it is, where to start, the picture, then the claims");
-  const cta = hero.slice(at('<div class="hero-cta">'), at('<div class="hero-visual">'));
+  assert.deepEqual(order, [...order].sort((a, b) => a - b), "in reading order: a statement, what it is, where to start and what it costs, the picture, then the claims");
+  const cta = hero.slice(at('<div class="hero-cta">'), at('<p class="hero-price">'));
   assert.equal((cta.match(/class="actions"/g) ?? []).length, 2, "the actions of the site that is open and of the one that is not");
   assert.equal((cta.match(/<p class="small muted mt-s"/g) ?? []).length, 2, "and what is said under each");
   assert.ok(!/class="actions"/.test(hero.slice(at('<div class="hero-visual">'), at('<ul class="proof">'))), "nothing of the actions is inside the picture's column");
+});
+
+test("the price stands on the first screen, between the actions and the picture, and is written from the plan table, not by hand", () => {
+  const home = page(pages, "index.html").html;
+  const block = /<!-- generated:hero-price:start \(scripts\/export-pricing\.mjs; do not edit between the markers\) -->([\s\S]*?)<!-- generated:hero-price:end -->/.exec(home);
+  assert.ok(block, "the hero's price is a fenced block of scripts/export-pricing.mjs");
+  const price = textOf(block![1]!);
+  for (const plan of Object.values(PLANS)) assert.ok(price.includes(plan.name), `the hero's price names ${plan.name}`);
+  for (const plan of Object.values(PLANS)) if (plan.priceMonthlyUsd) assert.ok(price.includes(`$${plan.priceMonthlyUsd}`), `${plan.name}: its monthly price, in the first screen's line`);
+  assert.match(block![1]!, /<a href="pricing\/">Compare the plans<\/a>/, "and the rows of figures lead to the plans");
+  // A phone places it with CSS order; the stylesheet must say so, or it lands under the picture with the note.
+  const css = fs.readFileSync(path.join(SITE, "assets", "site.css"), "utf8");
+  assert.match(css, /@media \(max-width: 719px\) \{[\s\S]*?\.hero-price \{ order: 5;[\s\S]*?\.hero-visual \{ order: 6;/, "on a phone: actions, price, picture");
+  assert.match(css, /@media \(min-width: 1040px\) \{[\s\S]*?\.hero-price \{ grid-row: 4;/, "and on a desk it takes the row under the lede");
 });
 
 test("each of the four reasons is a card of its own, a mark, a title and its words first, and a drawing of the idea after them", () => {
