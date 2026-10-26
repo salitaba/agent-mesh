@@ -376,6 +376,9 @@ test("the page for an address that is not found offers the pages a person was pr
   }
   assert.ok(items.length >= 4 && items.length <= 7, "short enough to read at a glance");
   assert.match(notFound.html, /<p class="mt-l"><a class="btn btn-primary" href="\/">Go to the home page<\/a><\/p>/, "and the way home is still one press");
+  // Home first: the way out is on the first screen, under the heading, before the six ways. It was after them, 1,195px down
+  // at 360, so the one action a lost reader most often wants was the last thing on the page.
+  assert.ok(notFound.html.indexOf('<p class="mt-l"><a class="btn btn-primary" href="/">Go to the home page</a></p>') < notFound.html.indexOf('<ul class="nf-list">'), "the way home comes before the ways, not after them");
 });
 
 test("the cards that carry a mark are the ones where it helps a reader find the one they want: each has its own drawing, and a drawing means the same on every page", () => {

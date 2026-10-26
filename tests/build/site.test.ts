@@ -775,4 +775,29 @@ test("an address line stays one line on a phone, a card's title sits below its s
   assert.match(forced, /\.teaser > li, \.plan-limits > div \{ forced-color-adjust: auto; \}/, "and the cells are still drawn in the system's colours");
 });
 
+test("a section head is the page's rank wherever it stands, and an explanation is a ruled line, not a panel", () => {
+  const css = fs.readFileSync(path.join(SITE, "assets", "site.css"), "utf8");
+  // The rank the documentation and contact pages took (28 at 360, 48 at a desktop) is every page's, including a split's:
+  // the security and legal pages' sections were 24/34, a step below the same kind of head on the other pages.
+  const rank = /\.section > \.wrap > h2\.legend-title \{ font-size: ([^;]+);/.exec(css)?.[1];
+  const split = /\.split > header h2 \{ font-size: ([^;]+);/.exec(css)?.[1];
+  assert.ok(rank && split, "both rules state the rank's size");
+  assert.equal(split, rank, "a split's head takes the page's rank, not one of its own");
+  for (const [rel, count] of [["security/index.html", 6], ["legal/index.html", 3]] as const) {
+    const heads = [...page(pages, rel).markup.matchAll(/<section class="split" id="[\w-]+">\s*<header>\s*<h2>/g)];
+    assert.equal(heads.length, count, `${rel}: ${count} sections, each with its head in a split`);
+  }
+  // The summary's answers use the box's width: the mark and its title share the first row and the words run under both,
+  // because in the 222px beside the mark two of the three answers ran a line longer than their words needed at 360.
+  assert.match(css, /\n\.glance-list \.mark \{ grid-row: 1; \}/);
+  assert.match(css, /\n\.glance-list p \{ grid-column: 1 \/ -1; margin: 0; \}/);
+  // The note over the map explains what a title and a path are; it is prose, so it is a ruled line and not a notice panel.
+  assert.match(css, /\n\.doc-note \{[^}]*border-top: 1px solid var\(--line2\);[^}]*font-size: \.875rem;/, "the map's note is a ruled line of small muted words");
+  const docs = page(pages, "docs/index.html").markup;
+  assert.match(docs, /<p class="doc-note"><b>Each title opens the document on GitHub\.<\/b>/, "and the map's explanation keeps its words");
+  assert.ok(!docs.includes('class="notice neutral mt-m"><b>Each title opens'), "the explanation is not a warning's panel");
+  // A footer link is a target: its own word is the only thing that sets its width, and "Terms" is 43px in a system font.
+  assert.match(css, /\n\.foot-col a \{[^}]*min-width: 44px;/, "a footer link is at least a thumb's square across");
+});
+
 
