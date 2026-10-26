@@ -2,7 +2,7 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties } from "react";
 import { ago, dur, fmt, localTime, plainBlocker, plural, refusalSummary, outcomeOf, zoneLabel, OUTCOME_META, type Outcome } from "../format";
 import { useMesh, type TurnStep } from "../store";
-import { AgentAvatar, Button, EmptyState, ErrorState, NextLinks, OutcomePill, PageHeader, Ring, SearchField, Segmented, Skeleton, Stat, Switch, Tooltip, agentColor, useNow } from "../components";
+import { AgentAvatar, Banner, Button, EmptyState, ErrorState, NextLinks, OutcomePill, PageHeader, Ring, SearchField, Segmented, Skeleton, Stat, Switch, Tooltip, agentColor, useNow } from "../components";
 import { Icon } from "../icons";
 import { compactNow, nowLine, timeLeftText, type CurrentTool } from "../livework";
 import { BUCKETS, heldList, newestKey } from "../feed";
@@ -356,10 +356,12 @@ function Rows(): React.JSX.Element {
 /* ---------------------------------- page ----------------------------------- */
 
 export default function Steps(): React.JSX.Element {
-  const { steps, stepsLoaded, stepsError, stepFilter, setStepFilter, stepSearch, setStepSearch, openDetail, refreshSteps, stepLimit, setStepLimit, status, serverDown, setView } = useMesh();
+  const { steps, stepsLoaded, stepsError, stepsStale, stepFilter, setStepFilter, stepSearch, setStepSearch, openDetail, refreshSteps, stepLimit, setStepLimit, status, serverDown, setView } = useMesh();
   const { state } = useMission();
   const missionActions = useMissionActions();
   const [fold, setFold] = useState(true);
+  // A retry asked for from the note above the ledger: its answer replaces the note, so focus has to be put back by hand.
+  const [retrying, setRetrying] = useState(false);
   // On a phone the outcome chips are folded behind one button, as Events' facets are: three chips in two rows
   // took 166 px above the first turn. The button names the choice that is on and its count, so folding the chips
   // away does not hide what is being shown.
@@ -368,6 +370,15 @@ export default function Steps(): React.JSX.Element {
   // The turn picked out in both the timeline and the list.
   const [hot, setHot] = useState<string | null>(null);
   const ledgerRef = useRef<HTMLDivElement | null>(null);
+  // The note above the list is removed by the read that answers it, and the button that was pressed goes with it: focus fell to
+  // <body>, a screen up, with nothing to say the history had arrived. It lands on the newest turn instead, where the list begins.
+  useEffect(() => {
+    if (!retrying || stepsStale || !stepsLoaded) return;
+    setRetrying(false);
+    const row = ledgerRef.current?.querySelector<HTMLElement>(".st-row");
+    if (row) row.focus({ preventScroll: true });
+    else document.querySelector<HTMLElement>("#view h2[tabindex]")?.focus();
+  }, [retrying, stepsStale, stepsLoaded]);
   // Buckets only move at minute scale; a 30s clock keeps the ledger out of the per-second render path while live durations tick
   // inside their own leaves.
   const now = useNow(30_000);
@@ -483,6 +494,18 @@ export default function Steps(): React.JSX.Element {
       </div>
 
       <HoldBar paused={hold.paused} fresh={held.fresh} noun="turn" onShow={showNewest} />
+
+      {/* A read that failed after a good one keeps the rows and says so. Without this the page went on reporting the tail the
+          Overview had primed — 6 turns under "Live · Updated 2s ago" — as the mission's whole history. */}
+      {stepsStale && stepsLoaded ? (
+        <Banner
+          tone="warn"
+          title="The turn history could not be read just now."
+          actions={<Button variant="banner-act" icon="refresh" onClick={() => { setRetrying(true); void refreshSteps(true); }}>Read again</Button>}
+        >
+          Showing the {plural(visible.length, "turn")} already loaded. Reading it again failed at {localTime(new Date(stepsStale.at).toISOString())}. {stepsStale.why}
+        </Banner>
+      ) : null}
 
       <div className="st-ledger" ref={ledgerRef} onKeyDown={roving.onKeyDown} {...hold.listProps}>
         {groups.length ? (

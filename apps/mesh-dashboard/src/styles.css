@@ -1423,6 +1423,9 @@ ul.errs { margin: var(--s1-5) 0; padding-left: 18px; font-size: 14px; color: var
     min-height: 44px;
   }
   :is(.pj-home, .ptab-x, .ptab-add, .agent-open, .gr-open, .icon-btn, .close-x, .palette-x, .toast-x, .copy-btn.compact, .srch-clear) { min-width: 44px; }
+  /* The Cards/List choice in a page head was 43 × 44 at 320–390: a 44 px row, a pixel short of a square, on the one control a
+     thumb uses to change how the page reads. A segmented choice in a page head is a target, not a caption. */
+  .page-head .seg button { min-width: 44px; }
   /* A tab's close control used to appear only under a pointer resting on the tab. A touch screen has no resting pointer, so a
      background project could not be closed without first selecting it. */
   .ptab-x { opacity: 1; }
