@@ -117,7 +117,6 @@
 /* The outcome chips are the page's own filter, and on a phone they fold behind one button that names the
    choice and its count. The toggle exists only where the fold does. */
 .st-filters-toggle { display: none; }
-.st-filters-toggle .st-f-n { font-weight: 500; color: var(--muted); }
 .st-f-dot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--oc); }
 .st-f-n { font-weight: 500; color: var(--muted); }
 .st-filters button[aria-pressed="true"] { color: var(--oc, var(--k-accent-ink)); }
@@ -241,15 +240,17 @@
 
 @media (max-width: 620px) {
   .st-pulse-top { padding: var(--s3-5) var(--s4); }
-  /* The outcome chips and their counts are one 44 px button until opened; the switch stays, because folding quiet
-     runs is a reading choice the ledger keeps. Measured before: 166 px of filter above the first turn, 106 of it
-     the chips' second row. After: 60 px. */
+  /* The outcome chips and their counts are one 44 px button until opened, and the quiet-run switch joins them in the
+     fold, as Events' does. Measured before: 166 px of filter above the first turn, 106 of it the chips' second row.
+     After: 60 px. */
   .st-filters-toggle { display: inline-flex; flex: 0 1 auto; }
   .st-facetbox { display: none; flex: 1 1 100%; order: 3; flex-direction: column; align-items: stretch; gap: var(--s2); }
   .st-facetbox.open { display: flex; }
   .st-facetbox .st-foldchoice { min-height: 44px; }
   .st-toolbar-right { order: 2; margin-left: auto; }
+  /* Unfiltered, the button carries the count; with a search or a filter on, how many of how many is the fact that changed. */
   .st-count { display: none; }
+  .st-count.on { display: inline; }
   /* Three figures could not share 302 px: the third ran 76 px past the card and scrolled the whole view sideways at 360.
      A 2 x 2 ledger gives the two counts the first line and the share that went nowhere the second, at full width. */
   .st-kpis { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); width: 100%; gap: var(--s3) var(--s4); margin-left: 0; }

@@ -360,9 +360,9 @@ export default function Steps(): React.JSX.Element {
   const { state } = useMission();
   const missionActions = useMissionActions();
   const [fold, setFold] = useState(true);
-  // On a phone the outcome chips are folded behind one button, as Events' facets are: three chips in two
-  // rows, held still at the top of the ledger, spent a fifth of the screen on every scroll. The button names
-  // the choice that is on and its count, so folding the chips away does not hide what is being shown.
+  // On a phone the outcome chips are folded behind one button, as Events' facets are: three chips in two rows
+  // took 166 px above the first turn. The button names the choice that is on and its count, so folding the chips
+  // away does not hide what is being shown.
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [openFolds, setOpenFolds] = useState<ReadonlySet<string>>(() => new Set());
   // The turn picked out in both the timeline and the list.
@@ -474,7 +474,7 @@ export default function Steps(): React.JSX.Element {
           </span>
         </div>
         <div className="st-toolbar-right">
-          <span className="st-count">
+          <span className={`st-count${filtered ? " on" : ""}`}>
             {!stepsLoaded ? (stepsError ? "Not loaded" : "Loading…") : filtered ? `${rows.length} of ${visible.length}` : `${visible.length} turn${visible.length === 1 ? "" : "s"}`}
           </span>
           {/* Said aloud only while a filter is on: a count that announced every new turn would talk all through a live run. */}

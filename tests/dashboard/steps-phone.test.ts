@@ -30,6 +30,8 @@ test("the outcome chips fold behind one button that names the choice and its cou
   assert.match(phone, /\.st-filters-toggle \{ display: inline-flex/, "the button exists on a phone");
   assert.match(phone, /\.st-facetbox \{ display: none;/, "and the chips do not");
   assert.match(phone, /\.st-facetbox\.open \{ display: flex; \}/, "until it is pressed");
+  assert.match(tsx, /className=\{`st-count\$\{filtered \? " on" : ""\}`\}/, "a search's 1-of-28 is still a visible fact");
+  assert.match(phone, /\.st-count\.on \{ display: inline; \}/, "where the unfiltered count is the button's own");
   assert.match(desktop, /\.st-filters-toggle \{ display: none; \}/, "a desk keeps the chips in plain sight, with no button");
 });
 
