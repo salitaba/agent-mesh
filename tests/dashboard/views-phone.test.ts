@@ -97,6 +97,14 @@ test("a phone scans what shipped as rows, and the narrowest one puts the state u
   assert.match(phone, /grid-template-areas: "tile name name" "tile meta state" "path path path";/, "name, then what it is with its state at the right, then the path");
   assert.match(phone, /\.ov-files \.fc-top > \.tile \{ grid-area: tile; width: 28px; height: 28px/, "a 40 px tile belongs to a card; the row's mark is the size the seat stack uses");
   assert.match(phone, /\.ov-files \.fc-top > \.pill \{ grid-area: state; \}/, "where a file stands is a cell of its own");
+  // At 360 the type is one word beside the pill: "ArchitectureDocument" measured 138 px in a 119 px meta cell and painted 19 px
+  // under the state pill's background, "RequirementsDoc" 106 px in 73 px. The name breaks a word only where it cannot fit; the
+  // meta does the same, so one of the six rows grows (78 → 96 px, the panel 829 → 847) and nothing overlaps.
+  assert.match(
+    phone,
+    /\.ov-files \.fc-meta \{ grid-area: meta; align-self: start; overflow-wrap: anywhere; \}/,
+    "a type wider than its cell breaks instead of running under the state",
+  );
   // The loading card is not a row: three bars stacked, so the placeholders do not jump into three cells and one of them collapse.
   assert.match(phone, /\.ov-files \.fc-skel \{ grid-template-columns: minmax\(0, 1fr\); grid-template-areas: none; \}/, "the skeleton keeps the card's shape while it loads");
   assert.match(view("Shipped.tsx"), /className="card fc fc-skel"/, "and names itself, so only the placeholder takes that rule");

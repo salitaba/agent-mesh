@@ -145,6 +145,9 @@ export interface FileViewProps {
   /** Controlled view. Left out, the file remembers its own. */
   mode?: FileViewMode;
   onModeChange?: (mode: FileViewMode) => void;
+  /** The level a document's own headings start under: the reader's title is an h3 in the page and an h2 in the panel (default 4,
+   *  `PANEL_HEADING_BASE`). A drawer that leaves it at 4 reads h2 → h4 and skips a level. */
+  headingBase?: number;
 }
 
 export function FileView({
@@ -160,6 +163,7 @@ export function FileView({
   showPath = true,
   mode: modeProp,
   onModeChange,
+  headingBase = PANEL_HEADING_BASE,
 }: FileViewProps): React.JSX.Element {
   const [own, setOwn] = useState<FileViewMode | null>(null);
   const [wrap, setWrap] = useState(false);
@@ -242,7 +246,7 @@ export function FileView({
         ) : content === undefined ? (
           <p className="fv-empty">This file has no content to show.</p>
         ) : kind === "markdown" && mode === "rendered" ? (
-          <div className="fv-md" dangerouslySetInnerHTML={{ __html: renderMarkdown(content, { headingBase: PANEL_HEADING_BASE }) }} />
+          <div className="fv-md" dangerouslySetInnerHTML={{ __html: renderMarkdown(content, { headingBase }) }} />
         ) : (
           <div className={`fv-code${wrap ? " wrap" : ""}`}>
             {lines.slice(0, win.shown).map((l, i) => (

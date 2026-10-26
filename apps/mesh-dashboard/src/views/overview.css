@@ -231,7 +231,11 @@ details.ov-note { display: block; }
   /* The name has the row's whole width, so a file is broken only where a word cannot fit at all — "payment-requirements" set
      anywhere-broken beside a 144 px pill was three lines of a word. */
   .ov-files .fc-name { grid-area: name; align-self: end; overflow-wrap: break-word; }
-  .ov-files .fc-meta { grid-area: meta; align-self: start; }
+  /* A type is one word, and some are wider than the cell beside the pill: at 360 "ArchitectureDocument" measured 138 px in a 119 px
+     meta cell and painted 19 px under the state pill's own background, "RequirementsDoc" 106 px in 73 px (33 px under it) on the
+     rows whose pill reads "ready for review". The name already breaks a word only where it cannot fit (§6b); the meta does the
+     same. One of the delivered demo's six rows grows (78 → 96 px, the panel 829 → 847) and no line overlaps. */
+  .ov-files .fc-meta { grid-area: meta; align-self: start; overflow-wrap: anywhere; }
   .ov-files .fc-path { grid-area: path; margin-top: var(--s1); }
   /* The loading shape is not a row: three bars stack where the card's own lines will be, so nothing jumps when the files arrive. */
   .ov-files .fc-skel { grid-template-columns: minmax(0, 1fr); grid-template-areas: none; }

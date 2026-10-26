@@ -680,12 +680,15 @@ export function Shell({ viewNode }: { viewNode: React.ReactNode }): React.JSX.El
           runs one mesh with no registry and has no tabs to show. */}
       {hasProjects ? <ProjectTabs parked={parked} parkedId={mesh.projectId} inert={navModal} /> : null}
       {navModal ? <div id="nav-scrim" aria-hidden="true" onClick={closeMenu} /> : null}
-      <aside
+      {/* A div, not an <aside>: the off-canvas sheet is a modal dialog, and `role="dialog"` on an <aside> is a role ARIA in HTML
+          does not allow there (axe: `aria-allowed-role`, one node, every time the phone menu was open). A div carries the same
+          two roles honestly — the complementary landmark a wide screen has always shown, and the dialog a phone gets. */}
+      <div
         id="sidebar"
         className={menuOpen ? "open" : ""}
         inert={sidebarHidden}
         aria-hidden={sidebarHidden || undefined}
-        role={narrow ? "dialog" : undefined}
+        role={narrow ? "dialog" : "complementary"}
         aria-modal={navModal || undefined}
         aria-label={narrow ? "Navigation" : undefined}
       >
@@ -731,7 +734,7 @@ export function Shell({ viewNode }: { viewNode: React.ReactNode }): React.JSX.El
           <IconButton id="btn-help" icon="help" label="Keyboard shortcuts and help" keys="?" onClick={openHelp} />
           {auth?.required ? <IconButton id="btn-signout" icon="sign-out" label="Sign out" title="Sign out: end this browser's session on the server" onClick={auth.signOut} /> : null}
         </div>
-      </aside>
+      </div>
 
       <header id="topbar" className={hostLevel ? "bare" : undefined} inert={navModal || undefined}>
         <Button id="btn-menu" variant="ghost" aria-expanded={menuOpen} aria-label={menuOpen ? "Close navigation" : "Open navigation"} onClick={() => setMenuOpen(!menuOpen)}><Icon name="menu" size={18} /></Button>

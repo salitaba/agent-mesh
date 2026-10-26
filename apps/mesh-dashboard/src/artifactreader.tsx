@@ -71,6 +71,23 @@ export function ArtifactReader({ id, as, stamp }: {
     };
   }, [id, client, metaTry, stamp]);
 
+  // The loading head's close button is replaced by the record's own head when the read lands, and removing the focused node
+  // drops focus to <body>: the drawer stayed open with the keyboard nowhere in it (measured at 320, 360 and 390 px, the log was
+  // file row → close → BODY, with nothing in the panel reachable by Tab). Put it back once per file, on the close it had, and
+  // only when focus was lost — a reader already on a version button keeps where they are. The step drawer's rule, same reason.
+  const restoredFor = useRef<string | null>(null);
+  useEffect(() => {
+    if (as !== "drawer" || meta.kind === "loading" || restoredFor.current === id) return;
+    restoredFor.current = id;
+    const active = document.activeElement;
+    if (active && active !== document.body) return;
+    const root = document.getElementById("drawer");
+    if (!root) return;
+    const first = root.querySelector<HTMLElement>(".close-x")
+      ?? root.querySelector<HTMLElement>('a[href], button:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])');
+    (first ?? root).focus();
+  }, [as, id, meta.kind]);
+
   const art = meta.kind === "ready" ? meta.art : null;
   const versions: ArtVersion[] = useMemo(() => (meta.kind === "ready" ? distinctVersions(meta.history) : []), [meta]);
   const latest = versions.length ? versions[versions.length - 1]!.version : art?.version ?? null;
@@ -267,6 +284,8 @@ export function ArtifactReader({ id, as, stamp }: {
           mode={mode}
           onModeChange={setMode}
           maxHeight={undefined}
+          /* In the panel the reader's own title is the h2, so a document's headings start one level down from the page's h3. */
+          headingBase={as === "drawer" ? 3 : undefined}
           changes={{
             available: canCompare,
             diff: diffFor && "diff" in diffFor ? diffFor.diff : null,

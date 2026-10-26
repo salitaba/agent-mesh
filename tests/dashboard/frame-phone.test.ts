@@ -89,7 +89,7 @@ test("the project strip is one button and a sheet on a phone, not a sideways scr
 test("the navigation sheet is a layer: a scrim, a close control, aria-modal and an inert page", () => {
   assert.match(shell, /const navModal = narrow && menuOpen;/);
   assert.match(shell, /\{navModal \? <div id="nav-scrim" aria-hidden="true" onClick=\{closeMenu\} \/> : null\}/);
-  assert.match(shell, /role=\{narrow \? "dialog" : undefined\}/);
+  assert.match(shell, /role=\{narrow \? "dialog" : "complementary"\}/);
   assert.match(shell, /aria-modal=\{navModal \|\| undefined\}/);
   assert.match(shell, /aria-label="Close navigation"/, "a visible way out that is not a nav item");
   assert.match(shell, /<header id="topbar"[^>]*inert=\{navModal \|\| undefined\}/);
