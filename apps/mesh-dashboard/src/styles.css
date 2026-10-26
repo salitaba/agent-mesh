@@ -1434,4 +1434,6 @@ ul.errs { margin: var(--s1-5) 0; padding-left: 18px; font-size: 14px; color: var
   /* The two capital captions that were missed: the sidebar's group names and the palette's. Both are words on a phone, not
      glyph marks, so they take the same 12px floor as the Stat labels. */
   :is(.nav-label, .palette-group, .palette-scope) { font-size: 12px; }
+  /* The goal id under the wordmark was the last 11 px word on a phone (247 px wide at 360, measured). It is a name, not a glyph. */
+  .brand .sub { font-size: 12px; }
 }

@@ -133,56 +133,96 @@ Breakpoints: **1280 1100 900 800 760 620 560**. 800 is the sidebar drawer (JS
 
 ## Open problems (carried forward)
 
-- The Overview is 4,474 px tall at 360 px with a delivered mission (was 8,582 before the folding and the shipped card work). `JumpRow`
-  makes its four sections one press away, but the sections themselves (seven goal checks, six file cards, eight log rows) are still
-  long. Measure whether one line per section at 620 px and below, opening in place, is worth what it hides.
-- Events and the approvals inbox are the only console pages without an end-cap.
-  That is deliberate for now: Events is a live viewport that filters and grows,
-  and the inbox owns its own navigation. The next pass should decide whether
-  either gets a row, and where it sits relative to the live content.
-- At 621–800 px the project strip is still a row of tabs that scrolls inside
-  itself when projects overflow. The phone's switcher and sheet prove the
-  pattern; whether a tablet needs the same trade has not been measured with
-  enough projects, so this pass did not change it.
+- The Overview is now **1,214 px** at 360 px with a delivered mission (was 4,132 today, 8,582 before the 2026-10-22 folding and shipped-card
+  work): the four evidence sections below the index are one ruled row each until opened. The open question is the default, not the length:
+  What shipped is closed like the other three, and a mission that has just delivered may deserve its six file rows open; measured, the
+  closed row is 53 px and the open panel 847, so the whole difference is one press or two screens.
+- Events and the approvals inbox still close without `NextLinks`, and that is now a decision rather than a pending question: Events ends on
+  its window status (the newest 300 of 491 events) and the inbox on its empty state's Back to the Overview; a row of doors would repeat
+  the navigation each page already has (`Pause`/`Filters`, `Decisions`/`Tool gates`) rather than continue it.
+- At 621–800 px the project strip is still a row of tabs that scrolls inside itself when projects overflow. The phone's switcher and sheet
+  prove the pattern; it was not measured here because `curule console` serves one mesh and `/api/projects` answers 404, so this mode has no
+  strip to overflow. The hosted console is where the measurement can be made.
 - The top bar no longer shows the mission's goal below 800 px. That is the
   deliberate trade that made it one row; the goal leads Overview and is one tap
   away, but a reader on Events cannot see it without leaving the page. Watch
   whether that absence costs a visit in real use.
-- The Designer's phone header still stacks its actions three rows deep (116 px)
-  before the roster; and its first-run guide plus header leave only the first
-  seat row on an 844 px screen. Both are measured in the 2026-10-23 entry with
-  the two shapes that would shorten them and what each would hide.
-- The Designer's YAML preview scrolls sideways inside its own box (2,043 px of
-  text at 360). A wrap toggle is the next move; the page itself stays put.
-- 768 px is just above the Designer's 760 phone layout: the guide disclosures
-  are 32 px and the canvas wire handles 26 px on a touch-class screen.
+- The Designer's phone header is **90 px** with the first-run guide (was 150): undo/redo are in ⋯ and the other three actions share one row.
+  The first seat row starts at **735** on an 844 screen (was 795), so one row is fully visible but still only one: the guide's 459 px is now
+  the largest block before the roster, and a one-line or sheet shape for the guide is the next decision.
+- The Designer's YAML preview wraps by default at 620 and below (295/295 at 360, was 462 in 295). The choice is component state, so it is not
+  remembered between visits; a wrapped path breaks anywhere and the copy button is still the way to the exact text.
+- 768 px is just above the Designer's 760 phone layout, but its guide disclosures and canvas wiring ports now take the 44 px floor on a
+  coarse pointer (the port keeps its 26 px mark). The console's `NextLinks` there still measure 32 px on a coarse pointer, above the phone
+  break; whether every touch-class tablet row takes 44 is the wider question this pass did not answer.
 - Overview's avatar initials are 11 px glyphs in a 22 px disc. They are marks, not
-  words, and stay at 11 on a phone.
+  words, and stay at 11 on a phone. The goal id under the wordmark was the last 11 px word there and is now 12.
 - The public site (`apps/cloud-server/pages`) has its own memory; this pass did
   not change it.
 
 ## What the next pass should take
 
-1. The Overview's length (above): the index is a signpost, not a fold. Measure a
-   one-line-per-section phone shape against the current 4,474 px page.
-2. Decide the Events and inbox end-caps (above), and whether the Events fold row
-   should also offer the actor filter it now counts.
-3. Prove whether 768 px needs the project sheet: seed enough projects that the
-   strip overflows at 768 and judge it as a tablet's one-row alternative to the
-   phone's switcher.
-4. The Designer's phone header: move undo/redo into `⋯` and measure whether the
-   52 px it returns is worth the extra press; then decide the guide's shape (the
-   path in one line, or a sheet) against the roster's first two rows being
-   visible on arrival.
-5. Give the YAML preview a wrap toggle and measure a 2,043 px line at 360.
-6. Decide whether a touch-class 768 px tablet inherits the Designer's 44 px
-   controls or stays at pointer density.
+1. Decide whether What shipped opens by default on a fresh delivery, and whether the phone's fold remembers a section (the page resets to all
+   closed on every visit).
+2. Give the first-run guide a phone shape — the path in one line, or a sheet — against the roster's first two rows being visible on arrival.
+   The header now costs 90; the guide costs 459.
+3. Measure the project strip at 621–800 with enough projects, in the hosted console where a registry exists; `curule console` cannot show it.
+4. Decide whether a touch-class 768 px tablet takes the 44 px floor beyond the Designer: its `NextLinks` are still 32 px and the phone break
+   is 620.
+5. Remember the YAML preview's wrap choice, or move the toggle into the pane's own head; either is a small addition to a layer that now fits.
+6. Check the Events and inbox end-caps against real live content before adding any row (the decision above).
 7. Read the console with a real thumb on a real phone: the measurements here are
    Chromium at 360 px with touch emulation only in CSS, not a hardware device.
 8. Check the frame's safe-area claims on a notched device in both orientations;
    the insets are in the CSS but the stand-in browser reports them as zero.
 
 ## Pass log
+
+### 2026-10-26 — the Overview becomes a briefing, and three rules reach the edges
+
+Surface: `views/Overview.tsx`, `views/Panel.tsx`, `views/Shipped.tsx`, `views/GoalChecks.tsx`, `views/overview.css`, `designer/chrome.tsx`,
+`designer/Designer.tsx`, `designer/designer.css`, `designer/topology.css`, `styles.css`. Measured on the scripted demo at **Delivered**
+(491 events, 9 files, 7 checks), production build, Chromium over CDP at 320/360/390/620/621/768/1440 in light and dark, reduced motion,
+a touch pointer at 800 and below, axe-core 4.14 at 360 and 1440. Before and after are the **same mission**: the pre-change build was
+rebuilt from this pass's base and read at the same minute, then the fixed build was read again.
+
+- **The Overview is a briefing, not a scroll.** At 360 a delivered mission was **4,132 px**: six file rows (847), five turns (547), seven
+  checks (946) and the folded feed (789). The four sections below the index are now one ruled row each — title, one figure, Show —
+  until opened in place (`Panel`'s `fold`, phone only). The page is **1,214 px**; the rows are **53 px** each, **212** for all four, and
+  a closed row is a rule rather than a card with a heading and nothing under it (the card-shaped closed row measured 103). The index
+  opens the section it names before it lands: pressing Goal checks at 360 put `#ov-goal` at the top of the now-2,157 px page with focus
+  on it (a same-tick scroll clamps to 478, the folded page's end, and leaves the pressed section below the bar — the landing waits for the open). What it hides, one press each: the six file rows, the
+  five turns, the seven checks and the feed. The hero's Open the product / files / cost / replay are untouched, and a closed row says
+  its failure ("could not load", "paused while reconnecting") instead of reading forever. 1440 is unchanged at 1,750.
+- **The YAML preview wraps.** At 360 a 462 px line lived in a 295 px pane — 167 px behind a sideways drag inside a layer that already
+  fills the screen (2,043 in the larger draft the 2026-10-23 entry measured). It wraps by default below 620: **295/295, 0 hidden**,
+  4,766 → 4,974 px of vertical text. A 44 px `Wrap lines` toggle (`aria-pressed`) returns the aligned `pre` text, and the desk still
+  opens unwrapped. Tab still cycles inside the layer (close → Wrap → Copy → text) and Escape returns focus to `#ms-more`.
+- **The 44 px floor reaches a touch-class 768.** 768 is above the Designer's 760 phone layout but a finger: the guide's three closed
+  steps were **32 px** and each wiring port **26 × 26**. The disclosures are 44; the port's target is **44 × 44** with the 26 px mark
+  drawn inside it, so the canvas does not grow a row of blobs. At 768 coarse the Designer has **0** controls under 44, against four
+  (three steps and the port). The last 11 px word on a phone was the goal id under the wordmark (247 px wide at 360): it takes the
+  caption's **12**. The Overview's smallest text is now a 22 px avatar's 11 px glyph; it was the goal-id word.
+- **The Designer's phone header gives 60 px back.** At 360 with the first-run guide the header was 150 px and its actions two rows
+  (52 for undo/redo and the verdict, 44 for Inspector and the menu). Undo/redo move into ⋯ on a phone (44 px rows; driven: one edit,
+  then `Undo: Edited mission goal`, restores the placeholder). Header **150 → 90**, actions **104 → 44** in one row, the guide starts
+  238 → 178, the roster body **709 → 649**, and the first seat row **795 → 735** — fully on an 844 screen, though still only one row:
+  the guide is 459 and its own shape is the next decision.
+
+The type and target census is otherwise unchanged: 120 page/width/theme reads have **no document or `#view` horizontal scroll**
+(320/360/390/768/1440, light and dark), **0 axe WCAG/best-practice violations** at 360 and 1440 on all twelve views and with the YAML
+layer open, and no control under 44 × 44 at 320/360/390 except the 20 px checkbox inside its 44 px label on Events/Steps/Gates. The
+Designer's 11 px "Starts" flag is unchanged from its own 2026-10-23 census.
+
+Suite: typecheck, eslint (0 errors, 211 pre-existing cross-package warnings) and build clean; `dist/tests/dashboard` **1,166 pass, 0
+fail**, including the new `overview-fold.test.ts` and rules in `designer-layers`, `designer-phone`, `phone-type` and `page-exits`. The
+fold's `hidden` body was mutation-checked: removing it fails the new test.
+
+**Left.** What shipped is closed by default like the other three; a fresh delivery may deserve it open, and that is a reading decision,
+not a layout one. The first-run guide still leaves one seat row on an 844 screen, 60 px better than it was. The project strip at
+621–800 was not measured: `curule console` serves one mesh and `/api/projects` answers 404, so there is no strip here to overflow.
+Events and the inbox still close without `NextLinks`: Events ends on its window status (the newest 300 of 491 events) and the inbox on
+its empty state's Back to the Overview, and neither needed a second row of doors.
 
 ### 2026-10-25 — a read that fails or is slow still says what it is doing
 

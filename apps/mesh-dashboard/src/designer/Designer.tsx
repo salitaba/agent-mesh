@@ -734,8 +734,18 @@ export default function Designer(): React.JSX.Element {
   // context a person has for what they opened.
   const sideTitle = tab === "crew" ? (current ? `Seat: ${current}` : "No seat selected") : tab === "mesh" ? "Mesh settings" : "Policy settings";
 
+  // On a phone the history pair is the row that costs the roster its second line: the header's actions measured 104 px in two rows at
+  // 360 (52 for undo/redo and the verdict, 44 for Inspector and the menu). The pair moves into ⋯ there, where it sits above the file
+  // actions, and the header gives 60 px back. A desk keeps both buttons in the bar, where there is room and undo is one press.
+  const historyItems: MenuItem[] = listMode
+    ? [
+        ...(labelsNow.undo ? [{ id: "ms-mi-undo", icon: "undo" as const, label: `Undo: ${labelsNow.undo}`, title: `Undo: ${labelsNow.undo} (Ctrl or Cmd Z)`, onClick: doUndo }] : []),
+        ...(labelsNow.redo ? [{ id: "ms-mi-redo", icon: "redo" as const, label: `Redo: ${labelsNow.redo}`, title: `Redo: ${labelsNow.redo} (Shift Ctrl or Cmd Z)`, onClick: doRedo }] : []),
+      ]
+    : [];
   const moreItems: MenuItem[] = [
-    { id: "ms-mi-yaml", icon: "files", label: "View YAML", title: "The file Save changes would write", onClick: openYaml },
+    ...historyItems,
+    { id: "ms-mi-yaml", icon: "files", label: "View YAML", title: "The file Save changes would write", separated: historyItems.length > 0, onClick: openYaml },
     { id: "ms-mi-templates", icon: "agents", label: "Start from a template…", title: "Replace the draft with a small team to edit", onClick: () => setTemplatesOpen(true) },
     { id: "ms-mi-import", icon: "files", label: "Import YAML…", title: "Replace the draft with a pasted mesh.yaml", onClick: () => setImportOpen(true) },
     ...(guideOff && needsGuide(m.mesh?.goal, ids.length, wires.length) ? [{ id: "ms-mi-guide", icon: "info" as const, label: "Show the setup guide", onClick: () => { setGuideHidden(false); setGuideOff(false); } }] : []),
@@ -752,10 +762,12 @@ export default function Designer(): React.JSX.Element {
         lede={showGuide ? undefined : LEDE}
         actions={(
           <>
-            <div className="ms-toolgroup" role="group" aria-label="History">
-              <ToolButton icon="undo" label={labelsNow.undo ? `Undo: ${labelsNow.undo}` : "Undo"} disabled={!labelsNow.undo} onClick={doUndo} title={labelsNow.undo ? `Undo: ${labelsNow.undo} (Ctrl or Cmd Z)` : "Nothing to undo"} />
-              <ToolButton icon="redo" label={labelsNow.redo ? `Redo: ${labelsNow.redo}` : "Redo"} disabled={!labelsNow.redo} onClick={doRedo} title={labelsNow.redo ? `Redo: ${labelsNow.redo} (Shift Ctrl or Cmd Z)` : "Nothing to redo"} />
-            </div>
+            {listMode ? null : (
+              <div className="ms-toolgroup" role="group" aria-label="History">
+                <ToolButton icon="undo" label={labelsNow.undo ? `Undo: ${labelsNow.undo}` : "Undo"} disabled={!labelsNow.undo} onClick={doUndo} title={labelsNow.undo ? `Undo: ${labelsNow.undo} (Ctrl or Cmd Z)` : "Nothing to undo"} />
+                <ToolButton icon="redo" label={labelsNow.redo ? `Redo: ${labelsNow.redo}` : "Redo"} disabled={!labelsNow.redo} onClick={doRedo} title={labelsNow.redo ? `Redo: ${labelsNow.redo} (Shift Ctrl or Cmd Z)` : "Nothing to redo"} />
+              </div>
+            )}
             <div className="ms-checks-anchor" ref={checksAnchor}>
               <ChecksButton
                 checking={checking && !result} valid={valid} offline={checkFailed && !result} errors={errors.length} notes={notes.length}

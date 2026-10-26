@@ -85,7 +85,19 @@ test("the drawer and its scrim are ordered by the console's own z ladder, and th
 test("the YAML slide is a modal layer too, not a dialog floating over a live page", () => {
   assert.match(chrome, /<div className="ms-scrim" aria-hidden="true" onClick=\{onClose\} \/>/, "the slide has a ground");
   assert.match(chrome, /role="dialog" aria-modal="true" aria-label="YAML preview"/, "and says the page behind it cannot be used");
-  assert.match(chrome, /<pre className="yaml-pane" tabIndex=\{0\} aria-label="YAML text">/, "the long output is reachable and scrolls");
+  assert.match(chrome, /<pre className=\{`yaml-pane\$\{wrap \? " wrap" : ""\}`\} tabIndex=\{0\} aria-label="YAML text">/, "the long output is reachable and scrolls");
+});
+
+test("the YAML preview wraps on a phone, where a 462 px line was read through a 295 px window", () => {
+  // Measured at 360 on the demo draft: the pane was 295 px wide and its longest line reached 462, so 167 px of every long line sat
+  // behind a sideways drag inside a layer that already fills the screen. The phone wraps by default; a desk keeps `pre` and the
+  // toggle is there for either.
+  assert.match(chrome, /const phone = useMedia\("\(max-width: 620px\)"\);/, "the pane asks the phone's own breakpoint");
+  assert.match(chrome, /const wrap = wrapPref \?\? phone;/, "the phone starts wrapped, and a press overrides it");
+  assert.match(chrome, /<Button variant="small" aria-pressed=\{wrap\} onClick=\{\(\) => setWrapPref\(!wrap\)\}>Wrap lines<\/Button>/, "the toggle names its state to a screen reader and to a thumb");
+  const wrap = blocksFor(designerCss, ".yaml-pane.wrap").join(";");
+  assert.match(wrap, /white-space:\s*pre-wrap/, "a wrapped line breaks at the pane's edge");
+  assert.match(wrap, /overflow-wrap:\s*anywhere/, "and a path with no space in it breaks too");
 });
 
 test("at 560px and below the assistant dock is the whole screen, so it is a layer; above that it stays beside the work", () => {

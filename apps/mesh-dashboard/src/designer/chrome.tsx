@@ -2,8 +2,10 @@
  * Presentational: all state flows in through props from the Designer. */
 
 import type { RefObject } from "react";
+import { useState } from "react";
 import { Banner, Button, Dialog, TextArea, useDismissable } from "../components";
 import { Icon } from "../icons";
+import { useMedia } from "../useMedia";
 import { CloseButton, PathLabel } from "./ui";
 import { locateIssue, whereLabel, type Where } from "./locate";
 import { TEMPLATES, type Template } from "./model";
@@ -130,6 +132,11 @@ export interface YamlSlideProps {
 /** The file Save writes, on demand, beside the canvas. It is the server's own rendering of the payload, so it is the exact text. */
 export function YamlSlide({ yaml, path, invalid, stale, onCopy, onClose }: YamlSlideProps): React.JSX.Element {
   const ref = useDismissable<HTMLDivElement>(true, onClose);
+  // The text is drawn `pre` on a desk, where a long line is read against the column beside it. On a phone the same 462 px line sat
+  // in a 295 px box and had to be dragged sideways; it wraps there by default, and the toggle is the way back to the aligned text.
+  const phone = useMedia("(max-width: 620px)");
+  const [wrapPref, setWrapPref] = useState<boolean | null>(null);
+  const wrap = wrapPref ?? phone;
   return (
     <>
       <div className="ms-scrim" aria-hidden="true" onClick={onClose} />
@@ -140,7 +147,10 @@ export function YamlSlide({ yaml, path, invalid, stale, onCopy, onClose }: YamlS
         </div>
         <div className="ms-slide-meta">
           {path ? <PathLabel path={path} /> : null}
-          <Button variant="small" icon="copy" onClick={onCopy}>Copy</Button>
+          <div className="ms-slide-acts">
+            <Button variant="small" aria-pressed={wrap} onClick={() => setWrapPref(!wrap)}>Wrap lines</Button>
+            <Button variant="small" icon="copy" onClick={onCopy}>Copy</Button>
+          </div>
         </div>
         <p className="ms-hint">This is the file Save changes writes. Comments in the existing file are not kept; the old file is kept in .mesh-versions first.</p>
         {invalid || stale ? (
@@ -148,7 +158,7 @@ export function YamlSlide({ yaml, path, invalid, stale, onCopy, onClose }: YamlS
             {invalid ? "Showing the last version that passed." : "This may be out of date."}
           </Banner>
         ) : null}
-        <pre className="yaml-pane" tabIndex={0} aria-label="YAML text">{yaml ?? "Waiting for the first check."}</pre>
+        <pre className={`yaml-pane${wrap ? " wrap" : ""}`} tabIndex={0} aria-label="YAML text">{yaml ?? "Waiting for the first check."}</pre>
       </div>
     </>
   );

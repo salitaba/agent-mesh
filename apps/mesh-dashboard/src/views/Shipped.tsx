@@ -4,7 +4,7 @@ import { Button, IconTile, Pill, Skeleton, type PillTone } from "../components";
 import { repoPathOf } from "../files";
 import type { LoadState } from "../inbox-model";
 import { fileIcon, filesByStatus, sortFiles, workspaceOf } from "../overview-model";
-import { Panel } from "./Panel";
+import { Panel, type Fold } from "./Panel";
 import "./overview.css";
 
 /** How many files the result shows before it sends the reader to Files. Nine is a small mission; ninety is not a card. */
@@ -19,15 +19,15 @@ const SHOWN = 6;
  * does. Every card used to print where the mesh stores the file's content (`.mesh-state/artifacts/artifacts/art-…/v1.txt`):
  * the mesh's own store, not anything a person ships or opens, and the same on every card.
  */
-export function Shipped({ arts, state, onRetry, openArt, onOpenFiles }: {
-  arts: any[]; state: LoadState; onRetry: () => void; openArt: (a: any) => void; onOpenFiles: () => void;
+export function Shipped({ arts, state, onRetry, openArt, onOpenFiles, fold }: {
+  arts: any[]; state: LoadState; onRetry: () => void; openArt: (a: any) => void; onOpenFiles: () => void; fold?: Fold;
 }): React.JSX.Element {
   const files = useMemo(() => sortFiles(arts), [arts]);
   const summary = useMemo(() => filesByStatus(arts), [arts]);
   const ws = useMemo(() => workspaceOf(arts), [arts]);
   const shown = files.slice(0, SHOWN);
   return (
-    <Panel id="ov-shipped" title="What shipped" meta={files.length ? <><b>{summary.total} {summary.total === 1 ? "file" : "files"}</b>: {summary.groups.map((g) => `${g.count} ${g.label}`).join(", ")}.</> : undefined}>
+    <Panel id="ov-shipped" title="What shipped" fold={fold} meta={files.length ? <><b>{summary.total} {summary.total === 1 ? "file" : "files"}</b>: {summary.groups.map((g) => `${g.count} ${g.label}`).join(", ")}.</> : undefined}>
       {state === "loading" ? (
         <div role="status" aria-busy="true">
           <span className="sr-only">Loading the files.</span>

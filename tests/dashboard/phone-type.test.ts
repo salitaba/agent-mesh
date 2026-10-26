@@ -43,3 +43,9 @@ test("the sidebar's and the palette's capital captions are 12 px on a phone", ()
 test("a project card's dt captions are 12 px on a phone", () => {
   assert.match(phoneBlocks(projects), /\.pj-facts dt \{ font-size: 12px; \}/, "the project caption step is 12");
 });
+
+test("the goal id under the wordmark is a word at 12 px, like every other caption on a phone", () => {
+  // Measured at 360: the `.sub` span was 11 px and 247 px wide, the last off-ladder word on the page (the 22 px avatar initials
+  // and the 18 px key chips are glyphs and stay). A name set at 11 px is a caption that got smaller than the caption floor.
+  assert.match(phoneBlocks(styles), /\.brand \.sub \{ font-size: 12px; \}/, "the goal id takes the phone's 12 px caption step");
+});

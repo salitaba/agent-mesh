@@ -249,6 +249,13 @@ details.ov-note { display: block; }
   .ov .ov-note > summary, .ov .ov-ad > summary { align-items: center; min-height: 44px; padding-top: 0; }
   .ov .ov-ad > summary::before { margin-top: 0; }
   .ov .ov-ev .chip { min-height: 44px; padding: 0 var(--s3); }
+  /* A folded section is one row: its name, one figure, Show. The figure may not wrap the row into two lines, so it truncates. */
+  .ov .card-fold-sum { flex: 1 1 auto; min-width: 0; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  /* Closed, the section is a ruled row, not a card with its heading and nothing under it: the four evidence sections read as one
+     ledger under the index, and the surface returns when a row opens. Measured at 360: a closed card was 103 px (16 padding, a
+     44 px control, a 12 px gap and a rule with no body under it); the row is 53, and the four rows are 212 against 412. */
+  .ov .card.closed { background: none; border: 0; border-top: 1px solid var(--line); border-radius: 0; box-shadow: none; padding: var(--s1) var(--s2); }
+  .ov .card.closed .card-head { flex-wrap: nowrap; margin: 0; padding: 0; border: 0; }
 }
 
 /* The narrowest phone cannot hold a state pill beside the file's type: at 320 the type's column measured 32 px, one word a line, a
