@@ -360,6 +360,10 @@ export default function Steps(): React.JSX.Element {
   const { state } = useMission();
   const missionActions = useMissionActions();
   const [fold, setFold] = useState(true);
+  // On a phone the outcome chips are folded behind one button, as Events' facets are: three chips in two
+  // rows, held still at the top of the ledger, spent a fifth of the screen on every scroll. The button names
+  // the choice that is on and its count, so folding the chips away does not hide what is being shown.
+  const [filtersOpen, setFiltersOpen] = useState(false);
   const [openFolds, setOpenFolds] = useState<ReadonlySet<string>>(() => new Set());
   // The turn picked out in both the timeline and the list.
   const [hot, setHot] = useState<string | null>(null);
@@ -399,6 +403,9 @@ export default function Steps(): React.JSX.Element {
   const maxTokens = useMemo(() => visible.reduce((m, s) => Math.max(m, s.tokens || 0), 0), [visible]);
 
   const filtered = Boolean(stepFilter || stepSearch.trim());
+  // The phone's folded filter button says what is on and how many turns it shows.
+  const onFilter = FILTERS.find((f) => f.id === stepFilter) ?? FILTERS[0];
+  const onFilterN = onFilter.id === "" ? visible.length : counts[onFilter.id as Outcome] || 0;
   const folding = fold && !filtered;
   const groups = useMemo(() => groupSteps(rows, now, folding, BUCKETS), [rows, folding, now]);
 
@@ -436,26 +443,35 @@ export default function Steps(): React.JSX.Element {
       <Strip steps={visible} loaded={stepsLoaded} failed={Boolean(stepsError)} onPick={pick} filter={stepFilter} counts={counts} missionTokens={missionTokens} hot={hot} onHot={setHot} />
 
       <div className="st-toolbar">
-        <div className="seg st-filters" role="group" aria-label="Filter by outcome">
-          {FILTERS.map((f) => {
-            const n = f.id ? counts[f.id] || 0 : visible.length;
-            return (
-              <button
-                key={f.id}
-                type="button"
-                className={f.id ? OUTCOME_META[f.id as Outcome].cls : undefined}
-                onClick={() => setStepFilter(stepFilter === f.id ? "" : f.id)}
-                title={f.id ? OUTCOME_META[f.id as Outcome].hint : "Every turn, whatever it did."}
-                aria-pressed={stepFilter === f.id}
-                // A choice with nothing behind it is disabled, except the one that is on: it must stay operable so the filter can be lifted.
-                disabled={Boolean(f.id) && n === 0 && stepFilter !== f.id}
-              >
-                {f.id ? <i className="st-f-dot" aria-hidden="true" /> : null}
-                {f.label}
-                <span className="st-f-n">{stepsLoaded ? n : "–"}</span>
-              </button>
-            );
-          })}
+        <Button variant="soft" icon="sliders" extra="st-filters-toggle" aria-expanded={filtersOpen} aria-controls="st-facets" onClick={() => setFiltersOpen((o) => !o)}>
+          {onFilter.label}
+          <span className="st-f-n">{stepsLoaded ? onFilterN : "–"}</span>
+        </Button>
+        <div className={`st-facetbox${filtersOpen ? " open" : ""}`} id="st-facets">
+          <div className="seg st-filters" role="group" aria-label="Filter by outcome">
+            {FILTERS.map((f) => {
+              const n = f.id ? counts[f.id] || 0 : visible.length;
+              return (
+                <button
+                  key={f.id}
+                  type="button"
+                  className={f.id ? OUTCOME_META[f.id as Outcome].cls : undefined}
+                  onClick={() => setStepFilter(stepFilter === f.id ? "" : f.id)}
+                  title={f.id ? OUTCOME_META[f.id as Outcome].hint : "Every turn, whatever it did."}
+                  aria-pressed={stepFilter === f.id}
+                  // A choice with nothing behind it is disabled, except the one that is on: it must stay operable so the filter can be lifted.
+                  disabled={Boolean(f.id) && n === 0 && stepFilter !== f.id}
+                >
+                  {f.id ? <i className="st-f-dot" aria-hidden="true" /> : null}
+                  {f.label}
+                  <span className="st-f-n">{stepsLoaded ? n : "–"}</span>
+                </button>
+              );
+            })}
+          </div>
+          <span className="st-foldchoice" title={filtered ? "Folding is off while a filter or search is active." : "Fold runs of three or more turns that wrote nothing into one row."}>
+            <Switch label="Collapse quiet runs" checked={folding} disabled={filtered} onChange={() => setFold((f) => !f)} />
+          </span>
         </div>
         <div className="st-toolbar-right">
           <span className="st-count">
@@ -463,9 +479,6 @@ export default function Steps(): React.JSX.Element {
           </span>
           {/* Said aloud only while a filter is on: a count that announced every new turn would talk all through a live run. */}
           <span className="sr-only" role="status">{filtered ? `${rows.length} of ${plural(visible.length, "turn")} ${rows.length === 1 ? "matches" : "match"}.` : ""}</span>
-          <span title={filtered ? "Folding is off while a filter or search is active." : "Fold runs of three or more turns that wrote nothing into one row."}>
-            <Switch label="Collapse quiet runs" checked={folding} disabled={filtered} onChange={() => setFold((f) => !f)} />
-          </span>
         </div>
       </div>
 
