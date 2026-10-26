@@ -252,7 +252,9 @@ export function ProjectsProvider({ children, eventTypes }: { children: (activeId
     if (noRegistryRef.current) return [];
     let res: Awaited<ReturnType<typeof api>>;
     try {
-      res = await api("GET", "/api/projects");
+      // The page reports this failure itself: the shell draws a failed view, the Projects page its own sentence. The generic
+      // "server error /api/projects -> 503" notice above them named a route and a code, and covered the page's heading.
+      res = await api("GET", "/api/projects", undefined, { quiet: true });
     } catch {
       // A refused connection is not a timeout: surface it as host-down here so
       // no caller has to deal with a rejected poll.

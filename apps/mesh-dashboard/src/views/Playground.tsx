@@ -92,10 +92,9 @@ export default function Playground(): React.JSX.Element {
         lede="Run the product's own commands in its checkout and read exactly what they print."
       />
 
-      {/* The product itself, first: the page it ships and its own UI, running. Using the thing is why the terminal
-          below exists, and on a phone it should not live two views away. */}
-      <YourProduct client={client} projectId={projectId} />
-
+      {/* The terminal first, because it is what the page is for: measured at 360, the product card above it put the
+          command box at y=657 and Run at 709, so the page opened on another page's card and its own action sat at the
+          foot of the first screen. The product follows the output, where it is the answer to "now what?". */}
       <form className="pg-form" onSubmit={submit} aria-label="Run a command in the product's checkout">
         <Input
           mono
@@ -212,6 +211,10 @@ export default function Playground(): React.JSX.Element {
           )}
         </section>
       ) : null}
+      {/* The product itself, after the terminal: the page it ships and its own UI, running, for the moment a command
+          answered the question and the next is "now use it". */}
+      <YourProduct client={client} projectId={projectId} />
+
       <NextLinks links={[
         { label: "Open the product", hint: "Use what the team built, running from this workspace", icon: "product", onGo: () => setView("product") },
         { label: "Read the files", hint: "Each file the team made, its versions and what changed", icon: "files", onGo: () => setView("artifacts") },

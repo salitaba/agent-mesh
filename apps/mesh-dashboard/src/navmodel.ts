@@ -32,6 +32,24 @@ export function serverKind(facts: RegistryFacts | null): ServerKind {
   return facts.loaded && facts.projectCount === 0 ? "empty-host" : "host";
 }
 
+export type RegistryPhase =
+  /** The first answer is still on its way. */
+  | "waiting"
+  /** The host was asked and did not answer, and nothing has ever said what it holds. */
+  | "failed"
+  /** The server has said which of the two kinds it is. */
+  | "known";
+
+/**
+ * What the view area does while the registry has not answered. A host that answers 5xx is "down", and `projects.tsx` keeps
+ * the last list it had; with no last list there is nothing to keep, and the console used to sit on the loading placeholder
+ * for ever because `hasRegistry` stayed null and every view held. It is a failed first read, so it says so and offers a retry.
+ */
+export function registryPhase(facts: { hasRegistry: boolean | null; hostDown: boolean } | null): RegistryPhase {
+  if (facts === null || facts.hasRegistry !== null) return "known";
+  return facts.hostDown ? "failed" : "waiting";
+}
+
 /** The sidebar's group the host owns. */
 export const HOST_SECTION = "Host";
 

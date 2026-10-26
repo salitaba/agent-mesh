@@ -465,9 +465,10 @@ test("the view offers Stop on the output it would end, and brings that output to
   assert.match(view, /id="pg-out"/);
 });
 
-test("the view puts the product itself above the terminal", () => {
-  assert.match(view, /<YourProduct client=\{client\} projectId=\{projectId\} \/>/, "the page it ships, and its own UI running");
-  assert.ok(view.indexOf("<YourProduct") < view.indexOf("pg-form"), "the product comes first: it is the reason the terminal is here");
+test("the terminal leads, and the product follows the answer", () => {
+  assert.match(view, /<YourProduct client=\{client\} projectId=\{projectId\} \/>/, "the page it ships, and its own UI running, are still on the page");
+  assert.ok(view.indexOf('className="pg-form"') < view.indexOf("<YourProduct"), "the command box is the page's own action, so it comes first");
+  assert.ok(view.indexOf("<YourProduct") < view.indexOf("<NextLinks"), "and the product is offered before the ways out");
 });
 
 test("the view is registered in the console's routing, its sidebar and its view switch", () => {

@@ -103,6 +103,20 @@
 .st-filters button:disabled { opacity: .5; cursor: default; }
 /* On a phone a choice with nothing behind it is a third of a screen of things that cannot be pressed. */
 @media (max-width: 620px) { .st-filters button:disabled { display: none; } }
+/* The filter's own panel: the outcome chips and the quiet-run fold. On a phone it is the fold; on a desk both
+   sit in plain sight beside the count, as Events' facets do. */
+.st-facetbox { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s2) var(--s4); min-width: 0; }
+.st-foldchoice { display: inline-flex; align-items: center; }
+@media (min-width: 621px) {
+  /* A desk has the room: the panel takes no box of its own, so the chips, the count and the fold switch keep the one
+     row they had. */
+  .st-facetbox { display: contents; }
+  .st-toolbar-right { order: 2; margin-left: auto; }
+  .st-foldchoice { order: 3; }
+}
+/* The outcome chips are the page's own filter, and on a phone they fold behind one button that names the
+   choice and its count. The toggle exists only where the fold does. */
+.st-filters-toggle { display: none; }
 .st-f-dot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--oc); }
 .st-f-n { font-weight: 500; color: var(--muted); }
 .st-filters button[aria-pressed="true"] { color: var(--oc, var(--k-accent-ink)); }
@@ -226,6 +240,17 @@
 
 @media (max-width: 620px) {
   .st-pulse-top { padding: var(--s3-5) var(--s4); }
+  /* The outcome chips and their counts are one 44 px button until opened, and the quiet-run switch joins them in the
+     fold, as Events' does. Measured before: 166 px of filter above the first turn, 106 of it the chips' second row.
+     After: 60 px. */
+  .st-filters-toggle { display: inline-flex; flex: 0 1 auto; }
+  .st-facetbox { display: none; flex: 1 1 100%; order: 3; flex-direction: column; align-items: stretch; gap: var(--s2); }
+  .st-facetbox.open { display: flex; }
+  .st-facetbox .st-foldchoice { min-height: 44px; }
+  .st-toolbar-right { order: 2; margin-left: auto; }
+  /* Unfiltered, the button carries the count; with a search or a filter on, how many of how many is the fact that changed. */
+  .st-count { display: none; }
+  .st-count.on { display: inline; }
   /* Three figures could not share 302 px: the third ran 76 px past the card and scrolled the whole view sideways at 360.
      A 2 x 2 ledger gives the two counts the first line and the share that went nowhere the second, at full width. */
   .st-kpis { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); width: 100%; gap: var(--s3) var(--s4); margin-left: 0; }
@@ -253,7 +278,16 @@
   .st-cost-bar { display: none; }
   .st-when, .st-left { justify-self: auto; }
   .st-now-tool { max-width: 100%; }
-  .st-fold-head { padding-left: var(--s3-5); padding-right: var(--s3-5); }
+  /* A wake reason was one 264 px line: 5 of 25 were clipped, one of them 1,728 px of text behind 264. On a phone it
+     takes two lines and ends in an ellipsis; the step drawer carries the whole note. */
+  .st-woke { white-space: normal; overflow: hidden; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; }
+  /* The quiet run's names had 113 of the 287 px they needed, and read "tech-lead, ar…". The count and the cost take
+     the first line and the names the second, whole. */
+  .st-fold-head { flex-wrap: wrap; row-gap: var(--s0); padding-left: var(--s3-5); padding-right: var(--s3-5); }
+  .st-fold-head .icon { order: 1; }
+  .st-fold-head b { order: 2; }
+  .st-fold-cost { order: 3; margin-left: auto; }
+  .st-fold-who { order: 4; flex: 1 1 100%; overflow: visible; white-space: normal; text-overflow: clip; }
 }
 
 /* ---- Windows High Contrast ----
