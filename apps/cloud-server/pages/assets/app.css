@@ -1,5 +1,5 @@
 /* One stylesheet for the public pages. The visitor's colour scheme is the only switch, and nothing is loaded from elsewhere or written inline. */
-/* Icons: nine, 20 units, masks in the text's colour. --n picks one (0 check 1 alert 2 refused 3 info 4 eye 5 eye off 6 bars 7 chevron 8 mail); --s sizes it. */
+/* Icons: 20 units, a mask in the text's colour; --n: 0 check, 1 alert, 2 refused, 3 info, 4 eye, 5 eye off, 6 bars, 7 chevron, 8 mail; --s sizes. */
 :root {
   color-scheme: light dark;
   --max: 1080px;
@@ -494,7 +494,7 @@ body[data-page="home"] main { background: var(--k-glow) top / 100% 520px no-repe
 /* No price read, no line said. */
 .price-line:has([data-from-price]:empty) { display: none; }
 .byline { margin: 8px 0 0; color: var(--k-muted); font-size: .9375rem; }
-/* The record is drawn at every width: on a phone it is the product a stranger sees before paying. */
+/* The record is drawn at every width, before a stranger pays. */
 .record { margin: 0; padding: 16px; border: 1px solid var(--k-line); border-radius: var(--k-r-lg); background: var(--k-surface); box-shadow: var(--k-hl), var(--k-shadow-1); }
 @media (min-width: 960px) {
   .hero { grid-template-columns: minmax(0, 1.3fr) minmax(0, .7fr); gap: 64px; align-items: center; }
@@ -547,15 +547,8 @@ body[data-page="home"] main { background: var(--k-glow) top / 100% 520px no-repe
   gap: 8px 16px;
   padding: clamp(24px, 4vw, 40px) 0 20px;
 }
-#who {
-  margin: 0;
-  padding: 4px 8px;
-  border: 1px solid var(--k-line);
-  border-radius: var(--k-r-pill);
-  background: var(--k-surface);
-  font-size: .875rem;
-  overflow-wrap: anywhere;
-}
+#who { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 6px; margin: 0; font-size: .8125rem; }
+#who .who-a { color: var(--k-ink-2); font-family: var(--k-mono); overflow-wrap: anywhere; }
 #who:empty { display: none; }
 #create-note:not(:empty) { margin-top: 12px; }
 #create-slot #create { margin-top: 16px; }
@@ -658,12 +651,11 @@ body[data-page="home"] main { background: var(--k-glow) top / 100% 520px no-repe
 .facts-list { display: grid; gap: 4px; list-style: none; color: var(--k-ink-2); font-size: .9375rem; }
 /* A workspace: its state, why, the one thing to do, its address at the foot. */
 .ws > div:empty, .ws > .ws-says:empty { display: none; }
-.ws .ws-says, .ws .ws-note, .ws .ws-address { margin: 0; }
+.ws .ws-says, .ws .ws-note { margin: 0; }
 .ws .ws-says { color: var(--k-ink-2); }
 .ws .btn-primary { min-height: 48px; padding-inline: 24px; font-size: 1rem; }
 .ws .btn-row { gap: 8px; }
 .ws .ws-auto .check { align-items: center; min-height: 44px; margin: 0; }
-.ws .copy { margin-left: -12px; }
 .ws .ws-address {
   display: flex;
   flex-wrap: wrap;
@@ -753,7 +745,7 @@ body[data-page="home"] main { background: var(--k-glow) top / 100% 520px no-repe
   background: linear-gradient(to right, var(--k-surface), transparent) 0 0 / 24px 100% no-repeat local, linear-gradient(to left, var(--k-surface), transparent) 100% 0 / 24px 100% no-repeat local, linear-gradient(to right, color-mix(in srgb, var(--k-ink) 12%, transparent), transparent) 0 0 / 10px 100% no-repeat, linear-gradient(to left, color-mix(in srgb, var(--k-ink) 12%, transparent), transparent) 100% 0 / 10px 100% no-repeat, var(--k-surface);
 }
 .table-wrap + .table-wrap { margin-top: 20px; }
-/* On a phone the money is off to the right: the row's name stays at its edge. */
+/* The row's name stays at its edge while its figures scroll. */
 .table-wrap th:first-child { position: sticky; left: 0; }
 .table-wrap tbody th { background: var(--k-surface); }
 table { width: 100%; border-collapse: collapse; font-size: .875rem; }
@@ -862,6 +854,9 @@ tfoot > tr > * { background: var(--k-surface-2); font-weight: 650; }
   .bar, .bar nav { flex-wrap: wrap; }
   .figures > div { min-width: 0; }
   .figures dd { font-size: min(1.375rem, 9vw); }
+  /* The caption takes its own row; the host and Copy share the next. */
+  .ws-address-l { flex: 1 0 100%; font-size: .75rem; }
+  .ws .ws-address code { flex: 1 1 8rem; min-width: 0; }
 }
 @media (max-width: 720px), (pointer: coarse) {
   .btn, .btn-small, .bar nav a, .bar nav button, input:not([type="checkbox"]), select { min-height: 44px; }
