@@ -1007,3 +1007,101 @@ the accessibility runs are axe-core over the same 64 views.
 - **With scripts off `/verify` still says "Checking the link."** beside its `noscript`
   sentence, unchanged.
 
+## 2026-10-26: the answer a failed act leaves behind
+
+Same harness: Chromium 156 (playwright-core 1.64, the headless shell) against this worktree's trial
+(`trial --port 7531`, whose plans are the trial's own fixtures), 320 / 360 / 390 / 768 / 1440 in light and
+dark, `prefers-reduced-motion: reduce`, a touch pointer below 721, and axe-core 4.14 over the same views.
+"Before" is the base commit's own `app.js` and page files, served by the same trial on the same fixtures and
+measured again today: a Team account with one running workspace and a Team account with no workspace yet.
+Heights are `document.documentElement.scrollHeight`; positions are
+`getBoundingClientRect` plus `scrollY`; names are Chromium's own `document.activeElement`.
+
+- **A sign-out that fails keeps the cursor, and says what happened.** The bar's button was disabled while the
+  request was out, and disabling a control takes the cursor off it: at 360 `document.activeElement` was
+  **BODY**, so the next Tab started again at the skip link above the whole page, and the only answer was the
+  button's new name ("Try signing out again"), which a reader is not told when the name changes under a cursor
+  that never left it. There was no status line in the header to say it in. It is now **held**
+  (`aria-disabled`, the idiom every other control on the page uses) rather than disabled, so the cursor never
+  moves, and the header carries a `.sr` status line, `#bar-say`, on all ten pages: after a 503 the line reads
+  **"You are still signed in. Something went wrong on our side. Try again in a moment."** and the cursor is on
+  the button at 320, 360, 390, 768 and 1440. A second press while the first request is out is not sent
+  (**2 presses → 1 `POST /api/logout`**). The bar still wraps when the label grows (61 → 97px at 360 and
+  61 → 141 at 320, the page 2,808 → 2,844 and 2,939 → 3,019) — before and after, because the words are the
+  design's and a shorter label would lose the verb (see what this leaves).
+- **A change that went through and a read that did not now says so where the change was asked.** With
+  `/api/me` failing on the read that follows a successful **Pause**, the card kept saying **Running** — which
+  was no longer true — with an empty 1px note, no control, and the cursor on Pause: the page had no answer and
+  no way to ask again. Every action that re-reads the account after it went through — open, pause, resume,
+  delete, change plan and create — now uses one helper: the card's own note (or `#stage-status` at the top, or
+  `#create-note` at the form) says **"That worked, but your account could not be read again just now, so this
+  page is out of date."** and carries a **Try again** that re-runs the same read. At 360 the card is
+  **270 → 424px**, the note **142px** at y = 251, and the page **2,808 → 2,962** while it is shown; pressing Try again draws the answer in place — the card reads
+  **Stopped**, the note goes back to 0px and the cursor lands on **Resume**. A retry that fails again leaves
+  the sentence, the button and the cursor on it. The same sentence in the card at the top (Resume asked from
+  there) sits in `#stage-status` and the cursor stays on the Resume that asked.
+- **The page's own usage read is heard when it fails.** `GET /api/usage` failing on the page's first draw
+  replaced the skeleton with a warning sentence and a Try again that only takes the cursor when a person
+  pressed it — so a reader heard **nothing at all** (measured: 0 status areas with text on the account page).
+  The panel now has its own `.sr` line, `#usage-say`, and a first read that fails says **"Usage. Usage could
+  not be read just now. Try again in a moment."** there; it is cleared when a read answers. The visible
+  sentence and the retry's `aria-describedby` are unchanged.
+- **A workspace the service refuses to make is heard.** The form's note, `#create-note`, is where `onSubmit`
+  writes every failure of that form, but it was a plain paragraph: with the service answering 409 the visible
+  note ("A workspace with that name already exists.") sat 12px under the button at y = 742 at 360 and **no
+  status area on the page had any text**. It is `role="status" aria-live="polite"` now, so the refusal, the
+  page's own "Something went wrong in this page" and the plan-full hint are read out. Because that line is
+  also drawn again on every look at the page, `hint()` no longer writes a sentence and class that are already
+  there: the same words are not said twice (a test pins the note's text node across a re-render).
+- **Widths, schemes and the floor.** Ten pages (account, front, 404, terms, privacy signed in; sign-up,
+  sign-in, forgot, reset, verify signed out) at 320, 360, 390, 768 and 1440, light and dark: no sideways page
+  scroll, nothing computes below **12px**, and **106 axe-core runs** (100 page views, the read-back state in
+  both schemes, and the failed sign-out on four pages) find **no violation**. Every page is the same height
+  before and after to the pixel — account 2,927 / 2,808 / 2,635 / 2,136 / 2,172, front 4,528 / 4,151 / 4,056 /
+  3,039 / 2,667, sign-up 1,612 / 1,440 / 1,440 / 1,425 / 948, sign-in 1,381 / 1,285 / 1,255 / 1,248 / 800,
+  forgot 1,185 / 1,161 / 1,081 / 1,056 / 800, reset 1,021 / 973 / 897 / 800, verify 1,249 / 1,199 / 1,145 /
+  1,143 / 800, 404 800 at every width, terms 4,141 / 3,786 / 3,540 / 2,592 / 2,569 and privacy 3,122 / 2,823 /
+  2,603 / 1,846 / 1,851 — the header's new line is `.sr` and absolutely placed, and the usage line is one
+  clipped line in a panel. The only controls under 44 × 44 below 721 are the prose links the record already
+  names.
+- **The budget.** `app.css` is untouched at **40,938 bytes of 40,960**: a held button, a status paragraph and
+  a sentence are all classless additions to markup the stylesheet already draws. Twenty-two bytes remain.
+- **Tests.** `dist/tests/cloud/pages*.test.js` — **174 pass, 0 fail** (`pages-app.test.ts` alone: 90). The new
+  tests pin the held sign-out and its single request and its line, the read-back sentence at the card, at
+  `#stage-status` and at the form with its retry and its cursors, the usage line, and the refusal's role. Each
+  was mutation-checked: disabling the button again, making the read-back helper a no-op, dropping the usage
+  line, dropping `role="status"` from the note, and restoring the old `hint()` each made exactly its test fail.
+
+| measured at 360, light | before | after |
+| --- | --- | --- |
+| A sign-out that fails: cursor | **BODY** (the next Tab is the skip link) | **the Sign out button** |
+| … what is said | nothing | "You are still signed in. Something went wrong on our side. Try again in a moment." |
+| … presses sent, of two | 1 (the button was disabled) | 1 (held) |
+| … header / page | 61 → 97px / 2,808 → 2,844 | 61 → 97px / 2,808 → 2,844 |
+| Pause, then the read fails: the card | 270px, a 1px empty note, no control, still "Running" | 424px, a 142px note with **Try again**, still "Running" |
+| … the page | 2,808 | 2,962 |
+| … pressing Try again | — | "Stopped", the note 0px, the cursor on **Resume** |
+| The usage read failing as the page draws | 0 status areas with text | 1 ("Usage. Usage could not be read just now. Try again in a moment.") |
+| A refused workspace name | 0 status areas with text, the note a plain `p` | 1, the note `role="status" aria-live="polite"` |
+
+### What this pass leaves
+
+- **The bar grows when the sign-out failure is named.** 61 → 97px at 360, 61 → 141 at 320 and 61 → 101 at
+  390, because "Try signing out again" is longer than "Sign out" and the nav wraps. Making it "Try again"
+  would fit, and would not say what is being tried; a shorter visible label with the sentence in the bar's
+  line is the same trade one level down. The page under it moves by the same 36 or 80px, on a screen the
+  person is already looking at.
+- **A retry that fails again does not say the sentence a second time.** The note already reads it, so only
+  the button's word changes ("Trying again", then "Try again" again) and the cursor stays on it; a reader who
+  presses it again hears the button, and the sentence is still the line above it. A third way — reload the
+  page — is not offered beside it.
+- **The read that follows a change is still a second request.** A page that has just changed one fact asks
+  for the whole account again; the alternative is a partial answer the projections do not have.
+- **`#create-note` is a status for the form's hints too.** With the plan full, "Your plan includes 1
+  workspace…" is read once when the form is drawn, which is the sentence that explains why there is no form;
+  it is no longer repeated on every look, but it is said at load where a page used to say nothing.
+- **The account's failed read at the form focuses the card at the top.** When the read after a create
+  answers, the form has gone (the plan is full), so the cursor goes to `#stage-title` rather than to a field
+  that is no longer drawn.
+- **Nothing was added for the dead reset link, the sticky strip over a target at 768, or the delete's busy
+  window.** They are the previous passes' entries, unchanged.

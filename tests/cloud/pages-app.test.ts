@@ -257,10 +257,23 @@ test("signing out asks the service, and leaves the page only when the person is 
   const s = await visit("home", { routes: stuck.routes });
   const button = s.button(s.doc.querySelector("header nav")!, "Sign out");
   s.click(button);
+  // A second press while the first is out is not a second sign-out, and the button is held rather than disabled: the bar is above
+  // whatever the person was reading, and a disabled control takes the cursor away, which would send the next Tab to the top of the page.
+  s.click(button);
+  assert.equal(button.getAttribute("aria-disabled"), "true");
+  assert.equal(button.disabled, false);
   await s.idle();
+  assert.deepEqual(s.to("POST", "/api/logout").length, 1, "one press, one request");
   assert.deepEqual(s.navigations, [], "a sign-out that did not reach the service has not signed anyone out");
   assert.equal(button.textContent, "Try signing out again");
   assert.equal(button.disabled, false);
+  assert.equal(button.getAttribute("aria-disabled"), null, "and it can be pressed again");
+  assert.equal(s.doc.activeElement, button, "the cursor never left the button, so the next Tab is where the person was");
+  assert.equal(
+    s.text("bar-say"),
+    "You are still signed in. The service could not be reached. Check your connection and try again.",
+    "and the failure is said in the bar's own line: a name that changes under a cursor that never left it is not read out",
+  );
 
   const gone = world(paid);
   gone.answers.set("POST /api/logout", failure(401, "not_signed_in", "Sign in to continue."));
@@ -1131,6 +1144,129 @@ test("a workspace the service refuses to make is said in the service's words and
   assert.equal(v.text("create-note"), "Your plan allows 1 workspace.");
   assert.equal(v.$("create-note").className, "note note-bad");
   assert.equal(v.$("workspace-name").value, "Second");
+  // The form's own note is a status area: the answer to its submit is read out, not only drawn under the button.
+  assert.equal(v.$("create-note").getAttribute("role"), "status");
+  assert.equal(v.$("create-note").getAttribute("aria-live"), "polite");
+});
+
+test("a change that went through and a read back that did not says so in the card that asked, and asks again there", async () => {
+  const w = world((x) => {
+    paid(x);
+    x.workspaces = [workspace()];
+  });
+  let reads = 0;
+  const paused = { account: w.view(), balance: w.balance };
+  w.answers.set("GET /api/me", () => {
+    reads += 1;
+    // The page's own first read answers; the look it makes after a change does not.
+    if (reads === 1) return { json: paused };
+    return failure(503, "unavailable", "Something went wrong on our side. Try again in a moment.");
+  });
+  w.answers.set("POST /api/workspaces/ws_1/suspend", () => {
+    w.workspaces = [workspace({ status: "suspended", statusReason: "paused by its owner" })];
+    return { json: {} };
+  });
+  const v = await visit("account", { routes: w.routes });
+  v.click(v.button("workspaces", "Pause"));
+  await v.idle();
+  // The pause was made. The page could not read the account again, so it still says Running, and it has to say why.
+  assert.equal(reads, 2);
+  assert.match(v.text("workspaces"), /^Research Running Open Pause /, "the card shows what it showed before the change, because it cannot know more");
+  const note = v.$("workspaces").querySelector(".ws-note")!;
+  assert.equal(v.text(note), "That worked, but your account could not be read again just now, so this page is out of date. Try again", "the sentence and its way to ask again are in the card's own note");
+  assert.equal(note.className, "note note-bad ws-note", "drawn as the card's notes are, not as a hint under it");
+  assert.equal(note.getAttribute("role"), "status", "so a reader hears it where the change was asked");
+  assert.equal(v.doc.activeElement, v.$("pause-ws_1"), "and the cursor stays on the button that asked");
+
+  // The way to ask again re-runs the read the page already makes, and draws the answer in place.
+  w.answers.delete("GET /api/me");
+  v.click(v.button(note, "Try again"));
+  await v.idle();
+  assert.match(v.text("workspaces"), /^Research Stopped /, "what the change did is drawn from the answer");
+  assert.equal(v.text(note), "", "and the sentence and its button go with it");
+  assert.equal(note.className, "ws-note sr", "the note is out of the page again, as an empty one is");
+  assert.equal(v.doc.activeElement, v.button("workspaces", "Resume"), "the cursor goes to what the card says now: the next thing to do");
+  assert.deepEqual(v.consoleErrors, []);
+});
+
+test("a new workspace whose read back failed is not a form that emptied itself for nothing", async () => {
+  const w = world(paid);
+  let reads = 0;
+  const before = { account: w.view(), balance: w.balance };
+  w.answers.set("GET /api/me", () => {
+    reads += 1;
+    if (reads === 1) return { json: before };
+    return failure(503, "unavailable", "Something went wrong on our side. Try again in a moment.");
+  });
+  w.answers.set("POST /api/workspaces", (call) => {
+    w.workspaces = [workspace({ name: String((call.body as { name: string }).name), status: "suspended", statusReason: "paused by its owner" })];
+    return { status: 201, json: { workspace: w.workspaces[0] } };
+  });
+  const v = await visit("account", { routes: w.routes });
+  v.type("workspace-name", "Second");
+  await v.send(v.$("create"));
+  // The name was taken and the field emptied: the page owes the person the sentence it cannot draw the workspace for yet.
+  assert.equal(v.$("workspace-name").value, "");
+  assert.equal(v.text("create-note"), "That worked, but your account could not be read again just now, so this page is out of date. Try again");
+  w.answers.delete("GET /api/me");
+  v.click(v.button("create-note", "Try again"));
+  await v.idle();
+  assert.match(v.text("workspaces"), /^Second Stopped /, "the workspace the answer carries is drawn");
+  assert.doesNotMatch(v.text("create-note"), /could not be read again/, "and the sentence about the read that failed is gone");
+  assert.equal(v.text("create-note"), "Your plan includes 1 workspace. To make another, delete this one or change your plan.", "the form says what is true of the plan it filled");
+  assert.deepEqual(v.consoleErrors, []);
+});
+
+test("a change asked from the card at the top, whose read back failed, answers in that card", async () => {
+  const w = world((x) => {
+    paid(x);
+    x.workspaces = [workspace({ status: "suspended", statusReason: "paused by its owner" })];
+  });
+  let reads = 0;
+  const before = { account: w.view(), balance: w.balance };
+  w.answers.set("GET /api/me", () => {
+    reads += 1;
+    if (reads === 1) return { json: before };
+    return failure(503, "unavailable", "Something went wrong on our side. Try again in a moment.");
+  });
+  w.answers.set("POST /api/workspaces/ws_1/resume", () => {
+    w.workspaces = [workspace()];
+    return { json: {} };
+  });
+  const v = await visit("account", { routes: w.routes });
+  assert.deepEqual(v.labels("stage-actions"), ["Resume"]);
+  v.click(v.button("stage-actions", "Resume"));
+  await v.idle();
+  assert.equal(
+    v.text("stage-status"),
+    "That worked, but your account could not be read again just now, so this page is out of date. Try again",
+    "the card at the top answers under its own sentence, where the button was",
+  );
+  assert.equal(v.text("stage-title"), "Research is paused", "and still says what it said, because the page could not read more");
+  assert.equal(v.doc.activeElement, v.button("stage-actions", "Resume"), "the cursor stays on the Resume it was pressed on");
+  assert.equal(v.button("stage-actions", "Resume").getAttribute("aria-disabled"), null, "and it can be pressed again");
+  w.answers.delete("GET /api/me");
+  v.click(v.button("stage-status", "Try again"));
+  await v.idle();
+  assert.equal(v.text("stage-title"), "Research is running", "the answer is drawn from the read");
+  assert.equal(v.text("stage-status"), "", "and the card's own status is empty again");
+  assert.equal(v.doc.activeElement, v.button("stage-actions", "Open"), "the cursor goes to what the card offers now");
+  assert.deepEqual(v.consoleErrors, []);
+});
+
+test("a line that says the same is not written again, so a status area is not read out for every look the page takes", async () => {
+  const w = world((x) => {
+    x.subscription = { ...ACTIVE!, status: "past_due", pastDueSince: "2026-10-01T00:00:00.000Z" };
+    x.workspaces = [workspace()];
+    x.plans = failure(503, "unavailable", "Down.");
+  });
+  const v = await visit("account", { routes: w.routes });
+  assert.equal(v.text("create-note"), "Update your payment details to create a workspace.");
+  const line = v.$("create-note").children[0];
+  v.click(v.button("plan", "Try again"));
+  await v.idle();
+  assert.equal(v.text("create-note"), "Update your payment details to create a workspace.", "the retry draws the page again");
+  assert.equal(v.$("create-note").children[0], line, "and the sentence that has not changed is not written a second time, so it is not read out again");
 });
 
 test("opening a workspace asks for a one-time address and goes there; an answer that is not an address the page will follow is refused", async () => {
@@ -1510,6 +1646,25 @@ test("usage shows only the last fourteen days, newest first, and a Failed column
   assert.match(v.text(rows[13]!), /^Sep 7, 2026 /);
   assert.equal(v.text(first.querySelector("thead tr")!), "Day Calls Failed Input tokens Output tokens Charged");
   assert.equal(v.text(first.querySelector("tfoot tr")!), "Total 20 1 200 100 $0.002");
+});
+
+test("a usage read that fails while the page draws is said to a reader, not only drawn", async () => {
+  const w = world((x) => {
+    paid(x);
+    x.workspaces = [workspace()];
+  });
+  w.answers.set("GET /api/usage", failure(502, "usage_unavailable", "Usage could not be read just now. Try again in a moment."));
+  const v = await visit("account", { routes: w.routes });
+  // The first read is not a button anyone pressed, so the panel's own line says what failed: the sentence beside it is for a person
+  // looking at the panel, and a reader who is not looking at it would otherwise hear nothing at all.
+  assert.equal(v.$("usage-say").getAttribute("role"), "status");
+  assert.equal(v.text("usage-say"), "Usage. Usage could not be read just now. Try again in a moment.");
+  w.answers.set("GET /api/usage", { json: NO_USAGE });
+  v.click(v.button("usage", "Try again"));
+  await v.idle();
+  assert.match(v.text("usage"), /^Nothing has been used yet\./);
+  assert.equal(v.text("usage-say"), "", "the line goes when a read answers");
+  assert.equal(v.doc.activeElement, v.$("usage-h"), "and the cursor goes to the section's heading, as a retry that answers does");
 });
 
 test("usage that cannot be read says so and can be asked for again", async () => {
