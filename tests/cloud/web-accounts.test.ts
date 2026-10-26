@@ -388,6 +388,13 @@ test("a reset link chooses a new password, once; every session ends and the cook
   const s = site(p);
   await s.call("POST", "/api/forgot", { json: { email: "ada@example.com" }, ...origins });
   const token = tokenIn(p.mailer.sent.at(-1)!.text);
+  // A page can ask whether the link is good before drawing a form for it. The check reads, and uses nothing: the same link still works.
+  const check = (value: string | undefined) => s.call("GET", `/api/reset/check${value === undefined ? "" : `?token=${encodeURIComponent(value)}`}`);
+  for (let i = 0; i < 2; i++) assert.deepEqual(await check(token).then((r) => [r.status, r.json]), [200, { ok: true }], "asked twice, and the link is not spent");
+  const dead = { ok: false, message: "That link is not valid, or it has expired. Ask for a new one." };
+  assert.deepEqual(await check(undefined).then((r) => [r.status, r.json]), [200, dead], "a read whose answer is no is not a failed request");
+  assert.deepEqual(await check("not-a-link").then((r) => [r.status, r.json]), [200, dead]);
+  assert.equal((await s.call("POST", "/api/reset/check", { json: { token }, ...origins })).headers.allow, "GET", "the check is a read, not a way to use a link");
   for (const password of ["short", 5, undefined]) {
     const weak = await s.call("POST", "/api/reset", { json: { token, password }, ...origins });
     assert.deepEqual([weak.status, weak.json.error.code], [400, "weak_password"], String(password));
@@ -400,10 +407,12 @@ test("a reset link chooses a new password, once; every session ends and the cook
   assert.equal((await s.call("POST", "/api/login", { json: { email: "ada@example.com", password: NEW_PASSWORD }, ...origins })).status, 200);
   const reused = await s.call("POST", "/api/reset", { json: { token, password: "yet another password 9" }, ...origins });
   assert.deepEqual([reused.status, reused.json.error.code], [400, "invalid_token"]);
+  assert.deepEqual(await check(token).then((r) => [r.status, r.json]), [200, dead], "a used link is refused by the check too");
   await p.plane.accounts.signup("bob@example.com", PASSWORD);
   const confirmation = tokenIn(p.mailer.sent.at(-1)!.text);
   const notAReset = await s.call("POST", "/api/reset", { json: { token: confirmation, password: NEW_PASSWORD }, ...origins });
   assert.equal(notAReset.json.error.code, "invalid_token", "a confirmation link does not choose a password");
+  assert.deepEqual(await check(confirmation).then((r) => [r.status, r.json]), [200, dead], "and the check does not call it a reset link");
 });
 
 test("a reset ends a lockout: whoever holds the mailbox is not kept out by someone else's failed attempts", async () => {

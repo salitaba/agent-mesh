@@ -203,7 +203,7 @@ test("nothing used yet is an empty state: what is missing, and when it will not 
   const empty = v.$("usage").querySelector(".empty")!;
   assert.equal(v.text(empty), "Nothing has been used yet. Calls appear here when a team in one of your workspaces asks a model for something.");
   assert.equal(v.text(empty.querySelector(".empty-t")!), "Nothing has been used yet.");
-  assert.equal(empty.querySelector(".tile")!.getAttribute("aria-hidden"), "true");
+  assert.equal(empty.querySelector(".tile"), null, "the empty state is a ruled entry, not a card with a decorative tile");
   assert.equal(v.$("usage").querySelectorAll("table").length, 0);
 });
 
