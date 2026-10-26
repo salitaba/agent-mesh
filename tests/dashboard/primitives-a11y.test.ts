@@ -171,3 +171,17 @@ test("a view change whose control was removed lands in the page, not back at the
   const header = bodyOf(components, "PageHeader");
   assert.match(header, /<h2 tabIndex=\{-1\}>/, "the page's h2 is a programmatic target, not a tab stop");
 });
+
+test("the off-canvas navigation is a dialog a div may carry, not an <aside> wearing one", () => {
+  // On a phone the sidebar is a modal layer, so it takes `role="dialog"`; ARIA in HTML does not allow that role on an <aside>,
+  // and axe said so (`aria-allowed-role`, one node) every time the menu was open. It is a div now: a complementary landmark on
+  // a wide screen, the navigation dialog below 800 px. What is pinned is both roles and where each applies.
+  const shell = read("shell.tsx");
+  const start = shell.indexOf('id="sidebar"');
+  assert.ok(start > 0, "the shell has a sidebar");
+  const open = shell.lastIndexOf("<", start);
+  assert.doesNotMatch(shell.slice(open, start), /<aside/, "the sidebar is not an aside");
+  assert.match(shell, /role=\{narrow \? "dialog" : "complementary"\}/, "a dialog below 800 px, the complementary landmark above it");
+  assert.match(shell, /aria-modal=\{navModal \|\| undefined\}/, "modal only while it is a layer over the page");
+  assert.match(shell, /aria-label=\{narrow \? "Navigation" : undefined\}/, "and named only where it is a page-level sheet");
+});

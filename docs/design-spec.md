@@ -64,7 +64,10 @@ A view is "best" only when **all** hold, in both themes and at 390 / 768 / 1280:
 5. **No bypass** — the view uses tokens and shared classes; it introduces no raw
    hex colour and no off-ramp `px` for type or rhythm (see §3, §4).
 6. **Overflow** — long names, long paths, and 10k-row lists are handled by
-   truncation or virtualisation, never by a horizontal page scrollbar.
+   truncation or virtualisation, never by a horizontal page scrollbar. The
+   document itself does not scroll at all: `#view` is the console's one scroller
+   and the frame clips its own overflow (`frame-scroll.test.ts`), so a long page
+   cannot be wheeled out of the window onto blank ground.
 7. **Honesty** — a number that is stale, partial, or estimated is labelled as
    such. The console reports the system; it must not flatter it.
 8. **Live** — what is on screen moves when the mission moves. A page that reads once
@@ -427,6 +430,78 @@ Known debt, so it is not rediscovered:
 
 The changes to the console that were measured against rendered screens, newest first. A pass is only in this list with the run
 that produced it, the before and the after, and what it deliberately did not change.
+
+### 2026-10-26 — the window cannot scroll the console away, and the Files panel keeps the pen
+
+Run against `examples/demo-stub/mesh.yaml` at **Delivered** (the scripted demo, no model calls) on the production build from the
+worktree: one fresh state, the mission started from the console, every reading taken on that same delivered state (481 events)
+within the hour. 320, 360, 390, 768 and 1440 in light and dark; `prefers-reduced-motion: reduce`; Chromium 1248 with axe-core
+4.14 in the page. The frame was read on nine views × five widths (Overview, Agents, Steps, Events, Files, Product, Cost, Graph,
+Designer); the wheel that found it is 600 px with the pointer over the 64 px top bar, the strip above `#view`. The rest was read
+on the delivered demo's Files list and its Overview.
+
+**What changed.**
+
+- **The document cannot be scrolled out of the window.** `#app` is a 100dvh grid and `#view` is its scroller, but a long view's
+  overflow still reached the root: at 360 the Graph page held 1,881 px of content in a 780 px `#view` and the document measured
+  **1,774 px for an 844 px window**, so one wheel over the top bar moved the whole frame 600 px up onto blank ground — the top
+  bar, the page and every control gone, with nothing on the blank part to scroll back by. `#app` now carries `contain: paint`:
+  the frame clips its own overflow and the document is the window's height again at every width. It is on the frame and not on
+  `#view` because the Designer draws `.ms-side`, `.ms-slide` and the assistant dock `position: fixed` *inside* the view, and
+  containment there would make the view their containing block and move them under the top bar; measured after the change, the
+  inspector still covers 360 × 844 from the window's top-left corner and so does the drawer.
+- **The Files panel keeps focus when the record arrives.** Opening a file put focus on the loading head's close (86 ms), and
+  the record replaced that head, so the focused node was removed and focus fell to `<body>`: at 320, 360 and 390 the log was
+  `row → close → BODY`, `document.activeElement.closest("#drawer")` was null, and a keyboard user who had just opened the panel
+  had nothing in it. The reader now puts focus back once per file, on the close it had, and only when focus was lost (the step
+  drawer's rule, `reader-focus.test.ts`). Escape still returns to the row.
+- **A document's outline starts under the panel's title.** In the panel the reader's title is the dialog's h2, and a document's
+  markdown started at h4 (`PANEL_HEADING_BASE`), so the outline read h2 → h4 and axe reported `heading-order` (one node,
+  moderate). `FileView` takes the level it renders at; the reader asks for 3 in the panel and keeps 4 in the page, where the
+  title is an h3. The sheet already draws h3 and h4 at 14 px (`#drawer h3, #drawer h4`), so a document's `#` keeps its size and
+  its `##` takes the sheet's 14 px (it was 16); the outline is what changed.
+- **The phone's navigation sheet is a dialog a div may carry.** It was an `<aside role="dialog">`, a role ARIA in HTML does not
+  allow on an aside, and axe said so (`aria-allowed-role`, one node, minor) every time the menu was open. It is a div with
+  `role={narrow ? "dialog" : "complementary"}`: the same landmarks, each in a role its element allows.
+- **What shipped: a file's type no longer runs under its state pill.** On a phone the type is one word in the cell beside the
+  pill, and the pill's width sets that cell: at 360 `ArchitectureDocument` measured 138 px in 119 px and painted 19 px under
+  the "approved" pill, `RequirementsDoc` 106 px in 73 px under "ready for review". The meta breaks a word only where it cannot
+  fit, as the file's name already did. One of the six rows grows and the panel with it.
+
+**Measured.**
+
+| | Before | After |
+|---|---|---|
+| Graph, 360, document height | 1,774 px for an 844 px window (930 px of blank) | 844 / 844 |
+| Graph, 320 / 390 / 1440 | 1,899 (1,055 blank) / 1,671 (827) / 900 | 844 / 844 / 900 |
+| Cost, 320 / 360 / 390 / 768 / 1440 | 1,490 / 1,447 / 1,321 / 1,216 / 1,021 | 844 / 844 / 844 / 900 / 900 |
+| Product, 320 | 875 (31 px of blank) | 844 |
+| View/width readings with blank scroll below the frame (9 views × 5 widths) | 9 of 45 | 0 of 45 |
+| One 600 px wheel over the top bar | moved the window on 9 of 45 readings, to 600 px — the frame off the screen | 0 of 45 |
+| Files reader, a file opened at 320 / 360 / 390 | `row → close → BODY`; final focus `<body>`, 0 panel controls in reach | `row → close → close`; final focus the close, inside the panel; Esc → the row |
+| Files reader drawer, headings at 360 | H2 release-plan → H4 Release → H5 release plan; axe `heading-order` ×1 | H2 → H3 → H4; axe 0 |
+| The reader's page at 1440 (unchanged) | H3 / H4 / H5 at 18 / 18 / 16 px | identical |
+| Phone menu open, axe (all rules) | `aria-allowed-role` ×1 (`#sidebar`, an `<aside role="dialog">`) | 0 (`<div role="dialog">`, 360 × 844) |
+| What shipped, 360: type names wider than their cell | 3 (138 in 119 · 93 in 73 · 106 in 73) | 0 |
+| What shipped panel / page, 360 | 829 / 4,135 px | 847 / 4,153 px |
+| What shipped, 390 / 320 | 1 (106 in 103) / 0; 775 / 891 px | 0 / 0; 775 / 891 px |
+| The 13 views the sweep lists × 5 widths × 2 themes | 0 axe, 0 page scroll, smallest text 11 px | identical |
+| Controls under 44 × 44 at 320 / 360 / 390 | 0 | 0 |
+
+`npm run typecheck`, `npm run lint` (0 errors; the same 211 cross-package warnings, none in the console) and `npm run build`
+pass; `node --test "dist/tests/**/*.test.js"` passes **6,361 tests** (6,359 pass, 0 fail, 2 skipped), including the new
+`frame-scroll.test.ts` and `reader-focus.test.ts` and the added rules in `primitives-a11y.test.ts`, `frame-phone.test.ts`,
+`panel-headings.test.ts` and `views-phone.test.ts`. Each new rule was mutation-checked (the containment removed, the restore's
+guard relaxed, the panel's base put back to 4, the aside put back, the meta's wrap removed — each seen to fail, then restored).
+
+**Left.** `curule console` is a single-mesh server and answers `/api/projects` with 404 on purpose, so Chromium logs "Failed to
+load resource: 404" for it and `npm run qa:console` still reports one line per width and theme and exits 1; it was there before
+this pass (the 1440 light baseline has the same line), and silencing it means changing what the server answers or teaching the
+script which 404 is the answer. A document's `#` in the drawer is still 14 px, the sheet's one size for its headings, while the
+same heading is 18 px in the page's reader: making the panel follow the page means changing `#drawer h3, #drawer h4`, a
+decision about the sheet and not about the outline. The drawer's section jump row still scrolls sideways on a phone (the
+2026-10-25 entry's left) and was not touched. No real phone, screen reader, Safari, Firefox or Windows High Contrast run this
+pass.
 
 ### 2026-10-25 — a read that fails or is slow still says what it is doing
 

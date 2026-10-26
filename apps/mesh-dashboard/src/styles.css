@@ -334,7 +334,13 @@ kbd { display: inline-flex; align-items: center; justify-content: center; min-wi
    buttons on top of headings at every width the wrap block was meant to serve.
    `auto` lets the track follow the header; #topbar keeps its identity as a
    min-height, and #view starts wherever the header actually ends. */
-#app { display: grid; grid-template-columns: 232px 1fr; grid-template-rows: auto 1fr; grid-template-areas: "side top" "side main"; height: 100vh; height: 100dvh; }
+/* `contain: paint` makes the frame own the window: the console's one scroller is #view, so the document itself must never
+   scroll. It did. A long view's overflow still reached the root — measured at 360 px, the Graph page's 1,881 px of content in
+   a 780 px #view made the document 1,774 px tall — and one wheel over the 64 px top bar moved the whole console 600 px up onto
+   blank ground, with nothing left on screen to scroll back by. Clipping the frame at its own box fixes that and changes nothing
+   about where the fixed layers land: #app is the viewport's box, so the drawer, its scrim, a dialog and the toasts resolve to
+   the same rectangle they did against the viewport. */
+#app { display: grid; grid-template-columns: 232px 1fr; grid-template-rows: auto 1fr; grid-template-areas: "side top" "side main"; height: 100vh; height: 100dvh; contain: paint; }
 
 /* ---------- sidebar ---------- */
 /* A search field, then four groups under small-caps labels, each row an icon and a name. The ground is --bg-2 so the sidebar
