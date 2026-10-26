@@ -22,7 +22,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
-import { renderPlanCards, renderPlanTable, renderPlanStack, renderRunCosts, renderRunStack, renderPlanTeaser } from "./pricing-html.mjs";
+import { renderPlanCards, renderPlanTable, renderPlanStack, renderRunCosts, renderRunStack, renderPlanTeaser, renderHeroPrice } from "./pricing-html.mjs";
 
 const here = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const rootFlag = process.argv.indexOf("--root");
@@ -56,10 +56,11 @@ const BLOCKS = {
   "run-costs": renderRunCosts(exported),
   "run-stack": renderRunStack(exported),
   "plan-teaser": renderPlanTeaser(exported),
+  "hero-price": renderHeroPrice(exported),
 };
 const PAGES = [
   { file: "site/pricing/index.html", required: ["plans-json", "plan-cards", "plan-table", "plan-stack", "run-costs", "run-stack"] },
-  { file: "site/index.html", required: [] },
+  { file: "site/index.html", required: ["hero-price"] },
 ];
 
 const targets = [

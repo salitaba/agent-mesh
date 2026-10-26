@@ -252,6 +252,11 @@ main:has(.hero) .section-head .eyebrow::before { counter-increment: sec; content
 .hero h1 { max-width: 22ch; }
 .hero .lede { margin-top: 24px; }
 .hero-cta { margin-top: 28px; }
+/* The price with the promise: the figures a visitor came to check stand under the actions and before the picture, in a
+   ruled line, so the first screen answers "what is it" and "what does it cost". Written from the plan table
+   (scripts/export-pricing.mjs), never typed here. */
+.hero-price { max-width: 40rem; margin-top: 20px; padding-top: 12px; border-top: 1px solid var(--line); color: var(--ink2); font-size: .875rem; line-height: 1.62; }
+.hero-price a { color: var(--link); font-weight: 600; white-space: nowrap; }
 .actions { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 20px; }
 .proof { --s: 20px; --y: 12px; margin-top: 32px; }
 .proof li { padding-block: 12px; border-top: 1px solid var(--line); color: var(--ink2); font-weight: 500; }
@@ -268,17 +273,19 @@ main:has(.hero) .section-head .eyebrow::before { counter-increment: sec; content
   .hero .lede { order: 3; margin-top: 16px; }
   .hero-cta { display: contents; }
   .hero-cta .actions { order: 4; margin-top: 20px; }
-  .hero-visual { order: 5; margin-top: 20px; }
-  .hero-cta > p { order: 6; margin-top: 12px; }
-  .proof { order: 7; }
+  .hero-price { order: 5; margin-top: 16px; }
+  .hero-visual { order: 6; margin-top: 20px; }
+  .hero-cta > p { order: 7; margin-top: 12px; }
+  .proof { order: 8; }
 }
 @media (min-width: 1040px) {
   .hero-grid { grid-template-columns: repeat(12, minmax(0, 1fr)); column-gap: 24px; }
   .hero .eyebrow, .hero h1 { grid-column: 1 / -1; }
   .hero .lede { grid-row: 3; grid-column: 1 / span 7; }
   .hero-cta { grid-row: 3; grid-column: 9 / -1; margin-top: 16px; }
-  .hero-visual { grid-row: 4; grid-column: 1 / -1; margin-top: 56px; }
-  .proof { grid-row: 5; grid-column: 1 / -1; grid-template-columns: var(--c3); gap: 0 24px; margin-top: 40px; }
+  .hero-price { grid-row: 4; grid-column: 1 / span 7; margin-top: 24px; }
+  .hero-visual { grid-row: 5; grid-column: 1 / -1; margin-top: 56px; }
+  .proof { grid-row: 6; grid-column: 1 / -1; grid-template-columns: var(--c3); gap: 0 24px; margin-top: 40px; }
 }
 
 /* the product frame, and the choice of view */
@@ -433,6 +440,10 @@ main:has(.hero) .section-head .eyebrow::before { counter-increment: sec; content
 /* A long line shows a shadow at the edge until scrolled to its end: the cover scrolls with the text, the shadow stays. */
 .code pre { margin: 0; padding: 14px 18px 16px; overflow-x: auto; font: 13px/1.6 var(--mono); tab-size: 2; background: linear-gradient(to left, var(--code) 30%, transparent) right / 48px 100% no-repeat local, linear-gradient(to left, var(--edge), transparent) right / 12px 100% no-repeat scroll; }
 .code pre code { font-size: 1em; }
+/* The demo's commands are a recipe, not a log: a command that does not fit wraps instead of hiding its end, and the copy
+   button still copies the text exactly as written. Measured before: 134, 228 and 228px of the three commands lay behind a
+   sideways drag at 360 (174/268/268 at 320), and the run command's last 32px were cut even at 1,440. */
+#try .code pre { white-space: pre-wrap; overflow-wrap: anywhere; }
 .code-bar { position: absolute; top: 0; right: 6px; z-index: 1; display: flex; align-items: center; height: 48px; }
 .copy { min-height: 36px; padding: 0 12px; border-radius: var(--k-r-sm); color: var(--ink2); font: 600 .8125rem/1 var(--font); }
 .copy:hover { background-color: var(--panel2); color: var(--ink); }

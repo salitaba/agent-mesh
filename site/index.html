@@ -10,7 +10,7 @@
 <link rel="apple-touch-icon" href="assets/apple-touch-icon.png">
 <meta name="theme-color" content="#fbfaf8" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#131211" media="(prefers-color-scheme: dark)">
-<link rel="stylesheet" href="assets/site.css?v=2f3d804510">
+<link rel="stylesheet" href="assets/site.css?v=ae5bea64fd">
 <meta property="og:type" content="website">
 <link rel="canonical" href="https://curule.dev/">
 <meta property="og:url" content="https://curule.dev/">
@@ -77,6 +77,9 @@
         </div>
         <p class="small muted mt-s" data-cloud-only>Curule Cloud runs it for you, and you bring your own model key. The demo is a scripted team on your own machine: no API key, no account.</p>
       </div>
+<!-- generated:hero-price:start (scripts/export-pricing.mjs; do not edit between the markers) -->
+<p class="hero-price">Community is free; Team is $149 a month; Business is $599 a month; Enterprise is quoted. <a href="pricing/">Compare the plans</a></p>
+<!-- generated:hero-price:end -->
       <div class="hero-visual">
         <fieldset class="showcase">
           <legend class="sr">Product view</legend>
@@ -342,7 +345,6 @@
         <p class="lede">The demo runs a scripted team on the real runtime: no model, no credentials. Watch the whole flow before you commit to anything.</p>
       </div>
       <p class="muted">You need Docker and git. The first command uses <code>openssl</code>; any random string of 32 or more characters will do as the token.</p>
-      <p data-image-off class="small muted">There is no published container image yet, so the second step builds it from the source. Tagged releases will publish one.</p>
       <p class="mt-m"><a class="arrow-link" href="docs/" data-doc="commercial/deployment.md">Deploying: Docker Compose, Helm and TLS</a></p>
     </div>
     <ol class="try">
@@ -354,6 +356,8 @@ echo "$MESH_API_TOKEN"</code></pre></div>
       </li>
       <li>
         <h3>Build the image from the source</h3>
+        <!-- The caveat belongs to the step it explains: it used to stand in the preamble, above the first command. -->
+        <p data-image-off class="small muted">There is no published container image yet, so this step builds it from the source. Tagged releases will publish one.</p>
         <div class="code"><pre tabindex="0"><code>git clone https://github.com/salitaba/agent-mesh.git curule
 cd curule
 docker build -t curule .</code></pre></div>

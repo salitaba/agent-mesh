@@ -208,3 +208,17 @@ export function renderPlanTeaser(out) {
   });
   return `<ul class="teaser" aria-label="The plans">\n${items.join("\n")}\n</ul>`;
 }
+
+/**
+ * The price on the first screen: one ruled line of figures under the hero's actions, before the picture, so a visitor who
+ * came to check what a licence costs reads it without scrolling. Written from the plan table like the teaser, so it cannot
+ * drift from `packages/licensing/src/plans.ts`. Measured at 360 before it: the first amount was at y=1,882.7.
+ */
+export function renderHeroPrice(out) {
+  const says = out.plans.map((p) => {
+    if (p.pricing === "free") return `${esc(p.name)} is free`;
+    if (p.pricing === "contact") return `${esc(p.name)} is quoted`;
+    return `${esc(p.name)} is ${usd(p.priceMonthlyUsd)} a month`;
+  });
+  return `<p class="hero-price">${says.join("; ")}. <a href="pricing/">Compare the plans</a></p>`;
+}
