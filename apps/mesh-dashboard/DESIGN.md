@@ -41,6 +41,8 @@ ring), not only how wide it is.
    actions take their own row and controls may grow to fill it. When the page
    shows a first-run guide, the guide *is* the brief and the header's sentence is
    omitted: two briefs pushed the Designer's first seat out of the screen.
+   A route change that lands focus on the page's heading announces the page; the heading wears no ring, because it is a place,
+   not a control (the same for `#view`). A control's keyboard ring is untouched.
 2. **The state, before the content** — a banner for stale or refused, an
    `ErrorState` with a retry, an `EmptyState` with the next move. Never an empty
    card, never zeros standing in for "not read".
@@ -109,7 +111,7 @@ Breakpoints: **1280 1100 900 800 760 620 560**. 800 is the sidebar drawer (JS
 - No affordance is hover-only. A control that exists on a phone is visible or
   reachable by one press; a tooltip repeats a name, it does not supply one.
 - Filters that are not needed to read the page fold behind one 44 px button with
-  a count, as Events already does; the search stays out.
+  a count, as Events and Steps do; the search stays out.
 - A page's last row is a way on, not a full stop: `NextLinks` is 13 px link text
   on a rule, 44 px tall at 620 px and below, and wraps rather than scrolls. It is
   a signpost, not a second band of primary buttons.
@@ -159,24 +161,86 @@ Breakpoints: **1280 1100 900 800 760 620 560**. 800 is the sidebar drawer (JS
   words, and stay at 11 on a phone. The goal id under the wordmark was the last 11 px word there and is now 12.
 - The public site (`apps/cloud-server/pages`) has its own memory; this pass did
   not change it.
+- The registry's failure state is honest but not a console: while `/api/projects` does not answer, no view can be drawn, because
+  the shell cannot tell a host from a one-mesh server. The page says that and offers Try again; it does not guess.
+- The Steps filter is one button at 620 and below and 166 px of chips and switch from 621 to 768. The phone's 44 px fold may be
+  the right shape for a touch-class tablet, but that is the same open question as the tablet's 32 px `NextLinks`.
+- The Playground now leads with its terminal and puts the product card after the output. That is a deliberate reversal of the
+  2026-10-22 "product first" reading for this one page: the page's own action was at the foot of the first screen. If real use
+  says the product should lead there too, the card costs 487 px above the command box and the measurement is in this entry.
 
 ## What the next pass should take
 
-1. Decide whether What shipped opens by default on a fresh delivery, and whether the phone's fold remembers a section (the page resets to all
-   closed on every visit).
-2. Give the first-run guide a phone shape — the path in one line, or a sheet — against the roster's first two rows being visible on arrival.
-   The header now costs 90; the guide costs 459.
-3. Measure the project strip at 621–800 with enough projects, in the hosted console where a registry exists; `curule console` cannot show it.
-4. Decide whether a touch-class 768 px tablet takes the 44 px floor beyond the Designer: its `NextLinks` are still 32 px and the phone break
-   is 620.
+1. Give the first-run guide a phone shape — the path in one line, or a sheet — against the roster's first two rows being visible on arrival.
+   The header is 90 and the guide 459; this was the last pass's first job and is now this one's.
+2. Decide whether the Steps filter fold belongs above 620: at 621–768 the chips take two rows and the switch a third (166 px),
+   though the page's own reading is one button there. The same decision covers the tablet's 32 px `NextLinks`.
+3. Decide whether What shipped opens by default on a fresh delivery, and whether the phone's fold remembers a section (the page
+   resets to all closed on every visit).
+4. Measure the project strip at 621–800 with enough projects, in the hosted console where a registry exists; `curule console` cannot show it.
 5. Remember the YAML preview's wrap choice, or move the toggle into the pane's own head; either is a small addition to a layer that now fits.
 6. Check the Events and inbox end-caps against real live content before adding any row (the decision above).
-7. Read the console with a real thumb on a real phone: the measurements here are
-   Chromium at 360 px with touch emulation only in CSS, not a hardware device.
-8. Check the frame's safe-area claims on a notched device in both orientations;
-   the insets are in the CSS but the stand-in browser reports them as zero.
+7. Read the console with a real thumb on a real phone: the measurements here are Chromium at 360 px with touch emulation only in CSS, not a hardware device.
+8. Check the frame's safe-area claims on a notched device in both orientations; the insets are in the CSS but the stand-in browser reports them as zero.
 
 ## Pass log
+
+### 2026-10-26 — the Steps ledger gives the phone its screen, and a failed registry says so
+
+Surface: `views/Steps.tsx`, `views/steps.css`, `views/Playground.tsx`, `shell.tsx`, `navmodel.ts`, `projects.tsx`, `styles.css`.
+Measured on the scripted demo at **Delivered** (28 turns, one quiet fold) in the production build, Chromium 1248 at
+320/360/390/768/900/1440 in light and dark, reduced motion, a touch pointer, axe-core 4.14 at 360 and 1440 in both schemes and
+on the states this pass changed (Steps' filter open, the failed registry, forced colours). Before is the base build at
+`a05ea58`, run beside this one on its own port for the registry case; after is this branch, on the same delivered mission.
+
+- **The Steps filter is one button on a phone.** At 360 the ledger opened on **166 px** of filter — three outcome chips in two
+  rows and the quiet-run switch on a third — before the first turn. It is one 44 px button that names the choice and its count
+  (`Everything 28`), with the chips and the switch in its fold (opened: 218 px, only while choosing). Toolbar **166 → 60**, the
+  first group **786 → 680**, the first turn **822 → 734**, so the ledger itself starts on the first screen. The page is
+  3,372 → **3,377**: the filter gives 106 px back and the wrapped reasons below spend most of it. A desk is unchanged: the
+  toggle is `display: none` above 620 and the panel takes no box (`display: contents`), so at 1440 the toolbar is **68 px**
+  with the count and the switch where they were.
+- **A wake reason reads on a phone.** The line under every turn was 264 px of `nowrap`; **5 of 25** reasons were cut with no
+  end in reach — one held **1,728 px** of text — and a phone has no hover to reveal the `title`. It takes two lines and ends in
+  an ellipsis: **0** are now cut without a visible end, and the 3 that do not fit two lines clamp at 35 px against content of
+  139, 52 and 104 px. The step drawer still carries the whole note, as it did.
+- **The quiet run's names are whole.** The fold row gave its names **113 of the 287 px** they needed and read
+  `tech-lead, ar…`; the count and the cost now take the first line and the names the second, **306/306 at 360** (row 44 → 49)
+  and **266/266 at 320** (64).
+- **The Playground opens on its command.** The product card above the terminal put the command box at **y=657** and Run at
+  **709**: the page's own action sat at the foot of the first screen, behind 487 px of a card Product already opens with. The
+  terminal leads: command box **657 → 170**, Run **709 → 222**, and the product card follows the output (170 → 529). Page
+  1,041 → 1,057. The product is still on the page, still the first door at its end, and still `Product`'s first card
+  (`product-path.test.ts`); the Playground's own test now pins the terminal first and the product before the ways out.
+- **A registry that never answers is a failed read, not a wait.** With `/api/projects` answering 503, at 10 s the console sat
+  on **"Loading this page…"** in every view with **0 alerts and 0 controls**: `hasRegistry` never left null, so the shell held
+  every view. `registryPhase` now distinguishes waiting from failed; at the same 10 s the page shows its own heading,
+  `Could not load the projects list`, **one `role="alert"` and one 108 × 44 Try again**, and pressing it recovers the ledger
+  (3,377 px). The generic `server error /api/projects -> 503` notice is suppressed (`quiet`) because the page now says it in
+  place — it had been covering the page's own heading.
+- **The page a route lands on is a place, not a control.** **7 of 12** pages arrived with a 2 px accent ring: four around the
+  page title (Agents, Steps, Playground, Cost) and three around the whole **360 × 736** view (Files, Designer, Tool gates).
+  The ring is gone (**0/12**) while the focus stays — `document.activeElement` is still the page's `h2` where the route change
+  focuses it — and Tab through the bar still draws its 2 px ring on the skip link, ☰ and ⋯. The landing is announced, not
+  selected.
+
+The 120 view/width/theme reads are unchanged in the ways that matter: **no document or `#view` horizontal scroll** at
+320/360/390/768/1440 in both schemes, **0 real controls under 44 × 44 at 320/360/390**, smallest text on the ramp (11 px is
+the Designer's "Starts" flag and the Overview's avatar glyph), and **0 axe violations** at 360 and 1440, both schemes, on all
+twelve views and on the filter-open and registry-failed states.
+
+Suite: typecheck, eslint (0 errors, 211 pre-existing cross-package warnings) and build clean; `dist/tests/dashboard` **1,172
+pass, 0 fail**, including the new `steps-phone.test.ts` and rules in `playground`, `navmodel`, `failure-states` and
+`primitives-a11y`; `node --test "dist/tests/**/*.test.js"` **6,384 tests, 6,382 pass, 0 fail, 2 skipped**.
+
+**Left.** The Designer's first-run guide is untouched (still 459 px, still one seat row on an 844 screen) and is the next
+pass's first job. Above 620 the Steps chips still take two rows with the switch on a third (**166 px at 621–768**), because
+the phone fold is at the phone break and a tablet is not a phone; whether the fold belongs up to 760 is the same question as
+the tablet's 32 px `NextLinks`. The Playground note between the Run and the quick commands is eight lines on a phone and now
+sits directly under the action; trimming it is a words decision, not a layout one. A registry that answers 5xx still cannot
+draw a view: the console cannot know whether the server is a host or one mesh until it answers, so it says so and offers the
+retry rather than guessing. The failure's own sentence is a full paragraph at 360 — it is the one place on the console that
+explains a thing the person has never seen before, and the retry is directly under it.
 
 ### 2026-10-26 — the Overview becomes a briefing, and three rules reach the edges
 
