@@ -18,9 +18,9 @@ const read = (file: string): string => fs.readFileSync(path.join(SRC, file), "ut
 test("the Overview says what is below it, and its panels are the anchors it lands on", () => {
   const overview = read("views/Overview.tsx");
   const panel = read("views/Panel.tsx");
-  assert.match(overview, /<JumpRow delivered=\{delivered\} \/>/, "the index is drawn");
+  assert.match(overview, /<JumpRow delivered=\{delivered\} onOpen=\{openSection\} \/>/, "the index is drawn");
   for (const id of ["ov-shipped", "ov-work", "ov-goal", "ov-events"]) {
-    assert.ok(overview.includes(`jump("${id}")`), `the row offers ${id}`);
+    assert.ok(overview.includes(`onOpen("${id}")`), `the row offers ${id}`);
     assert.ok(overview.includes(`id="${id}"`) || read("views/GoalChecks.tsx").includes(`id="${id}"`) || read("views/Shipped.tsx").includes(`id="${id}"`), `${id} exists as a section`);
   }
   assert.match(panel, /<section id=\{id\} tabIndex=\{-1\}/, "the section is the element with the id, and can take focus when a jump lands");

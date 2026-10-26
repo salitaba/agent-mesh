@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Button, Chip, Progress } from "../components";
 import { Icon } from "../icons";
 import { checkView, checksSummary, evidenceChips, goalNeedsItsCard } from "../overview-model";
-import { Panel } from "./Panel";
+import { Panel, type Fold } from "./Panel";
 import "./overview.css";
 
 /** Past this many characters the goal is folded to four lines with a way to read the rest. Counted, not measured: no DOM read on render. */
@@ -26,11 +26,11 @@ function GoalText({ text }: { text: string }): React.JSX.Element | null {
  * standing unproven. Evidence sits on the check it supports, and a chip that names a file opens it. The goal's own text is shown
  * here only when the hero could not show all of it: a short goal is already the line under the headline, and saying it twice is noise.
  */
-export function GoalChecks({ goal, arts, openArt }: { goal: any; arts: any[]; openArt: (a: any) => void }): React.JSX.Element {
+export function GoalChecks({ goal, arts, openArt, fold }: { goal: any; arts: any[]; openArt: (a: any) => void; fold?: Fold }): React.JSX.Element {
   const criteria: any[] = goal?.acceptanceCriteria || [];
   const sum = checksSummary(criteria);
   return (
-    <Panel id="ov-goal" className="ov-goalcard" title="Goal checks" meta={sum.total ? `${sum.done} of ${sum.total} mandatory evidenced` : undefined}>
+    <Panel id="ov-goal" className="ov-goalcard" title="Goal checks" fold={fold} meta={sum.total ? `${sum.done} of ${sum.total} mandatory evidenced` : undefined}>
       {sum.total ? <Progress value={sum.done} max={sum.total} label="Mandatory checks evidenced" tone="ok" /> : null}
       {goalNeedsItsCard(String(goal?.description || "")) ? <GoalText text={String(goal?.description || "")} /> : null}
       {criteria.length ? (

@@ -52,6 +52,9 @@ const hasRule = (css: string, selector: string, declaration: RegExp): boolean =>
 
 const styles = read("styles.css");
 const inspector = read("designer/inspector.css");
+const designerCss = read("designer/designer.css");
+const topologyCss = read("designer/topology.css");
+const designer = read("designer/Designer.tsx");
 
 test("a field on a phone is 16px: Safari zooms a page whose focused field is smaller", () => {
   // The mono rule (13px) has a higher specificity than the shared field rule, so it needs the same phone override.
@@ -65,4 +68,23 @@ test("every thing a thumb presses in the phone inspector is 44px tall", () => {
     assert.ok(hasRule(inspector, selector, /min-height:\s*44px/), `${selector} is 44px tall in the phone drawer`);
   }
   assert.ok(hasRule(inspector, ".ms-insp .chip-toggle", /min-width:\s*44px/), "even the shortest chip ('qa') is 44px wide");
+});
+
+test("a touch-class tablet at 768 gets the 44 px floor, though it is above the 760 phone layout", () => {
+  // Measured at 768 with a coarse pointer: the guide's three closed steps were 32 px tall and each seat's wiring port was 26 × 26,
+  // so a finger had to aim at a 26 px circle on a 56 px card. The port keeps its 26 px mark and takes a 44 px target around it.
+  assert.ok(hasRule(designerCss, ".ms-step-toggle", /min-height:\s*44px/), "a guide disclosure is 44 px tall");
+  assert.ok(hasRule(topologyCss, ".ms-handle", /width:\s*44px/), "the wiring port's target is 44 px wide");
+  assert.ok(hasRule(topologyCss, ".ms-handle", /height:\s*44px/), "and 44 px tall");
+  assert.ok(hasRule(topologyCss, ".ms-handle::before", /inset:\s*9px/), "the mark drawn inside it stays the 26 px circle the card was drawn around");
+});
+
+test("a phone header gives the history pair to the menu, so the roster starts 52 px higher", () => {
+  // Measured at 360 with the first-run guide: the header's actions took two rows (52 px for undo/redo and the verdict, 44 for
+  // Inspector and the menu) and the header was 150 px. Hiding the pair lets the remaining three share one row.
+  assert.match(designer, /\{listMode \? null : \(\s*<div className="ms-toolgroup" role="group" aria-label="History">/, "the bar's history pair is not drawn on a phone");
+  assert.match(designer, /const historyItems: MenuItem\[\] = listMode/, "the menu gets the same two actions there");
+  assert.match(designer, /label: `Undo: \$\{labelsNow\.undo\}`/, "Undo names the change it would take back");
+  assert.match(designer, /label: `Redo: \$\{labelsNow\.redo\}`/, "and so does Redo");
+  assert.match(designer, /separated: historyItems\.length > 0, onClick: openYaml/, "the file actions are set apart from the history ones");
 });

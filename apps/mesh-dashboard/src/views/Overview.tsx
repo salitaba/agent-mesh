@@ -10,6 +10,7 @@ import { useProjectsOptional } from "../projects";
 import { useMission } from "../useMission";
 import { useMissionActions } from "../useMissionActions";
 import { useToolApprovals } from "../useToolApprovals";
+import { useMedia } from "../useMedia";
 import { escalationText, holdsOf, owedLine } from "../escalation-card";
 import { orderDecisions, toolRequestsBySeat, type LoadState } from "../inbox-model";
 import type { HeroAction, MissionAction } from "../mission";
@@ -20,6 +21,7 @@ import { AttentionList } from "./AttentionList";
 import { GoalChecks } from "./GoalChecks";
 import { MissionHero } from "./MissionHero";
 import { Panel } from "./Panel";
+import type { Fold } from "./Panel";
 import { ReplayDrawer } from "./ReplayDrawer";
 import { Shipped } from "./Shipped";
 import { MiniFeed, TimelineSkeleton, WorkTimeline } from "./Timeline";
@@ -28,6 +30,9 @@ import "./overview.css";
 /** How many of the newest events the page asks for when its buffer stops short of the log. */
 const EVENT_TAIL = 150;
 
+/** The phone's break, the same value styles.css and the other views use: below it the evidence sections fold to one row each. */
+const PHONE = "(max-width: 620px)";
+
 /** Where each fix on the attention list lives. */
 const FIX_VIEW: Record<FixTarget, View> = { inbox: "escalations", tools: "gates", designer: "designer", hostsettings: "hostsettings" };
 
@@ -35,24 +40,19 @@ const FIX_VIEW: Record<FixTarget, View> = { inbox: "escalations", tools: "gates"
  * The page's own table of contents. On a phone the Overview measured 8,395 px tall — a delivered mission with a dozen checks
  * and files — and the three sections after the hero sat several screens down with nothing at the top saying so. One row, one
  * press each, and the target takes focus as well as the scroll so a keyboard user continues inside the section.
+ *
+ * On a phone the sections are one row each until opened, so the index also opens the one it names: a jump that landed on a
+ * closed heading would hide the thing it promised. The scroll waits for that open (`Overview`'s pendingJump effect): a target
+ * 478 px from the bottom of the folded page cannot be scrolled to the top until its own body has given the page its height.
  */
-function JumpRow({ delivered }: { delivered: boolean }): React.JSX.Element {
-  // The scroll is the one thing a script animates on this page, and `behavior: "smooth"` asks for it whatever the person's motion
-  // preference is: the stylesheet's `scroll-behavior: auto !important` cannot reach an option passed to this call.
-  const jump = (id: string): void => {
-    const el = document.getElementById(id);
-    if (!el) return;
-    el.focus({ preventScroll: true });
-    const still = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    el.scrollIntoView({ block: "start", behavior: still ? "auto" : "smooth" });
-  };
+function JumpRow({ delivered, onOpen }: { delivered: boolean; onOpen: (id: string) => void }): React.JSX.Element {
   return (
     <nav className="ov-jump" aria-label="Sections of this page">
       <span className="ov-jump-h caps">On this page</span>
-      {delivered ? <Button variant="ghost" icon="files" onClick={() => jump("ov-shipped")}>What shipped</Button> : null}
-      <Button variant="ghost" icon="steps" onClick={() => jump("ov-work")}>Latest work</Button>
-      <Button variant="ghost" icon="check" onClick={() => jump("ov-goal")}>Goal checks</Button>
-      <Button variant="ghost" icon="events" onClick={() => jump("ov-events")}>Just happened</Button>
+      {delivered ? <Button variant="ghost" icon="files" onClick={() => onOpen("ov-shipped")}>What shipped</Button> : null}
+      <Button variant="ghost" icon="steps" onClick={() => onOpen("ov-work")}>Latest work</Button>
+      <Button variant="ghost" icon="check" onClick={() => onOpen("ov-goal")}>Goal checks</Button>
+      <Button variant="ghost" icon="events" onClick={() => onOpen("ov-events")}>Just happened</Button>
     </nav>
   );
 }
@@ -79,6 +79,36 @@ export default function Overview(): React.JSX.Element {
   const [attempt, setAttempt] = useState(0);
   // Bumped to read the steps again without reading everything else: the list can be a few seconds older than the status beside it.
   const [stepsTick, setStepsTick] = useState(0);
+  // On a phone the evidence below the hero is one row a section until it is opened: at 360 a delivered mission was 4,132 px, and
+  // the reader had to scroll through six file rows, five turns, seven checks and thirteen events to learn the page had four parts.
+  // The index opens the section it names; the state lives here so a press on either one agrees with the other.
+  const phone = useMedia(PHONE);
+  const [openSections, setOpenSections] = useState<ReadonlySet<string>>(() => new Set<string>());
+  const [pendingJump, setPendingJump] = useState<string | null>(null);
+  const toggleSection = (id: string): void => setOpenSections((cur) => {
+    const next = new Set(cur);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    return next;
+  });
+  const openSection = (id: string): void => {
+    setOpenSections((cur) => (cur.has(id) ? cur : new Set(cur).add(id)));
+    setPendingJump(id);
+  };
+  const foldOf = (id: string, summary: React.ReactNode): Fold | undefined =>
+    phone ? { open: openSections.has(id), onToggle: () => toggleSection(id), summary } : undefined;
+  // The index opens a section and then lands on it: the effect runs after the body's height is in the DOM, which is the one moment
+  // `scrollIntoView` can put a section at the top of a page that was 1,214 px tall when the press happened and is 2,059 now.
+  // `behavior: "smooth"` is the one animation on this page, so it asks the motion preference rather than assuming it.
+  useEffect(() => {
+    if (!pendingJump) return;
+    const el = document.getElementById(pendingJump);
+    setPendingJump(null);
+    if (!el) return;
+    el.focus({ preventScroll: true });
+    const still = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    el.scrollIntoView({ block: "start", behavior: still ? "auto" : "smooth" });
+  }, [pendingJump]);
 
   // What the page read when it opened is the mission as it was then. A mission that is started while the person watches, and
   // finishes in front of them, has to be read again: it said "No files are recorded for this goal" at the moment of delivery,
@@ -300,6 +330,12 @@ export default function Overview(): React.JSX.Element {
   const forYou = attention.filter((a) => a.tone !== "info" || a.kind === "notices").length;
   const live = rightNowInput(status, { phase: state.phase, now: 0, forYou, steps: runningSteps });
 
+  // What each folded row says in place of its body. A failure is said in the row too: "reading the files" forever would be the one
+  // state the fold could invent, and the fold is the only thing a phone sees until the row is opened.
+  const stepsFold = stepsErr && !steps.length ? "could not load" : steps.length ? `${steps.length} ${steps.length === 1 ? "step" : "steps"}` : stepsLoaded ? "none yet" : "reading the steps";
+  const artsFold = artsState === "error" ? "could not load" : artsState === "ready" ? `${goalArts.length} ${goalArts.length === 1 ? "file" : "files"}` : "reading the files";
+  const eventsFold = sseState === "reconnecting" ? "paused while reconnecting" : behind && tailFailed ? "latest could not load" : `${status.eventCount ?? timeline.length} events`;
+
   return (
     <div className="ov">
       <PageHeader title="Overview" />
@@ -324,13 +360,14 @@ export default function Overview(): React.JSX.Element {
         run={run}
       />
       <AttentionList items={attention} onFix={fix} />
-      <JumpRow delivered={delivered} />
-      {delivered ? <Shipped arts={goalArts} state={artsState} onRetry={() => setAttempt((n) => n + 1)} openArt={openArt} onOpenFiles={() => setView("artifacts")} /> : null}
+      <JumpRow delivered={delivered} onOpen={openSection} />
+      {delivered ? <Shipped arts={goalArts} state={artsState} fold={foldOf("ov-shipped", artsFold)} onRetry={() => setAttempt((n) => n + 1)} openArt={openArt} onOpenFiles={() => setView("artifacts")} /> : null}
       {/* Renders nothing unless a collaboration is actually open, and owns its own hooks so this component's hook count does not move. */}
       <CollabCard />
       <div className="ov-grid">
         <Panel
           id="ov-work" className="ov-work" title="Latest work"
+          fold={foldOf("ov-work", stepsFold)}
           meta={runningSteps.length ? <Pill tone="awakened" pulse>{runningSteps.length} working now</Pill> : undefined}
           actions={<Button variant="small" onClick={() => setView("steps")}>All steps</Button>}
         >
@@ -345,9 +382,10 @@ export default function Overview(): React.JSX.Element {
             </div>
           ) : <TimelineSkeleton label="Loading recent work." />}
         </Panel>
-        <GoalChecks goal={goal} arts={arts} openArt={openArt} />
+        <GoalChecks goal={goal} arts={arts} openArt={openArt} fold={foldOf("ov-goal", checks.total ? `${checks.done} of ${checks.total} evidenced` : "no checks")} />
         <Panel
           id="ov-events" className="ov-events" title="Just happened"
+          fold={foldOf("ov-events", eventsFold)}
           meta={sseState === "reconnecting"
             ? "Live updates paused while reconnecting. This list may be stale."
             : behind && tailFailed ? "These are older events: the latest could not be loaded." : undefined}

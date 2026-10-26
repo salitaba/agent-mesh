@@ -89,6 +89,15 @@
   cursor: crosshair; opacity: 0; touch-action: none; transition: opacity var(--k-dur-1) var(--k-ease), background-color var(--k-dur-1) var(--k-ease), color var(--k-dur-1) var(--k-ease);
 }
 .ms-handle:hover { background: var(--k-accent); color: var(--k-on-accent); }
+/* On a touch-class tablet there is no hover to find the port with, and 26 px is under a finger. The target is 44 px; the mark it
+   draws stays the 26 px circle the card was drawn around, so the canvas does not grow a row of blobs. */
+@media (pointer: coarse) {
+  .ms-handle { width: 44px; height: 44px; right: -22px; border: 0; background: transparent; box-shadow: none; }
+  .ms-handle::before { content: ""; position: absolute; inset: 9px; border: 1px solid var(--k-accent); border-radius: 50%; background: var(--panel); box-shadow: var(--k-hl), var(--k-shadow-2); }
+  .ms-handle:hover { background: transparent; color: var(--k-on-accent); }
+  .ms-handle:hover::before { background: var(--k-accent); }
+  .ms-handle > .icon { position: relative; z-index: 1; }
+}
 .ms-node:hover .ms-handle, .ms-node:focus-within .ms-handle, .ms-node.sel .ms-handle, .ms-node.from .ms-handle { opacity: 1; }
 .ms-stage.wiring .ms-handle { display: none; }
 

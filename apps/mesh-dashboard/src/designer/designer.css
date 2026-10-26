@@ -84,6 +84,8 @@
 .ms-steps li:first-child { padding-top: 0; border-top: 0; }
 .ms-steps li:last-child { padding-bottom: 0; }
 .ms-step-toggle { display: flex; align-items: center; justify-content: space-between; gap: var(--s2); width: 100%; min-height: 32px; padding: 0; border: 0; border-radius: var(--r-sm); background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+/* 768 px is just above the 760 phone layout, and a tablet at that width is still a finger: the disclosures take the phone's floor. */
+@media (pointer: coarse) { .ms-step-toggle { min-height: 44px; } }
 .ms-step-toggle b { font: 600 14px var(--sans); letter-spacing: var(--k-track-tight); }
 .ms-step-caret { flex: none; color: var(--muted); transition: transform var(--k-dur-1) var(--k-ease); }
 .ms-step-caret.open { transform: rotate(90deg); }
@@ -155,7 +157,10 @@ body:has(.ms-bar) #toasts { bottom: calc(var(--dock-clear) + var(--ms-bar-h, 0px
 /* ---------- YAML slide-over and the dialogs ---------- */
 .ms-slide { position: fixed; top: 0; right: 0; z-index: var(--z-slide); width: min(620px, 94vw); height: 100dvh; display: flex; flex-direction: column; gap: var(--s3); padding: var(--s4) var(--s5); overflow: auto; background: var(--drawer); border-left: 1px solid var(--line-strong); box-shadow: var(--k-hl), var(--k-shadow-4); animation: drawer-in var(--k-dur-3) var(--k-ease); }
 .ms-slide-meta { display: flex; align-items: center; justify-content: space-between; gap: var(--s2); flex-wrap: wrap; }
+.ms-slide-acts { display: flex; align-items: center; gap: var(--s2); }
 .yaml-pane { flex: 1 1 auto; min-height: 220px; margin: 0; padding: var(--s3) var(--s4); overflow: auto; white-space: pre; font: 13px/1.6 var(--mono); color: var(--text-dim); background: var(--sunken); border: 1px solid var(--line); border-radius: var(--r); tab-size: 2; }
+/* A wrapped YAML line stays inside the box: at 360 the longest line measured 462 px in a 295 px pane. The toggle is in the meta row. */
+.yaml-pane.wrap { white-space: pre-wrap; overflow-wrap: anywhere; }
 .ms-templates.stacked { grid-template-columns: 1fr; width: 100%; }
 
 /* ---------- the inspector as a drawer, and the bar on narrower screens ---------- */
@@ -182,6 +187,10 @@ body:has(.ms-bar) #toasts { bottom: calc(var(--dock-clear) + var(--ms-bar-h, 0px
 @media (max-width: 760px) {
   /* The header's actions join the title row's own wrapping, so undo and redo sit beside the title and the rest fills the row below it. */
   .ms .page-actions { display: contents; }
+  /* With the history pair in ⋯ (Designer.tsx), the verdict, Inspector and the menu are 142 + 127 + 44 px: 313, plus two 12 px gaps
+     = 337 in a 332 px row, so the menu alone fell to a second row. The title row's gap is 8 here; 329 fits, and the header gives
+     the roster back the row the pair used to hold (52 px plus its 8 px gap). */
+  .ms .view-title { column-gap: var(--s2); }
   .ms-side { width: 100%; border-left: 0; }
   .ms-bar-acts { margin-left: 0; width: 100%; }
   .ms-bar-acts > button { flex: 1 1 0; }
