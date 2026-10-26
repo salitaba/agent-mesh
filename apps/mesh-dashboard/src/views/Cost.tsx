@@ -120,10 +120,12 @@ export default function Cost(): React.JSX.Element {
     const read = async (): Promise<void> => {
       if (loaded.current && document.visibilityState === "hidden") return;
       try {
-        const { json, timeout } = await client.api("GET", "/budgets");
+        const { json, timeout, status: code } = await client.api("GET", "/budgets");
         if (dead) return;
-        if (timeout || !json || json.error) {
-          fail(timeout ? "The request timed out. The server may be busy." : String(json?.error ?? "The mesh server did not answer."));
+        // The status is part of the answer. A gateway's 503 with a JSON body parses as `{}`, and `{}` summarized to
+        // "Nothing spent yet — 0 of no limit": the one question this page answers, answered with a zero it never read.
+        if (timeout || code !== 200 || !json || json.error) {
+          fail(timeout ? "The request timed out. The server may be busy." : code !== 200 ? `The server answered ${code} instead of the budgets.` : String(json?.error ?? "The mesh server did not answer."));
           return;
         }
         const first = !loaded.current;

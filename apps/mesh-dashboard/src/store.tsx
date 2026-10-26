@@ -178,6 +178,12 @@ interface MeshState {
    *  Without it the skeleton said "Loading turns" forever: the loader kept a
    *  stale list on purpose and had nowhere to report that it had never had one. */
   stepsError: string | null;
+  /** The last /steps read that got no usable answer, once the list is on screen.
+   *  A failed poll keeps the rows (a good answer is better than none) but the
+   *  page must not go on saying "6 turns" as if that were the history: Steps
+   *  says what it still holds and offers the read again. Cleared by the next
+   *  good read, so a flaky poll says nothing twice. */
+  stepsStale: { at: number; why: string } | null;
   stepLimit: number;
   setStepLimit: (n: number) => void;
   stepFilter: string;
@@ -258,6 +264,7 @@ export function MeshProvider({ children, projectId = null, background = false }:
   const [steps, setStepsState] = useState<TurnStep[]>([]);
   const [stepsLoaded, setStepsLoaded] = useState(false);
   const [stepsError, setStepsError] = useState<string | null>(null);
+  const [stepsStale, setStepsStale] = useState<{ at: number; why: string } | null>(null);
   const [streams, setStreams] = useState<Record<string, StreamBuf>>({});
   const [stepLimit, setStepLimitState] = useState(60);
   // refreshSteps reads the limit through a ref: a plain dep made "load older
@@ -484,6 +491,9 @@ export function MeshProvider({ children, projectId = null, background = false }:
   const setSteps = useCallback((s: TurnStep[]) => {
     setStepsState(s);
     setStepsLoaded(true);
+    // The overview primes this with the newest few turns. That is a good read of a smaller page, so it clears the
+    // first-read error but not staleness: whether the *page's* own read works is the loader's answer, not this one's.
+    setStepsError(null);
     stepsAt.current = Date.now();
   }, []);
 
@@ -506,22 +516,23 @@ export function MeshProvider({ children, projectId = null, background = false }:
           setStepsState(json);
           setStepsLoaded(true);
           setStepsError(null);
+          setStepsStale(null);
           stepsAt.current = Date.now();
           return;
         }
-        // A failed first read is a failed page. After a good one the list is kept and nothing is said:
-        // the row count and "Updated …" already stand, and a banner on every flaky poll would be noise.
-        if (stepsAt.current === 0) {
-          setStepsError(
-            timeout
-              ? "The request timed out. The server may be busy."
-              : code >= 400
-                ? `The server answered ${code} instead of the step history.`
-                : "The server sent something this page could not read.",
-          );
-        }
+        // A failed first read is a failed page. After a good one the list is kept — a count that survives a flaky poll is
+        // worth more than no rows — but it is marked: the page says what it still holds and when it last read, and offers
+        // the read again. Saying nothing let a 6-turn tail primed by the Overview stand as the mission's history.
+        const why = timeout
+          ? "The request timed out. The server may be busy."
+          : code >= 400
+            ? `The server answered ${code} instead of the step history.`
+            : "The server sent something this page could not read.";
+        if (stepsAt.current === 0) setStepsError(why);
+        else setStepsStale({ at: Date.now(), why });
       } catch {
         if (stepsAt.current === 0) setStepsError("The mesh server did not answer. It may be restarting.");
+        else setStepsStale({ at: Date.now(), why: "The mesh server did not answer. It may be restarting." });
       }
     })();
     stepsInflight.current = { limit, p };
@@ -810,11 +821,11 @@ export function MeshProvider({ children, projectId = null, background = false }:
     () => ({
       projectId, client,
       view, setView, status, statusError, events, lastSeq, serverDown, sseState, livePaused, setLivePaused,
-      steps, stepsLoaded, stepsError, stepFilter, setStepFilter, stepSearch, setStepSearch, vocab, goalId,
+      steps, stepsLoaded, stepsError, stepsStale, stepFilter, setStepFilter, stepSearch, setStepSearch, vocab, goalId,
       toasts, toast, dismissToast, confirm, drawer, drawerDepth, openDrawer, closeDrawer, refreshStatus, refreshSteps, setSteps, setStepLimit, stepLimit, primeEvents, evSearch, setEvSearch, evFilter, setEvFilter,
       detail, openDetail, closeDetail,
     }),
-    [projectId, client, view, setView, status, statusError, events, lastSeq, serverDown, sseState, livePaused, steps, stepsLoaded, stepsError, setSteps, stepFilter, stepSearch, vocab, goalId, toasts, toast, dismissToast, confirm, drawer, drawerDepth, openDrawer, closeDrawer, refreshStatus, refreshSteps, setStepLimit, stepLimit, primeEvents, evSearch, evFilter, detail, openDetail, closeDetail],
+    [projectId, client, view, setView, status, statusError, events, lastSeq, serverDown, sseState, livePaused, steps, stepsLoaded, stepsError, stepsStale, setSteps, stepFilter, stepSearch, vocab, goalId, toasts, toast, dismissToast, confirm, drawer, drawerDepth, openDrawer, closeDrawer, refreshStatus, refreshSteps, setStepLimit, stepLimit, primeEvents, evSearch, evFilter, detail, openDetail, closeDetail],
   );
   // Token deltas replace this object up to dozens of times a second; in its own
   // context only the live-stream consumers re-render per token.

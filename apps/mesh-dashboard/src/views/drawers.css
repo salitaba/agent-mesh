@@ -487,9 +487,14 @@ span.caret { color: var(--ok); animation: blink 1s steps(1) infinite; }
   .agent-vitals .avital:nth-child(3) { border-left: 0; }
   .agent-vitals .avital:nth-child(n + 3) { border-top: 1px solid var(--line); }
   .sbx-rt { margin-left: 0; width: 100%; }
-  .sv-jump { overflow-x: auto; scrollbar-width: none; flex-wrap: nowrap; }
-  .sv-jump::-webkit-scrollbar { display: none; }
-  .sv-jump-b { flex: none; }
+  /* Six sections in a 330 px row: `nowrap` with the scrollbar hidden put Events half past the edge and Brief and Raw wholly
+     behind a drag nothing announced, in a panel over 3,000 px tall whose jump row is the only way around it. Measured on the
+     delivered demo at 360: 3 of the 6 chips wholly in view, 105 px of row out of reach. The names fit one row at this width
+     once the counts (each section repeats its own over its first rows) are off the chips; below that the row wraps rather
+     than scrolls, so a narrower phone loses a row and not a section. */
+  .sv-jump { flex-wrap: wrap; }
+  .sv-jump-b { flex: 0 1 auto; min-width: 0; padding: 0 var(--s1); }
+  .sv-jump-n { display: none; }
 }
 
 /* ---- A phone's drawer presses at 44 px ----

@@ -57,21 +57,29 @@ test("a failed page probe is not reported as 'it ships no page'", () => {
   assert.match(yourProduct, /setProbeAttempt\(\(n\) => n \+ 1\)/, "Try again asks the question again");
 });
 
-test("a failed first read of the step history is a failure, not an endless skeleton", () => {
-  // Measured at 360, 768 and 1440 with /steps answering 500: after six seconds the page still said "Loading turns · Fetching
-  // the step history." over five skeleton rows, with no error and no retry. The loader kept a stale list on purpose and had no
-  // way to say it had never had one.
+test("a failed read of the step history is said, whether or not a list is already on screen", () => {
+  // Measured at 360, 768 and 1440 with /steps answering 500 before any answer: after six seconds the page still said
+  // "Loading turns · Fetching the step history." over five skeleton rows, with no error and no retry. The loader kept a
+  // stale list on purpose and had no way to say it had never had one.
   assert.match(store, /setStepsError\(/, "the store can report the first read");
-  const guard = store.indexOf("if (stepsAt.current === 0) {");
-  const set = store.indexOf("setStepsError(", guard);
-  assert.ok(guard > -1 && set > guard, "only the FIRST read is reported: a good list is kept through a later failure");
+  const guard = store.indexOf("if (stepsAt.current === 0) setStepsError");
+  assert.ok(guard > -1, "the FIRST read is a failed page");
+  assert.match(store, /else setStepsStale\(/, "a later failure marks the rows it keeps");
+  // Measured at 360 with /steps answering 500 after a good read: the page drew the six turns the Overview had primed,
+  // under "Live · Updated 2s ago", and said nothing — six turns stood as the mission's history of twenty-eight.
+  assert.match(store, /setStepsStale\(null\)/, "a good read clears the mark");
+  assert.match(store, /const setSteps = useCallback[\s\S]*?setStepsError\(null\)[\s\S]*?\}, \[\]\);/, "the overview's priming read clears only the first-read error");
   assert.match(store, /code >= 400[\s\S]*?instead of the step history/, "the failure names the answer rather than a raw exception");
-  assert.match(store, /stepsLoaded, stepsError, stepFilter/, "the provider exposes it");
+  assert.match(store, /stepsLoaded, stepsError, stepsStale, stepFilter/, "the provider exposes it");
   assert.match(stepsView, /const \{[^}]*stepsError/, "Steps reads it");
   const branch = stepsView.indexOf(") : !stepsLoaded ? (");
   const retry = stepsView.indexOf('<ErrorState what="the step history" detail={stepsError}', branch);
   assert.ok(branch > -1 && retry > branch, "the no-list branch draws the ErrorState with a retry");
   assert.match(stepsView, /failed=\{Boolean\(stepsError\)\}/, "the pulse line is told too, so it stops saying 'Loading turns'");
+  assert.match(stepsView, /stepsStale && stepsLoaded \? \(\s*<Banner/, "the kept list says what it is");
+  assert.match(stepsView, /Showing the \{plural\(visible\.length, "turn"\)\} already loaded/, "and how much of the history it is");
+  assert.match(stepsView, /onClick=\{\(\) => \{ setRetrying\(true\); void refreshSteps\(true\); \}\}/, "with the read offered again");
+  assert.match(stepsView, /if \(!retrying \|\| stepsStale \|\| !stepsLoaded\) return;\s*\n\s*setRetrying\(false\);\s*\n\s*const row = ledgerRef\.current\?\.querySelector<HTMLElement>\("\.st-row"\)/, "and the answer puts the cursor on the newest turn, not <body>");
 });
 
 test("a registry that never answers is a failure with a retry, not the loading placeholder for ever", () => {

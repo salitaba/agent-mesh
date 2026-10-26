@@ -87,10 +87,12 @@ export default function Graph(): React.JSX.Element {
   useEffect(() => {
     let dead = false;
     setErr(null);
-    client.api("GET", "/graph").then(({ json, timeout }) => {
+    client.api("GET", "/graph").then(({ json, timeout, status: code }) => {
       if (dead) return;
-      if (timeout || !json || json.error) {
-        setErr(timeout ? "The request timed out. The server may be busy." : String(json?.error ?? "The mesh server did not answer."));
+      // A non-200 answer is a failed read even when its body parses: a 503 carrying `{}` used to draw the empty graph,
+      // and the page said "No agents in this mesh yet" about a mesh it had not been able to ask.
+      if (timeout || code !== 200 || !json || json.error) {
+        setErr(timeout ? "The request timed out. The server may be busy." : code !== 200 ? `The server answered ${code} instead of the graph.` : String(json?.error ?? "The mesh server did not answer."));
         return;
       }
       setGraph(json);
