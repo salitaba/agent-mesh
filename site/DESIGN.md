@@ -926,3 +926,94 @@ a second port and measured today; no number is copied from an earlier pass.
 - **The pricing comparison still stacks below 720**, the first plan amount is still at y=950 at 360, and the docs page
   still has no On this page bar. None of these changed.
 - `site/ux/` was not edited.
+
+## 2026-10-26: the copy button says what it did, and the filter's empty answer is spoken
+
+Measured with the same probe (Chrome for Testing 156 over CDP, reduced motion, light unless said, touch at 320/360/390, a
+mouse at 768 and 1440, print at 794 for A4, both schemes for the interactive states). The before column is the site at
+`feb4968`, extracted to a second folder and served on a second port, and measured in the same run; no number is copied from
+an earlier pass.
+
+### What changed
+
+- **A copy button's accessible name follows the word it shows.** The name was `Copy the sales address` (or `Copy these
+  commands`) in every state, so when the button said "Copied" or "Not copied" the visible label was not inside the name:
+  axe's `label-content-name-mismatch` (WCAG 2.5.3, Label in Name) reported **1 node** in each of the four states (the
+  contact page and a code block, success and refusal). `copyName()` now derives the name from the state — `Copy the sales
+  address`, `Copied: the sales address`, `Not copied: the sales address`, and `Copied: these commands` / `Not copied: these
+  commands` — and the axe census of the six interactive states at 320/360/768/1440 in both schemes is **0 violations**.
+- **The address line keeps its line while the button's word changes.** At 360 the address line was one line at rest (205 ×
+  44) and the button 62; "Copied" made the button 76, the address **194 × 54.4** and its row **169.4 → 179.8** for the 2.2
+  seconds the word was shown, pushing the Support row down 10.4px. The refusal did the same at 390 (169.4 → 179.8, the
+  address 205 → 195 and onto a second line). The button now keeps one width (**76px**, the width of its success word
+  "Copied"), and "Not copied" wraps inside it; at 420 and below the row gives it the room (padding-inline 16, gap 4). At
+  360 the row is **169.4 → 169.4** and the address **205 × 44 → 205 × 44**; at 390 the same; at 320 the row is 179.8 in
+  both states and the address 174 wide in both (it was 168 at rest and 154 when copied). The content of a 360px row starts
+  8px further left (41 → 33), in line with its own padding.
+- **A refusal says where to look on the page.** The only visible answer to a refused copy was the button's "Not copied";
+  the 63-character instruction was in the 1 × 1 clipped live region, so a sighted reader was told that it failed and not
+  what to do. The script now makes a visible `p.copy-note` — under the address (294 × 40.6 at 360, 369 × 40.6 at 768, in the
+  address column) and at the end of a code block — with the same sentence the live region says: "The browser did not allow
+  copying. Select the text and copy it." It appears only on a refusal, stays until the next attempt, and goes on a success.
+  The row is 222 at 360 while it is shown (the answer is a line, not a jump to hide); a code block is 121.6 → 206.8 at 360
+  (three lines of note at its end).
+- **The filter's empty answer is spoken.** With nothing matching, the only live region said "0 of 16 documents" (17
+  characters); the empty box's 125 characters — the words typed, and `Clear the filter` — were outside every live region, so
+  a screen reader never heard them. `#doc-filter-count` is now the visible count only, and a `.sr` `#doc-filter-announce`
+  (`role="status"`) says the whole answer, 102 characters: `No document matches “kubernetes operator”. 0 of 16 documents.
+  Clear the filter, below, shows them all.` A normal filter announces "7 of 16 documents", and clearing "All 16 documents",
+  exactly once (the count is not a second live region).
+- **The tests hold each rule.** `copyName` is a pure export and the test checks the visible word is inside the name for
+  every state; the click test checks the `aria-label` after a success and a refusal; a new test checks the note is a sibling
+  after the address (and inside the code block), hidden until a refusal, shown then, and that its text is the live region's;
+  the docs test checks the no-match sentence names the query and the Clear, that the count has no `role`, and that there is
+  one live region. Breaking each rule fails it: removing the `aria-label` update fails 2 tests, the width 62 fails the copy
+  and address-line tests, dropping the query fails the empty-state test, and always hiding the note fails the refusal test.
+
+### Measurements after this pass
+
+| Page, height at 320 / 360 / 390 / 768 / 1440 | Before | After |
+|---|---|---|
+| Home | 14,258 / 13,550 / 12,948 / 13,156 / 12,282 | **14,258 / 13,550 / 12,948 / 13,156 / 12,282** |
+| Pricing | 15,075 / 14,075 / 13,433 / 10,911 / 9,417 | **15,075 / 14,075 / 13,433 / 10,911 / 9,417** |
+| Documentation | 9,356 / 8,746 / 8,426 / 5,766 / 4,455 | **9,356 / 8,746 / 8,426 / 5,766 / 4,455** |
+| Security | 12,823 / 11,916 / 11,178 / 8,327 / 7,668 | **12,823 / 11,916 / 11,178 / 8,327 / 7,668** |
+| Contact | 4,996 / 4,698 / 4,490 / 3,883 / 2,860 | **4,996 / 4,698 / 4,490 / 3,883 / 2,860** |
+| Legal | 5,741 / 5,267 / 4,941 / 3,863 / 3,317 | **5,741 / 5,267 / 4,941 / 3,863 / 3,317** |
+| 404 | 2,443 / 2,348 / 2,301 / 1,911 / 1,524 | **2,443 / 2,348 / 2,301 / 1,911 / 1,524** |
+
+| The contact page's first address row at 360 | Before | After |
+|---|---|---|
+| Address, at rest → after Copy | 205 × 44 → **194 × 54.4** (two lines) | 205 × 44 → **205 × 44** |
+| Row, at rest → after Copy | **169.4 → 179.8** (+10.4) | **169.4 → 169.4** |
+| Address and row, after a refusal | 165 × 54.4, row **179.8** | 205 × 44, row **222** with a 294 × 40.6 note |
+| Button, at rest → Copied → Not copied | 62 → 76 → 105 | **76 → 76 → 76** (the refusal wraps: 26 + 48px lines) |
+| axe, `label-content-name-mismatch`, Copied / refusal | **1 / 1** | **0 / 0** |
+
+- At 390 the Copy is unchanged (the row was already 169.4); the refusal was **169.4 → 179.8** and is now **169.4 → 222**
+  with the note. At 320 the Copy row is 179.8 → 179.8; the refusal is 179.8 → 232.3 with a 254 × 40.6 note. At 768 the
+  button is 76 (was 62) and the row stays 119.4; the note sits in the address column (369 × 40.6).
+- The six interactive states (contact Copied, contact refused, a code block Copied, a code block refused, docs no match,
+  docs with results) at 320/360/768/1440 in light and dark: **0 axe violations, 0 horizontal overflow** (48 contexts).
+- The 70 default page/width/theme pairs are unchanged: **0** horizontal page scroll, **0** axe WCAG 2.1 AA violations,
+  **0** console errors, smallest text **12px**.
+- Without a script: every page renders as before (home 13,549 at 360, contact 4,697, docs 8,681, pricing 12,836 with its
+  calculator notice), no page overflows. With `forcedColors: active` at 360: no overflow, smallest text 12px. Print at 794:
+  home 12,346; pricing 10,300; docs 4,690; security 7,495; contact 3,084; legal 3,066; 404 1,123 — unchanged, and a
+  refusal note is not printed, like the copy buttons it belongs to.
+- The default copy button is a 44px target on a coarse pointer, as before; the note is text, not a control.
+
+### What this pass deliberately left
+
+- **A refusal's note adds height while it is shown.** 40.6px at 360 and 390 (the row 169.4 → 222), 52.5px at 320, and
+  85.2px in a code block (121.6 → 206.8), because the answer takes two or three lines at a phone's width. That is the answer
+  being read, not a jump to hide; putting it in the code block's 48px header would cover the "Terminal" label and the button.
+- **"Not copied" is two lines inside the 76px button** (26px and 48px at 13px/1.15). One line is 105px, which is what the
+  address had to give up before; the word is whole, and the accessible name is still "Not copied: the sales address".
+- **At 350 and below the address is two lines in every state** (205px of address and a 76px button do not fit 284px). It
+  already was at 320; the row is now stable there instead of changing shape with the button's word.
+- **The filter's live sentence still waits 400ms after the last keystroke**, as the count did, so a fast typist hears one
+  answer and not one per character.
+- **The On this page row still scrolls in silence where the chips do not fit**, the pricing page's first plan amount is
+  still at y=950 at 360, and the docs page still has no On this page bar; none of these changed.
+- `site/ux/` and the captures were not touched.

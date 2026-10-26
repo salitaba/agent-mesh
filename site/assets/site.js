@@ -53,10 +53,16 @@ var IMAGE_NAME = "ghcr.io/salitaba/curule";
   var withoutArrival = function (names) {
     return String(names || "").split(/\s+/).filter(function (name) { return name && !/^rv(-|$)/.test(name); }).join(" ");
   };
+  // A copy button's accessible name in the state its visible word says. WCAG 2.5.3 wants the visible label inside the
+  // name: "Copy the sales address" contains "Copy", but once the word is "Copied" or "Not copied" a name that still
+  // says only what the button would do no longer matches what it says.
+  var copyName = function (label, shown) {
+    return shown === "Copy" ? label : shown + ": " + String(label).replace(/^Copy /, "");
+  };
 
   // The pure parts, for the tests, when the file is loaded as a module; in a browser nothing is exported.
   if (typeof module === "object" && module !== null && typeof module.exports === "object") {
-    module.exports = { readingAt: readingAt, docMatches: docMatches, scrolledOff: scrolledOff, staggerOf: staggerOf, startsHidden: startsHidden, withClass: withClass, withoutArrival: withoutArrival };
+    module.exports = { readingAt: readingAt, docMatches: docMatches, scrolledOff: scrolledOff, staggerOf: staggerOf, startsHidden: startsHidden, withClass: withClass, withoutArrival: withoutArrival, copyName: copyName };
   }
   if (typeof document === "undefined") return;
 
@@ -130,9 +136,13 @@ var IMAGE_NAME = "ghcr.io/salitaba/curule";
     var status = el("div", "sr");
     status.setAttribute("role", "status");
     document.body.appendChild(status);
+    // What a refusal says, in the button's visible note and in the live region: one sentence, in both places, because a
+    // person looking at the page is owed the next step as much as a screen reader is.
+    var REFUSED = "The browser did not allow copying. Select the text and copy it.";
     // A button that copies what `text()` returns. It says "Copied" for a moment, and says so to a screen reader through the live
-    // region, whose words are `spoken`; its name is `label`. When the browser does not allow it, it says so and where to look.
-    var copyButton = function (label, spoken, text) {
+    // region, whose words are `spoken`; its name follows the word it shows. When the browser does not allow it, it says so, shows
+    // the note under it (or at the end of its code box) with where to look, and says the same sentence aloud.
+    var copyButton = function (label, spoken, text, note) {
       var button = el("button", "copy", "Copy");
       button.type = "button";
       button.setAttribute("aria-label", label);
@@ -140,24 +150,35 @@ var IMAGE_NAME = "ghcr.io/salitaba/curule";
       var say = function (shown, said, done) {
         button.textContent = shown;
         button.className = done ? "copy is-done" : "copy";
+        button.setAttribute("aria-label", copyName(label, shown));
+        if (note) note.hidden = done || shown === "Copy";
         status.textContent = said;
         window.clearTimeout(timer);
-        timer = window.setTimeout(function () { button.textContent = "Copy"; button.className = "copy"; status.textContent = ""; }, 2200);
+        timer = window.setTimeout(function () { button.textContent = "Copy"; button.className = "copy"; button.setAttribute("aria-label", label); status.textContent = ""; }, 2200);
       };
       button.addEventListener("click", function () {
+        if (note) note.hidden = true;
         navigator.clipboard.writeText(text()).then(
           function () { say("Copied", spoken, true); },
-          function () { say("Not copied", "The browser did not allow copying; select the text instead"); }
+          function () { say("Not copied", REFUSED, false); }
         );
       });
       return button;
+    };
+    // The visible answer to a refusal, a paragraph the button hides until it is needed.
+    var copyNote = function (text) {
+      var note = el("p", "copy-note", text);
+      note.hidden = true;
+      return note;
     };
     all(".code").forEach(function (box) {
       var pre = box.querySelector("pre");
       if (!pre || box.querySelector(".copy")) return;
       var bar = el("div", "code-bar");
-      bar.appendChild(copyButton("Copy these commands", "Copied to the clipboard", function () { return pre.textContent.replace(/\s+$/, ""); }));
+      var note = copyNote(REFUSED);
+      bar.appendChild(copyButton("Copy these commands", "Copied to the clipboard", function () { return pre.textContent.replace(/\s+$/, ""); }, note));
       box.insertBefore(bar, box.firstChild);
+      box.appendChild(note);
     });
     // An address to write to is copied in one tap: on a phone with no mail program set up, or with webmail, the link opens nothing
     // useful, and a copied address goes where the person's mail is. The address stays text and a link without a script.
@@ -165,7 +186,10 @@ var IMAGE_NAME = "ghcr.io/salitaba/curule";
       var address = link.textContent.trim();
       if (!/^[^\s@]+@[^\s@]+$/.test(address) || (link.nextSibling && link.nextSibling.className === "copy")) return;
       var kind = link.getAttribute("data-mail");
-      link.parentNode.insertBefore(copyButton("Copy the " + kind + " address", "Copied the " + kind + " address to the clipboard", function () { return address; }), link.nextSibling);
+      var line = link.parentNode;
+      var note = copyNote(REFUSED);
+      link.parentNode.insertBefore(copyButton("Copy the " + kind + " address", "Copied the " + kind + " address to the clipboard", function () { return address; }, note), link.nextSibling);
+      if (line && line.parentNode) line.parentNode.insertBefore(note, line.nextSibling);
     });
   }
 
@@ -376,6 +400,7 @@ var IMAGE_NAME = "ghcr.io/salitaba/curule";
   if (filter) {
     var field = document.getElementById("doc-filter-input");
     var count = document.getElementById("doc-filter-count");
+    var announce = document.getElementById("doc-filter-announce");
     var none = document.getElementById("doc-filter-none");
     var said = document.getElementById("doc-filter-said");
     var groups = all(".doc-card").map(function (card) {
@@ -386,7 +411,17 @@ var IMAGE_NAME = "ghcr.io/salitaba/curule";
     });
     var total = groups.reduce(function (n, g) { return n + g.docs.length; }, 0);
     var saying = 0;
-    var tell = function (shown, filtering) { count.textContent = filtering ? shown + " of " + total + " documents" : "All " + total + " documents"; };
+    // The visible count, and the same answer in the one polite live region. When nothing matches, the region says what a
+    // reader looking at the empty box sees: the words typed, and the way back to every document. Its first version said only
+    // "0 of 16 documents", so the query and the Clear offer never reached a screen reader.
+    var tell = function (shown, filtering, query) {
+      var typed = String(query === undefined ? "" : query).trim().replace(/\s+/g, " ");
+      count.textContent = filtering ? shown + " of " + total + " documents" : "All " + total + " documents";
+      if (!announce) return;
+      announce.textContent = filtering && shown === 0
+        ? "No document matches \u201c" + typed + "\u201d. " + count.textContent + ". Clear the filter, below, shows them all."
+        : count.textContent;
+    };
     var apply = function () {
       var query = field.value;
       var shown = 0;
@@ -404,7 +439,7 @@ var IMAGE_NAME = "ghcr.io/salitaba/curule";
       none.hidden = shown > 0;
       said.textContent = query.trim();
       window.clearTimeout(saying);
-      saying = window.setTimeout(function () { tell(shown, filtering); }, 400);
+      saying = window.setTimeout(function () { tell(shown, filtering, query); }, 400);
     };
     var clear = function () {
       field.value = "";
@@ -420,7 +455,7 @@ var IMAGE_NAME = "ghcr.io/salitaba/curule";
       clear();
       field.focus();
     });
-    tell(total, false);
+    tell(total, false, "");
     filter.hidden = false;
   }
 

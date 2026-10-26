@@ -48,6 +48,7 @@ interface Pure {
   startsHidden(top: number, windowHeight: number): boolean;
   withClass(names: string, name: string, on: boolean): string;
   withoutArrival(names: string): string;
+  copyName(label: string, shown: string): string;
 }
 
 /** The script's pure parts, as it exports them when it is loaded as a module (in a browser nothing is exported). */
@@ -561,6 +562,7 @@ interface Filtered {
   shown: () => string[];
   groups: () => number;
   count: () => string;
+  announce: () => string;
   runTimers: () => void;
 }
 
@@ -592,6 +594,7 @@ function docsPage(): Filtered {
     shown: () => doc.querySelectorAll(".doc-list li").filter(visible).map((li) => li.querySelector("a")!.textContent),
     groups: () => doc.querySelectorAll(".doc-card").filter(visible).length,
     count: () => doc.getElementById("doc-filter-count")!.textContent,
+    announce: () => doc.getElementById("doc-filter-announce")!.textContent,
     runTimers: () => timers.splice(0).forEach((fn) => fn()),
   };
 }
@@ -601,13 +604,17 @@ test("the filter is not on the page without a script, and with one it is there, 
   assert.match(html, /<div class="doc-filter[^"]*" id="doc-filter" hidden>/, "hidden until the script has wired it");
   assert.match(html, /<div class="doc-none[^"]*" id="doc-filter-none" hidden>/);
   assert.match(html, /<label for="doc-filter-input">Filter the documents<\/label>/, "a field with a label that says what it does");
-  assert.match(html, /<p class="count" id="doc-filter-count" role="status"><\/p>/, "and a polite live region for the count");
+  assert.match(html, /<p class="count" id="doc-filter-count"><\/p>/, "the count a reader sees");
+  assert.match(html, /<p class="sr" id="doc-filter-announce" role="status"><\/p>/, "and one polite live region that says the same answer, and the way back when nothing matches");
   const r = docsPage();
   const all = r.doc.querySelectorAll(".doc-list li").length;
   assert.ok(all >= 14);
   assert.equal(r.doc.getElementById("doc-filter")!.hidden, false);
   assert.equal(r.doc.getElementById("doc-filter-none")!.hidden, true);
   assert.equal(r.count(), `All ${all} documents`);
+  assert.equal(r.announce(), `All ${all} documents`, "the live region says it once at rest, and the visible count says it too");
+  assert.equal(r.doc.getElementById("doc-filter-count")!.getAttribute("role"), null, "the visible count is not a second live region: one answer is announced, not two");
+  assert.equal(r.doc.getElementById("doc-filter-announce")!.getAttribute("role"), "status");
   assert.equal(r.shown().length, all);
 });
 
@@ -621,6 +628,7 @@ test("typing keeps the documents with every word, hides a group with none left, 
   assert.equal(r.count(), `All ${all.length} documents`, "the count waits for a pause in the typing");
   r.runTimers();
   assert.equal(r.count(), `${guides.length} of ${all.length} documents`);
+  assert.equal(r.announce(), `${guides.length} of ${all.length} documents`, "and the live region says the same answer");
   r.type("guide deploy");
   assert.deepEqual(r.shown(), ["Try it in a minute", "Deploying Curule"]);
   r.type("concepts");
@@ -643,6 +651,11 @@ test("when nothing matches the page says so, names what was typed, and Clear the
   assert.equal(none.hidden, false);
   assert.equal(r.doc.getElementById("doc-filter-said")!.textContent, "kubernetes   operator");
   assert.equal(r.count(), `0 of ${all} documents`);
+  // The live region used to say only "0 of 16 documents": the empty box's 125 characters — the words typed, and the Clear
+  // that brings everything back — were outside every live region, so a screen reader never heard them.
+  assert.equal(r.announce(), `No document matches \u201ckubernetes operator\u201d. 0 of ${all} documents. Clear the filter, below, shows them all.`);
+  assert.ok(r.announce().includes("kubernetes operator"), "the words typed are in the answer a screen reader hears");
+  assert.ok(r.announce().includes("Clear the filter"), "and so is the way back");
   const clear = r.doc.getElementById("doc-filter-clear")!;
   assert.equal(clear.tag, "button");
   for (const fn of clear.listeners.get("click") ?? []) fn(event(clear));
@@ -651,6 +664,7 @@ test("when nothing matches the page says so, names what was typed, and Clear the
   assert.equal(r.shown().length, all);
   assert.equal(none.hidden, true);
   assert.equal(r.count(), `All ${all} documents`);
+  assert.equal(r.announce(), `All ${all} documents`);
   assert.ok(r.doc.activeElement === r.field, "the focus goes back to the field");
 });
 
@@ -732,14 +746,71 @@ test("an address to write to has a copy button right beside it that copies the a
     await r.click(button);
     assert.equal(r.written[r.written.length - 1], link.textContent.trim(), `${kind}: the address is what was copied`);
     assert.equal(button.textContent, "Copied", `${kind}: and the button says so`);
+    assert.equal(button.getAttribute("aria-label"), `Copied: the ${kind} address`, `${kind}: and its name says the same word it shows, so a speech user is told "Copied" too (WCAG 2.5.3)`);
     assert.equal(button.className, "copy is-done", `${kind}: and the stylesheet can show it, in the colour of what went well as well as in words`);
     assert.equal(r.said(), `Copied the ${kind} address to the clipboard`, `${kind}: and so does the live region, for a screen reader`);
     r.runTimers();
     assert.equal(button.textContent, "Copy", `${kind}: after a moment it is a copy button again`);
     assert.equal(button.className, "copy", `${kind}: that looks like one`);
+    assert.equal(button.getAttribute("aria-label"), `Copy the ${kind} address`, `${kind}: with the name it started with`);
     assert.equal(r.said(), "");
   }
   assert.equal(r.written.length, 3);
+});
+
+test("a copy button's name is the word it shows, in every state: the visible label is inside the accessible name", () => {
+  const { copyName } = pure();
+  for (const label of ["Copy the sales address", "Copy these commands"]) {
+    for (const shown of ["Copy", "Copied", "Not copied"]) {
+      const name = copyName(label, shown);
+      assert.ok(name.includes(shown), `${label} / ${shown}: the name "${name}" contains the word the button shows`);
+    }
+  }
+  assert.equal(copyName("Copy the sales address", "Copy"), "Copy the sales address", "at rest, the name is the one the page wrote");
+  assert.equal(copyName("Copy the sales address", "Copied"), "Copied: the sales address");
+  assert.equal(copyName("Copy these commands", "Not copied"), "Not copied: these commands");
+});
+
+test("a refusal shows where to look on the page, not only in a live region: the note under the address and at the end of a code block", async () => {
+  const refused = copying("contact/index.html", false);
+  const row = refused.doc.querySelector(".address-row")!;
+  const line = row.querySelector(".address")!;
+  const button = row.querySelector("button")!;
+  const note = row.querySelector(".copy-note")!;
+  assert.equal(note.tag, "p");
+  assert.ok(note.parent === line.parent && note.parent!.children.indexOf(note) === line.parent!.children.indexOf(line) + 1, "the note sits under the address it belongs to");
+  assert.equal(note.hidden, true, "nothing is shown until the browser refuses");
+  await refused.click(button);
+  assert.equal(button.textContent, "Not copied");
+  assert.equal(button.getAttribute("aria-label"), "Not copied: the sales address", "the name follows the word, as on every other state");
+  assert.equal(note.hidden, false, "and the page says where to look, for a reader who can see it");
+  assert.equal(note.textContent, refused.said(), "the visible note and the spoken answer are one sentence");
+  assert.match(note.textContent, /Select the text and copy it/);
+  // The next attempt hides the old answer until the browser gives a new one.
+  await refused.click(button);
+  assert.equal(note.hidden, false, "a refusal shown again keeps its note");
+  const allowed = copying("contact/index.html", true);
+  const okRow = allowed.doc.querySelector(".address-row")!;
+  const okNote = okRow.querySelector(".copy-note")!;
+  await allowed.click(okRow.querySelector("button")!);
+  assert.equal(okNote.hidden, true, "a copy that works shows no refusal");
+  // The code boxes say the same, at the end of the block.
+  const home = copying("index.html", true);
+  for (const box of home.doc.querySelectorAll(".code")) {
+    const copy = box.querySelector(".code-bar button")!;
+    const boxNote = box.querySelector(".copy-note")!;
+    assert.ok(boxNote.parent === box, "the code block's note is in the block");
+    assert.equal(boxNote.hidden, true);
+    await home.click(copy);
+    assert.equal(copy.getAttribute("aria-label"), "Copied: these commands", "the button's name changes with its word here too");
+    assert.equal(boxNote.hidden, true);
+  }
+  const denied = copying("index.html", false);
+  const first = denied.doc.querySelector(".code")!;
+  const firstNote = first.querySelector(".copy-note")!;
+  await denied.click(first.querySelector(".code-bar button")!);
+  assert.equal(firstNote.hidden, false);
+  assert.equal(firstNote.textContent, denied.said());
 });
 
 test("a browser that does not allow copying is told so, with where to look, and the code boxes' buttons copy the commands without the trailing space", async () => {
@@ -748,7 +819,7 @@ test("a browser that does not allow copying is told so, with where to look, and 
   await refused.click(button);
   assert.equal(button.textContent, "Not copied");
   assert.equal(button.className, "copy", "a refusal is not shown as a success");
-  assert.equal(refused.said(), "The browser did not allow copying; select the text instead");
+  assert.equal(refused.said(), "The browser did not allow copying. Select the text and copy it.");
   // A block that ends in a blank line (an editor leaves one) is copied without it, or the paste would run the last command at once.
   const home = copying("index.html", true, (html) => html.replace('echo "$MESH_API_TOKEN"</code>', 'echo "$MESH_API_TOKEN"\n\n</code>'));
   const boxes = home.doc.querySelectorAll(".code");
@@ -768,6 +839,11 @@ test("the copy buttons are 44 pixel targets on a phone and where a finger points
   assert.match(CSS, /@media \(max-width: 719px\), \(pointer: coarse\) \{ \.copy \{ min-height: 44px; \} \}/);
   assert.match(CSS, /\n\.address-row \.address a \{[^}]*min-height: 44px;/);
   assert.match(CSS, /\n\.copy \{ min-height: 36px;/, "and a button with a mouse is a little smaller, as the code boxes' always were");
+  // The address's button keeps one width, so "Copied" and "Not copied" do not take the address's line away and re-wrap it.
+  assert.match(CSS, /\n\.address-row \.address \.copy \{ flex: none; width: 76px;/, "one width for every word the button shows");
+  assert.match(CSS, /@media \(max-width: 420px\) \{ \.address-row \{ padding-inline: 16px; \} \.address-row \.address \{ gap: 4px 4px; \} \}/, "and the row makes the room for it at a phone's width");
+  assert.match(CSS, /\n\.copy-note \{[^}]*color: var\(--k-bad\);[^}]*font-size: \.875rem;/, "a refusal is written where the reader is looking, in the site's refusal colour");
+  assert.match(CSS, /@media print \{[\s\S]*?\.copy-note, \.doc-filter/, "and a printed page carries neither the buttons nor a refusal they left on screen");
 });
 
 test("without a clipboard no page has a copy button, and an address that is not one yet (a marker) is not offered to copy", () => {

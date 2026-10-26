@@ -56,10 +56,14 @@ lands below the header and the bar: `--head-h` and `--toc-h` in `assets/site.css
 brought wholly into the row, with 24px beside it, rather than the sliver the browser leaves when it considers a partly
 visible chip to be in view.
 
-Wherever the script finds a clipboard it adds a Copy button to each block of commands, and one beside each address on the contact
-page (`a[data-mail]`, when the text is an address): one click writes it to the clipboard and says "Copied", to a screen reader
-too, for a moment. The address stays a link and text, so a page with no script, or a browser that does not allow copying, loses
-only the button. On a phone the button is a 44 pixel target.
+Wherever the script finds a clipboard it adds a Copy button to each block of commands, and one beside each address on the
+contact page (`a[data-mail]`, when the text is an address): one click writes it to the clipboard and says "Copied", to a
+screen reader too, for a moment. The address stays a link and text, so a page with no script, or a browser that does not
+allow copying, loses only the button. The button's accessible name is the word it shows ("Copy the sales address",
+"Copied: the sales address"), so a speech user hears the same state as a reader looking at it. A browser that refuses the
+copy shows the next step in the page, under the address or at the end of the commands, as well as saying it in the live
+region: "The browser did not allow copying. Select the text and copy it." On a phone the button is a 44 pixel target and
+keeps one width, so the address beside it does not re-wrap when the word grows from "Copy" to "Copied".
 
 Once a reader is two screens down any page and turns back (scrolls up), or has come to the end of the content, a *Back to top*
 button shows in the bottom right corner. While the reader goes down it is not shown: on a phone it would sit on the ends of the
@@ -74,7 +78,9 @@ for Curule Cloud, and the map's entry for the document it names, are there only 
 of the map, so its filter leaves them alone. The page also has a filter over its documents ("Filter the documents"). It is in the markup, hidden, and the script shows
 it: what is typed keeps the documents that have every word somewhere in their title, description, label (Guide, Reference, Short,
 Log), path or group, hides a group that has none left, and says how many are left in a polite live region after a pause in the
-typing. When nothing matches it says so, with a button that clears the filter; Escape clears it too. It reads only the page.
+typing. When nothing matches it says so, with a button that clears the filter; Escape clears it too. The live region says the
+whole answer then, not just the count: the words that were typed, and that Clear the filter, below, shows them all, so a
+screen reader is told the same next step a reader can see. It reads only the page.
 
 The pricing page's calculator says its answer twice: the ledger under the fields for reading, and one polite sentence after
 a pause for a screen reader (`#calc-said`, `role="status"`; the ledger itself is not a live region, so it is not read out row
