@@ -73,3 +73,17 @@ test("a failed first read of the step history is a failure, not an endless skele
   assert.ok(branch > -1 && retry > branch, "the no-list branch draws the ErrorState with a retry");
   assert.match(stepsView, /failed=\{Boolean\(stepsError\)\}/, "the pulse line is told too, so it stops saying 'Loading turns'");
 });
+
+test("a registry that never answers is a failure with a retry, not the loading placeholder for ever", () => {
+  // Measured at 360 with /api/projects answering 503: the console sat on "Loading this page…" indefinitely. `hasRegistry`
+  // stayed null, so the shell held every view, and no banner could name the failure because no page had rendered.
+  const shell = fs.readFileSync(path.join(SRC, "shell.tsx"), "utf8");
+  const nav = fs.readFileSync(path.join(SRC, "navmodel.ts"), "utf8");
+  assert.match(nav, /export function registryPhase\(/, "the rule is DOM-free and testable");
+  assert.match(shell, /const registry = registryPhase\(/, "the shell reads it");
+  assert.match(shell, /registry === "failed" \? \(\s*<RegistryDown page=\{askedPage\} onRetry=\{\(\) => void projectsCtx\?\.refreshProjects\(\)\} \/>/, "a failed first answer draws the error state with a retry");
+  const down = shell.slice(shell.indexOf("function RegistryDown"));
+  assert.match(down, /<PageHeader title=\{page\} \/>/, "the page still has a signpost");
+  assert.match(down, /<ErrorState\s+what="the projects list"/, "and the failure names what could not be read");
+  assert.match(shell, /registry === "known" && !holdView/, "a failed registry does not poll tool requests against a host that did not answer");
+});

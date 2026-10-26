@@ -5,7 +5,7 @@ import { useMesh, type View } from "./store";
 import { MessageDrawer, ApprovalDrawer, StepDrawer, AgentDrawer } from "./drawers";
 // The shell keeps its own stack-aware trap (drawer over drawer), but it must
 // agree with every other dialog about what "focusable" means.
-import { Banner, Button, DrawerHead, EmptyState, IconButton, Kbd, Menu, ToastCard, Wordmark, focusables, isTopTrap, pushTrap, type MenuItem } from "./components";
+import { Banner, Button, DrawerHead, EmptyState, ErrorState, IconButton, Kbd, Menu, PageHeader, ToastCard, Wordmark, focusables, isTopTrap, pushTrap, type MenuItem } from "./components";
 import { Icon, type IconName } from "./icons";
 import { barActionIsHere, documentTitle, type MissionAction } from "./mission";
 import { useMission } from "./useMission";
@@ -18,7 +18,7 @@ import { ratioOf } from "./ui/chart-model";
 import { ViewLoading } from "./viewboundary";
 import { HostEmptyState, ProjectTabs } from "./tabs";
 import { useProjectsOptional } from "./projects";
-import { holdsForProject, isHostView, serverKind, showsSection } from "./navmodel";
+import { holdsForProject, isHostView, registryPhase, serverKind, showsSection } from "./navmodel";
 import ChatDock, { ChatDockButton } from "./designer/ChatDock";
 import { useAuthOptional } from "./auth";
 import { LicenseBanner } from "./license";
@@ -161,6 +161,23 @@ function ProjectStarting({ name }: { name: string | null }): React.JSX.Element {
   );
 }
 
+/**
+ * The host was asked what it holds and has never answered. Without an answer the console cannot tell a one-mesh server from
+ * a host, so every view holds — that hold used to be the loading placeholder, for ever, with no sentence and no retry.
+ */
+function RegistryDown({ page, onRetry }: { page: string; onRetry: () => void }): React.JSX.Element {
+  return (
+    <>
+      <PageHeader title={page} />
+      <ErrorState
+        what="the projects list"
+        detail="The server did not answer the projects list, so the console cannot tell whether this is one mesh or a host, and no page can ask it anything yet. It may be restarting."
+        onRetry={onRetry}
+      />
+    </>
+  );
+}
+
 /** What a command looks like in the palette: where it is listed when nothing has been typed, its icon, and the key that does the same. */
 function lookOf(c: Command): { group: string; icon: IconName; hint?: string } {
   if (c.id.startsWith("go.")) {
@@ -202,7 +219,10 @@ export function Shell({ viewNode }: { viewNode: React.ReactNode }): React.JSX.El
   // blank under "Connecting…" for as long as it took. It holds the view
   // placeholder instead, which stays invisible for its first moment, so the fast
   // case still paints nothing and the slow one says it is loading.
-  const registryPending = projectsCtx != null && projectsCtx.hasRegistry === null;
+  const registry = registryPhase(projectsCtx ? { hasRegistry: projectsCtx.hasRegistry, hostDown: projectsCtx.hostDown } : null);
+  const registryPending = registry === "waiting";
+  // The page the person asked for, so a failed registry still shows a signpost rather than a bare error.
+  const askedPage = NAV_ITEMS.find((n) => n.view === view)?.label ?? "The console";
   const goal = status?.goal || {};
   // Mandatory-only, matching Overview and the termination gate. The header used
   // to score every criterion including optional ones, so the two screens
@@ -219,7 +239,7 @@ export function Shell({ viewNode }: { viewNode: React.ReactNode }): React.JSX.El
   const hostLevel = noProjects || view === "projects";
   const decisions = facts.blockingDecisions + facts.advisoryDecisions;
   // Tool requests do not ride the event stream, so the badge polls for them (inbox.ts).
-  const toolRequests = useToolRequests(client, !serverDown && !noProjects && !registryPending && !holdView);
+  const toolRequests = useToolRequests(client, !serverDown && !noProjects && registry === "known" && !holdView);
   const inbox = decisions + toolRequests;
   // The connection is a separate fact from the mission. A mission that is running over a dropped connection is not "running".
   const reconnecting = !serverDown && sseState === "reconnecting";
@@ -810,7 +830,9 @@ export function Shell({ viewNode }: { viewNode: React.ReactNode }): React.JSX.El
               operator with no project open is exactly who should be able to set
               a spend ceiling *before* opening one. Every other view really does
               need a project, so they still get the empty state. */}
-          {registryPending ? <ViewLoading /> : noProjects && view !== "hostsettings" ? <HostEmptyState /> : holdView ? <ProjectStarting name={projectName} /> : viewNode}
+          {registry === "failed" ? (
+            <RegistryDown page={askedPage} onRetry={() => void projectsCtx?.refreshProjects()} />
+          ) : registryPending ? <ViewLoading /> : noProjects && view !== "hostsettings" ? <HostEmptyState /> : holdView ? <ProjectStarting name={projectName} /> : viewNode}
         </main>
       </FocusCtx.Provider>
 

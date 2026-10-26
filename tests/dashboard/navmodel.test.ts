@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { HOST_SECTION, holdsForProject, isHostView, serverKind, showsSection } from "../../apps/mesh-dashboard/src/navmodel";
+import { HOST_SECTION, holdsForProject, isHostView, registryPhase, serverKind, showsSection } from "../../apps/mesh-dashboard/src/navmodel";
 
 /**
  * The README's quick start serves one mesh with no registry. The sidebar offered it "Projects" and "Host settings", pages that
@@ -17,6 +17,14 @@ test("what kind of server this is, from what the registry has said", () => {
   assert.equal(serverKind(facts(true, true, 2)), "host");
   assert.equal(serverKind(facts(true, true, 0)), "empty-host", "a host that has answered and holds nothing is first run");
   assert.equal(serverKind(facts(true, false, 0)), "host", "a host that has not listed its projects yet is not empty yet");
+});
+
+test("a registry that never answers is a failed read, not an endless wait", () => {
+  assert.equal(registryPhase(null), "known", "no provider: there is nothing to wait for");
+  assert.equal(registryPhase({ hasRegistry: null, hostDown: false }), "waiting", "the first answer is on its way");
+  assert.equal(registryPhase({ hasRegistry: null, hostDown: true }), "failed", "a 5xx before any answer leaves nothing to show, so the page says so");
+  assert.equal(registryPhase({ hasRegistry: false, hostDown: true }), "known", "a single mesh that has answered keeps answering for itself");
+  assert.equal(registryPhase({ hasRegistry: true, hostDown: false }), "known");
 });
 
 test("a single-mesh server has no Host group, and neither does one that has not said what it is", () => {
