@@ -212,9 +212,9 @@ on the states this pass changed (Steps' filter open, the failed registry, forced
   terminal leads: command box **657 → 170**, Run **709 → 222**, and the product card follows the output (170 → 529). Page
   1,041 → 1,057. The product is still on the page, still the first door at its end, and still `Product`'s first card
   (`product-path.test.ts`); the Playground's own test now pins the terminal first and the product before the ways out.
-- **A registry that never answers is a failed read, not a wait.** With `/api/projects` answering 503, at 10 s the console sat
-  on **"Loading this page…"** in every view with **0 alerts and 0 controls**: `hasRegistry` never left null, so the shell held
-  every view. `registryPhase` now distinguishes waiting from failed; at the same 10 s the page shows its own heading,
+- **A registry that never answers is a failed read, not a wait.** With `/api/projects` answering 503, the base build still
+  said **"Loading this page…"** at 10 s with **0 alerts and 0 controls** — the 503 had put all twelve views there at 1.6 s —
+  because `hasRegistry` never left null, so the shell held every view. `registryPhase` now distinguishes waiting from failed; at the same 10 s the page shows its own heading,
   `Could not load the projects list`, **one `role="alert"` and one 108 × 44 Try again**, and pressing it recovers the ledger
   (3,377 px). The generic `server error /api/projects -> 503` notice is suppressed (`quiet`) because the page now says it in
   place — it had been covering the page's own heading.
