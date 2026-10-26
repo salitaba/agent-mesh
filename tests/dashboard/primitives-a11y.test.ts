@@ -172,6 +172,14 @@ test("a view change whose control was removed lands in the page, not back at the
   assert.match(header, /<h2 tabIndex=\{-1\}>/, "the page's h2 is a programmatic target, not a tab stop");
 });
 
+test("the landing is announced, not ringed, and a control keeps its ring", () => {
+  // Measured at 360: 7 of 12 pages arrived with a 2 px accent ring around the page title, and three of them around the
+  // whole 360 × 736 view. A heading that took focus is a place, not a thing to press.
+  assert.match(styles, /#view:focus-visible \{ outline: none; \}/, "the view that took focus wears no ring");
+  assert.match(styles, /#view :is\(h1, h2, h3\)\[tabindex="-1"\]:is\(:focus, :focus-visible\) \{ outline: none; \}/, "nor does the heading a route change lands on");
+  assert.match(styles, /:is\(:focus-visible, \.is-focus\) \{ outline: 2px solid var\(--accent\); outline-offset: 2px; \}/, "the keyboard's ring on a real control is untouched");
+});
+
 test("the off-canvas navigation is a dialog a div may carry, not an <aside> wearing one", () => {
   // On a phone the sidebar is a modal layer, so it takes `role="dialog"`; ARIA in HTML does not allow that role on an <aside>,
   // and axe said so (`aria-allowed-role`, one node) every time the menu was open. It is a div now: a complementary landmark on

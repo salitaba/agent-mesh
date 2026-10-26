@@ -579,8 +579,12 @@ body:has(#drawer), body:has(#palette-scrim), body:has(.confirm-scrim) { overflow
   #app:has(#sidebar.open) #view { overflow: hidden; }
   body:has(#sidebar.open) { overflow: hidden; }
 }
+/* A route change moves focus to the view or to the page's own heading, so a screen reader reads where the person landed. That
+   landing is not an action: it wears no ring. Measured at 360, 7 of 12 pages arrived with a 2px accent ring around the page
+   title, and three of them around the whole 360 × 736 view. A keyboard ring on a control is untouched. */
 #view:focus { outline: none; }
-#view:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+#view:focus-visible { outline: none; }
+#view :is(h1, h2, h3)[tabindex="-1"]:is(:focus, :focus-visible) { outline: none; }
 /* A route change is a 120ms fade of the page that arrives, nothing that moves: the person's target stays where it was. */
 :where(#view) > :where(:not(.sr-only, .view-loading)) { animation: fade-in var(--k-dur-1) var(--k-ease) backwards; }
 .view-title { display: flex; align-items: baseline; flex-wrap: wrap; gap: var(--s2) var(--s3); margin: 2px 2px var(--s3-5); }
