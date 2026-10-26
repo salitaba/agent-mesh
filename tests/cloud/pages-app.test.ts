@@ -1045,10 +1045,10 @@ test("the balance is what the gateway says, rounded down; when it cannot be read
   const w = world(paid);
   w.balance = balance({ included: 19_999_200, purchased: 10_000_000 });
   const v = await visit("account", { routes: w.routes });
-  assert.equal(v.text("figures"), "Available $29.99 From your plan $19.99 left of $20.00 From credit you added $10.00", "what is left of what the plan includes each period is said in words, as it is to a reader of the page");
+  assert.equal(v.text("figures"), "Available $29.99 From your plan $19.99 left of $20.00 a month From credit you added $10.00", "what is left of what the plan includes each period is said in words, with the period it is for, as it is to a reader of the page");
   const bar = v.$("figures").querySelector("meter")!;
   assert.deepEqual([bar.getAttribute("min"), bar.getAttribute("max"), bar.getAttribute("value")], ["0", "20000000", "19999200"], "and the bar is that part against that whole, in the units the service gives");
-  assert.equal(bar.getAttribute("aria-label"), "From your plan: $19.99 left of $20.00", "which is said to a reader of the page in words");
+  assert.equal(bar.getAttribute("aria-label"), "From your plan: $19.99 left of $20.00 a\u00A0month", "which is said to a reader of the page in words");
 
   const blind = world(paid);
   blind.balance = null;

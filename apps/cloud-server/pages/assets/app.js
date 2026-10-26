@@ -318,7 +318,12 @@
     const tiles = [{ id: "workspaces", label: "Workspaces", value: String(count("running")), unit: "running", note: others.join(", ") || (plan ? `${plural(plan.workspaces, "workspace")} in your plan` : "") }];
     const [state, tone] = planState(sub);
     tiles.push({ id: "plan", label: "Plan", value: sub.title || "Your plan", unit: "", note: plan ? `${money(plan.priceMinor, currency)} per ${plan.period}` : "", badge: [state, tone] });
-    if (sectionsOf(view).balance) tiles.push({ id: "balance", label: "Balance", value: balance ? balanceMoney(balance.balance.available, balance.currency) : "", unit: "", note: balance ? "available" : "Not available just now" });
+    if (sectionsOf(view).balance) {
+      // What is left, and what the calls have used of what the plan includes: the question a person opens the account with.
+      const left = allowanceLeft(plan, balance);
+      const note = !balance ? "Not available just now" : left ? `${balanceMoney(left.of - left.left, balance.currency)} of ${balanceMoney(left.of, balance.currency)} used` : "available";
+      tiles.push({ id: "balance", label: "Balance", value: balance ? balanceMoney(balance.balance.available, balance.currency) : "", unit: "", note });
+    }
     return tiles;
   }
 
@@ -2128,9 +2133,10 @@
         $("figures").replaceChildren(figure("Available", "Not available just now"));
         return;
       }
-      // What the plan includes each period, and how much of it is left: a bar for the eye, and the figure it is of.
+      // What the plan includes each period, and how much of it is left: a bar for the eye, and the figure it is of, with the period it is for.
       const left = allowanceLeft(planOf(), b);
-      const of = left ? el("dd", { class: "of" }, el("meter", { min: 0, max: left.of, value: left.left, "aria-label": `From your plan: ${balanceMoney(left.left, b.currency)} left of ${balanceMoney(left.of, b.currency)}` }), `left of ${balanceMoney(left.of, b.currency)}`) : null;
+      const period = left ? ` a\u00A0${planOf().period}` : "";
+      const of = left ? el("dd", { class: "of" }, el("meter", { min: 0, max: left.of, value: left.left, "aria-label": `From your plan: ${balanceMoney(left.left, b.currency)} left of ${balanceMoney(left.of, b.currency)}${period}` }), `left of ${balanceMoney(left.of, b.currency)}${period}`) : null;
       $("figures").replaceChildren(figure("Available", balanceMoney(b.balance.available, b.currency)), figure("From your plan", balanceMoney(b.balance.included, b.currency), of), figure("From credit you added", balanceMoney(b.balance.purchased, b.currency)));
     }
 

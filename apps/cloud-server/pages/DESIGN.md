@@ -1305,3 +1305,87 @@ with no plan. Heights are `document.documentElement.scrollHeight`; positions are
   taller there, and the glance, stage and strip have not been re-measured at that size since 2026-10-23.
 - A real usage table with a model key behind it, to see the charged column and its bars with more than a fixture's
   four rows.
+
+## 2026-10-26: the strip out of the way, and what the facts are worth
+
+Same harness: Chromium 156 through `playwright-core` over CDP, axe-core 4.14, the trial on `trial --port 7631`
+(plans: Team $149/month, Business $599/month). "Before" is the base commit's own `account.html`, `app.css` and
+`app.js` served by the same trial through request interception in the same browser session as the after, not a
+figure copied from an earlier record; `/api/usage` is held to one empty answer in both halves, because the
+trial's 60-reads-an-hour limit had already turned the panel into its warning. Fixtures: a Team account with one
+running workspace, the same plan with no workspace yet, and a fresh account with no plan. 320 / 360 / 390 / 768
+/ 1440 at 800 tall, light and dark, `prefers-reduced-motion: reduce`, a touch pointer below 721. Heights are
+`document.documentElement.scrollHeight`; positions are `getBoundingClientRect` plus `scrollY`.
+
+- **The section strip is in the flow, so it never covers the button under it.** Above 720 the strip was
+  `position: sticky; top: 61px`, and the page scrolls under it: at 768 with the page at scroll 966 the strip
+  (61–110) covered the top 28px of **Manage billing** and **Change plan** (82–114), and axe-core reported
+  `target-size` on both — the same two nodes the 2026-10-25 and 2026-10-26 records left for this pass. At 1440,
+  scroll 600, it covered 8px of Open, Pause and More. Any sticky bar of that height does this; the only fix that
+  does not move the page is to stop it floating. It is now static at every width, as it already was below 721:
+  **2 controls covered → 0** at 768, **4 → 0** at 1440, **2 → 0** on the workspace-less account at 1440, and
+  **axe `target-size` 2 nodes → 0** at 768/966, in both schemes. The strip's marking of the section in view
+  (`aria-current="location"`, kept by the page's observer) is unchanged, and the phone is untouched.
+- **The three facts are three ruled entries, not three cards, on a wide page too.** The glance was a card at
+  768 and 1440 and a 10px ruled row at 720 and narrower, so the same three facts had two bodies. A card is for
+  something a person acts on; this is a record. The ruled rules now hold at every width, and the columns share
+  one rule above and one below: the glance is **114 → 102** at 768 and at 1440, every section below moves up the
+  12px (Workspaces 498 → 486 at 768, Plan 857 → 845 at 1440), and the page is **2,021 → 2,009** and
+  **2,058 → 2,046**. At 320, 360 and 390 the glance keeps its 190px: it was already ruled there.
+- **The balance tile answers "what have I spent".** The first screen said `BALANCE $10.00 available` and the
+  amount used of what the plan includes was only in the Balance panel 1,100px down (`$10.00 left of $10.00`) and
+  in the Usage panel 1,600px down. The tile's note is now **`$0.00 of $10.00 used`**, from the plan's allowance
+  and the balance the service sent; with the plans unread, or on a plan that sells hosting only, there is no
+  allowance to speak of and the note stays `available`, as before. Nothing else about the tile moved.
+- **The allowance carries its period.** The Balance panel said `left of $10.00` while the plan panel said "each
+  month": a limit without the period it is for, which the direction does not allow. The figure now reads **`left
+  of $10.00 a month`**, the plan's own `period`, with the two words joined by a no-break space so the line breaks
+  as "left of $10.00" / "a month" rather than leaving "month" alone. The service's own words are in the meter's
+  `aria-label` too. At 390 and wider the figure still fits one line, so nothing moves; at 360 the Balance panel
+  is **541 → 562** and the page **2,507 → 2,527** (**2,769 → 2,790** at 320), which is the whole cost of the
+  period on a phone.
+- **Widths, schemes and the floor.** 320 / 360 / 390 / 768 / 1440 in light, 360 and 1440 in dark, on all three
+  fixtures: no sideways page scroll (320: 320; 360: 360; 390: 390; 768: 768; 1440: 1440), nothing computes below
+  **12px**, and the only control under 44 × 44 below 721 is still the stage heading, which is a `tabindex="-1"`
+  landing place and not a control. **20 axe-core runs on the three fixtures have no violation** (the two
+  `target-size` nodes at 768 were the only ones, and they are gone), and the plan-less and workspace-less
+  accounts are unchanged at **1,516 / 1,036** and **2,146 / 1,676**. With scripts off the account still shows
+  its `noscript` sentence and the settings form; forced colours draws the new rules and the number.
+- **The budget.** `app.css` is **40,906 bytes of 40,960** (was 40,929, a net **−23**): the strip lost its
+  `position`, `top`, `z-index` and background, `.stat` left the card list, and the card chrome the glance no
+  longer draws paid for the ruled rules and the media blocks; three comments were shortened. Fifty-four bytes
+  remain.
+- **Tests.** `dist/tests/cloud/pages*.test.js` and `dist/tests/build/pages-workflow.test.js` — **131 pass, 0
+  fail**. The glance's note and the balance figure's period are pinned in `pages-app.test.ts` and
+  `pages-dashboard.test.ts`; nothing pins the strip's stickiness, and a test could now: `.subnav` has no
+  `position` at all.
+
+| measured | before | after |
+| --- | --- | --- |
+| A control under the strip, 768 at scroll 600 / 966 | **2** covered (Manage billing, Change plan) | **0** |
+| … 1440 at scroll 600 | **4** covered (Open, Pause, More, Copy) | **0** |
+| … axe `target-size` at 768, scroll 966 | **2 nodes**, serious | **0** |
+| The glance at 768 / 1440 | 114px, three cards | **102px**, ruled entries |
+| The account at 768 / 1440 | 2,021 / 2,058 | **2,009 / 2,046** |
+| The Balance tile's note | `available` | **`$0.00 of $10.00 used`** |
+| The allowance's line | `left of $10.00` | **`left of $10.00 a month`** |
+| The account at 360 / 320 | 2,507 / 2,769 | **2,527 / 2,790** (the period on a narrow phone) |
+| `app.css` | 40,929 bytes | **40,906** |
+
+### What this pass leaves
+
+- **The strip no longer says where you are while you scroll.** It is a contents line at the top of the page; the
+  sections' headings carry the record's numbers and the reader meets them as they go. The alternative — a rail
+  in the gutter — needs about 180px of margin, which the page's 1080px measure only has at 1280 and wider, and
+  was not worth the breakpoint in this pass. The axe case that failed three passes is closed.
+- **The period costs 20px on a 360 phone and 21 on a 320 one.** The figure wraps; a shorter phrase ("$10.00 left
+  a month") would keep the line and lose "of what". Left as the truthful one.
+- **The used figure is the plan's allowance, not every dollar spent.** A spend draws on the plan's included
+  usage first and on bought credit after it (the gateway's ledger), so `allowance − included` is what the calls
+  used of the plan; money spent from purchased credit is only visible as a smaller "from credit you added". The
+  tile says "of $10.00 used", which is the allowance it names, and does not claim to be the whole bill.
+- **The glance is still three facts and not the page's four questions.** "What do I do next" is the card above
+  it; "what am I on" and "what have I spent" are the plan and balance entries; "is it running" is the card and
+  the workspaces entry. The Usage panel remains the place the bill is itemised.
+- **Nothing was added for the checkout stand-in, the dead reset link (closed 2026-10-26), the usage read's rate
+  limit, or the prose-only inline links.** They are the previous entries, unchanged and still true.
