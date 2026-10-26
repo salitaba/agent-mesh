@@ -82,6 +82,8 @@ test("a registry that never answers is a failure with a retry, not the loading p
   assert.match(nav, /export function registryPhase\(/, "the rule is DOM-free and testable");
   assert.match(shell, /const registry = registryPhase\(/, "the shell reads it");
   assert.match(shell, /registry === "failed" \? \(\s*<RegistryDown page=\{askedPage\} onRetry=\{\(\) => void projectsCtx\?\.refreshProjects\(\)\} \/>/, "a failed first answer draws the error state with a retry");
+  const projects = fs.readFileSync(path.join(SRC, "projects.tsx"), "utf8");
+  assert.match(projects, /api\("GET", "\/api\/projects", undefined, \{ quiet: true \}\)/, "the page says it in place, so the route-and-code notice is not raised over the heading");
   const down = shell.slice(shell.indexOf("function RegistryDown"));
   assert.match(down, /<PageHeader title=\{page\} \/>/, "the page still has a signpost");
   assert.match(down, /<ErrorState\s+what="the projects list"/, "and the failure names what could not be read");
