@@ -1126,3 +1126,142 @@ worktree before the edits and measured today; no number is copied from an earlie
   and 132px, 36px more, which is the cost of not widening the page.
 - **The current-page line is in the footer too.** The footer's current page was a weight and a colour; it is now underlined
   as well, and no page height moves.
+
+## 2026-10-26, third pass: the way home is on the first screen, and a section head is the page's rank
+
+Measured with the same probe (Chrome 156 in the pass container, where `system-ui` resolves to Noto Sans; the absolute page
+heights are therefore 3–4% below the record's, which were taken where it resolves to a wider system font. The before and after
+below are the same browser, the same run, so the differences stand: reduced motion, light unless said, touch at 320/360/390, a
+mouse at 768 and 1,440, print at 794, forced colours at 360). The before column is the worktree at `a05ea58` before any edit,
+measured in the same run; no number is copied from an earlier pass.
+
+### What changed
+
+- **A page that is not here offers the way home on the first screen.** The 404 page's one obvious action sat after the six ways:
+  at 360 the button was at **y=1,194.8**, 395px below an 800px screen, and the screen ended in the third way with no way home on
+  it (the header's wordmark is a link, but it does not say so). It is now under "That page is not here." at **y=341.6** (320:
+  341.6, 1,440: 385.4, was 1,244.6 and 880.2), and the six ways begin at **521.2** (were 445.2; 320: 471 → 547, 1,440: 471.4 →
+  543.4). The first screen at 360 holds the button and two of the six ways; before it held three ways, the third cut by the
+  screen, and the button was 395px below it. The page is 2,300px at 360 in both. The sentence that introduces the ways is still
+  the sentence immediately before them; the button stands between it and the h1, which is the design's "six named ways back,
+  home first". `site-copy.test.ts` now fails if the button is after the list.
+
+- **A section head takes the page's rank in a split too.** The security page's six sections and the legal page's three were
+  `h2` at **24px** at 360 and **34px** at 1,440, while the documentation page's and the contact page's section heads were
+  **28 and 48**: the same kind of head was two steps down on two pages, and at 360 only 5px above a card's title. The split's
+  head now takes the page's rank: **24 → 28px at 360** (a one-line head 25.9 → 30.2px, the two-line "What leaves your
+  environment" 51.8 → 60.5) and **34 → 48px at 1,440** (the legal page's "The licence, in plain words" 36.7 → 103.7, two
+  lines). Every `h2` in a section is now 28 at 360 and 48 at 1,440; the only smaller ones are the three titles inside a
+  column or a box — "Something missing?" (22), "At a glance" (22) and "What we can help with" (22). The security page is
+  **11,100 → 11,082px** at 360 (the summary's −48 below more than pays for the larger heads) and the legal page **4,965 →
+  5,008**; at 768 they are 8,162 → 8,206 and 3,865 → 3,887, and at 1,440 neither page changes height: a split's header is a
+  column beside the content, whose height sets the section, so the bigger head is room the column already had.
+
+- **The summary's answers use the box's width.** The three answers in the security page's At a glance box were a 40px mark
+  plus a 222px column of words at 360 (182px at 320), so two of the three ran a line longer than the words needed and all
+  three did at 320. The mark and its title now share the first row and the paragraph runs under both: **222 → 278px** at 360
+  and **182 → 238px** at 320 (at 1,440, 282/253/253 → 338/309/309). The answers' heights at 360 are **96/144/120 → 96/120/96**
+  (two lines fewer in all; the first was already four), at 320 **120/192/144 → 96/144/120** (four lines fewer, two of them
+  in the second); the list is 566 → 518 at 360 (662 → 566 at 320), the box **977.9 → 929.9** (1,169.9 → 1,073.9), and the
+  first section below it 1,520.4 → 1,472.4 (1,737.6 → 1,641.6). At 768 the box is 572 in both and at 1,440 388 in both,
+  because the tallest answer sets those rows; what changes there is the measure, not the height.
+
+- **The map's explanation is a ruled note, not a notice panel.** The paragraph saying that each title opens the document on
+  GitHub and the path under it is its place in the repository was a `.notice` box with an icon: **150px** between the filter
+  and the first card at 360 (174px at 320), five lines of 15px in a panel. It is now a ruled line of 14px muted words with the
+  bold lead (**78.1px** at 360, 99.8 at 320); its words are unchanged. The first document card is **2,734.4 → 2,662.5** at
+  360 (2,995.4 → 2,921.2 at 320), and the page **8,474 → 8,402** (9,109 → 9,035; at 768 −21 and at 1,440 −19). The no-script
+  notice below it stays a notice: that one is a warning, and this one was an explanation in a warning's clothes.
+
+- **A footer link is a thumb's square across.** "Terms" was **43.2 × 44** at 320 and 360: its own word at 15px in the system
+  font, a pixel under the rule, and the last standalone target under 44 on the seven pages at those widths. The footer's links
+  now keep a **44px** minimum width ("Terms" is 44 × 44; every other link is already wider); the only control under 44 at
+  320/360 is the 24 × 24 usage-reports checkbox, whose label is the 44px target. At 1,440 the links are 44 × 36, a mouse's
+  row, as before.
+
+### Measurements after this pass
+
+| Page, height at 320 / 360 / 390 / 768 / 1440 | Before | After |
+|---|---|---|
+| Home | 13,791 / 12,991 / 12,517 / 12,905 / 12,016 | unchanged |
+| Pricing | 14,444 / 13,485 / 12,927 / 10,766 / 9,142 | unchanged |
+| Documentation | 9,109 / 8,474 / 8,250 / 5,667 / 4,465 | **9,035 / 8,402 / 8,202 / 5,646 / 4,446** |
+| Security | 12,298 / 11,100 / 10,569 / 8,162 / 7,450 | **12,233 / 11,082 / 10,577 / 8,206 / 7,450** |
+| Contact | 4,749 / 4,459 / 4,334 / 3,883 / 2,836 | unchanged |
+| Legal | 5,542 / 4,965 / 4,764 / 3,865 / 3,266 | **5,559 / 5,008 / 4,777 / 3,887 / 3,266** |
+| 404 | 2,419 / 2,300 / 2,277 / 1,915 / 1,524 | unchanged |
+
+| The 404 at 360 | Before | After |
+|---|---|---|
+| The way home | **y = 1,194.8**, after the six ways | **y = 341.6** |
+| The first way | y = 445.2 | **y = 521.2** |
+| The first screen (800) | three ways, the third cut; no way home | **the way home and two ways** |
+| The page | 2,300 | 2,300 |
+
+| The section heads at 360 / 1,440 | Before | After |
+|---|---|---|
+| Six on the security page | 24 / 34 | **28 / 48** |
+| Three on the legal page | 24 / 34 | **28 / 48** |
+| Every `h2` in a section | 28 / 48 on four pages, 24 / 34 on two | **28 / 48 on all six** |
+| A title in a column or a box | 22 | 22 (three: the docs band, the glance, the contact band) |
+| Security page height, 360 / 768 | 11,100 / 8,162 | **11,082 / 8,206** |
+| Legal page height, 360 / 768 | 4,965 / 3,865 | **5,008 / 3,887** |
+
+| The At a glance box | 320 | 360 | 1,440 |
+|---|---|---|---|
+| An answer's words, before → after | 182 → **238** | 222 → **278** | 282/253/253 → **338/309/309** |
+| The three answers' heights | 120/192/144 → **96/144/120** | 96/144/120 → **96/120/96** | 96/120/120 → **72/120/96** |
+| The list | 662 → **566** | 566 → **518** | 168 both |
+| The box | 1,169.9 → **1,073.9** | 977.9 → **929.9** | 388 both |
+| The first section | 1,737.6 → **1,641.6** | 1,520.4 → **1,472.4** | 955.2 both |
+
+| The map's note | 320 | 360 | 1,440 |
+|---|---|---|---|
+| The note | 174 → **99.8** | 150 → **78.1** | 54 → **34.7** |
+| The first document card | 2,995.4 → **2,921.2** | 2,734.4 → **2,662.5** | 1,698.5 → **1,679.2** |
+| The page | 9,109 → **9,035** | 8,474 → **8,402** | 4,465 → **4,446** |
+
+- The 404's way home at 1,440 is **385.4** (was 880.2), and the six ways **543.4** (were 471.4); at 768 the button is 335.7
+  (was 826.6) and the ways begin at 493.8 (were 417.8). The button is 180 × 44 at 320/360 and 180 × 40 at 1,440, a mouse's row.
+- The footer's "Terms" is **43.2 × 44 → 44 × 44** at 320 and 360, and 43.2 × 36 → 44 × 36 at 1,440 (where a fine pointer
+  keeps its 36px rows). The only remaining target under 44 at 320/360 is the pricing page's 24 × 24 checkbox, whose label is
+  44 (unchanged).
+- No page scrolls sideways at 320, 360, 390, 768 or 1,440 in either theme (**0** on all 70 page/width/theme pairs), the probe
+  reports **0** console errors, and **0** axe-core violations on the seven pages at 320 dark, 360 light, 768 light and 1,440
+  dark. The smallest computed text is **12px** on every page, and the worst text pair is **5.61:1** in light and **6.57:1** in
+  dark (AA normal text needs 4.5).
+- Print at 794: every page **0px over** (home 12,060; pricing 10,062; docs 4,660; security 7,420; contact 3,084; legal 3,090;
+  404 1,103); the note prints and the 404's button prints where it now stands. With `forcedColors: active` at 360 every page
+  is 0px over; without a script every page is 0px over and the filter and calculator are hidden; at a 24px root every page is
+  **0px over** at 320, 360 and 720.
+- `tests/build/site.test.ts` holds the rank (the split's rule and the section rank state the same clamp), the glance's
+  full-width answer, the map's note, and the footer's 44px; `site-copy.test.ts` holds the 404's way home before the ways. The
+  site's own suites — the `site*` files with docs-links, product-name and no-mojibake — are **147** tests, all passing.
+
+### What this pass deliberately left
+
+- **The pricing page's first plan amount is still at y=950 at 360**, 150px below an 800px first screen. The page head's lede
+  (five lines), the plans section's own head, its swipe hint and the billing switch own that 150px; the only ways to take it
+  back are to shorten the lede or move the switch below the cards, and both change what the page opens with. It is the next
+  pass's first job, as it was the last four passes'.
+- **The legal page's `TODO(owner)` is still published**, so `npm run site:check` still exits 1 at `site/legal/index.html:133`.
+  The terms are the owner's and counsel's, not a sentence to invent.
+- **The security page's Cloud caveat stays in the At a glance box.** Moving it under the box would save about 44px of the
+  section and let the box be the three answers alone, but `site-copy.test.ts` says the box says it, and the caveat is about
+  the answers it qualifies; that is a change to what the box is, and the owner's.
+- **The documentation row still cuts its third chip at 360** (502px of chips in 360); its labels are the sections' own names,
+  and the row's edge shadow is the cue that it goes on. A shorter chip would name "Something missing" less exactly.
+- **The 404's six ways still stand after the button.** They are the page's main content for a reader who knows what they
+  wanted; the button is the fallback and now comes first. The page is the same height.
+- **The captures were not retaken.** The console is being redesigned in parallel and the hero's 1,440 shots would be retaken
+  twice; the docs page's note and the glance are type, not pictures.
+- **At 1,440 a split's head is now 48px in a 443px column**, so the legal page's "The licence, in plain words" wraps onto two
+  lines (36.7 → 103.7px). The section's height is its content's and the page does not move; a narrower column would be a
+  change to the split, not to the rank.
+- **Curule Cloud's prices** are still in the app; the pages say so, and no stable Cloud price can be generated from
+  `packages/licensing/src/plans.ts`.
+- `site/ux/` was not edited, and the passes' captures were not retaken.
+
+The next pass's first job is the pricing page's first amount at 950 at 360; after it, the plan stack's repetition of the
+limits and support (the exporter's), and the documentation row's third chip.
+
