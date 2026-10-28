@@ -1,5 +1,5 @@
-/* One stylesheet for every page; the colour scheme is the only switch. */
-/* Icons: 20 units, a mask in the text's colour; --n: 0 check, 1 alert, 2 refused, 3 info, 4 eye, 5 eye off, 6 bars, 7 chevron, 8 mail; --s sizes. */
+/* One stylesheet; the colour scheme is the switch. */
+/* Icons: a 20-unit mask in the text's colour; --n picks the glyph, --s its size. */
 :root {
   color-scheme: light dark;
   --max: 1080px;
@@ -643,7 +643,6 @@ body[data-page="home"] main { background: var(--k-glow) top / 100% 520px no-repe
 .row-head strong { font-size: 1.25rem; font-weight: 650; line-height: 1.3; letter-spacing: var(--k-track-tight); }
 .plan-line { margin: 0; color: var(--k-ink-2); }
 .facts-list { display: grid; gap: 4px; list-style: none; color: var(--k-ink-2); font-size: .9375rem; }
-/* A workspace. */
 .ws > div:empty, .ws > .ws-says:empty { display: none; }
 .ws .ws-says, .ws .ws-note { margin: 0; }
 .ws .ws-says { color: var(--k-ink-2); }
@@ -685,7 +684,6 @@ body[data-page="home"] main { background: var(--k-glow) top / 100% 520px no-repe
   .plans { grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); }
 }
 .plan { display: flex; flex-direction: column; gap: 14px; padding: 24px; }
-/* The plan, or the one picked. */
 .plan.current, .plan.picked { border-color: var(--k-accent); box-shadow: var(--k-hl), 0 0 0 1px var(--k-accent); }
 .plan h3 { display: flex; align-items: center; gap: 8px; margin: 0; }
 .plan .price { font-size: 2.25rem; font-weight: 650; letter-spacing: var(--k-track-display); line-height: 1.1; }
@@ -731,7 +729,7 @@ body[data-page="home"] main { background: var(--k-glow) top / 100% 520px no-repe
 }
 .topup-options .btn { flex: 1 1 0; padding-inline: 6px; border-color: transparent; background: none; box-shadow: none; white-space: nowrap; }
 .topup-options .btn:hover { border-color: var(--k-line); background: var(--k-surface); box-shadow: var(--k-shadow-1); }
-/* The balance is the record; adding credit is one named line under it. */
+/* Adding credit is one named line. */
 .topup > summary { display: none; }
 .topup > summary::-webkit-details-marker { display: none; }
 .topup > summary::after { --n: 7; --s: 16px; color: var(--k-muted); }
@@ -741,7 +739,7 @@ body[data-page="home"] main { background: var(--k-glow) top / 100% 520px no-repe
   background: linear-gradient(to right, color-mix(in srgb, var(--k-ink) 12%, transparent), transparent) 0 0 / 10px 100% no-repeat, linear-gradient(to left, color-mix(in srgb, var(--k-ink) 12%, transparent), transparent) 100% 0 / 10px 100% no-repeat, var(--k-surface);
 }
 .table-wrap + .table-wrap { margin-top: 20px; }
-/* The row's name stays at the edge. */
+/* The row's name stays. */
 .table-wrap th:first-child { position: sticky; left: 0; }
 .table-wrap tbody th { background: var(--k-surface); }
 table { width: 100%; border-collapse: collapse; font-size: .875rem; }
@@ -753,7 +751,7 @@ tbody th, tfoot th { color: var(--k-ink-2); font-weight: 500; }
 tbody tr:hover > * { background: var(--k-surface-2); }
 tfoot > tr > * { background: var(--k-surface-2); font-weight: 650; }
 .bar-cell { display: inline-grid; grid-template-columns: 72px minmax(8ch, max-content); align-items: center; justify-content: end; gap: 12px; }
-/* No result: a ruled entry. */
+/* No result. */
 .empty { display: grid; justify-items: start; gap: 4px; padding: 12px 0; border-top: 1px solid var(--k-line); }
 .empty p { max-width: 44ch; margin: 0; }
 .empty-t { font-weight: 600; }
@@ -774,7 +772,7 @@ tfoot > tr > * { background: var(--k-surface-2); font-weight: 650; }
 .panel-quiet summary:focus-visible { outline-offset: -2px; }
 .panel-quiet form { max-width: 28rem; padding: 20px; }
 .panel-quiet h3 { margin: 0 0 16px; font-size: .9375rem; }
-/* The page while it reads. */
+/* The skeleton. */
 .sk {
   border-radius: var(--k-r-lg);
   background: linear-gradient(90deg, var(--k-sunken) 30%, var(--k-surface-2) 50%, var(--k-sunken) 70%) 0 0 / 300% 100%;
@@ -834,21 +832,23 @@ tfoot > tr > * { background: var(--k-surface-2); font-weight: 650; }
   .stat-v, .stat-n { margin: 0 !important; }
   .sk-tiles { grid-template-columns: 1fr; }
   .sk-tiles .sk { height: 60px; }
+  /* Ruled entries at the page's edge: the figure ends its row, the measure sits under. */
   .figures { display: block; margin: 0; padding: 0; }
+  #balance-panel .card { padding: 0; border: 0; background: none; box-shadow: none; }
+  .figures dt { margin-right: auto; }
   .figures dd { margin: 0; font-size: min(1.375rem, 9vw); line-height: 1.15; }
-  .figures .of { display: flex; align-items: center; gap: 8px; margin: 0; line-height: 1.6; }
-  .figures .of meter { width: 44px; }
+  .figures .of { display: flex; align-items: center; gap: 8px; flex: 1 0 100%; margin: 0; line-height: 1.4; }
+  .figures .of meter { flex: 1; min-width: 3em; }
   .topup > summary { display: flex; align-items: center; justify-content: space-between; gap: 16px; min-height: 44px; margin-bottom: 8px; color: var(--k-accent-ink); font-weight: 600; cursor: pointer; list-style: none; }
   #topup-fail { margin-top: 20px; }
   #topup-add { display: none; }
   .subnav { gap: 2px; margin-top: 12px; padding: 0; }
   .subnav a { min-height: 44px; padding: 0 6px; }
-  /* The steps are a row. */
   .steps { column-gap: 12px; }
   .steps li::after { display: none; }
   .check label { line-height: 44px; }
   .check label a { display: inline-block; min-height: 44px; }
-  /* A bar with too much text wraps. */
+  /* Too much text wraps. */
   .bar, .bar nav { flex-wrap: wrap; }
   /* Caption, then host and Copy. */
   .ws-address-l { flex: 1 0 100%; font-size: .75rem; }
