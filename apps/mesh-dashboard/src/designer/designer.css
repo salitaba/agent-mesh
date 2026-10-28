@@ -198,6 +198,11 @@ body:has(.ms-bar) #toasts { bottom: calc(var(--dock-clear) + var(--ms-bar-h, 0px
 @media (max-width: 760px) {
   /* The header's actions join the title row's own wrapping, so undo and redo sit beside the title and the rest fills the row below it. */
   .ms .page-actions { display: contents; }
+  /* At 320 the three actions were 128.5 + 119.7 + 44 px: 308 in a 292 px row, so the 44 px menu alone took a third row and the header was
+     141.6 px. The Inspector's glyph was decoration around its name; without it the row is 280 and the header 89.6. The word, the 44 px
+     target and the aria contract do not change. */
+  .ms #ms-insp-toggle { gap: 0; padding-inline: var(--s3); }
+  .ms #ms-insp-toggle .icon { display: none; }
   /* With the history pair in ⋯ (Designer.tsx), the verdict, Inspector and the menu are 142 + 127 + 44 px: 313, plus two 12 px gaps
      = 337 in a 332 px row, so the menu alone fell to a second row. The title row's gap is 8 here; 329 fits, and the header gives
      the roster back the row the pair used to hold (52 px plus its 8 px gap). */
@@ -205,4 +210,15 @@ body:has(.ms-bar) #toasts { bottom: calc(var(--dock-clear) + var(--ms-bar-h, 0px
   .ms-side { width: 100%; border-left: 0; }
   .ms-bar-acts { margin-left: 0; width: 100%; }
   .ms-bar-acts > button { flex: 1 1 0; }
+  /* The bar said what file it writes and where the draft stands on two lines, so it was 107.4 px of a first-run phone and the roster's first
+     seat ended 3.7 px under it at 320. Path and state share the line now (17.4 px), and the bar's rhythm is 4: 73.4 px plus its 1 px rule,
+     74.4 measured. The state takes
+     its sentence's width and the path takes the rest, so at 320 the folder truncates and "mesh.yaml" is whole. A state with actions in it
+     still wraps and the bar grows, which is the honest height for a sentence that has become a question. */
+  .ms-bar { padding: var(--s1) var(--s3); }
+  .ms-bar-in { gap: var(--s1); }
+  .ms-bar-file { flex-direction: row; align-items: center; gap: var(--s2); }
+  /* 88 px is the icon, its gap and a nine-character file name: the folder may truncate, the name may not. */
+  .ms-bar-file .ms-path { flex: 1 1 0; min-width: 88px; }
+  .ms-bar-state { flex: 0 1 auto; min-width: 0; }
 }

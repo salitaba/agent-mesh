@@ -89,6 +89,18 @@ test("on a phone the first-run guide is a ruled brief, and each step is one 44 p
   assert.ok(hasRule(designerCss, ".ms-steps li.now", /padding-bottom:\s*var\(--s3\)/), "the step to do now keeps its air before the next rule");
 });
 
+test("a phone's fixed chrome is two rows and one bar line, so the roster's first seat is whole at 320", () => {
+  // Measured on the first-run project in the production build at 320: the header's 141.6 px was three rows (the 44 px menu alone on the
+  // third), the save bar 107.4 px was a file line and a save line, and the roster's first 60 px seat ended 3.7 px under the bar. Without
+  // the Inspector's decorative glyph the three actions are one 280 px row in 292 (header 89.6), and the path and draft state share one
+  // 17.4 px line (bar 74.4): the seat is 628.3-688.3, whole above 769.6. The word "Inspector", its 44 px target and its aria contract stay.
+  assert.ok(hasRule(designerCss, ".ms #ms-insp-toggle .icon", /display:\s*none/), "the phone's Inspector is its word, not a glyph plus a word");
+  assert.ok(hasRule(designerCss, ".ms-bar", /padding:\s*var\(--s1\) var\(--s3\)/), "the bar's rhythm is 4 on a phone");
+  assert.ok(hasRule(designerCss, ".ms-bar-file", /flex-direction:\s*row/), "the path and the draft state share one line");
+  assert.ok(hasRule(designerCss, ".ms-bar-file .ms-path", /min-width:\s*88px/), "the file name may not be truncated by the state");
+  assert.ok(hasRule(designerCss, ".ms-bar-state", /min-width:\s*0/), "a long state wraps instead of pushing the path out");
+});
+
 test("a phone header gives the history pair to the menu, so the roster starts 52 px higher", () => {
   // Measured at 360 with the first-run guide: the header's actions took two rows (52 px for undo/redo and the verdict, 44 for
   // Inspector and the menu) and the header was 150 px. Hiding the pair lets the remaining three share one row.

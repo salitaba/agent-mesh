@@ -121,6 +121,12 @@ Breakpoints: **1280 1100 900 800 760 620 560**. 800 is the sidebar drawer (JS
   keeps its instruction and its field under its own line. At 360 it is 334.8 px
   and the roster's first 60 px seat is wholly above the pinned save bar, where a
   446.2 px card left 27.8 px of it (2026-10-28).
+- The Designer's fixed chrome is two rows and one bar line on a phone: the
+  verdict, Inspector and ⋯ share one 44 px row even at 320 (the phone's
+  Inspector is its word, without the decorative glyph), and the save bar's path
+  and draft state share one 17.4 px line. The header is 141.6 → 89.6 px and the
+  bar 107.4 → 74.4 at 320; the two blocks together are 164 px at 320 and 360,
+  and the roster's first 60 px seat is wholly above the bar at both (2026-10-28).
 - A page's last row is a way on, not a full stop: `NextLinks` is 13 px link text
   on a rule, 44 px tall at 620 px and below, and wraps rather than scrolls. It is
   a signpost, not a second band of primary buttons.
@@ -161,11 +167,12 @@ Breakpoints: **1280 1100 900 800 760 620 560**. 800 is the sidebar drawer (JS
   deliberate trade that made it one row; the goal leads Overview and is one tap
   away, but a reader on Events cannot see it without leaving the page. Watch
   whether that absence costs a visit in real use.
-- At **320** the Designer's header wraps to **141.6 px**: its second row holds the 128 px verdict and the 120 px Inspector, and the 44 px
-  ⋯ menu needs 308 px of controls in a 296 px row, so it takes a third. With the guide as ruled lines the first seat row starts at
-  **680.3**, 3.7 of its 60 px under the save bar; at 360 the header is 89.6 px and the row is whole. The menu is the lever, not the guide.
-- The Designer's save bar is **107.4 px** of a first-run phone: the file line takes a row of its own and the two saves the next. Every
-  first-screen figure on that page is measured against it.
+- At **320** the Designer's save bar shows the file name and a few characters of its folder (the full path is the title), and a blocked
+  draft gives the state a 200 px column beside it, where "1 error blocks saving. Show the error" wraps to three lines and the bar grows to
+  **110.4 px** (still 15.6 px shorter than the 126 it was). When the state holds a button, giving it the line under the path is the next
+  shape; the header itself is now two rows at 320, 89.6 px.
+- The Designer's Inspector is a word on every phone layout now (91.7 px wide, no glyph); at 390 and 620 the glyph had room beside the word,
+  so whether the phone should keep it is a reading question rather than a measurement one.
 - The Designer's YAML preview wraps by default at 620 and below (295/295 at 360, was 462 in 295). The choice is component state, so it is not
   remembered between visits; a wrapped path breaks anywhere and the copy button is still the way to the exact text.
 - 768 px is just above the Designer's 760 phone layout, but its guide disclosures and canvas wiring ports now take the 44 px floor on a
@@ -185,9 +192,9 @@ Breakpoints: **1280 1100 900 800 760 620 560**. 800 is the sidebar drawer (JS
 
 ## What the next pass should take
 
-1. Give the **320** Designer header a row: its second row holds the 128 px verdict and the 120 px Inspector, and the 44 px ⋯ menu needs
-   308 px of controls in 296, so it takes a third row there and the header is 141.6 px; the roster's first seat then ends 3.7 px under the
-   save bar, where 360 shows it whole. The lever is that menu or the save bar's own 107.4 px, not the guide, which is 334.8 now.
+1. Decide whether the Designer's save-bar state takes the line under the path when it holds a button: at 320 a blocked draft gets a
+   200 px column, wraps "1 error blocks saving. Show the error" to three lines and makes the bar 110.4 px, where the base state has
+   17.4 px beside the path. The base bar is 74.4 now, so this is the last row it can give back.
 2. Decide whether the Steps filter fold belongs above 620: at 621–768 the chips take two rows and the switch a third (166 px),
    though the page's own reading is one button there. The same decision covers the tablet's 32 px `NextLinks`.
 3. Decide whether What shipped opens by default on a fresh delivery, and whether the phone's fold remembers a section (the page
@@ -199,6 +206,42 @@ Breakpoints: **1280 1100 900 800 760 620 560**. 800 is the sidebar drawer (JS
 8. Check the frame's safe-area claims on a notched device in both orientations; the insets are in the CSS but the stand-in browser reports them as zero.
 
 ## Pass log
+
+### 2026-10-28 — the Designer's fixed chrome is two rows at every phone width
+
+Surface: `designer/designer.css` (the 760 block) and one new rule in `tests/dashboard/designer-phone.test.ts`. Measured on the
+**first-run** project (the scaffold's placeholder goal, one seat, 4 events) in the production build, Chromium over CDP at
+320/360/390/768/1440 in light, at 360 in dark, in forced colours and at a 32 px root, axe-core at 360 light and 1440 dark — and on the
+scripted demo's Designer at 360, where there is no guide, to show the bar gives back the same 33 px. Before is the base build from its own
+checkout on 7736, after is this branch on 7756, both read on the same four-event state within the hour.
+
+- **At 320 the header is two rows, not three: 141.6 → 89.6 px.** The three actions measured 128.5 + 119.7 + 44 = 308.2 px in a 292 px row,
+  so the 44 px ⋯ menu alone took a third. The Inspector's sliders glyph was decoration around its name; without it the button is **91.7**
+  and the row **280.2**. The word, the 44 × 44 target, `aria-pressed`/`aria-controls` and the keyboard are unchanged: Inspector is still the
+  5th stop, 8 Tabs reach the guide's goal field and 13 the roster's first seat.
+- **The save bar is a line and a row, not two: 107.4 → 74.4 px at 320 and 360.** The path and "The draft matches mesh.yaml." each had a
+  34.4 px line; they share a **17.4** px line, and the bar's rhythm is 4 px (padding 10 → 4, gap 8 → 4). The path is **117.8** px at 320
+  (the folder cuts, `mesh.yaml` is whole) and 157.8 at 360; the state is **170.2** on one line at both. On the demo's Designer the bar is
+  the same 107.4 → 74.4 and the page 1,052 → 1,019, with the header (147.6) and seat row (308.6–405.9) untouched.
+- **The roster's first 60 px seat is whole at 320.** It ended **3.7** px under the 736.6 bar (680.3–740.3); it is **628.3–688.3** above
+  the 769.6 bar, 81.3 px clear. The fixed chrome is **249.0 → 164.0** at 320 and **197.0 → 164.0** at 360, so the first screen gives the
+  work 85 px more at 320 and 33 at 360. The guide (352.2 at 320, 334.8 at 360), the page's top (76) and the seat's top at 360 (597.4) do
+  not move.
+- **A blocked draft still says so, and the bar grows rather than cutting the file name.** With the goal emptied and "1 error" the bar is
+  **126 → 110.4** px at 320 (the base state was measured first); the state takes 200 px and wraps to three lines, and the path keeps its
+  88 px (icon, gap and `mesh.yaml`). The state's buttons are still visible, 44 px and never hover-only.
+- **Nothing else moved.** 390: header 89.6, bar 74.4, seat 597.4–657.4. 768 (above the phone layout) and 1440 are unchanged (guide
+  428.8/394, bar 65/57, page 1,186/1,051). No document or `#view` horizontal scroll at 320/360/390/768/1440, **0** text under 12 px,
+  **0** controls under 44 × 44 at 320/360/390/768, forced colours and a 32 px root the same geometry, 1 console error in both halves (the
+  one-mesh `/api/projects` 404), and axe-core **0** violations at 360 light and 1440 dark (24 and 32 rules passed, as before).
+
+Suite: typecheck and build clean; `dist/tests/dashboard` **1,180 pass, 0 fail**, with one new rule in `designer-phone.test.ts`; the build
+and primitive tests (`console-*`, `icons`, `type-ramp`, `css-vars`, `forced-colors`, `primitives-a11y`) **35 pass**; eslint on the changed
+test 0 errors (the stylesheet is not in eslint's config).
+
+**Left.** A blocked state's 200 px column wraps to three lines (bar 110.4), and giving it the line under the path when it holds a button is
+the next small shape; the 320 path shows the file name and a fragment of the folder, with the full path in the title. The Inspector is a
+word on every phone layout now, which is a reading question at 390 and 620 where the glyph had room.
 
 ### 2026-10-28 — the first-run guide is a ruled path on a phone, and the roster opens on its seat
 
