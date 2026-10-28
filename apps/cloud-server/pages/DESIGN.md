@@ -1794,3 +1794,92 @@ are `document.documentElement.scrollHeight`; positions are `getBoundingClientRec
   row's end, which this pass did not measure and judged a different drawing.
 - **The address strip's Copy, the steps at 320, the checkout stand-in, the dead reset link and the
   prose-only 19px links are unchanged.** They are the earlier entries.
+
+## 2026-10-29: the money is one ledger
+
+Same harness: Chromium 156 through `playwright-core` over CDP, axe-core 4.14, 320 / 360 / 390 / 768 / 1440
+in light and dark, forced colours at 360, the root raised to 32px at 360, `prefers-reduced-motion: reduce`, a
+touch pointer below 721. "Before" is `main`'s own pages served by a trial on **7961**, this pass's pages by a
+trial on **7981**, both signed in to the same account made through the same script: a Team plan at $149.00 a
+month, one running workspace named Research, $10.00 available, $10.00 from the plan, $0.00 from credit. Every
+height is `document.documentElement.scrollHeight`, every position `getBoundingClientRect` plus `scrollY`.
+
+- **The glance's three facts are the balance's ruled rows.** On a phone the three facts wrote their notes as
+  sentences trailing their figures — `Workspaces 1 running · 1 workspace in your plan` on one line, the plan's
+  price and the balance's used figure after their amounts on theirs — while the panel below drew the same
+  kind of figures as ruled rows with the note on a line of its own. Two grammars for one ledger. The name now
+  starts the row and the figure ends it (`margin-right: auto` on the row's `dt`), and the note is the line
+  under, in the panel's own rule rather than a copy of it: `.stat dt` joins `.figures dt`, and `.stat-n` joins
+  `.figures .of` in one declaration block, so the two cannot drift. At 360 the three figures end at **344,
+  344 and 344** (they ended at 190, 205 and 166.6) and the three notes start at **16** (the plan's started at
+  215 and the balance's at 176.6). The rows are **57.6 / 59.2 / 57.1** (64.2 / 45 / 44) and the block
+  **154.2 → 174.8**.
+- **The rows are 4px, and the balance pays 8px back for them.** A row's padding goes 6 → 4 in the rule the
+  two blocks share, so the panel's figures are **156.8 → 148.8** and the panel **247.3 → 239.3** at 360, while
+  768 and 1440 keep **423.3** and **425.8**, where the rule does not apply. The page is **2,105 → 2,118** at
+  360, **2,373 → 2,365** at 320 — where the balance row's note already fitted inline, so the column buys a
+  line instead of spending one — and **2,085 → 2,118** at 390, where all three facts had fitted one line each.
+  Settings begins at **1,941.1 → 1,953.7**; `01 Workspaces` at 627 → 647.7, the workspace's name at 665.5 →
+  686.2 and its `Open / Pause / More` row at **745.2–789.2**, still inside an 800px screen.
+- **A note that has nothing to say takes no line.** With `/api/plans` answering 503 the workspaces and plan
+  facts have no note at all, and a `dd` that takes the line under the row would have been two lines of
+  nothing: `.stat-n:empty` is not drawn. Measured: both notes are **0 × 0** (36.4px saved), the glance is 134 → **146.1** (the
+  balance's `available` is the one note it has), the panel **334.9 → 330.9** and the page **2,223 → 2,231**.
+  The section's retry still leaves the cursor on **Try again** when the read fails again (page 2,231), and on
+  **`#plan-h`** when the plans arrive (page 2,118).
+- **The allowance's entry stays two lines, and the arithmetic is why.** A one-line entry needs the label
+  (121.2), the amount (66.3), the note (134.5, measured today: this browser renders the 13px note 10px wider
+  than the previous record's 124.1) and two 10px gaps — **342px** — in a 328px row before the bar has a pixel,
+  and **389px** with the bar's 39px floor. So the measure keeps its own line, which is now the grammar of
+  every row in both blocks rather than the exception in one. The bar is unchanged at **185.5 × 6**.
+- **States, schemes and the floor.** 320 / 360 / 390 / 768 / 1440 in light and dark: no sideways page scroll
+  (320: 320; 360: 360; 390: 390; 768: 768; 1440: 1440), nothing computes below **12px**, and the only control
+  under 44 × 44 below 721 is the 41 × 44 `Plan` contents link the record already names, in both halves. Dark is
+  the same height as light at 320, 360, 390 and 768. **8 axe-core runs** (320, 360 and 768 light, 1440 dark, WCAG 2.0–2.2
+  A and AA and again with every rule) find **no violation**, and there is no console error but the 503 a failed
+  read logs in both halves. Forced colours draws the rules and the notes in the system's own black; with scripts
+  off both halves are **800px** with the money blocks empty, as the script draws them, and the settings form as
+  before. At **200% text** (root 32px) the page is **4,374 → 4,335**, the glance **423.8 → 396.1** and the panel
+  **536.7 → 524.7**, and the balance row's figure now ends its row (**307.2 → 344**) where the note used to
+  wrap beside it; the workspaces and plan figures still fall under their labels there (see what this leaves).
+  The `Add credit` row is still 44px and opens the same form: opened, the panel is **436.4 → 428.4** and the
+  page **2,294 → 2,307**.
+- **The budget.** `app.css` is **40,930 → 40,908 bytes of 40,960** (a net **−22**). The two selectors joined two
+  rules that already existed and the row's padding is one digit shorter; the balance's own ruled-entry comment
+  went and the one above the shared row now names the grammar both blocks keep. `pages.test.ts`
+  pins the glance's `dt` and its full-line note beside the panel's, so a later pass cannot take one without the
+  other; each assertion was mutation-checked and each failed alone.
+
+| measured at 360, light | before | after |
+| --- | --- | --- |
+| The three figures' right edges | 190 / 205 / 166.6 | **344 / 344 / 344** |
+| The three notes' left edges | 16 / 215 / 176.6 | **16 / 16 / 16**, each 328 wide |
+| The glance's rows | 64.2 / 45 / 44px | **57.6 / 59.2 / 57.1** |
+| The glance | 154.2px | **174.8px** |
+| The panel's figures / the panel | 156.8 / 247.3px | **148.8 / 239.3** |
+| The account page | 2,105px | **2,118px** |
+| … at 320 / 390 | 2,373 / 2,085 | **2,365 / 2,118** |
+| … at 768 / 1440 | 2,009 / 2,046 | **2,009 / 2,046** |
+| Settings begins at | y = 1,941.1 | **y = 1,953.7** |
+| The workspace's controls, at 360 | 724.5–768.5 | **745.2–789.2** (still on an 800px screen) |
+| `/api/plans` 503: the glance / the page | 134 / 2,223px | **146.1 / 2,231** with both empty notes at 0px |
+| The `Add credit` row, opened | panel 436.4, page 2,294 | **428.4 / 2,307** |
+| At 200% text | 4,374 page, 423.8 glance, balance figure ending at 307.2 | **4,335 / 396.1 / 344** |
+| axe-core, 8 runs | 0 | **0** |
+| `app.css` | 40,930 bytes | **40,908** |
+
+### What this pass leaves
+
+- **The glance's third line cost 13px of page at 360 and 33 at 390.** The two facts whose notes fitted inline
+  now pay a line for the column, and only the balance's 8px of padding comes back. At 390, where all three
+  notes fitted, the price is the whole 33px. It is the drawing's cost, not a rounding, and the first screen
+  still ends on the workspace's controls (745.2–789.2 of 800).
+- **At 200% text two of the three glance figures still fall under their labels.** A row is a wrapping flex
+  line: a 48px `Workspaces` (194.2 wide) leaves no room for the 52px `1 running` after it, so the figure takes
+  the next line at the left. The balance row, whose label is short, now ends at 344. Nothing overflows and
+  nothing is lost.
+- **The glance's workspaces note is still a plan fact beside a running count.** `1 workspace in your plan`
+  under `1 running` is true of the plan, not of the count; it takes the second line at 360, which is where the
+  column now puts it anyway.
+- **The address strip's Copy, the steps at 320, the checkout stand-in, the dead reset link and the prose-only
+  19px links are unchanged.** They are the earlier entries.
