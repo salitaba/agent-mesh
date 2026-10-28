@@ -111,6 +111,10 @@ uses them by name. What is particular to the site:
   under the pages' policy.
 - **Rows that line up.** A plan card and a "Start here" card are `subgrid` rows (`grid-row: span N`), so that title, price, limits,
   what is included and the button sit at one height across a row; a browser without subgrid shows plain cards.
+- **The footer's index.** Product, Resources and Company are three columns at every width narrower than a tablet — never two with
+  the third left alone under them — and the brand stands above them; from 640 the brand is a column of its own and the three
+  groups take the desktop's four-column grid. A phone's link rows are 44px, and a label that has to take two lines in a column
+  96px wide still fits inside one, so the three columns' rows line up.
 - **Grounds.** A page alternates the paper with a slightly different paper (`--band`) and has one deep ground (`--deep`), the closing
   band. An inner page's heading sits on the same ruled paper as the home page's first screen, fainter.
 - **Arrival.** The stylesheet hides nothing. For a visitor who has not asked for reduced motion the script marks the pieces *below the
