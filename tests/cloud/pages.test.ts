@@ -445,7 +445,7 @@ test("a name a person typed cannot widen the page: the cards that show one break
   assert.equal(own(".bar nav a", "white-space"), "nowrap", "a link is a word, not two");
   assert.equal(own(".site-header .wrap", "padding-inline", "max-width: 380px"), "0", "the header's gutter is the page's, not a second inset; the bar wraps rather than pass the edge");
   assert.equal(own(".bar", "flex-wrap", "max-width: 720px"), "wrap", "a bar with more text than its line wraps");
-  assert.equal(own(".figures > div", "min-width", "max-width: 720px"), "0", "and an amount in a narrow column may set its own width");
+  assert.equal(own(".figures dd", "font-size", "max-width: 720px"), "min(1.375rem, 9vw)", "and an amount on a phone is capped against its column rather than widening the page");
   assert.equal(own(".bar", "gap", "max-width: 380px"), "8px");
   assert.equal(own(".bar nav", "gap", "max-width: 380px"), "0");
   assert.equal(own(".bar nav a", "padding", "max-width: 380px"), "0 7px");
@@ -490,6 +490,12 @@ test("the balance is the record, and adding credit is one 44px row on a phone th
   assert.equal(value(".topup > summary", "display"), "none", "a wide screen keeps the whole form: the row is the phone's");
   assert.equal(value(".topup > summary", "min-height", "max-width: 720px"), "44px", "and on a phone the row is a finger's target");
   assert.equal(value(".topup > summary", "cursor", "max-width: 720px"), "pointer");
+  assert.ok(
+    rules.some((r) => r.at.includes("max-width: 720px") && r.selectors.includes(".stat") && r.selectors.includes(".figures > div") && declared(r, "display") === "flex"),
+    "the three figures are the ruled rows the glance's three facts are: one entry a row, its label, figure and note on one line",
+  );
+  assert.equal(value(".figures", "display", "max-width: 720px"), "block", "not the two-column grid that made the panel a form");
+  assert.equal(value(".figures .of", "display", "max-width: 720px"), "flex", "and the allowance's note sits on its line with its bar, rather than under the amount");
 });
 
 test("the stylesheet is held to its budget, and whatever it moves it stills for a person who asked for stillness", () => {
