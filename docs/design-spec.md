@@ -341,7 +341,8 @@ recipe that a third page needs is written here.
   not in the same two numbers again.
 - **Designer**: seat cards with the role colour down one edge; wires quiet until a seat or a wire is selected; one grouped
   toolbar of icon buttons that say whether what they opened is open; an inspector that reads as a form, its sections
-  sentences on a turning chevron; kit dialogs; an assistant dock.
+  sentences on a turning chevron; kit dialogs; an assistant dock. On a phone the first-run guide is the page's brief and not a
+  card: one 44 px ruled line per step, the step to do now open under its own line, so the roster's first seat is on the first screen.
 - **Files** shows what a file is before it is read (a tile for a patch, a release plan, a report or a document), its state as a
   word, and a patch by colour. **Product** is the checkout as ruled facts, a script as a button that says what it runs, and a
   failed run as a note with a rail. **Cost** leads with the figure (30 px); the meter turns amber and red by the host's own rule with

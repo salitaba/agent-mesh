@@ -79,6 +79,16 @@ test("a touch-class tablet at 768 gets the 44 px floor, though it is above the 7
   assert.ok(hasRule(topologyCss, ".ms-handle::before", /inset:\s*9px/), "the mark drawn inside it stays the 26 px circle the card was drawn around");
 });
 
+test("on a phone the first-run guide is a ruled brief, and each step is one 44 px line of it", () => {
+  // Measured at 360 with the first-run guide: the guide was a 446.2 px card of the 736.6 px above the pinned save bar, so the roster's
+  // first 60 px seat began at 708.8 and only 27.8 of it showed. On the page's own rules, with the three closed steps one line each
+  // instead of four padded blocks, the guide is 334.8 px and that seat is whole. The guide holds nothing that is pressed as a whole,
+  // which is what DESIGN.md reserves a card for.
+  assert.ok(hasRule(designerCss, ".card.ms-guide", /padding:\s*0/), "a phone's guide is not a box");
+  assert.ok(hasRule(designerCss, ".ms-steps li", /padding-block:\s*0/), "a closed step is its line and its rule, not a padded block");
+  assert.ok(hasRule(designerCss, ".ms-steps li.now", /padding-bottom:\s*var\(--s3\)/), "the step to do now keeps its air before the next rule");
+});
+
 test("a phone header gives the history pair to the menu, so the roster starts 52 px higher", () => {
   // Measured at 360 with the first-run guide: the header's actions took two rows (52 px for undo/redo and the verdict, 44 for
   // Inspector and the menu) and the header was 150 px. Hiding the pair lets the remaining three share one row.

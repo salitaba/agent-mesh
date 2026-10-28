@@ -40,7 +40,8 @@ ring), not only how wide it is.
    sentence saying what the page is for, and the page's actions. On a phone the
    actions take their own row and controls may grow to fill it. When the page
    shows a first-run guide, the guide *is* the brief and the header's sentence is
-   omitted: two briefs pushed the Designer's first seat out of the screen.
+   omitted: two briefs pushed the Designer's first seat out of the screen; on a
+   phone that brief is ruled lines, not a card (2026-10-28).
    A route change that lands focus on the page's heading announces the page; the heading wears no ring, because it is a place,
    not a control (the same for `#view`). A control's keyboard ring is untouched.
 2. **The state, before the content** — a banner for stale or refused, an
@@ -115,6 +116,11 @@ Breakpoints: **1280 1100 900 800 760 620 560**. 800 is the sidebar drawer (JS
   reachable by one press; a tooltip repeats a name, it does not supply one.
 - Filters that are not needed to read the page fold behind one 44 px button with
   a count, as Events and Steps do; the search stays out.
+- The first-run guide is a brief, not a box: at 760 px and below it drops the
+  card, each of its four steps is one 44 px ruled line, and the step to do now
+  keeps its instruction and its field under its own line. At 360 it is 334.8 px
+  and the roster's first 60 px seat is wholly above the pinned save bar, where a
+  446.2 px card left 27.8 px of it (2026-10-28).
 - A page's last row is a way on, not a full stop: `NextLinks` is 13 px link text
   on a rule, 44 px tall at 620 px and below, and wraps rather than scrolls. It is
   a signpost, not a second band of primary buttons.
@@ -155,9 +161,11 @@ Breakpoints: **1280 1100 900 800 760 620 560**. 800 is the sidebar drawer (JS
   deliberate trade that made it one row; the goal leads Overview and is one tap
   away, but a reader on Events cannot see it without leaving the page. Watch
   whether that absence costs a visit in real use.
-- The Designer's phone header is **90 px** with the first-run guide (was 150): undo/redo are in ⋯ and the other three actions share one row.
-  The first seat row starts at **735** on an 844 screen (was 795), so one row is fully visible but still only one: the guide's 459 px is now
-  the largest block before the roster, and a one-line or sheet shape for the guide is the next decision.
+- At **320** the Designer's header wraps to **141.6 px**: its second row holds the 128 px verdict and the 120 px Inspector, and the 44 px
+  ⋯ menu needs 308 px of controls in a 296 px row, so it takes a third. With the guide as ruled lines the first seat row starts at
+  **680.3**, 3.7 of its 60 px under the save bar; at 360 the header is 89.6 px and the row is whole. The menu is the lever, not the guide.
+- The Designer's save bar is **107.4 px** of a first-run phone: the file line takes a row of its own and the two saves the next. Every
+  first-screen figure on that page is measured against it.
 - The Designer's YAML preview wraps by default at 620 and below (295/295 at 360, was 462 in 295). The choice is component state, so it is not
   remembered between visits; a wrapped path breaks anywhere and the copy button is still the way to the exact text.
 - 768 px is just above the Designer's 760 phone layout, but its guide disclosures and canvas wiring ports now take the 44 px floor on a
@@ -177,8 +185,9 @@ Breakpoints: **1280 1100 900 800 760 620 560**. 800 is the sidebar drawer (JS
 
 ## What the next pass should take
 
-1. Give the first-run guide a phone shape — the path in one line, or a sheet — against the roster's first two rows being visible on arrival.
-   The header is 90 and the guide 459; this was the last pass's first job and is now this one's.
+1. Give the **320** Designer header a row: its second row holds the 128 px verdict and the 120 px Inspector, and the 44 px ⋯ menu needs
+   308 px of controls in 296, so it takes a third row there and the header is 141.6 px; the roster's first seat then ends 3.7 px under the
+   save bar, where 360 shows it whole. The lever is that menu or the save bar's own 107.4 px, not the guide, which is 334.8 now.
 2. Decide whether the Steps filter fold belongs above 620: at 621–768 the chips take two rows and the switch a third (166 px),
    though the page's own reading is one button there. The same decision covers the tablet's 32 px `NextLinks`.
 3. Decide whether What shipped opens by default on a fresh delivery, and whether the phone's fold remembers a section (the page
@@ -190,6 +199,49 @@ Breakpoints: **1280 1100 900 800 760 620 560**. 800 is the sidebar drawer (JS
 8. Check the frame's safe-area claims on a notched device in both orientations; the insets are in the CSS but the stand-in browser reports them as zero.
 
 ## Pass log
+
+### 2026-10-28 — the first-run guide is a ruled path on a phone, and the roster opens on its seat
+
+Surface: `designer/designer.css` (the guide's phone block) and one rule in `tests/dashboard/designer-phone.test.ts`. Measured on a
+**first-run** project (the scaffold's placeholder goal, one seat, 4 events, `goal-M614ST980`) in the production build, Chromium over CDP
+at 320/360/390/768/1440 in light, at 360 in dark, in forced colours and at a 32 px root, axe-core at 360 light and 1440 dark — and on the
+scripted demo at **Delivered** at 360/390/1440 light and 360 dark, to show nothing moves where there is no guide. Reduced motion, a touch
+pointer at 768 and below. Before is the base build from its own checkout on port 7716, after is this branch on 7726, both read on the same
+four-event state within the hour.
+
+- **The guide is a brief, not a box, on a phone.** At 360 it was a **446.2 px** card of the **736.6 px** a first-run phone has above its
+  pinned save bar — 60% of the first screen — and the roster's first seat began at 708.8 with **27.8 of its 60 px** showing. Off the card
+  and on the page's own rules (DESIGN.md keeps a card for a thing that is pressed as a whole) it is **334.8 px**, and that seat is
+  **597.4–657.4**: whole above the bar, with the card's note under it. The view goes **888 → 780 px** in a 780 px frame, so nothing on the
+  Designer's first page is below the fold any more.
+- **Each step is one 44 px line.** The three closed steps were 69, 69 and 57 px of padded block; with the rule as their only separation
+  they are **45 px each** (the 44 px disclosure and its 1 px rule), and the mark centres on the line it names, 9 px = (44 − 26) / 2. The
+  path is **356.2 → 278.8 px**, and every step is still the same 44 px button with the same `aria-expanded`, opened in place: pressing
+  "Decide who may message whom" grows that row 45 → **97.8 px** and the guide to 387.6, with the first seat still whole at 650.2–710.2.
+- **The step to do now keeps its instruction and its field, and they get 42 px wider.** The guide's own 20 px inset was what narrowed them;
+  on the page it takes the content width, so the goal's sentence is two lines at 360 instead of three and the now step is
+  **161.2 → 143.8 px**. At 320 the same reflow leaves it at 161.2 and the guide there is **462.2 → 352.2**.
+- **Nothing else moved.** 320: guide 462.2 → 352.2 and the first seat 790.3 → **680.3**, its last 3.7 px under the bar where none of it
+  showed before; 390: 428.8 → 334.8 and 691.4 → **597.4**. 768 (above the phone layout) and 1440 are unchanged to the pixel — guide 428.8
+  and 394, steps 143.8/69/69/57 and 149.8/57/57/45 — and a delivered mission's Designer is identical in 4 reads (360/390/1440 light, 360
+  dark). No document or `#view` horizontal scroll at any width, **0** controls under 44 × 44 at 320/360/390/768, nothing under 12 px,
+  forced colours and a 32 px root the same geometry, and 1 console error in both halves (the one-mesh `/api/projects` 404).
+- **The keyboard is untouched.** From a cold load it is **8 Tabs** to the guide's goal field and **13** to the roster's first seat, and
+  Enter on that seat opens its inspector with 7 more Tabs to the seat's first field — the same three numbers before and after, on the same
+ 2 px accent ring.
+- **axe: 0 violations** at 360 light and 1440 dark, as before. At 360 the passing-rule count is 25 → 24 because
+  `scrollable-region-focusable` no longer has a region to check — the page does not scroll. Fifteen nodes there now need a manual contrast
+  read (was five), because the guide sits on the page's ground and the body's radial gradient stops axe computing a background; measured
+  by hand, the smallest pair on it is `--muted` on `--bg`, **6.19:1** (`--text-dim` is 10.20:1).
+
+Suite: typecheck and build clean; `dist/tests/dashboard` **1,179 pass, 0 fail**, with one new rule in `designer-phone.test.ts`; the build and
+primitive tests (`console-*`, `icons`, `type-ramp`, `css-vars`, `forced-colors`, `primitives-a11y`) **35 pass**; eslint on the two changed
+files 0 errors.
+
+**Left.** At 320 the header still wraps to 141.6 px, which is the last 3.7 px of that seat. The save bar's **107.4 px** is now the largest
+fixed block on the page: the file line takes a row and the two saves the next. Whether a guide someone wants in front of them while they
+work is better as a sheet than as ruled lines is still a reading question — the ruled path costs nothing to leave open, which is what it
+does on arrival.
 
 ### 2026-10-28 — a phone's Overview spends its words once, and every fold control says what it opens
 
