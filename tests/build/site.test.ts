@@ -571,12 +571,14 @@ test("the drawings of an idea are decorative: hidden from a screen reader, with 
   assert.equal((/<ol class="steps">[\s\S]*?<\/ol>/.exec(home)![0].match(/<svg class="viz"/g) ?? []).length, 3);
 });
 
-test("the home page puts the price before the arguments, under a numbered contents strip", () => {
+test("the home page puts the price, then the proof and the demo, and the argument after them, under a numbered contents strip", () => {
   const home = page(pages, "index.html").html;
   const at = (needle: string): number => home.indexOf(needle);
-  const order = ['<section class="hero" id="top">', '<nav class="index"', '<section class="section" id="pricing">', '<section class="section" id="ways">', '<section class="section band" id="why">', '<section class="section" id="how">', '<section class="section band" id="product">', '<section class="section" id="try">', '<section class="section tint" id="security">', '<section class="section band" id="faq">'].map(at);
+  const order = ['<section class="hero" id="top">', '<nav class="index"', '<section class="section" id="pricing">', '<section class="section" id="ways">', '<section class="section band" id="product">', '<section class="section" id="try">', '<section class="section band" id="why">', '<section class="section" id="how">', '<section class="section tint" id="security">', '<section class="section band" id="faq">'].map(at);
   assert.ok(order.every((n) => n >= 0), "every part is there");
-  assert.deepEqual(order, [...order].sort((a, b) => a - b), "the statement, the contents, the price, then the arguments");
+  // The order is the argument: what it is and what it costs, who runs it, the console and the demo that prove it, and then the
+  // two sections that say why it is built this way and how a mission goes. A phone meets the proof and the demo before the prose.
+  assert.deepEqual(order, [...order].sort((a, b) => a - b), "the statement, the contents, the price and the ways in, then the console and the demo, then the argument");
   // The contents strip names every section below it, in order, numbered like the ledger's entries.
   const nav = /<nav class="index"[^>]*>([\s\S]*?)<\/nav>/.exec(home)![0];
   assert.match(nav, /aria-label="Contents"/);
@@ -584,10 +586,10 @@ test("the home page puts the price before the arguments, under a numbered conten
   assert.deepEqual(entries, [
     ["pricing", "01", "Plans and prices"],
     ["ways", "02", "Who runs it"],
-    ["why", "03", "Why rules"],
-    ["how", "04", "How it works"],
-    ["product", "05", "The console"],
-    ["try", "06", "Try it"],
+    ["product", "03", "The console"],
+    ["try", "04", "Try it"],
+    ["why", "05", "Why rules"],
+    ["how", "06", "How it works"],
     ["security", "07", "Security"],
     ["faq", "08", "Questions"],
   ], "eight entries, in the order the page reads");

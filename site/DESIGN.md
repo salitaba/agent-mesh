@@ -1532,3 +1532,101 @@ the site at `c607912`, served on a second port and measured in the same run; no 
 
 The next pass's first job is the home page's nine argument sections: at 360 they are 10,604.8px of the 12,973 (81.7%), and the only
 honest way down is an editorial one — which arguments a phone reads, in what order, and what each one can say in fewer lines.
+
+## 2026-10-28, third pass: the proof and the demo before the argument
+
+Measured with the same probe (Chrome 156 over CDP, reduced motion, light unless said, touch at 320/360/390, a mouse at 768 and
+1,440, print at 794, forced colours at 360, a 24px root at 320/360 and 720 for the 200% stand-in, and both schemes for the axe runs
+and for the grounds). The before column is the site at `6c1123a`, served on a second port and measured in the same run; no number
+is copied from an earlier pass.
+
+### What changed
+
+- **The console tour and the demo come before the two argument sections, and nothing else moves.** The order was the tagline, the
+  price, the two ways in, **why it is not a group chat** (4,073.8), **how a mission goes** (5,469.4), the console (6,619.4), the demo
+  (7,497.6), security, the questions. It is the tagline, the price, the two ways in, **the console** (4,073.8), **the demo** (4,952),
+  why it is not a group chat (6,985.5), how a mission goes (8,381), security, the questions. The two argument sections were the page's
+  two pieces of prose that ask to be read in order; the six captures and the four commands are what a phone can decide on. At 360 a
+  reader now meets the console **6,619.4 → 4,073.8** (8.3 → 5.1 screens of 800) and the demo **7,497.6 → 4,952.0** (9.4 → 6.2),
+  with the demo's first command block **8,172.9 → 5,627.3**. The price line (522.8) and the two ways' one action (3,422.2) do not
+  move, so what it costs, that it is real and the way to try it all stand inside the first **6.2** screens, where the third of them
+  was at **9.4**.
+- **The order is a chain of questions now, and each section answers the one above it.** *What is it, and what does it cost?* The
+  price. *Who runs it?* The two ways. *What does it look like?* The console, in six views. *Can I run it?* The four commands.
+  *Isn't this just a group chat?* — the objection the six captures raise — is the next section's own heading, "Why it is not a group
+  chat", so the answer arrives when the question does. *How does a mission go?* Then security, the questions, and the closing band.
+  Until this pass the page answered an objection a reader had not yet formed, and showed the product 2,546px later than it asked the
+  question.
+- **The contents strip names the page it is on.** The eight entries are the same eight sections, in the same row of eight 48px
+  links (194px at 360, unchanged), renumbered to the order a thumb now walks: **03 The console, 04 Try it, 05 Why rules, 06 How it
+  works** (01 plans, 02 who runs it, 07 security, 08 questions are where they were). Every one of the eight lands its section at
+  **88**, under the 69px bar, at 320, 360, 768 and 1,440, and the hero's "Try the demo" and the header's Product land at 88 too.
+- **The bands travelled with the sections, so no stylesheet byte changed.** The console keeps its banded ground and the demo its
+  plain one, so the sequence of grounds is still one plain block of buying (the price and the ways), a band (the console), a plain
+  section (the demo), a band (why), a plain (how), the tinted security section, a banded FAQ and the closing band: measured
+  `#product` `rgb(247, 245, 241)` → `#try` transparent → `#why` `rgb(247, 245, 241)` → `#how` transparent in light, and
+  `rgb(14, 13, 12)` / transparent / `rgb(14, 13, 12)` / transparent in dark. No class, colour, size or spacing step was added, and
+  `assets/site.css` and `assets/site.js` are untouched (their fingerprints and the pages' header and footer are what they were).
+
+### Measurements after this pass
+
+| The home page at 360, light | Before | After |
+|---|---|---|
+| The page | 12,973 (16.2 screens) | **12,973 (16.2)** |
+| The price line in the hero | 522.8 | 522.8 |
+| "Get started" in the two ways | 3,422.2 | 3,422.2 |
+| The console (`#product`) | 6,619.4 | **4,073.8** |
+| Its six-view row | 7,000.5 | **4,454.8** |
+| The demo (`#try`) | 7,497.6 | **4,952.0** |
+| The demo's first command | 8,172.9 | **5,627.3** |
+| Why rules (`#why`) | 4,073.8 | **6,985.5** |
+| How it works (`#how`) | 5,469.4 | **8,381.0** |
+| Security / questions / closing band / footer | 9,531.1 / 10,959.8 / 11,903.6 / 12,275.3 | **unchanged** |
+| Screens to the price, the console, the demo | 0.65 / 8.27 / 9.37 | **0.65 / 5.09 / 6.19** |
+
+| The console, and the demo, at | 320 | 390 | 768 | 1,440 |
+|---|---|---|---|---|
+| The console, before → after | 7,068.7 → **4,379.7** | 6,431.4 → **3,992.2** | 6,573.5 → **3,309.8** | 6,024.2 → **3,297.1** |
+| The demo, before → after | 7,948.9 → **5,259.8** | 7,296.0 → **4,856.8** | 8,262.4 → **4,998.7** | 8,132.3 → **5,405.2** |
+| The page | 13,790 | 12,455 | 12,515 | 12,199 (all unchanged) |
+
+- **Nothing was lost, measured.** 1,547 words, 36 links (29 unique), 52 controls, twelve figures (`$124`, `$149`, `$499`, `$599`,
+  the four plans' limits), 11 sections, 11 `h2`, 26 `h3`, 12 questions and 10 captures: identical before and after at 360. The
+  page height is identical at 320, 360, 390, 768 and 1,440.
+- **The keyboard walks the same controls in a different order.** 73 stops at 360 both before and after, and 52 controls in `main`.
+  The console's first control is the **28th** stop (was 29) and the demo's Copy buttons the **34th** (was 35), because the only
+  control between them before was the Graph capture's "Full size" link; the price's first control is the 18th stop and the
+  footer's the 56th in both halves.
+- **The floors are untouched.** 70 page/width/theme pairs (7 pages × 320/360/390/768/1,440 × light/dark): **0** horizontal page
+  scroll, **0** text under 12px, **0** console errors, and the same census of targets under 44 (the pricing page's 24 × 24
+  checkbox whose label is 44, and the mouse's 36px rows at 1,440). axe-core WCAG 2.0/2.1/2.2 A and AA: **0** violations on the home
+  page at 360 light, 360 dark and 1,440 dark. Without a script 12,972px; print at 794 12,135; `forcedColors: active` 12,973; a
+  24px root 20,319 at 360 and 21,933 at 320; a 720px viewport 12,644 — every one identical before and after, and 0px over.
+- **One test changed with the pinned shape.** `tests/build/site.test.ts` held the old order and the old numbering; it now holds the
+  new one, and its name says what the order is for. Nothing else in the suite read the page's order.
+
+### What this pass deliberately left
+
+- **The page is still 12,973px at 360, 16.2 screens, and the nine argument sections are still 10,604.8px of it.** This pass moved
+  what a phone meets and when it meets it; it did not shorten the words, because every claim on the page is pinned by a test and
+  the surface's rule is that a section is either a claim or an action. The only honest way down from here is copy: the demo
+  (**2,033.5px**) and the two ways in (**1,206.5**) are the two largest answers, and both are the owner's words.
+- **The argument now comes after the demo.** A reader who wants the reasons before the pictures reads them at 6,985.5 ("why rules")
+  and 8,381 ("how it works") instead of 4,073.8 and 5,469.4. That is the trade this pass makes: the objection "why is this not a
+  group chat" is now the answer to a section the reader has just seen, and the reasons are for the reader who scrolls past the
+  demo. The other order — arguments first, proof at 8.3 screens — is what the page had.
+- **The demo is a commitment before the argument.** Its four steps ask for Docker and git, and they now stand at 6.2 screens rather
+  than 9.4. A reader can skip them (the two ways in and the questions are one press each above and below), but the page does not
+  ask whether they want them first; a disclosure that folded the four commands was refused by the 24 Oct pass, because those
+  commands are what the hero's second action promises.
+- **At a 32px root (200% of a 16px default) the home page is 6px wider than a 360px window and 26px wider than a 320px one**, identically
+  before and after this pass: the closed phone menu's five links are 323..471 in a 360 window and the six-view row is a snap row that
+  scrolls inside its own box. The body's `px` ramp does not follow a user's default size, which the 24 Oct pass recorded as debt; the
+  200% case the record does test (a 720px viewport) is 0px over.
+- **The captures were not retaken**, and `site/ux/` was not edited.
+- **`npm run site:check` still exits 1** on the owner's `TODO(owner)` for the terms at `site/legal/index.html:133`; that is the
+  publishing gate the last four passes have recorded, and it is not this pass's.
+
+The next pass's first job is still the page's length: 12,973px at 360 is 16.2 screens, and the reorder changed the order a phone
+meets them in, not how many words it reads. The demo (2,033.5px of four steps and three command blocks) and the two ways in
+(1,206.5px of two cards) are the two places where fewer lines would take the most pixels off, and both are copy.
