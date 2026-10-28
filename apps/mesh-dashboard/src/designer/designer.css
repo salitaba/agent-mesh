@@ -183,6 +183,17 @@ body:has(.ms-bar) #toasts { bottom: calc(var(--dock-clear) + var(--ms-bar-h, 0px
      header's tools stay the editor's own density). 760 is the console's phone layout, not the 560 at which the guide's own text is
      set: a tablet is still a thumb. */
   .ms-guide button, .ms-bar-acts > button { min-height: 44px; }
+  /* The guide is the page's brief, and a brief is ruled lines, not a box: it holds nothing that is pressed as a whole, which is what
+     DESIGN.md keeps a card for. As a card it measured 446.2 px of the 736.6 px a first-run phone has above this bar, so the roster's
+     first 60 px seat began at 708.8 with 27.8 px of it showing. Off the card and on its own rules, each of the four steps one 44 px
+     line instead of a padded block (the three closed ones took 195 px of it), the guide is 334.8 px and the roster's first seat is whole. */
+  .card.ms-guide { padding: 0; background: none; border: 0; border-radius: 0; box-shadow: none; }
+  .ms-steps li { padding-block: 0; }
+  /* The step to do now is the only one whose body shows by itself, so it keeps its air before the next rule — and so does a step
+     somebody opened. A closed step is its line, its rule and nothing else. */
+  .ms-steps li.now, .ms-steps li:has(.ms-step-toggle[aria-expanded="true"]) { padding-bottom: var(--s3); }
+  /* The mark names the line it sits on, so it centres on that line: (44 − 26) / 2. */
+  .ms-steps li:not(.now) .ms-step-mark { margin-top: 9px; }
 }
 @media (max-width: 760px) {
   /* The header's actions join the title row's own wrapping, so undo and redo sit beside the title and the rest fills the row below it. */
