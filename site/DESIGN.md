@@ -1430,3 +1430,105 @@ an earlier pass.
 - **The documentation row still cuts its third chip at 360**, the security page's At a glance box is still 930px, and the
   footer is still 1,012px at 360 on every page. None of these changed.
 - **No capture was retaken**, and `site/ux/` was not edited.
+
+## 2026-10-28, second pass: the footer is an index, and it fits a phone
+
+Measured with the same probe (Chrome over CDP; reduced motion; light unless said; touch at 320, 360 and 390, a mouse at 768
+and 1,440; print at 794; forced colours at 360; a 24px root at 320, 360 and 720 for the 200% stand-in). The before column is
+the site at `c607912`, served on a second port and measured in the same run; no number is copied from an earlier pass.
+
+### What changed
+
+- **The footer's three groups stand as three columns, and none of them dangles.** Below a tablet the index was a grid of two
+  columns: Product (5 links) and Resources (6) side by side, and Company (5) alone under them in the left half, with the right
+  half empty for 245px. The grid is `var(--c3)` now, so the three groups are one row at **96px each at 360** (83 at 320, 106
+  at 390) and the footer's index is **747.9 → 445px at 360** (776 → 469 at 320; 748 → 445 at 390).
+- **A tablet reads the footer it has the room for.** The four-column grid (brand as a column, three groups beside it) began at
+  860, so at 768 — 706px of wrap — every page still read the two-column phone footer for **982.1px**. It begins at 640: at 768
+  the brand is a **201.9px** column and the three groups are **144.2px** each (**341.3 → 144.2**), and the footer is
+  **982.1 → 505.5** — the largest change on this surface, and the one the last pass's own record did not see, because the
+  footer was measured at 360 only.
+- **The brand stops being a banner wherever it can be a column.** It spanned the grid at every width below 860, and its 134px
+  row stood above three columns that did not need it. From 640 it is the first column, so at 640 the footer is
+  **991.1 → 514.1px** and the tagline wraps in the column it is given rather than across 352px.
+- **A label that wraps still fits a thumb's row.** At 360 a 96px column wraps two of the sixteen labels ("What it shows",
+  "Report a vulnerability") and at 320 three; the rows are **44px** with `line-height: 1.3` (the one that wrapped was 48), so
+  the three columns' rows line up at 44 and no target changes size. The group's name sits **12 → 6px** above its links, and the
+  legal block's rule keeps 20px under it instead of 24 and, at a phone, 32px above it instead of 40 — which is why the footer
+  at 1,440 falls by the 6 and the 4 rather than more: **498.5 → 488.5**.
+- **Nothing above the footer moved, and no sentence did.** The header and footer are written by `scripts/site-chrome.mjs`; this
+  pass changed no markup in them, so all sixteen links, the three group names, the logo, the tagline ("A team of AI agents, run
+  like an organization."), the contact line, the trademark line and the price line are exactly where they were — the footer's
+  own top is **12,275.3 on the home page at 360, before and after**. The one thing that changed is its shape and its height.
+
+### Measurements after this pass
+
+| Page, height at 320 / 360 / 390 / 768 / 1440 | Before | After |
+|---|---|---|
+| Home | 14,109 / 13,288 / 12,770 / 12,992 / 12,209 | **13,790 / 12,973 / 12,455 / 12,515 / 12,199** |
+| Pricing | 14,568 / 13,586 / 13,028 / 10,844 / 9,220 | **14,249 / 13,271 / 12,713 / 10,367 / 9,210** |
+| Documentation | 9,035 / 8,402 / 8,202 / 5,646 / 4,446 | **8,716 / 8,087 / 7,887 / 5,169 / 4,436** |
+| Security | 12,233 / 11,082 / 10,577 / 8,206 / 7,450 | **11,914 / 10,767 / 10,262 / 7,730 / 7,440** |
+| Contact | 4,749 / 4,459 / 4,334 / 3,883 / 2,836 | **4,430 / 4,144 / 4,019 / 3,407 / 2,826** |
+| Legal | 5,559 / 5,008 / 4,777 / 3,887 / 3,266 | **5,240 / 4,693 / 4,462 / 3,410 / 3,256** |
+| 404 | 2,419 / 2,300 / 2,277 / 1,915 / 1,524 | **2,100 / 1,985 / 1,962 / 1,438 / 1,514** |
+
+| The footer | 320 | 360 | 390 | 768 | 1,440 |
+|---|---|---|---|---|---|
+| Its height, before → after | 1,081.5 → **762.5** | 1,011.9 → **696.9** | 1,011.9 → **696.9** | 982.1 → **505.5** | 498.5 → **488.5** |
+| Its index, before → after | 775.9 → **469** | 747.9 → **445** | 747.9 → **445** | 747.9 → **283** | 241 → **235** |
+| Its columns, before | 132×289, 132×289, 132×249 | 152×289, 152×289, 152×245 | 167×289, 167×289, 167×245 | 341×289, 341×289, 341×245 | 238×241 ×3 |
+| Its columns, after | **83×283 ×3** | **96×283 ×3** | **106×283 ×3** | **144×283 ×3** | 238×235 ×3 |
+| The third column's row | its own row, left half | its own row, left half | its own row, left half | its own row, left half | same row |
+| Its legal block | 176.6 → **172.6** | 135 → **131** | 135 → **131** | 93.4 → **89.4** | 72.6 → **68.6** |
+
+| The seven footers together | Before | After |
+|---|---|---|
+| At 360 | 7,083.3 | **4,878.3** |
+| At 768 | 6,874.7 | **3,538.5** |
+| At 1,440 | 3,489.5 | **3,419.5** |
+
+- The footer costs every page **315px at 360 and 390** (319 at 320, 477 at 768, 10 at 1,440). The 404 page, whose footer was
+  44% of it, goes **2,300 → 1,985** at 360 (13.7% shorter) and its footer from **44% to 35%** of the page; the documentation page at
+  768 goes **5,646 → 5,169** (8.5%). The home page is **13,288 → 12,973**, 16.6 screens of 800 to 16.2.
+- At the home page's last scroll (12,173) the footer in the 800px screen runs from **102 to 1,114px** before — 314px under the
+  bottom edge — and **102 to 799** after: the whole index, brand and legal lines fit one screen, with the closing band above it.
+- No page scrolls sideways at 320, 360, 390, 768 or 1,440 in light or dark (**0** on all 70 page/width/theme pairs), the probe
+  reports **0** console errors, and **0 axe-core WCAG 2.0/2.1/2.2 A and AA violations** on all seven pages at 360 light and
+  1,440 dark. The smallest computed text is **12px** on every page. In dark at 360 and 1,440 every page is the height it is in
+  light (home 12,973 / 12,199, the 404 1,985 / 1,514) and **0px** over.
+- The only target under 44 × 44 at 320–768 is the pricing page's 24 × 24 usage-reports checkbox, whose label is the 44px target
+  (unchanged); at 1,440 the rows are 36px for a mouse, as before (29 controls under 44 on the home page in both runs, the
+  bar's and the footer's links).
+- Without a script the home page is **12,972** at 360 and its footer 696.9, 0px over. With `forcedColors: active` at 360 it is
+  12,973, 0px over, the columns keep their rules and the page you are on keeps its line. Print at 794 is **12,147 → 12,135**
+  (the index is not printed, as before; the 12px is the legal block's air), 0px over. At a 24px root the footer is
+  **1,204 → 902** at 360 and the page **20,621 → 20,319**, 0px over at 320, 360 and 720.
+- `tests/build/site.test.ts` now holds the new shape: the index is `var(--c3)`, the brand spans it while the columns are narrow
+  and takes a column of its own from 640, a footer link's `line-height: 1.3` keeps a wrapped label inside 44, and the group's
+  name is 6px above its links. The site's own suites — the `site*` files with docs-links, product-name, brand-assets,
+  set-domain and no-mojibake — are **177** tests, all passing.
+
+### What this pass deliberately left
+
+- **The home page is still sixteen screens (12,973 at 360).** The seed for this pass put its length down to "the arguments and
+  the six-view product tour": measured, the tour is **878px** at 360 (its six views are one sideways snap row, one tile tall),
+  and the length is nine argument sections — `#ways` 1,206.5, `#why` 1,395.6, `#how` 1,150, `#try` 2,033.5, `#security` 1,428.7,
+  the price teaser 1,196.8 and the FAQ 943.8. That is not furniture to be recomposed but copy to be edited: which of the nine a
+  phone reader needs, and in what order, is the next pass's first job.
+- **At 360 two of the sixteen labels take two lines** in a 96px column ("What it shows", "Report a vulnerability"), and three
+  at 320. The alternative is the two-column grid at 1,012px, or a 3-column grid at 13px type — the labels are whole, the rows
+  are 44, and the words are the group's own.
+- **Sixteen links at 44px is 704px of rows however they are arranged.** Three columns of six is the floor without hiding a group
+  behind a disclosure control, which would take the links out of the page a phone reads by scrolling.
+- **The footer at 1,440 loses 10px, not more.** The desktop grid was already four columns with the brand in the first; the only
+  change there is the legal block's rule and the group's name.
+- **The 404 page still carries the footer's full index** even though it is the page a reader least needs it on; the page's own
+  six ways stand above it, and the way home is on the first screen.
+- **The pricing page's cards still repeat the host scope sentence four times and the roadmap twice**, the comparison still
+  stacks below 720, the documentation row still cuts its third chip at 360, and the security page's At a glance box is 930px.
+  None of these changed.
+- **No capture was retaken**, and `site/ux/` was not edited.
+
+The next pass's first job is the home page's nine argument sections: at 360 they are 10,604.8px of the 12,973 (81.7%), and the only
+honest way down is an editorial one — which arguments a phone reads, in what order, and what each one can say in fewer lines.

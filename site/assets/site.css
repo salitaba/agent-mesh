@@ -490,21 +490,25 @@ main:has(.hero) .section-head .eyebrow::before { counter-increment: sec; content
 
 /* footer */
 .site-footer { padding: clamp(48px, 7vw, 80px) 0 40px; border-top: 1px solid var(--line); background: var(--k-sunken); color: var(--muted); font-size: 15px; }
-.foot-grid { display: grid; gap: 40px 24px; grid-template-columns: var(--c2); }
+/* The index is three columns at every width narrower than a tablet, so that the three groups stand beside each other instead
+   of the last one dangling under the other two, and the brand takes a column of its own from 640, where it stops being a
+   banner above the links. Its rows are a link's own height at every width, so the three columns' rows line up. */
+.foot-grid { display: grid; gap: 28px 20px; grid-template-columns: var(--c3); }
 .foot-brand { grid-column: 1 / -1; max-width: 22rem; }
 .foot-brand p { margin: 14px 0 0; color: var(--ink2); }
 .foot-brand .foot-contact { margin-top: 8px; color: var(--muted); font-size: .875rem; }
 .foot-contact a { display: inline-flex; align-items: center; min-height: 44px; color: var(--ink); }
-.foot-col h2 { margin: 0 0 12px; color: var(--ink); }
+.foot-col h2 { margin: 0 0 6px; color: var(--ink); }
 .foot-col ul { display: grid; }
 /* A footer link is a target like any other: at 15px "Terms" is 43.2px wide in the system font this was measured in, a
-   pixel under a thumb's square, and its own text is the only thing that sets its width. */
-.foot-col a { display: inline-flex; align-items: center; min-width: 44px; min-height: 36px; color: var(--muted); text-decoration: none; }
+   pixel under a thumb's square, and its own text is the only thing that sets its width. A label that has to take two lines
+   in a column 96px wide at 360 still fits inside the 44 a thumb needs. */
+.foot-col a { display: inline-flex; align-items: center; min-width: 44px; min-height: 36px; line-height: 1.3; color: var(--muted); text-decoration: none; }
 .foot-col a:hover { color: var(--ink); text-decoration: underline; }
 .foot-col a[aria-current="page"] { color: var(--ink); font-weight: 500; }
 @media (max-width: 859px), (pointer: coarse) { .foot-col a { min-height: 44px; } }
-@media (min-width: 860px) { .foot-grid { grid-template-columns: 1.4fr repeat(3, 1fr); } .foot-brand { grid-column: auto; } }
-.foot-legal { display: grid; gap: 6px; margin-top: clamp(40px, 6vw, 64px); padding-top: 24px; border-top: 1px solid var(--line); font-size: .8125rem; line-height: 1.6; }
+@media (min-width: 640px) { .foot-grid { grid-template-columns: 1.4fr repeat(3, minmax(0, 1fr)); gap: 40px 24px; } .foot-brand { grid-column: auto; max-width: none; } }
+.foot-legal { display: grid; gap: 6px; margin-top: clamp(32px, 5vw, 64px); padding-top: 20px; border-top: 1px solid var(--line); font-size: .8125rem; line-height: 1.6; }
 .foot-legal p { margin: 0; max-width: 60rem; }
 
 /* inner pages */
