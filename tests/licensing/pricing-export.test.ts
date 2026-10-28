@@ -109,7 +109,7 @@ test("the export writes each block into the pages that fence it, is the same the
   const pricingPage = ["plans-json", "plan-cards", "plan-table", "plan-stack", "run-costs", "run-stack"].map(fence).join("");
   fs.mkdirSync(path.join(dir, "site", "pricing"), { recursive: true });
   fs.writeFileSync(path.join(dir, "site", "pricing", "index.html"), pricingPage, "utf8");
-  fs.writeFileSync(path.join(dir, "site", "index.html"), `<p>home</p>\n${fence("plan-teaser")}`, "utf8");
+  fs.writeFileSync(path.join(dir, "site", "index.html"), `<p>home</p>\n${fence("hero-price")}\n${fence("plan-teaser")}`, "utf8");
   const run = (...args: string[]) => spawnSync(process.execPath, [path.join(ROOT, "scripts", "export-pricing.mjs"), "--root", dir, ...args], { encoding: "utf8" });
   assert.equal(run("--check").status, 1, "a page that has not been written is out of date");
   const wrote = run();
