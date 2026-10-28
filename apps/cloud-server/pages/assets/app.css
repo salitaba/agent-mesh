@@ -150,7 +150,7 @@ code {
 }
 .muted { color: var(--k-muted); }
 .small { font-size: .875rem; }
-/* Figures line up: tabular numerals. */
+/* Figures line up. */
 td, th, dd, .price, .num, .badge, .auth-points li::before { font-variant-numeric: tabular-nums; }
 .stat dt, .figures dt, thead th, .toc-h {
   color: var(--k-muted);
@@ -643,7 +643,7 @@ body[data-page="home"] main { background: var(--k-glow) top / 100% 520px no-repe
 .row-head strong { font-size: 1.25rem; font-weight: 650; line-height: 1.3; letter-spacing: var(--k-track-tight); }
 .plan-line { margin: 0; color: var(--k-ink-2); }
 .facts-list { display: grid; gap: 4px; list-style: none; color: var(--k-ink-2); font-size: .9375rem; }
-/* A workspace: state, action, address. */
+/* A workspace. */
 .ws > div:empty, .ws > .ws-says:empty { display: none; }
 .ws .ws-says, .ws .ws-note { margin: 0; }
 .ws .ws-says { color: var(--k-ink-2); }
@@ -786,7 +786,7 @@ tfoot > tr > * { background: var(--k-surface-2); font-weight: 650; }
 .sk-card { height: 200px; margin-top: 40px; }
 .sk-plan { height: 360px; }
 
-/* ---- documents, and the missing page */
+/* ---- documents and 404 */
 .doc { display: grid; gap: 32px; padding-top: clamp(32px, 6vh, 64px); }
 .doc-end { margin-top: 48px; padding-top: 24px; border-top: 1px solid var(--k-line); }
 .doc-end p { margin-bottom: 12px; }
@@ -829,17 +829,18 @@ tfoot > tr > * { background: var(--k-surface-2); font-weight: 650; }
 
 /* ---- phones and fingers */
 @media (max-width: 720px) {
-  /* A phone's facts are ruled. */
-  .stat { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 10px; min-height: 44px; padding: 6px 0; }
+  /* A phone's facts are ruled: label, figure, note. */
+  .stat, .figures > div { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 10px; min-height: 44px; padding: 6px 0; border-top: 1px solid var(--k-line); }
   .stat-v, .stat-n { margin: 0 !important; }
   .sk-tiles { grid-template-columns: 1fr; }
   .sk-tiles .sk { height: 60px; }
-  .figures { grid-template-columns: 1fr 1fr; margin-bottom: 0; }
-  /* The balance is the record; the form is one named 44px row under it. */
+  .figures { display: block; margin: 0; padding: 0; }
+  .figures dd { margin: 0; font-size: min(1.375rem, 9vw); line-height: 1.15; }
+  .figures .of { display: flex; align-items: center; gap: 8px; margin: 0; line-height: 1.6; }
+  .figures .of meter { width: 44px; }
   .topup > summary { display: flex; align-items: center; justify-content: space-between; gap: 16px; min-height: 44px; margin-bottom: 8px; color: var(--k-accent-ink); font-weight: 600; cursor: pointer; list-style: none; }
   #topup-fail { margin-top: 20px; }
   #topup-add { display: none; }
-  .figures > div:first-child { grid-column: 1 / -1; }
   .subnav { gap: 2px; margin-top: 12px; padding: 0; }
   .subnav a { min-height: 44px; padding: 0 6px; }
   /* The steps are a row. */
@@ -849,12 +850,10 @@ tfoot > tr > * { background: var(--k-surface-2); font-weight: 650; }
   .check label a { display: inline-block; min-height: 44px; }
   /* A bar with too much text wraps. */
   .bar, .bar nav { flex-wrap: wrap; }
-  .figures > div { min-width: 0; }
-  .figures dd { font-size: min(1.375rem, 9vw); }
   /* Caption, then host and Copy. */
   .ws-address-l { flex: 1 0 100%; font-size: .75rem; }
   .ws .ws-address code { flex: 1 1 8rem; min-width: 0; }
-  /* A day is an entry on a phone. */
+  /* A day is an entry. */
   .table-wrap { overflow: visible; background: none; }
   .table-wrap table, .table-wrap tbody, .table-wrap tfoot { display: block; }
   .table-wrap thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }

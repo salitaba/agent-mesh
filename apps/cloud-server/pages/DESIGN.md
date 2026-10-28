@@ -1620,3 +1620,84 @@ positions are `getBoundingClientRect` plus `scrollY`; names are Chromium's acces
   four-day table was held by request interception on both halves; a real model key behind the gateway is still the
   first check for the bill's own arithmetic.
 - **The auth pages, the 19px prose links and the checkout stand-in are untouched.** They are the earlier entries.
+
+## 2026-10-28: the balance's three figures are ruled rows
+
+Same harness: Chromium through `playwright-core` over CDP, axe-core 4.14, 320 / 360 / 390 / 768 / 1440 in
+light and dark, forced colours at 360, the root raised to 32px at 360 and 320, `prefers-reduced-motion:
+reduce`, a touch pointer below 721. "Before" is the base commit's own `app.css`, served by a trial of
+`main` (`trial --port 7711`) and measured in the same browser session; this pass's pages are served by
+`trial --port 7850`, because 7721 is the before trial's gateway tenant port (`app + 10`) and was listening.
+Both sides hold the same fixture: a Team account with one running workspace named Research, with
+`/api/usage` held to one empty answer by request interception in both halves (the trial's 60-reads-an-hour
+limit had already turned the panel into its warning once). Heights are
+`document.documentElement.scrollHeight`; positions are `getBoundingClientRect` plus `scrollY`.
+
+- **The balance's three figures are the ruled rows the glance's three facts are.** On a phone the panel
+  drew its record as a two-row grid inside a card: 36px `Available` on a line of its own, then the
+  allowance and the added credit side by side under their captions, **241.8px** in all. Each figure is
+  now one entry of the same flex row the glance uses — label, figure and note on a line, a 1px rule
+  above each — and the entries are **80.8 / 120 / 120 → 54.4 / 60 / 44**: the figures block is
+  **241.8 → 159.4**, the panel **374.3 → 291.9** and the page **2,232 → 2,150** at 360, with Settings at
+  **y = 2,053 → 1,970.7**. At 320 the panel is **393.4 → 291.9** (page 2,539 → 2,438) and at 390
+  **353.5 → 291.9** (2,191 → 2,130). The row is the glance's own selector, not a copy of it: the phone
+  rule is `.stat, .figures > div`, so the two cannot drift.
+- **A figure's amount no longer sets the height of its row.** The 36px `Available` shares its line with
+  its label (54.4px), the allowance's entry is two lines — its label and `$10.00`, then the bar with
+  `left of $10.00 a month` (60px) — and the added credit is 44. The `line-height: 1.15` the glance's
+  figure already used is what makes the first row 54 rather than 70.
+- **Nothing above or below the panel moved.** `04 Balance` begins at **y = 1,638.8** before and after at
+  360, and the 44px `Add credit` row is at **1,940 → 1,857.7** with its 44px height and its form behind
+  it unchanged: opened, the panel is **563.4 → 481** at 360 and **605 → 503.4** at 320. At 768 and 1440
+  the wide layout is untouched — the panel **439.3 / 425.8**, the pages **2,065 / 2,046**, all the same
+  as before — because the glance and the balance already read as the same three ruled columns there;
+  it was only the phone whose glance had taken the row and whose balance had not.
+- **The states that are not the plain one.** With `/api/plans` answering 503 the panel's figures are
+  **199.3 → 143.4**, the panel **472.8 → 416.9** and the page **2,361 → 2,305**, with the 157px note and
+  its Try again where they were (768: 1,990 / 348.7 in both halves). At root 32px the figures are
+  **514.4 → 434.1** and the page **4,549 → 4,468** at 360 (**4,843 → 4,760** at 320), still 360 wide.
+- **Widths, schemes and the floor.** 320 / 360 / 390 / 768 / 1440 in light, 360 and 1440 in dark, forced
+  colours at 360: no sideways page scroll (320: 320; 360: 360; 390: 390; 768: 768; 1440: 1440), nothing
+  computes below **12px**, and the only control under 44 × 44 below 721 is the 41 × 44 `Plan` contents
+  link the record already names. **24 axe-core runs** (12 views × both halves, WCAG 2.0–2.2 A and AA, the
+  open panel and the 200% text included) find **no violation**, and there is no console error. Forced
+  colours draws the rows' rules and the bar; with scripts off the page is the same **800px** with the
+  same settings form in both halves, because the account's figures are drawn by the script, as before.
+- **The budget.** `app.css` is **40,947 → 40,940 bytes of 40,960** (a net **−7**). The four phone rules
+  that made the two-row grid — the 1fr 1fr columns, the full-width first figure, the min-width and the
+  `9vw` font size line — paid for the row shape and its four new declarations; the comment that
+  repeated the base's "the balance is the record" went, and three comments were shortened. Twenty bytes
+  remain.
+- **Tests.** `dist/tests/cloud/pages*.test.js` — **177 pass, 0 fail**; the two page-related build tests —
+  **11 pass, 0 fail**; typecheck and lint clean. `pages.test.ts` no longer pins `.figures > div
+  { min-width: 0 }` (the grid it protected is gone); it pins the amount's `min(1.375rem, 9vw)` cap, the
+  shared `.stat, .figures > div` row, the block figures and the inline `.of` instead.
+
+| measured at 360, light | before | after |
+| --- | --- | --- |
+| The three figures | 241.8px: 80.8, 120, 120 | **159.4px: 54.4, 60, 44** |
+| The Balance panel | 374.3px | **291.9px** |
+| The account page | 2,232px | **2,150px** |
+| Settings begins at | y = 2,053 | **y = 1,970.7** |
+| … at 320 / 390 | 393.4 / 353.5 panel, 2,539 / 2,191 page | **291.9 / 291.9**, **2,438 / 2,130** |
+| … at 768 / 1440 | 439.3 / 425.8 panel, 2,065 / 2,046 page | **439.3 / 425.8**, **2,065 / 2,046** |
+| The open panel, 360 / 320 | 563.4 / 605 | **481 / 503.4** |
+| A failed plans read, 360 | 199.3 figures, 472.8 panel, 2,361 page | **143.4 / 416.9 / 2,305** |
+| At 200% text, 360 / 320 | 514.4 / 508.6 figures, 4,549 / 4,843 page | **434.1 / 425.8**, **4,468 / 4,760** |
+| axe-core, 12 views | 0 | **0** |
+| `app.css` | 40,947 bytes | **40,940** |
+
+### What this pass leaves
+
+- **The allowance's entry is two lines.** `From your plan` (121px) and `$10.00` (66) leave 78px of a 286px
+  row at 360, and the bar with `left of $10.00 a month` is 186px, so they take the second line: the
+  entry is 60px against the 44 of its neighbours. A shorter note ("$10.00 left a month") would fit one
+  line and lose the "of what"; the sentence is the record's, not this pass's.
+- **The bar is 44px wide and does not grow at 200% text.** It is a picture of the allowance beside the
+  words that state it, and the words double while the bar does not; an `em`-based width (about 60px at
+  root 32) was not measured against the row.
+- **The row loses the caption's column.** At 768 and 1440 `Available` still sits above a 36px figure in
+  its own column; on a phone it is a small label at the start of the row, level with the amount's
+  baseline. That is the glance's shape, and the two are now one rule.
+- **The checkout stand-in, the dead reset link's recoveries and the prose-only inline links are
+  untouched.** They are the earlier entries.
