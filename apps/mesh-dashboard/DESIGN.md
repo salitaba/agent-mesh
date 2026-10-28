@@ -56,12 +56,15 @@ ring), not only how wide it is.
 
 Overview is the one deliberate variation: its brief is short because the mission
 hero directly under it is the page's real headline. The two are not peers: the
-page name is a signpost, the hero is the news. Below the mission's first cards
-and before the sections it indexes, it carries `JumpRow`, its own four-door
-index, because the page runs past 8,500 px on a phone; each button scrolls to
-the section **and focuses it**, and every `Panel`
-section is the anchor (`id` + `tabIndex={-1}`), so a keyboard user continues
-inside the section rather than back at the top.
+page name is a signpost, the hero is the news. Below the mission's first cards,
+on a wide screen, it carries `JumpRow`, its own four-door index, because the page
+runs to 1,751 px at 1440 and past 3,000 at 621–768; each button scrolls to the
+section **and focuses it**, and every `Panel` section is the anchor (`id` +
+`tabIndex={-1}`), so a keyboard user continues inside the section rather than back
+at the top. A phone draws no such row: below 621 the four sections are themselves
+one 44 px closed row each, immediately under the hero, naming the same four
+sections with their figures — so the row of buttons said the same four words
+twice (2026-10-28).
 
 The **path** the surface is organised around is "open the console" → "I am using
 my product": a delivered mission's loudest action is **Open the product**, Product
@@ -135,10 +138,13 @@ Breakpoints: **1280 1100 900 800 760 620 560**. 800 is the sidebar drawer (JS
 
 ## Open problems (carried forward)
 
-- The Overview is now **1,214 px** at 360 px with a delivered mission (was 4,132 today, 8,582 before the 2026-10-22 folding and shipped-card
-  work): the four evidence sections below the index are one ruled row each until opened. The open question is the default, not the length:
-  What shipped is closed like the other three, and a mission that has just delivered may deserve its six file rows open; measured, the
-  closed row is 53 px and the open panel 847, so the whole difference is one press or two screens.
+- The Overview is now **1,088 px** at 360 px with a delivered mission (1,223 on this pass's base build, 4,132 before the 2026-10-22 folding and
+  shipped-card work, 8,582 before that): the four evidence sections are one ruled row each until opened, and since 2026-10-28 those rows are
+  also the phone's index. The open question is the default, not the length: What shipped is closed like the other three, and a mission that
+  has just delivered may deserve its six file rows open; measured, the closed row is 53 px and the open panel 847, so the whole difference is
+  one press or two screens.
+- A phone's first screen is the whole hero (**746 px** at 360), so the four evidence rows start 76 px below the fold even after the index
+  went. Shortening the brief is a words-and-shape decision about the mission, not a layout one, and it is the next lever on this page.
 - Events and the approvals inbox still close without `NextLinks`, and that is now a decision rather than a pending question: Events ends on
   its window status (the newest 300 of 491 events) and the inbox on its empty state's Back to the Overview; a row of doors would repeat
   the navigation each page already has (`Pause`/`Filters`, `Decisions`/`Tool gates`) rather than continue it.
@@ -184,6 +190,65 @@ Breakpoints: **1280 1100 900 800 760 620 560**. 800 is the sidebar drawer (JS
 8. Check the frame's safe-area claims on a notched device in both orientations; the insets are in the CSS but the stand-in browser reports them as zero.
 
 ## Pass log
+
+### 2026-10-28 — a phone's Overview spends its words once, and every fold control says what it opens
+
+Surface: `views/Overview.tsx`, `views/Panel.tsx`, `views/overview.css`, and the rules in `tests/dashboard/overview-fold.test.ts` and `page-exits.test.ts`. Measured on the scripted demo at **Delivered** (9 files, 7 checks, about 480 events) in the production build, Chromium over CDP at
+320/360/390/620/621/768/1440 in light and at 360/1440 in dark, reduced motion, a touch pointer at 768 and below, axe-core on
+Overview and Steps at 360 and 1440 in both schemes. Before is the base build served from its own checkout on port 7460, after is
+this branch on 7461; both were read within the same minute, on the same delivered mission, twice, with identical numbers.
+
+- **A phone's Overview stopped naming its four sections twice.** At 360 the page spent **107.6 px** on an "On this page" row of four
+  44 px buttons starting at y = 827.8, and the same four names stood as headings 137 px below them (964.7 to 1,179.7). Below 621 the
+  row is not drawn: the page is **1,223 → 1,088 px**, the first evidence row **947.4 → 811.8**, and each of the four names appears
+  **2 → 1** times on the page. 320: 1,242 → 1,107. 390: 1,179 → 1,043. 620 (the fold's own break): 1,007 → 915, the index there
+  having been 63.6 px.
+- **The four rows are the index now, and every section is still reachable.** Each closed row names its section, gives its figure and
+  opens it in place: at 360, Tab from the hero reaches **What shipped: Show, Latest work: Show, Goal checks: Show, Just happened:
+  Show** — the first at y = 812, and **9 → 5 presses** from Replay to the last section's control, since the index's four buttons are
+  no longer walked first. Goal checks pressed opens **53 → 975 px** with the page 1,088 → 2,010 (before: 1,223 → 2,145). The four
+  `h3`s are still the page's heading outline; axe finds **0 violations** at 360 and 1440 in both schemes on Overview and Steps.
+- **Four controls reading "Show" now say what they open.** The fold control was named by its own text, so a screen reader heard
+  "Show, button, collapsed" four times in a row: **0 of 4** named. It now carries the section's name and the action — **4 of 4**
+  read `What shipped: Show`, `Goal checks: Hide` — while still drawing the word for voice control (`aria-expanded` and
+  `aria-controls` unchanged). The desk's Show/Hide is the same control and gains the same name.
+- **A desk keeps its index, and it still lands.** It earns its place where the sections are open: at 1440 the row is **36 px** at
+  y = 414.4, Just happened begins **1,307 px** down, and pressing Goal checks puts `#view` at scrollTop **913** with `#ov-goal` at
+  **64 px**, focus on the section — before and after. 621 (88 px) and 768 (44 px) are untouched because the sections are open
+  there, which is the same decision as the fold itself.
+- **Nothing else moved.** The hero is 746 px at 360 in both builds and still owns the first screen, so the rows begin 76 px below
+  the 736 px viewport — 135.6 px earlier than they did. 84 reads (14 views × 320/360/1440 × light and dark) have **no document or
+  `#view` horizontal scroll**, **0 console errors** (the single-mesh `/api/projects` 404 aside), the smallest text at 11 px (the
+  avatar glyph in the hero) and nothing off the ramp; no control is under 44 × 44 at 320/360 except the 34 × 20 checkbox inside its
+  44 px label on the approvals inbox and Tool gates, as before. Contrast and the type census are unchanged.
+
+Overview at a delivered mission, every width measured, `#view` content coordinates (`document` itself never scrolls):
+
+| Width, light | Page, before → after | "On this page" index, before → after | First evidence row, before → after |
+|---|---|---|---|
+| 320 | 1,242 → **1,107** | 107.6 → **0** | 966.4 → **830.8** |
+| 360 | 1,223 → **1,088** | 107.6 → **0** | 947.4 → **811.8** |
+| 390 | 1,179 → **1,043** | 107.6 → **0** | 902.5 → **766.9** |
+| 620 | 1,007 → **915** | 63.6 → **0** | 730.8 → **639.2** |
+| 621 | 3,166 → 3,166 | 88 → 88 | 770 → 770 |
+| 768 | 3,103 → 3,103 | 44 → 44 | 726 → 726 |
+| 1440 | 1,751 → 1,751 | 36 → 36 | 462.4 → 462.4 |
+
+360 and 1440 in dark read the same as their light columns. axe-core 4.14, tags `wcag2a wcag2aa wcag21a wcag21aa wcag22aa`:
+Overview 0 violations at 360 and 1440 in both schemes (25 and 29 rules passed, against 24 and 29 before — the phone's 360 page has
+one landmark fewer because the index landmark is gone), Steps 0 at the same four reads (27 and 30 passed, unchanged). Keyboard at
+360: Replay → the last section's control was **9 presses** and is **5**.
+
+Suite: typecheck, eslint on the two changed views (0 errors) and build clean; `dist/tests/dashboard` **1,178 pass, 0 fail** — two
+rules in `overview-fold` and one in `page-exits` rewritten to the shape this entry describes, plus a new rule for the control's
+name; the build and primitive tests (`console-*`, `icons`, `type-ramp`, `css-vars`, `forced-colors`, `primitives-a11y`) **35 pass**.
+
+**Left.** The first screen at 360 is still the whole hero (746 px; the rows start 76 px below the fold), and shortening it is a
+words-and-shape decision about the mission brief, not an index one. A closed row's title is not itself pressable — only its 56 × 44
+Show control is, and a whole-row hit area needs a different row shape (a button that covers the head loses either the `h3` or the
+pill's own hover and ring), so it was not taken here. At 621 the index is still two rows (88 px) because the caption and four
+buttons do not fit 597 px: the same tablet question the last pass left. Whether a phone remembers which rows were open is still
+open — the page resets closed on every visit.
 
 ### 2026-10-26 — the Steps ledger gives the phone its screen, and a failed registry says so
 

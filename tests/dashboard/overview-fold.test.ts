@@ -1,8 +1,10 @@
 /**
  * The Overview is a briefing, not a scroll. On a delivered mission at 360 px it stood 4,132 px tall: six file rows, five turns,
  * seven checks and the whole folded event feed were between the hero and the end, and the page's own index (four buttons) was
- * still 883 px down. This pass makes every section below the index one 44 px row until it is opened, and the index opens the one
- * it names. The browser that measured it is not in this suite, so the shape is pinned in the sources.
+ * still 883 px down. This pass makes every section below the hero one 44 px row until it is opened. From 2026-10-28 those rows are
+ * the phone's index too: the button row above them said the same four names 120 px before they were read again, so a phone draws
+ * no jump row, and each closed row is a door across its whole width. The browser that measured it is not in this suite, so the
+ * shape is pinned in the sources.
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -35,7 +37,7 @@ test("a phone folds the four evidence sections to one row each, and a wide scree
 test("the closed head says what is inside and how to open it; the body is hidden, not merely tucked away", () => {
   assert.match(panel, /const closed = fold !== undefined && !fold\.open;/, "one answer decides the head and the body");
   assert.match(panel, /<span className="card-meta card-fold-sum">\{fold\.summary\}<\/span>/, "a closed section carries its one figure");
-  assert.match(panel, /<Button variant="small" aria-expanded=\{fold\.open\} aria-controls=\{bodyId\} onClick=\{fold\.onToggle\}>/, "the control says whether it is open and what it opens");
+  assert.match(panel, /<Button variant="small" aria-expanded=\{fold\.open\} aria-controls=\{bodyId\} aria-label=\{named\} onClick=\{fold\.onToggle\}>/, "the control says whether it is open, what it opens and which section it belongs to");
   assert.match(panel, /\{fold\.open \? "Hide" : "Show"\}/, "and names what pressing it does");
   assert.match(panel, /<div id=\{bodyId\} hidden=\{!fold\.open\}>\{children\}<\/div>/, "the closed body is hidden from the page and from a screen reader");
   assert.match(panel, /\$\{closed \? " closed" : ""\}/, "the section names its closed state");
@@ -44,9 +46,19 @@ test("the closed head says what is inside and how to open it; the body is hidden
   assert.match(css, /\.ov \.card\.closed \.card-head \{[^}]*flex-wrap: nowrap;[^}]*padding: 0;[^}]*border: 0;/, "and its head spends no room on a rule with no body under it");
 });
 
-test("the index opens the section it names, and lands on it", () => {
-  assert.match(overview, /<JumpRow delivered=\{delivered\} onOpen=\{openSection\} \/>/, "the row is given the opener");
-  assert.match(overview, /const openSection = \(id: string\): void => \{\s*setOpenSections\(\(cur\) => \(cur\.has\(id\) \? cur : new Set\(cur\)\.add\(id\)\)\);\s*setPendingJump\(id\);/, "a jump opens before it lands");
+test("the index is the wide screen's; on a phone the four rows are the index", () => {
+  assert.match(overview, /\{phone \? null : <JumpRow delivered=\{delivered\} onOpen=\{jumpTo\} \/>\}/, "the row is drawn where the sections are open, and not where they are one row each");
+  assert.match(overview, /const phone = useMedia\(PHONE\);/, "the same answer the fold uses");
+  assert.doesNotMatch(css, /@media \(max-width: 620px\) \{\s*\.ov-jump/, "and no phone rule is left for a row a phone never draws");
+});
+
+test("a jump lands on the section it names", () => {
+  assert.match(overview, /const jumpTo = \(id: string\): void => setPendingJump\(id\);/, "a wide jump is a landing, not an open: the sections are already open there");
   assert.match(overview, /const \[pendingJump, setPendingJump\] = useState<string \| null>\(null\);/, "the landing is a commit later, not the same tick");
   assert.match(overview, /el\.focus\(\{ preventScroll: true \}\);\s*const still = window\.matchMedia\("\(prefers-reduced-motion: reduce\)"\)\.matches;\s*el\.scrollIntoView\(\{ block: "start", behavior: still \? "auto" : "smooth" \}\);/, "the effect takes the focus and asks the motion preference");
+});
+
+test("each closed row's control is named by the section it opens", () => {
+  assert.match(panel, /const named = typeof title === "string" \? `\$\{title\}: \$\{fold\?\.open \? "Hide" : "Show"\}` : undefined;/, "the name is the section's, then what the press does");
+  assert.match(panel, /aria-label=\{named\}/, "four controls reading Show alone say nothing about what they open");
 });

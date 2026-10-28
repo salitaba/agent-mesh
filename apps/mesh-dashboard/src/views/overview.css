@@ -278,10 +278,8 @@ details.ov-note { display: block; }
   .ck.done { forced-color-adjust: none; background: Highlight; color: HighlightText; }
 }
 
-/* The Overview's own index, under the attention list and above the long tail. A row of quiet doors, not a toolbar. */
+/* The Overview's own index, under the attention list and above the long tail. A row of quiet doors, not a toolbar. It is drawn
+   above the phone's break only: below it the four closed rows directly under this spot carry the same four names, so the index
+   would say them twice within 250 px (2026-10-28, DESIGN.md). */
 .ov-jump { display: flex; flex-wrap: wrap; align-items: center; gap: 0 var(--s2); margin-top: var(--s4); }
 .ov-jump-h { margin-right: var(--s1); }
-@media (max-width: 620px) {
-  .ov-jump { gap: 0 var(--s1); }
-  .ov-jump-h { flex: 1 0 100%; margin: 0 0 var(--s1); }
-}

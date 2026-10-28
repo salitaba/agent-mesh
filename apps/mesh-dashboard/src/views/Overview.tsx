@@ -37,13 +37,13 @@ const PHONE = "(max-width: 620px)";
 const FIX_VIEW: Record<FixTarget, View> = { inbox: "escalations", tools: "gates", designer: "designer", hostsettings: "hostsettings" };
 
 /**
- * The page's own table of contents. On a phone the Overview measured 8,395 px tall — a delivered mission with a dozen checks
- * and files — and the three sections after the hero sat several screens down with nothing at the top saying so. One row, one
- * press each, and the target takes focus as well as the scroll so a keyboard user continues inside the section.
+ * The page's own table of contents — the wide screen's, where the four sections are open and 450 to 930 px apart: at 1440
+ * Just happened begins 1,307 px down. One row, one press each, and the target takes focus as well as the scroll so a keyboard
+ * user continues inside the section.
  *
- * On a phone the sections are one row each until opened, so the index also opens the one it names: a jump that landed on a
- * closed heading would hide the thing it promised. The scroll waits for that open (`Overview`'s pendingJump effect): a target
- * 478 px from the bottom of the folded page cannot be scrolled to the top until its own body has given the page its height.
+ * A phone does not draw it. There the sections are one 53 px row each, immediately below the hero, each carrying the same name
+ * and its one figure, so an index above them said the same four words a second time 137 px before they were read again (see the
+ * 2026-10-28 entry in DESIGN.md). Those rows are the index there, and each carries the Show control that opens it.
  */
 function JumpRow({ delivered, onOpen }: { delivered: boolean; onOpen: (id: string) => void }): React.JSX.Element {
   return (
@@ -81,7 +81,8 @@ export default function Overview(): React.JSX.Element {
   const [stepsTick, setStepsTick] = useState(0);
   // On a phone the evidence below the hero is one row a section until it is opened: at 360 a delivered mission was 4,132 px, and
   // the reader had to scroll through six file rows, five turns, seven checks and thirteen events to learn the page had four parts.
-  // The index opens the section it names; the state lives here so a press on either one agrees with the other.
+  // Those four rows are also the phone's index, so the page draws no separate one there; the state lives here so the rows and
+  // anything else that opens a section agree with each other.
   const phone = useMedia(PHONE);
   const [openSections, setOpenSections] = useState<ReadonlySet<string>>(() => new Set<string>());
   const [pendingJump, setPendingJump] = useState<string | null>(null);
@@ -91,15 +92,12 @@ export default function Overview(): React.JSX.Element {
     else next.add(id);
     return next;
   });
-  const openSection = (id: string): void => {
-    setOpenSections((cur) => (cur.has(id) ? cur : new Set(cur).add(id)));
-    setPendingJump(id);
-  };
+  const jumpTo = (id: string): void => setPendingJump(id);
   const foldOf = (id: string, summary: React.ReactNode): Fold | undefined =>
     phone ? { open: openSections.has(id), onToggle: () => toggleSection(id), summary } : undefined;
-  // The index opens a section and then lands on it: the effect runs after the body's height is in the DOM, which is the one moment
-  // `scrollIntoView` can put a section at the top of a page that was 1,214 px tall when the press happened and is 2,059 now.
-  // `behavior: "smooth"` is the one animation on this page, so it asks the motion preference rather than assuming it.
+  // The wide index lands on a section that is already open: the effect runs after the commit, so the scroll is computed against
+  // the page the press made, not the one it left. `behavior: "smooth"` is the one animation on this page, so it asks the motion
+  // preference rather than assuming it.
   useEffect(() => {
     if (!pendingJump) return;
     const el = document.getElementById(pendingJump);
@@ -360,7 +358,8 @@ export default function Overview(): React.JSX.Element {
         run={run}
       />
       <AttentionList items={attention} onFix={fix} />
-      <JumpRow delivered={delivered} onOpen={openSection} />
+      {/* The wide screen's index only: a phone's four closed rows, directly under this, say the same four names and open in place. */}
+      {phone ? null : <JumpRow delivered={delivered} onOpen={jumpTo} />}
       {delivered ? <Shipped arts={goalArts} state={artsState} fold={foldOf("ov-shipped", artsFold)} onRetry={() => setAttempt((n) => n + 1)} openArt={openArt} onOpenFiles={() => setView("artifacts")} /> : null}
       {/* Renders nothing unless a collaboration is actually open, and owns its own hooks so this component's hook count does not move. */}
       <CollabCard />
