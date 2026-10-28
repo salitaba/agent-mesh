@@ -511,6 +511,15 @@ main:has(.hero) .section-head .eyebrow::before { counter-increment: sec; content
 .page-head { padding: clamp(32px, 5vw, 64px) 0 clamp(28px, 4vw, 40px); border-bottom: 1px solid var(--line); }
 .page-head h1, .nf h1 { max-width: 18ch; font-size: clamp(2.25rem, 1.2rem + 4.4vw, 3.75rem); }
 .page-head .lede { margin-top: 24px; }
+/* The figures at the head of the page that sells them. The pricing page's first `$` was 943.4px down at 360, 990.9 at
+   320, 881.9 at 390, 810.8 at 768 and 941.2 at 1440: below the first screen at every width, on the page whose job is the
+   price. This is the hero's ruled line of figures (`renderHeroPrice`) at the head of the pricing page, written from the
+   plan table, and it names the billing period the switch below chooses: both sentences are in the markup and the
+   stylesheet shows the one the checked radio names, so it is right with no script and cannot disagree with the cards. */
+.page-head .head-price { max-width: 40rem; margin-top: 20px; padding-top: 12px; border-top: 1px solid var(--line); color: var(--ink2); font-size: .875rem; line-height: 1.62; }
+.head-price-monthly { display: none; }
+body:has(#billing-monthly:checked) .head-price-annual { display: none; }
+body:has(#billing-monthly:checked) .head-price-monthly { display: inline; }
 /* the hero's ruled paper, fainter and anchored to the heading, so an inner page starts on the ground the home page does */
 .page-head { position: relative; isolation: isolate; }
 .page-head::before { content: ""; position: absolute; top: calc(-1 * var(--head-h)); left: 0; right: 0; height: 420px; z-index: -1; pointer-events: none; opacity: .5; background: var(--k-rule); mask-image: radial-gradient(60% 85% at 22% 38%, black 8%, transparent); }
@@ -882,6 +891,8 @@ main:has(.hero) .section-head .eyebrow::before { counter-increment: sec; content
   .btn { background: none !important; border-color: #000 !important; color: #000 !important; }
   /* A printed plan has no switch to choose a period with, so it shows both prices. */
   .plans .price-annual, .plans .price-monthly { display: block !important; }
+  /* The same for the figures at the head: two labelled lines, since the switch is not printed. */
+  .head-price-annual, .head-price-monthly { display: block !important; }
   /* A printed page has no swipe: the rows and the table are laid out, not scrolled. */
   .tiles, .plans { display: grid; grid-template-columns: var(--c2); grid-auto-flow: row; gap: 16px; margin-inline: 0; padding: 0; overflow: visible; }
   .table-wrap { overflow: visible; }

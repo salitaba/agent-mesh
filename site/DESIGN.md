@@ -1339,3 +1339,94 @@ art it is cut from — so the figures are the thing a thumb can use and the pict
 - **A 720px capture of the hero would still read better than 326 × 204.** The console is being redesigned in parallel, so
   the captures were not retaken, and no CSS crop makes 1,440px of art legible in 326.
 - `site/ux/` was not edited.
+
+## 2026-10-28: the price at the head of the page that sells it
+
+Measured with the same probe (Chrome over CDP, reduced motion, light unless said, touch at 320/360/390, a mouse at 768 and
+1,440, print at 794, forced colours at 360, a 24px root at 320/360 and 720 for the 200% stand-in). The before column is the
+site at the commit this pass started from, served on a second port and measured in the same run; no number is copied from
+an earlier pass.
+
+### What changed
+
+- **The pricing page's four figures stand at its head.** The page's first `$` was at **943.4** at 360, **990.9** at 320, 881.9
+  at 390, 810.8 at 768 and 941.2 at 1,440: below the first screen at every width, on the one page whose whole job is to state
+  a price. The head now carries the hero's ruled line of figures (`head-price`, written by `scripts/export-pricing.mjs` from
+  `packages/licensing/src/plans.ts`, like the home page's `hero-price`): *The licence plans, billed annually: Community is
+  free; Team is $124 a month; Business is $499 a month; Enterprise is quoted.* It is **476.1–557.1** at 360, under the lede
+  and above the On this page row, and the first `$` is at **512.7**.
+- **The line names the period the switch below chooses, and the stylesheet is what chooses it.** Two sentences are in the
+  markup and `body:has(#billing-monthly:checked)` shows the one the checked radio names — the same plain-CSS pattern as the
+  plan cards and the phone's comparison stack. With Monthly chosen the head says *billed monthly: Team is $149 a month;
+  Business is $599 a month* and the card beside it says $149: the two cannot disagree, and neither needs the script. Print
+  has no switch, so both sentences print as two labelled lines.
+- **The six other pages already kept the rule, and were measured rather than changed.** At 360 the answer each page exists
+  for is at **522.8** on the home page (the price line), **600.7** on the documentation page (its first start card), **611.0**
+  on the security page (its first answer), **578.9** on the contact page (its first address), **524.0** on the legal page (the
+  licence's own head) and **341.6** on the 404 (the way home). The pricing page was the one page whose answer a reader had to
+  scroll for; it now reads with them. This is the job the last four passes left: "the pricing page's first amount is still at
+  y=950 at 360", recorded as the next pass's first job.
+
+### Measurements after this pass
+
+| Page, height at 320 / 360 / 390 / 768 / 1440 | Before | After |
+|---|---|---|
+| Home | 14,109 / 13,288 / 12,770 / 12,992 / 12,209 | unchanged |
+| Pricing | 14,444 / 13,485 / 12,927 / 10,766 / 9,142 | **14,568 / 13,586 / 13,028 / 10,844 / 9,220** |
+| Documentation | 9,035 / 8,402 / 8,202 / 5,646 / 4,446 | unchanged |
+| Security | 12,233 / 11,082 / 10,577 / 8,206 / 7,450 | unchanged |
+| Contact | 4,749 / 4,459 / 4,334 / 3,883 / 2,836 | unchanged |
+| Legal | 5,559 / 5,008 / 4,777 / 3,887 / 3,266 | unchanged |
+| 404 | 2,419 / 2,300 / 2,277 / 1,915 / 1,524 | unchanged |
+
+| The first `$` on the pricing page at | Before | After |
+|---|---|---|
+| 320 | 990.9 (103.7px under the screen) | **537.8** |
+| 360 | 943.4 (143.4 under) | **512.7** |
+| 390 | 881.9 (81.9 under) | **451.2** |
+| 768 | 810.8 (10.8 under) | **424.9** |
+| 1,440 | 941.2 (41.2 under an 800px screen) | **472.6** |
+
+| Pricing at 360 | Before | After |
+|---|---|---|
+| The page | 13,485 | **13,586** |
+| The On this page row | 476.1 | **577.1** |
+| The plans' own head | 604.3 | **705.3** |
+| The Annual/Monthly switch | 727.3 | **828.3** |
+| The first plan card | 801.3 | **902.3** |
+| The first plan amount | 950.4 | **1,051.4** |
+
+- The line costs the pricing page **101px at 360 and 390, 124 at 320 and 78 at 768 and 1,440**; with Monthly chosen the page
+  is **13,523** at 360, 63px shorter than annual, because the monthly per-line is a line shorter. The switch and the cards
+  move down by exactly the line's height; nothing else on the page moves, and no other page changes height.
+- No page scrolls sideways at 320, 360, 390, 768 or 1,440 in light or dark (**0** on all 70 page/width/theme pairs), the
+  probe reports **0** console errors, **0** axe-core WCAG 2.1 AA violations on the pricing page at 360 light and 1,440 dark,
+  and the smallest computed text is **12px** on every page. The line is **.875rem/1.62** in `--ink2`, the hero's own rule,
+  and the head is 81px tall at 360 (64.3 of words), 58.3 at 1,440 (41.7), 103.7 at 320.
+- Without a script the line is the annual one and the page is **12,446** at 360 (**8,760** at 1,440), 0px over. With
+  `forcedColors: active` at 360 it is 13,586, 0px over, and the smallest text is 12px. At a 24px root the head is 183.1px
+  and the pricing page **21,823** at 360 and **24,104** at 320, 0px over; at 720 (the 200% stand-in) it is 11,008, 0px over.
+  Print at 794 is **10,062 → 10,186** with both periods printed, 0px over.
+- The only target under 44 × 44 at 320–768 is the same 24 × 24 checkbox whose label is 44; the line holds no control, so it
+  adds none.
+- `tests/build/site-copy.test.ts` pins the block: fenced by the exporter, before the On this page row and under the lede,
+  every plan named with both its monthly and its annual figure, the two period sentences, the two `:has` rules that swap
+  them, and the print rule that shows both. `site.test.ts` is unchanged. `tests/licensing/pricing-export.test.ts`'s write
+  test now fences the two blocks the exporter requires — `hero-price` was already required by the last pass and missing
+  from that fixture, so the test was failing on `main` before this pass — and it asserts the head block is written.
+
+### What this pass deliberately left
+
+- **The first plan card is 102px lower at 360** (801.3 → 902.3), because the line stands above the section rather than
+  replacing any of it. The answer is on the first screen; the card's detail is one scroll below, where it was.
+- **The line repeats the four figures the cards state 400px below.** That is the price of a first screen that answers: the
+  home page's hero does the same with its teaser, and the two are written from the same table.
+- **The home page's line is still the monthly list price** ($149/$599, unlabelled) while the pricing page opens on the
+  annual one ($124/$499, labelled), because the pricing page's switch opens on Annual. Both are true offers and each is
+  labelled where the period matters; making the home's line say "billed monthly" would add a phrase to the busiest line on
+  the page without changing a figure.
+- **The pricing page's cards still repeat the host scope sentence four times and the roadmap sentence twice**, and the
+  comparison still stacks below 720. Neither is the opening, and both are the exporter's.
+- **The documentation row still cuts its third chip at 360**, the security page's At a glance box is still 930px, and the
+  footer is still 1,012px at 360 on every page. None of these changed.
+- **No capture was retaken**, and `site/ux/` was not edited.
