@@ -2197,7 +2197,8 @@
           values.map((v, i) => {
             if (i === 0) return el("th", { scope: "row" }, v);
             const bar = row && busiest > 0 && i === 1 ? el("meter", { min: 0, max: busiest, value: row.chargedMicros, "aria-hidden": "true" }) : null;
-            return el(tag, { class: "num" }, bar ? el("span", { class: "bar-cell" }, bar, v) : v);
+            // On a phone the header row is not drawn, so the cell carries its column's first word as its own label.
+            return el(tag, { class: "num", "data-h": head[i].split(" ")[0] }, bar ? el("span", { class: "bar-cell" }, bar, v) : v);
           }),
         );
       // A table that can scroll sideways on a narrow screen must be reachable by keyboard, and say what it is.

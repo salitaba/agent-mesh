@@ -1389,3 +1389,71 @@ running workspace, the same plan with no workspace yet, and a fresh account with
   the workspaces entry. The Usage panel remains the place the bill is itemised.
 - **Nothing was added for the checkout stand-in, the dead reset link (closed 2026-10-26), the usage read's rate
   limit, or the prose-only inline links.** They are the previous entries, unchanged and still true.
+
+## 2026-10-28: the bill a phone can read
+
+Same harness: Chromium through `playwright-core`, 320 / 360 / 390 / 768 / 1440, light and dark, forced colours at
+360, the root raised to 32px at 360, `prefers-reduced-motion: reduce`, a touch pointer below 721. "Before" is the
+base commit's own `app.css` served by the same trial (`trial --port 7631`) and measured again today, not a figure
+copied from an earlier record. The fixture is the same on both sides: a Team account, one running workspace, and a
+four-day usage answer held by request interception (the trial's own usage is empty). Heights are
+`document.documentElement.scrollHeight`; positions are `getBoundingClientRect` plus `scrollY`.
+
+- **The usage tables are read, not scrolled, on a phone.** Below 721px the by-day table was **722px of content in
+  a 326px box**: `Day` at x = 17 and `Charged` at 131–295 were inside, `Calls` began at **311** and the two token
+  columns at 463 and 595, so four of the six columns — the calls, the failures and what the tokens were — could
+  only be reached by a sideways swipe, and the sticky first cell kept the day beside them but not their meaning.
+  Each row is now an entry: the day on the first line, `Charged $2.74` beside it, then `Calls 34  Failed 1
+  Input 184,000  Output 12,600` on the second. The wrap's scroll width is **326 = its client width** at 360
+  (**286** at 320, **356** at 390), and all six facts are on the card. The by-workspace table is the same story
+  (**693 → 326**).
+- **The date and its charge line up down the table.** The day's cell takes a fixed **7rem** so the money begins at
+  **x = 139** on every row — the body rows and the total — instead of at the end of each date's own width.
+- **The header row is the labels, drawn in the cells.** On a phone the `thead` is not drawn; each figure cell
+  carries its column's first word in generated content. The word is drawn and spoken — not the empty-alternative
+  form the section numbers use — because on a phone it is the only label the cell has. The wide table keeps its header
+  row and its sticky first cell unchanged; the labels are an attribute on the cells, so no test that reads the
+  table's text moves.
+- **The cards stop being cards under the entries.** The table wrap's fill, the day cell's sticky white background
+  and the total row's fill are off below 721, so the rows are ruled entries on the page's paper, with the section's
+  own caption above them.
+- **Widths, schemes and the floor.** 320 / 360 / 390 / 768 / 1440 in light with the four-day answer: no sideways
+  page scroll (320: 320; 360: 360; 390: 390; 768: 768; 1440: 1440), and the tables no longer scroll at all below
+  721. At 360 in dark and in forced colours the entries are legible and the rules are the system's. At 200% text
+  (root 32px) the row becomes four lines — the day, the charge and calls, then the failures and the tokens — and
+  the page is still 360 wide. The account with no calls is unchanged at **2,527** at 360: the empty state has no
+  table to lay out. Axe-core over 320, 360 and 768 with the four-day answer finds **no violation** (0).
+- **The cost is height, and it is small.** The by-day table is **327 → 369px** at 360 (five rows), the account
+  **2,914 → 2,939** with the four-day answer (**3,154 → 3,200** at 320, **2,893 → 2,918** at 390), and 768 and
+  1440 are unchanged at **2,452 / 2,432** because the table there is the table it was. A 14-day answer would be
+  about 500px taller on a phone than the sideways table; the reader gets every figure for it.
+- **The budget.** `app.css` is **40,929 bytes of 40,960** (was 40,906, a net **+23**): the phone rules cost about
+  850 bytes and the two scrolling surface fades on the table wrap (now only an edge shadow at 721–1000) plus
+  shortened comments paid for most of it. Thirty-one bytes remain.
+
+| measured at 360, light | before | after |
+| --- | --- | --- |
+| The by-day table, box / content | 326 / **722** | 326 / **326** |
+| Columns readable without a swipe | Day, Charged | **all six** |
+| `Calls` begins at | x = 311 (past the 326 box) | **x = 262**, inside it |
+| The by-workspace table | 326 / 693 | **326 / 326** |
+| The by-day table's height | 327px | **369px** |
+| The account with four days | 2,914px | **2,939px** |
+| … at 320 / 390 | 3,154 / 2,893 | **3,200 / 2,918** |
+| … at 768 / 1440 | 2,452 / 2,432 | **2,452 / 2,432** |
+| axe-core (320, 360, 768) | 0 | **0** |
+| `app.css` | 40,906 bytes | **40,929** |
+
+### What this pass leaves
+
+- **A phone pays about 8px a row for the labels.** A day is 68px against the 48px of a table row; a fortnight of
+  calls is about half a screen more scroll than the sideways table. It is the price of not hiding four columns.
+- **The edge cue at 721–767 is a shadow, not a fade.** The wrap's two `local` surface fades went to pay for the
+  phone rules; the fixed 10px edge shadow and the thin scrollbar remain. At 768 the by-day table still needs 17px
+  of scroll for its last column, as it did before.
+- **The date is fixed at 7rem.** A longer day label than this fixture's ("Oct 27, 2026") wraps inside its 112px
+  column rather than pushing the charge off its line; the by-workspace table's "A deleted workspace" takes two
+  lines for the same reason.
+- **The first screen is still 494px of summary.** The card, the three facts and the contents line have not moved;
+  making the page answer "what am I paying for and what am I using" any sooner means changing those, not the bill.
+  The Workspaces heading still begins at y = 735, at the foot of an 800px screen.
