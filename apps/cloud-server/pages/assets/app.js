@@ -1239,7 +1239,7 @@
     }
 
     /** What is in the page's list of sections: the ones the account has. A list of two is for a page that is short. */
-    const SECTIONS = ["workspaces-panel", "plan-panel", "balance-panel", "usage-panel", "settings-panel"];
+    const SECTIONS = ["workspaces-panel", "plan-panel", "usage-panel", "balance-panel", "settings-panel"];
     const inBand = new Set();
     let spy = null;
 

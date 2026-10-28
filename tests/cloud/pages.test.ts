@@ -468,7 +468,7 @@ test("a long table keeps the name of its row at the edge while its figures scrol
   assert.match(declared(numbered!, "content") ?? "", /^attr\(data-entry\) \/ ""$/, "the number is drawn, and not said: the heading's name stays the word");
   const account = pages().find((p) => p.name === "account")!;
   const entries = account.all.filter((n) => n.tag === "h2" && n.attrs.has("data-entry")).map((n) => [attr(n, "data-entry"), n.textContent]);
-  assert.deepEqual(entries, [["01", "Workspaces"], ["02", "Plan"], ["03", "Balance"], ["04", "Usage"], ["05", "Settings"]]);
+  assert.deepEqual(entries, [["01", "Workspaces"], ["02", "Plan"], ["03", "Usage"], ["04", "Balance"], ["05", "Settings"]]);
 });
 
 test("the stylesheet is held to its budget, and whatever it moves it stills for a person who asked for stillness", () => {

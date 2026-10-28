@@ -826,17 +826,16 @@ tfoot > tr > * { background: var(--k-surface-2); font-weight: 650; }
 
 /* ---- phones and fingers */
 @media (max-width: 720px) {
-  /* A phone stacks the facts; a wide page sets columns. */
-  .stat { display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "l v" "n v"; align-items: center; }
-  .stat dt { grid-area: l; }
-  .stat-v { grid-area: v; justify-content: flex-end; margin: 0 !important; }
-  .stat-n { grid-area: n; }
+  /* A phone reads the three facts as three ruled lines. */
+  .stat { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 10px; min-height: 44px; padding: 6px 0; }
+  .stat-v, .stat-n { margin: 0 !important; }
   .sk-tiles { grid-template-columns: 1fr; }
   .sk-tiles .sk { height: 60px; }
   .figures { grid-template-columns: 1fr 1fr; }
   .figures > div:first-child { grid-column: 1 / -1; }
-  .subnav a { min-height: 44px; }
-  /* The steps are a row: the rule needs 30px a phone has not got. */
+  .subnav { gap: 2px; margin-top: 12px; padding: 0; }
+  .subnav a { min-height: 44px; padding: 0 6px; }
+  /* The steps are a row: the rule needs 30px. */
   .steps { column-gap: 12px; }
   .steps li::after { display: none; }
   .check label { line-height: 44px; }
@@ -851,14 +850,14 @@ tfoot > tr > * { background: var(--k-surface-2); font-weight: 650; }
   /* A day is an entry on a phone. */
   .table-wrap { overflow: visible; background: none; }
   .table-wrap table, .table-wrap tbody, .table-wrap tfoot { display: block; }
-  .table-wrap thead { display: none; }
+  .table-wrap thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
   .table-wrap tr { display: flex; flex-wrap: wrap; gap: 2px 10px; padding: 10px 0; border-top: 1px solid var(--k-line); }
   .table-wrap caption, .table-wrap th, .table-wrap td { display: block; height: auto; padding: 0; border: 0; white-space: normal; background: none; }
   .table-wrap tr > :first-child { flex: 0 0 7rem; }
   .table-wrap tbody th { background: none; }
   .table-wrap td { font-size: .75rem; }
   .table-wrap td:nth-child(2) { color: var(--k-ink); font-size: 1rem; font-weight: 650; }
-  .table-wrap td::before { content: attr(data-h) " "; }
+  .table-wrap td::before { content: attr(data-h) / ""; }
   .table-wrap .bar-cell { display: inline; }
   .table-wrap meter { display: none; }
   .table-wrap caption { padding-bottom: 8px; }

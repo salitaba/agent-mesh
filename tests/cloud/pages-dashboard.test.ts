@@ -78,7 +78,7 @@ test("the list of sections names the ones the account has and not the others, an
   assert.equal(paidOnly.shows(paidOnly.$("subnav")), true);
 
   const using = await visit("account", { routes: world((x) => { paid(x); x.workspaces = [workspace()]; }).routes });
-  assert.deepEqual(links(using), ["Workspaces", "Plan", "Balance", "Usage", "Settings"]);
+  assert.deepEqual(links(using), ["Workspaces", "Plan", "Usage", "Balance", "Settings"]);
   assert.equal(using.$("subnav").getAttribute("aria-label"), "On this page");
   for (const a of using.$("subnav").querySelectorAll("a")) assert.ok(using.doc.getElementById(a.getAttribute("href")!.slice(1)), `${a.getAttribute("href")} is a section of the page`);
 
@@ -87,7 +87,7 @@ test("the list of sections names the ones the account has and not the others, an
 });
 
 test("the list marks the section a reader is in: the last of those in the band they read in, and the last of all at the foot of the page", async () => {
-  const order = ["workspaces-panel", "plan-panel", "balance-panel", "usage-panel", "settings-panel"];
+  const order = ["workspaces-panel", "plan-panel", "usage-panel", "balance-panel", "settings-panel"];
   assert.equal(h.pickSection(order, new Set(), false), "", "above the first section none is marked");
   assert.equal(h.pickSection(order, new Set(["plan-panel"]), false), "plan-panel");
   assert.equal(h.pickSection(order, new Set(["workspaces-panel", "plan-panel"]), false), "plan-panel", "when two share the band, the one whose top has come in is the one");
@@ -95,7 +95,7 @@ test("the list marks the section a reader is in: the last of those in the band t
   assert.equal(h.pickSection([], new Set(), true), "");
 
   const v = await visit("account", { routes: world((x) => { paid(x); x.workspaces = [workspace()]; }).routes, observer: true });
-  assert.deepEqual(v.watching.targets.map((n) => n.id), ["workspaces-panel", "plan-panel", "balance-panel", "usage-panel", "settings-panel"], "the page's own sections are what is watched");
+  assert.deepEqual(v.watching.targets.map((n) => n.id), ["workspaces-panel", "plan-panel", "usage-panel", "balance-panel", "settings-panel"], "the page's own sections are what is watched");
   const current = () => v.$("subnav").querySelectorAll("a").filter((a) => a.getAttribute("aria-current") !== null).map((a) => `${v.text(a)}=${a.getAttribute("aria-current")}`);
   assert.deepEqual(current(), [], "at the top nothing is marked");
   v.intersect(["plan-panel"]);

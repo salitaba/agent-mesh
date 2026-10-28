@@ -1457,3 +1457,80 @@ four-day usage answer held by request interception (the trial's own usage is emp
 - **The first screen is still 494px of summary.** The card, the three facts and the contents line have not moved;
   making the page answer "what am I paying for and what am I using" any sooner means changing those, not the bill.
   The Workspaces heading still begins at y = 735, at the foot of an 800px screen.
+
+## 2026-10-28: the first screen, and the bill before the form
+
+Same harness: Chromium through `playwright-core` against the base commit's pages served by `trial --port 7601` and
+this pass's pages by `trial --port 7631`, on the same fixture (a Team account with one running workspace), 320 /
+360 / 390 / 768 / 1440, light and dark, forced colours at 360, the root raised to 32px at 360, a touch pointer
+below 721. Heights are `document.documentElement.scrollHeight`; positions are `getBoundingClientRect` plus
+`scrollY`.
+
+- **The first screen ends on the workspace, not on its heading.** At 360 the order was a 195px card, 190px of
+  three stacked facts and a 109px contents line — 494px before the first section — so `01 Workspaces` began at
+  **y = 735** and the workspace's name at 794, with its three controls at 832, below an 800px screen. The three
+  facts are now three ruled lines with the note beside the figure (label, value and note on one line; the
+  workspaces note still wraps at 360, so the block is **154px**, not 132), and the contents line is one row of
+  five 13px links at 44px with 6px of side padding and 2px between them (their measured widths are 102, 53, 64,
+  75 and 77 = **319 in 328**). `01 Workspaces` begins at **y = 627**, the workspace's name at **687** and
+  `Open / Pause / More` at **725–769** — its whole row is on an 800px screen. The page is **2,527 → 2,420** at
+  360, **2,507 → 2,379** at 390 and **2,790 → 2,749** at 320.
+- **The bill comes before the form that buys more of it.** The Payment panel was 1,486px down and the Usage
+  panel 2,087px: a customer reading the bill met `Add credit`, the three amounts and `Another amount` first.
+  Usage is now the third section and Balance the fourth, in the page, the contents line and the numbers
+  (`03 Usage`, `04 Balance`), and the scrollspy reads them in that order. Usage begins at **1,378** (was 2,087),
+  Balance at **1,639** (was 1,486) and Settings at **2,241** (was 2,348). At 768 and 1440 the page height is
+  unchanged (2,065 / 2,046) and the swap is the same 479px.
+- **A phone's table keeps its column headers, drawn or not.** `display: none` took the header row out of the
+  accessibility tree, and the `data-h` word was the only name a cell had. The header row is now clipped
+  (`position: absolute; 1px; clip-path: inset(50%)`) so it is drawn for the eye nowhere but still a row of
+  `<th scope="col">` for a reader, and the `data-h` label is drawn with an empty alternative (`attr(data-h) /
+  ""`) so it is not said twice. Chromium's `Accessibility.getFullAXTree` at 360 lists the six `columnheader`
+  cells **DAY, CHARGED, CALLS, FAILED, INPUT TOKENS, OUTPUT TOKENS** in the by-day table and the same six in the
+  by-workspace table, with the value cells named **$2.74, 34, 1, 184,000, 12,600**; before the change there were
+  no `columnheader` nodes at all. axe-core with every rule (not only WCAG) finds **0** violations at 360 and
+  768.
+- **Widths, schemes and the floor.** 320 / 360 / 390 / 768 / 1440 in light, 360 in dark and in forced colours,
+  and the root at 32px: no sideways page scroll (320: 320; 360: 360; 390: 390; 768: 768; 1440: 1440), nothing
+  computes below **12px**, and the account with no calls is 2,749 / 2,420 / 2,379 / 2,065 / 2,046. With a four-day
+  usage answer both passes together give 3,138 / 2,831 / 2,790 / 2,452 / 2,432 against the base's 3,154 / 2,914 /
+  2,893 / 2,452 / 2,432: the table's 42px is given back by the first screen. At 200% text
+  the first screen is 5,105px tall, the facts wrap to two lines each and the strip to 137px, and the page is
+  still 360 wide. The plan-less account (1,516px at 360) draws its stage card with the steps and puts the first
+  plan at 544 in the first screen; a paid account with no workspace puts the create form in the stage card at
+  358.
+- **The budget.** `app.css` is **40,950 bytes of 40,960** (was 40,929, a net **+21**): the compact facts, the
+  one-row contents line and the clipped header row cost about 90 bytes, and shortened comments and the folding
+  of two media-query lines paid for the rest. Ten bytes remain.
+
+| measured at 360, light | before | after |
+| --- | --- | --- |
+| The three facts | 190px, label and note stacked | **154px**, label, figure and note on a line |
+| The contents line | 109px, two rows (Settings alone) | **45px**, five links in 319 of 328 |
+| `01 Workspaces` begins at | y = 735 | **y = 627** |
+| The workspace's name / controls | 794 / 832–876 | **687 / 725–769** |
+| Usage begins at | 2,087 | **1,378** |
+| Balance begins at | 1,486 | **1,639** |
+| Settings begins at | 2,348 | **2,241** |
+| The account at 360 / 390 / 320 | 2,527 / 2,507 / 2,790 | **2,420 / 2,379 / 2,749** |
+| … at 768 / 1440 | 2,065 / 2,046 | **2,065 / 2,046** |
+| `columnheader` nodes at 360 | 0 | **12** (six per table) |
+| axe-core, every rule, 360 / 768 | — | **0** |
+| `app.css` | 40,929 bytes | **40,950** |
+
+### What this pass leaves
+
+- **The workspaces note still takes a second line at 360.** "1 workspace in your plan" is 152px against the 328px
+  line and the figure and label need the rest; the block is 154 instead of 132. A shorter note ("1 in your
+  plan") would buy the 22px and lose the noun.
+- **The contents line is one 13px row because its padding went from 12 to 6.** The targets are still 44px tall;
+  the current section's pill hugs its word more tightly than before. At 320 the five links do not fit and the row
+  wraps (91px), with Settings alone on the second line, as the 2026-10-26 record had it.
+- **The Balance panel still carries the top-up form.** The order changed, so the form is no longer met on the way
+  to the bill; folding it behind an `Add credit` disclosure would have saved another ~220px and was the other
+  candidate. It was not taken because hiding the way to add credit from a customer whose balance is low is the
+  worse trade, and because the record's order was the thing that was wrong.
+- **The three facts at 768 and 1440 are unchanged** (102px, three columns): there is room for the columns, and
+  this pass changed the phone's composition only.
+- **Nothing was added for the auth pages or the signed-out home.** The first minute a stranger sees is still the
+  front page's; this pass is the account's own record.
