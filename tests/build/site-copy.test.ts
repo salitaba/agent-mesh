@@ -518,6 +518,40 @@ test("the price stands on the first screen, between the actions and the picture,
   assert.match(css, /@media \(min-width: 1040px\) \{[\s\S]*?\.hero-price \{ grid-row: 4;/, "and on a desk it takes the row under the lede");
 });
 
+/**
+ * Measured before this block, the pricing page's first amount was at y=997.9 at 320, 950.4 at 360, 888.9 at 390, 817.8 at
+ * 768 and 948.2 at 1440: below the first screen at every width, on the one page whose whole job is to state a price. The
+ * other six pages already put their answer in their first 800px (the home page's price at 522.8, the docs page's first
+ * start card, the security page's glance, the contact page's first address, the legal page's licence and the 404's way
+ * home). The figures are the hero's line again, at the head of the page that sells them.
+ */
+test("the figures stand at the head of the page that sells them, in the period the switch below names", () => {
+  const pricing = page(pages, "pricing/index.html").html;
+  const block = /<!-- generated:head-price:start \(scripts\/export-pricing\.mjs; do not edit between the markers\) -->([\s\S]*?)<!-- generated:head-price:end -->/.exec(pricing);
+  assert.ok(block, "the pricing page's figures are a fenced block of scripts/export-pricing.mjs");
+  const head = block![1]!;
+  const at = (needle: string): number => pricing.indexOf(needle);
+  assert.ok(at("generated:head-price:start") < at('class="toc-bar"'), "at the head, before the On this page row");
+  assert.ok(at("generated:head-price:start") > at('<p class="lede" data-cloud-only>'), "under the lede that says which way each price is");
+  const text = textOf(head);
+  for (const plan of Object.values(PLANS)) {
+    assert.ok(text.includes(plan.name), `${plan.name} is named`);
+    if (plan.priceMonthlyUsd) assert.ok(text.includes(`$${plan.priceMonthlyUsd}`), `${plan.name}: its monthly figure, in the head`);
+    if (plan.priceMonthlyAnnualUsd) assert.ok(text.includes(`$${plan.priceMonthlyAnnualUsd}`), `${plan.name}: its annual figure, in the head`);
+  }
+  assert.match(text, /Community is free/);
+  assert.match(text, /Enterprise is quoted/);
+  // The period is the switch's, chosen by the stylesheet: right with no script, and the head cannot disagree with the cards.
+  assert.match(head, /<span class="head-price-annual">The licence plans, billed annually:/);
+  assert.match(head, /<span class="head-price-monthly">The licence plans, billed monthly:/);
+  const css = fs.readFileSync(path.join(SITE, "assets", "site.css"), "utf8");
+  assert.match(css, /\n\.head-price-monthly \{ display: none; \}/);
+  assert.match(css, /body:has\(#billing-monthly:checked\) \.head-price-annual \{ display: none; \}/);
+  assert.match(css, /body:has\(#billing-monthly:checked\) \.head-price-monthly \{ display: inline; \}/);
+  // A printed page has no switch, so both periods print, each naming its own.
+  assert.match(css, /@media print \{[\s\S]*?\.head-price-annual, \.head-price-monthly \{ display: block !important; \}/);
+});
+
 test("each of the four reasons is a card of its own, a mark, a title and its words first, and a drawing of the idea after them", () => {
   const home = page(pages, "index.html");
   const why = /<section[^>]*\sid="why"[\s\S]*?\n<\/section>/.exec(home.html)![0];

@@ -13,7 +13,7 @@ python3 -m http.server --directory site 8080      # then open http://127.0.0.1:8
 | File | Address | What it holds |
 |---|---|---|
 | `index.html` | `/` | The tagline, what Curule is and a picture of it beside the first actions (a product frame: overview, events, designer), the two ways in (we run it, or you do), why it is not a group chat, how a mission goes, a tour of the console in six views, the commands that run the demo today, security in brief, the plans in a line (four rows of one rate card on a phone), and the questions |
-| `pricing/index.html` | `/pricing/` | The two ways to pay (while Curule Cloud is open), the plans with the Annual/Monthly choice, the comparison table, what a plan pays for, a calculator, how licences work, and questions |
+| `pricing/index.html` | `/pricing/` | The four licence figures in a ruled line at the head, in the billing period the switch below chooses (so the price is on the first screen), then the two ways to pay (while Curule Cloud is open), the plans with the Annual/Monthly choice, the comparison table, what a plan pays for, a calculator, how licences work, and questions |
 | `docs/index.html` | `/docs/` | "Start here": a card for each thing a visitor comes to do (run the demo, deploy it, describe a team and its rules, use Curule Cloud), each naming the one document to open first; then a map of the documents in the repository: what each is for, and whether it is reference, a guide, short, or a log, with a filter over them. An On this page row under the heading names the three sections, as on the other long pages |
 | `security/index.html` | `/security/` | An At a glance box (what it protects, what leaves your environment, what it does not do: one line each, from the page's own sentences, each linking to its section, with a mark that says what kind of answer it is), then the three in full, a hardening checklist, assurance, and how to report a problem |
 | `contact/index.html` | `/contact/` | Which address is for what, in three rows (the place the links to sales, support and security land, each with a copy button that the script adds), and what to put in the message |
@@ -190,8 +190,9 @@ npm run pricing:export     # rewrites the blocks, pricing/plans.json and the tab
 npm run pricing:check      # fails if any of them is out of date (a test runs the same check)
 ```
 
-The blocks are the JSON the calculator reads (`plans-json`), the plan cards (`plan-cards`), the table (`plan-table`), the
-mission priced at each model (`run-costs`), all on the pricing page, and `plan-teaser` on the home page. They are static HTML, so
+The blocks are the JSON the calculator reads (`plans-json`), the four figures at the head of the pricing page (`head-price`), the
+plan cards (`plan-cards`), the table (`plan-table`), the mission priced at each model (`run-costs`), all on the pricing page,
+and `plan-teaser` and `hero-price` on the home page. They are static HTML, so
 the numbers are there without a script; the Annual/Monthly choice only hides the price that is not selected. The HTML is written
 by `scripts/pricing-html.mjs`.
 

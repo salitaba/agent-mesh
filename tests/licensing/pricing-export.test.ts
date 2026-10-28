@@ -106,10 +106,10 @@ test("the export writes each block into the pages that fence it, is the same the
     fs.copyFileSync(path.join(ROOT, file), path.join(dir, file));
   }
   const fence = (name: string): string => `<!-- generated:${name}:start (scripts/export-pricing.mjs; do not edit between the markers) -->\n<!-- generated:${name}:end -->\n`;
-  const pricingPage = ["plans-json", "plan-cards", "plan-table", "plan-stack", "run-costs", "run-stack"].map(fence).join("");
+  const pricingPage = ["plans-json", "plan-cards", "plan-table", "plan-stack", "run-costs", "run-stack", "head-price"].map(fence).join("");
   fs.mkdirSync(path.join(dir, "site", "pricing"), { recursive: true });
   fs.writeFileSync(path.join(dir, "site", "pricing", "index.html"), pricingPage, "utf8");
-  fs.writeFileSync(path.join(dir, "site", "index.html"), `<p>home</p>\n${fence("plan-teaser")}`, "utf8");
+  fs.writeFileSync(path.join(dir, "site", "index.html"), `<p>home</p>\n${fence("plan-teaser")}${fence("hero-price")}`, "utf8");
   const run = (...args: string[]) => spawnSync(process.execPath, [path.join(ROOT, "scripts", "export-pricing.mjs"), "--root", dir, ...args], { encoding: "utf8" });
   assert.equal(run("--check").status, 1, "a page that has not been written is out of date");
   const wrote = run();
@@ -120,6 +120,7 @@ test("the export writes each block into the pages that fence it, is the same the
   assert.match(first, /<table class="compare">/);
   assert.match(first, /<div class="stack-table plan-stack"/, "the phone's plan comparison is generated too");
   assert.match(first, /<div class="stack-table run-stack"/, "the phone's model comparison is generated too");
+  assert.match(first, /<p class="head-price">/, "the figures at the head of the page are generated too");
   assert.match(fs.readFileSync(path.join(dir, "site", "index.html"), "utf8"), /<ul class="teaser"/);
   assert.equal(run("--check").status, 0, "and the second time nothing is out of date");
   assert.equal(run().status, 0);

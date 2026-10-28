@@ -210,6 +210,25 @@ export function renderPlanTeaser(out) {
 }
 
 /**
+ * The figures at the head of the page that sells them. Measured before this block, the pricing page's first `$` was at
+ * y=943.4 at 360, 990.9 at 320, 881.9 at 390, 810.8 at 768 and 941.2 at 1440 — below the first screen at every width,
+ * on the one page whose whole job is to state a price. This is the hero's line again (`renderHeroPrice`), at the pricing
+ * page's head, and it names the period the billing switch below chooses: both sentences are in the markup and the
+ * stylesheet shows the one the checked radio names, so it is right with no script and cannot disagree with the cards.
+ */
+export function renderHeadPrice(out) {
+  const line = (annual) => {
+    const says = out.plans.map((p) => {
+      if (p.pricing === "free") return `${esc(p.name)} is free`;
+      if (p.pricing === "contact") return `${esc(p.name)} is quoted`;
+      return `${esc(p.name)} is ${usd(annual ? p.priceMonthlyAnnualUsd : p.priceMonthlyUsd)} a month`;
+    });
+    return `The licence plans, billed ${annual ? "annually" : "monthly"}: ${says.join("; ")}.`;
+  };
+  return `<p class="head-price"><span class="head-price-annual">${line(true)}</span><span class="head-price-monthly">${line(false)}</span></p>`;
+}
+
+/**
  * The price on the first screen: one ruled line of figures under the hero's actions, before the picture, so a visitor who
  * came to check what a licence costs reads it without scrolling. Written from the plan table like the teaser, so it cannot
  * drift from `packages/licensing/src/plans.ts`. Measured at 360 before it: the first amount was at y=1,882.7.

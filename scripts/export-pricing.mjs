@@ -5,9 +5,9 @@
  *   pricing/plans.json            the table, the model list prices and the measured runs, as JSON
  *   site/pricing/index.html       the same data inlined in the page's fenced `plans-json` block (so the calculator needs no
  *                                 fetch and the page opens from a file as well as from a server), and the HTML the page shows
- *                                 of it: the plan cards (`plan-cards`), the comparison table (`plan-table`) and the measured
- *                                 mission priced at each model (`run-costs`), so that nothing on the page is typed by hand
- *                                 and it reads without a script
+ *                                 of it: the figures at the head (`head-price`), the plan cards (`plan-cards`), the comparison
+ *                                 table (`plan-table`) and the measured mission priced at each model (`run-costs`), so that
+ *                                 nothing on the page is typed by hand and it reads without a script
  *   site/index.html               the four plans in a line (`plan-teaser`)
  *   docs/commercial/pricing.md    its two fenced blocks (the plan table and the unit economics)
  *
@@ -22,7 +22,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
-import { renderPlanCards, renderPlanTable, renderPlanStack, renderRunCosts, renderRunStack, renderPlanTeaser, renderHeroPrice } from "./pricing-html.mjs";
+import { renderPlanCards, renderPlanTable, renderPlanStack, renderRunCosts, renderRunStack, renderPlanTeaser, renderHeroPrice, renderHeadPrice } from "./pricing-html.mjs";
 
 const here = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const rootFlag = process.argv.indexOf("--root");
@@ -57,9 +57,10 @@ const BLOCKS = {
   "run-stack": renderRunStack(exported),
   "plan-teaser": renderPlanTeaser(exported),
   "hero-price": renderHeroPrice(exported),
+  "head-price": renderHeadPrice(exported),
 };
 const PAGES = [
-  { file: "site/pricing/index.html", required: ["plans-json", "plan-cards", "plan-table", "plan-stack", "run-costs", "run-stack"] },
+  { file: "site/pricing/index.html", required: ["plans-json", "plan-cards", "plan-table", "plan-stack", "run-costs", "run-stack", "head-price"] },
   { file: "site/index.html", required: ["hero-price"] },
 ];
 
