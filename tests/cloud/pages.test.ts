@@ -492,10 +492,15 @@ test("the balance is the record, and adding credit is one 44px row on a phone th
   assert.equal(value(".topup > summary", "cursor", "max-width: 720px"), "pointer");
   assert.ok(
     rules.some((r) => r.at.includes("max-width: 720px") && r.selectors.includes(".stat") && r.selectors.includes(".figures > div") && declared(r, "display") === "flex"),
-    "the three figures are the ruled rows the glance's three facts are: one entry a row, its label, figure and note on one line",
+    "the three figures are the ruled rows the glance's three facts are: one entry a row, its label at the start and its figure at the end",
   );
   assert.equal(value(".figures", "display", "max-width: 720px"), "block", "not the two-column grid that made the panel a form");
-  assert.equal(value(".figures .of", "display", "max-width: 720px"), "flex", "and the allowance's note sits on its line with its bar, rather than under the amount");
+  assert.equal(value(".figures dt", "margin-right", "max-width: 720px"), "auto", "the figure goes to the row's end, so the three amounts are one column");
+  assert.equal(value(".figures .of", "display", "max-width: 720px"), "flex", "and the allowance's note sits on its line with its bar");
+  assert.match(value(".figures .of", "flex", "max-width: 720px") || "", /1 0 100%/, "which is the line under its row, as wide as the row");
+  assert.equal(value(".figures .of meter", "flex", "max-width: 720px"), "1", "the bar takes the width the words leave");
+  assert.equal(value(".figures .of meter", "min-width", "max-width: 720px"), "3em", "and is measured in the note's own type, so 200% text is a 200% bar");
+  assert.equal(value("#balance-panel .card", "padding", "max-width: 720px"), "0", "on a phone the balance is ruled entries at the page's edge, not a card");
 });
 
 test("the stylesheet is held to its budget, and whatever it moves it stills for a person who asked for stillness", () => {

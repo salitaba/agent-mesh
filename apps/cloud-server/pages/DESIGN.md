@@ -1701,3 +1701,96 @@ limit had already turned the panel into its warning once). Heights are
   baseline. That is the glance's shape, and the two are now one rule.
 - **The checkout stand-in, the dead reset link's recoveries and the prose-only inline links are
   untouched.** They are the earlier entries.
+
+## 2026-10-28: the balance's figures end their rows
+
+Same harness: Chromium through `playwright-core` over CDP, axe-core 4.14, 320 / 360 / 390 / 768 /
+1440 in light, 320 / 360 / 390 / 1440 in dark, 360 in forced colours, the root raised to 32px at 360,
+`prefers-reduced-motion: reduce`, a touch pointer below 721. "Before" is a trial of `main` on port
+7761 and this pass's pages on 7781, both signed in to the same account: a Team plan, one running
+workspace named Research, `$10.00` available, `$10.00` from the plan and `$0.00` from credit. Heights
+are `document.documentElement.scrollHeight`; positions are `getBoundingClientRect` plus `scrollY`.
+
+- **The three figures end their rows, so the three amounts are one column.** Label, figure and note
+  were an inline sentence on a phone: the amounts began at **120.3 / 168.2 / 222.2** and none of the
+  three could be compared with another. The name is at the row's start and the figure at its end now
+  — `margin-right: auto` on each figure's label, inside the ruled row the glance and the balance share
+  — and the three amounts end at **344** (320: 304; 390: 374), one under another. The figures block is **159.4 → 156.8**, the
+  Balance panel **291.9 → 247.3** and the page **2,150 → 2,105** at 360, with Settings at
+  **1,970.7 → 1,926.1**; at 320 the panel is **291.9 → 247.3** (page 2,418 → 2,373) and at 390
+  **291.9 → 247.3** (2,130 → 2,085).
+- **The balance is not a card on a phone, and its entries take the page's width.** The figures sat in
+  a card with 20px of padding, so a row was **286px** of the 328 the page has; the glance above it has
+  had no card on a phone since 2026-10-23. The card's padding, border, background and shadow are gone
+  below 721 and the rows run **16 → 344**: the `Add credit` row is **286 → 328** wide at its 44px,
+  its form and the three amounts with it, and the failed read's note is 328 wide, which is the line
+  its sentence was missing: at 320 the hint under the form is **67.2 → 44.8px**, one line shorter.
+- **The allowance's measure is the entry's own line, and the bar is a share of it.** The bar was a
+  44px picture beside the words; it now takes the width the words leave on the line under the row —
+  **44 → 185.5px** at 360, **145.5** at 320 and **215.5** at 390 — with `flex: 1` and a `min-width`
+  of **3em** in the note's own type, so at root 32px it is **78px** where it was 39.1, and it grows
+  with every wider phone. Every character stays: `From your plan`, `$10.00`, `left of $10.00 a month`,
+  the period and the currency, and the meter's spoken label with them.
+- **The allowance's entry is still two lines: the one thing this pass could not do.** At the 12px
+  floor the label (121.2), the amount (66.3) and the note (124.1) are **327.6px of a 328px row**
+  before the bar has room for a single pixel, and **374.6** with its 39px floor; a row of one line
+  would have to lose the "of what" — the shorter note the previous pass weighed — or the bar, and a
+  note written after the amount would end the column of figures. The row is **57.4px**: its name and
+  figure on one line, its measure under. It was 60.
+- **A failed plans read keeps its answer and gains the room.** With `/api/plans` answering 503 the
+  panel is **416.9 → 334.9px**, the note **157 → 133** at 328 wide, the page **2,305 → 2,223**; the
+  retry still answers in place and still leaves the cursor on **`Try again`** when it fails again and
+  on **`$10.00`**, with the disclosure opened, when the amounts arrive. Opened on the account with
+  plans up: panel **481 → 436.4** at 360 (**503.4 → 436.4** at 320, where the hint loses its third
+  line), page 2,339 → 2,294.
+- **Widths, schemes and the floor.** 320 / 360 / 390 / 768 / 1440 in light, 320 / 360 / 390 / 1440 in
+  dark, 360 in forced colours and at root 32px: no sideways page scroll (320: 320; 360: 360; 390: 390; 768: 768; 1440:
+  1440), nothing computes below **12px**, and the only control under 44 × 44 below 721 is the 41 × 44
+  `Plan` contents link the record already names. At 768 and 1440 nothing moved to the pixel: the
+  panel **439.3 / 425.8**, the figures **120.2**, the pages **2,065 / 2,046** and the rows 99.2, so
+  every rule this pass adds lives inside `max-width: 720px`. **6 axe-core runs** (360 light, 1440 dark
+  and the opened panel, both halves) find **no violation**; there is no console error in any state but
+  the failed read, which logs the 503 it was given in both halves, as before; with scripts
+  off both halves are the same 800px, because the figures are the script's, as before. At root 32px
+  the panel is **589.1 → 536.7** and the page 4,427 → 4,374 at 360 wide; the figures drop below their
+  labels there, which is where they have room.
+- **The budget.** `app.css` is **40,940 → 40,930 bytes of 40,960** (a net **−10**). The four rules
+  cost about 250 bytes and paid for themselves: ten comments went or were shortened — three removed
+  (a workspace, the plan or the one picked, the steps) and seven cut to a clause (the icons' legend,
+  the stylesheet's opening line, the balance's old "one named line", the row's name, the empty
+  result, the skeleton, the bar's text).
+- **Tests.** `dist/tests/cloud/pages*.test.js` — **177 pass, 0 fail**; the two page-related build
+  tests — **11 pass, 0 fail**; typecheck and build clean, lint at its 211 pre-existing warnings.
+  `pages.test.ts` now pins the figure's `margin-right: auto`, the measure line's `flex: 1 0 100%`,
+  the bar's `flex: 1` with its `3em` floor, and the card's zero padding below 721.
+
+| measured at 360, light | before | after |
+| --- | --- | --- |
+| The three figures | 159.4px: 54.4, 60, 44 | **156.8px: 54.4, 57.4, 44** |
+| The amounts' left edges | 120.3 / 168.2 / 222.2 | **239.4 / 277.7 / 289.8 — all ending at 344** |
+| The allowance's bar | 44px | **185.5px** (145.5 at 320, 215.5 at 390) |
+| The Balance panel | 291.9px | **247.3px** |
+| The account page | 2,150px | **2,105px** |
+| Settings begins at | y = 1,970.7 | **y = 1,926.1** |
+| … at 320 / 390 | 291.9 / 291.9 panel, 2,418 / 2,130 page | **247.3 / 247.3**, **2,373 / 2,085** |
+| … at 768 / 1440 | 439.3 / 425.8 panel, 2,065 / 2,046 page | **439.3 / 425.8**, **2,065 / 2,046** |
+| The open panel, 360 / 320 | 481 / 503.4 | **436.4 / 436.4** |
+| A failed plans read, 360 | 416.9 panel, 157 note, 2,305 page | **334.9 / 133 / 2,223** |
+| At 200% text, 360 | 589.1 panel, bar 39.1 | **536.7, bar 78** |
+| axe-core, 6 views | 0 | **0** |
+| `app.css` | 40,940 bytes | **40,930** |
+
+### What this pass leaves
+
+- **The allowance's entry is two lines, by arithmetic.** One line needs 374.6px of text and bar in a
+  328px row; even without the bar it is 327.6px, four tenths of a pixel of nothing, so the measure
+  keeps its own line. The next pass that wants one line must shorten the *label* ("Plan allowance"
+  would leave 16px) or the *note*, and say which word it dropped.
+- **At 200% text the figures fall under their labels.** A row is a wrapping flex line, so a 24px
+  `From credit you added` takes a line of its own and the amount follows it at the left instead of the
+  right: nothing overflows and nothing is lost, but the column holds only at normal text.
+- **The glance above the panel keeps its inline figures.** Its rows are the same rule and its notes
+  trail their values; giving it the column too would move the price and the balance figure to the
+  row's end, which this pass did not measure and judged a different drawing.
+- **The address strip's Copy, the steps at 320, the checkout stand-in, the dead reset link and the
+  prose-only 19px links are unchanged.** They are the earlier entries.
