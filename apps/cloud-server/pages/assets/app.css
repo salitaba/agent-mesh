@@ -1,4 +1,4 @@
-/* One stylesheet for the public pages. The visitor's colour scheme is the only switch, and nothing is loaded from elsewhere or written inline. */
+/* One stylesheet for the public pages: the colour scheme is the only switch, and nothing is loaded elsewhere. */
 /* Icons: 20 units, a mask in the text's colour; --n: 0 check, 1 alert, 2 refused, 3 info, 4 eye, 5 eye off, 6 bars, 7 chevron, 8 mail; --s sizes. */
 :root {
   color-scheme: light dark;
@@ -150,7 +150,7 @@ code {
 }
 .muted { color: var(--k-muted); }
 .small { font-size: .875rem; }
-/* Figures line up: tabular numerals on figures, not prose. */
+/* Figures line up: tabular numerals. */
 td, th, dd, .price, .num, .badge, .auth-points li::before { font-variant-numeric: tabular-nums; }
 .stat dt, .figures dt, thead th, .toc-h {
   color: var(--k-muted);
@@ -170,7 +170,6 @@ td, th, dd, .price, .num, .badge, .auth-points li::before { font-variant-numeric
   background: currentColor;
   mask: var(--sprite) calc(var(--n, 0) * var(--s, 20px) * -1) 0 / calc(9 * var(--s, 20px)) var(--s, 20px) no-repeat;
 }
-/* Cards: a hairline, a lit top edge, the first rung of shadow. */
 .card, .row, .plan, .table-wrap, .panel-quiet details {
   border: 1px solid var(--k-line);
   border-radius: var(--k-r-lg);
@@ -363,7 +362,7 @@ input[type="checkbox"]:checked::after { transform: scale(1); }
 input[type="checkbox"]:focus-visible { outline: 2px solid var(--k-accent); outline-offset: 2px; box-shadow: none; }
 .check input[type="checkbox"] { margin-top: 12px; }
 
-/* ---- meters: a number against a whole */
+/* ---- meters: a number against its whole */
 meter {
   appearance: none;
   display: block;
@@ -380,7 +379,7 @@ meter::-moz-meter-bar { border-radius: var(--k-r-pill); background: currentColor
 .len { height: 4px; mask: repeating-linear-gradient(to right, black 0 calc(10% - 2px), transparent calc(10% - 2px) 10%); }
 .len[data-done] { color: var(--k-ok); }
 
-/* ---- notes and badges: one tone, as an icon and a wash */
+/* ---- notes and badges: one tone, an icon and a wash */
 .note, .confirm, .stage-warn, .stage-bad {
   border: 1px solid color-mix(in srgb, var(--tone) 30%, transparent);
   background: color-mix(in srgb, var(--tone) 8%, transparent);
@@ -435,7 +434,7 @@ meter::-moz-meter-bar { border-radius: var(--k-r-pill); background: currentColor
 .tile::before { --s: 24px; }
 .tile-mail::before { --n: 8; }
 
-/* ---- sign-in family: a form, and the way through its job */
+/* ---- sign-in family: a form and its way */
 .auth { padding-block: clamp(24px, 4vh, 56px); }
 .auth-main, .auth-side { width: 100%; max-width: 28rem; margin-inline: auto; }
 .auth-main h1 { margin-bottom: 8px; }
@@ -482,7 +481,7 @@ meter::-moz-meter-bar { border-radius: var(--k-r-pill); background: currentColor
   .auth-side { margin-top: 0; }
 }
 
-/* ---- the front page: a short argument, then the price, then the terms */
+/* ---- the front page: the argument, price, terms */
 body[data-page="home"] main { background: var(--k-glow) top / 100% 520px no-repeat; }
 .home { padding-top: clamp(24px, 5vw, 56px); }
 .hero { display: grid; gap: 40px; }
@@ -494,7 +493,6 @@ body[data-page="home"] main { background: var(--k-glow) top / 100% 520px no-repe
 /* No price read, no line said. */
 .price-line:has([data-from-price]:empty) { display: none; }
 .byline { margin: 8px 0 0; color: var(--k-muted); font-size: .9375rem; }
-/* The record is drawn at every width, before a stranger pays. */
 .record { margin: 0; padding: 16px; border: 1px solid var(--k-line); border-radius: var(--k-r-lg); background: var(--k-surface); box-shadow: var(--k-hl), var(--k-shadow-1); }
 @media (min-width: 960px) {
   .hero { grid-template-columns: minmax(0, 1.3fr) minmax(0, .7fr); gap: 64px; align-items: center; }
@@ -552,7 +550,7 @@ body[data-page="home"] main { background: var(--k-glow) top / 100% 520px no-repe
 #who:empty { display: none; }
 #create-note:not(:empty) { margin-top: 12px; }
 #create-slot #create { margin-top: 16px; }
-/* The one focal card: what the account waits for. */
+/* The focal card: what the account waits for. */
 .stage {
   display: flex;
   flex-wrap: wrap;
@@ -597,15 +595,15 @@ body[data-page="home"] main { background: var(--k-glow) top / 100% 520px no-repe
 .steps .now { color: var(--k-ink); }
 .steps .now .num { border-color: var(--k-accent); background: var(--k-accent); color: var(--k-on-accent); }
 .glance { margin-top: 16px; }
-/* Three facts, ruled as the entries below them are: a card is for what a person acts on. */
-.glance dl { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 0; margin: 0; border-bottom: 1px solid var(--k-line); }
+/* Three facts, ruled as the entries below. */
+.glance dl { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); margin: 0; border-bottom: 1px solid var(--k-line); }
 .stat { padding: 10px 0; border-top: 1px solid var(--k-line); }
 .stat dd { margin: 0; }
 .stat-v { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; margin-top: 6px !important; }
 .stat .n { font-size: 1.625rem; font-weight: 650; letter-spacing: var(--k-track-title); line-height: 1.15; }
 .stat .u, .stat-n { color: var(--k-muted); font-size: .875rem; }
 .stat-n { margin-top: 2px !important; font-size: .8125rem; }
-/* The page's sections: a contents line in the flow, marking the one in view. A bar that stays on screen covers the button under it. */
+/* The sections: a contents line, marking the one in view. */
 .subnav {
   display: flex;
   flex-wrap: wrap;
@@ -631,7 +629,7 @@ body[data-page="home"] main { background: var(--k-glow) top / 100% 520px no-repe
 .subnav a:focus-visible { outline-offset: -2px; }
 .panel { margin-top: 40px; scroll-margin-top: 124px; }
 .panel > h2 { scroll-margin-top: 124px; }
-/* A section is a heading and a rule; the number is drawn, not named. */
+/* A section: a heading and a rule; the number is drawn. */
 .panel > h2, .section > h2, .panel summary h2 { display: flex; align-items: center; gap: 16px; margin-bottom: 16px; font-size: 1.125rem; }
 .panel > h2::before, .panel summary h2::before { content: attr(data-entry) / ""; margin-right: -4px; color: var(--k-accent-ink); font: 650 .75rem var(--k-mono); letter-spacing: var(--k-track-caps); }
 .panel > h2::after, .section > h2::after { content: ""; flex: 1; height: 1px; background: var(--k-line); }
@@ -646,7 +644,7 @@ body[data-page="home"] main { background: var(--k-glow) top / 100% 520px no-repe
 .row-head strong { font-size: 1.25rem; font-weight: 650; line-height: 1.3; letter-spacing: var(--k-track-tight); }
 .plan-line { margin: 0; color: var(--k-ink-2); }
 .facts-list { display: grid; gap: 4px; list-style: none; color: var(--k-ink-2); font-size: .9375rem; }
-/* A workspace: its state, why, the one thing to do, its address at the foot. */
+/* A workspace: its state, the thing to do, its address. */
 .ws > div:empty, .ws > .ws-says:empty { display: none; }
 .ws .ws-says, .ws .ws-note { margin: 0; }
 .ws .ws-says { color: var(--k-ink-2); }
@@ -672,7 +670,6 @@ body[data-page="home"] main { background: var(--k-glow) top / 100% 520px no-repe
 .ws-key { display: grid; gap: 10px; padding: 16px 0 0; border-top: 1px solid var(--k-line); }
 .ws-key > p, .ws-key form .field, .ws-key form > p { margin: 0; }
 .ws-key form { display: grid; gap: 14px; max-width: 34rem; }
-/* A workspace's plan and the offer to move it: one row. */
 .ws-plan { display: grid; gap: 10px; }
 .ws-plan > p { margin: 0; }
 .inline-form .hint { display: block; }
@@ -683,13 +680,13 @@ body[data-page="home"] main { background: var(--k-glow) top / 100% 520px no-repe
 .confirm .btn-danger[disabled] { background: var(--k-bad); }
 .inline-form { display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-end; max-width: 30rem; }
 .inline-form .field { flex: 1 1 10rem; margin: 0; }
-/* Plans: the price first, the action at the foot of cards of one height. */
+/* Plans: the price first, the action at the foot. */
 .plans { display: grid; gap: 16px; }
 @media (min-width: 720px) {
   .plans { grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); }
 }
 .plan { display: flex; flex-direction: column; gap: 14px; padding: 24px; }
-/* The plan the account is on, or picked on the way in: an edge and a badge. */
+/* The plan, or the one picked on the way in. */
 .plan.current, .plan.picked { border-color: var(--k-accent); box-shadow: var(--k-hl), 0 0 0 1px var(--k-accent); }
 .plan h3 { display: flex; align-items: center; gap: 8px; margin: 0; }
 .plan .price { font-size: 2.25rem; font-weight: 650; letter-spacing: var(--k-track-display); line-height: 1.1; }
@@ -710,7 +707,7 @@ body[data-page="home"] main { background: var(--k-glow) top / 100% 520px no-repe
 .plan:only-child { max-width: 28rem; }
 .plans + p { margin-top: 16px; }
 .plan .btn { width: 100%; min-height: 44px; margin-top: auto; }
-/* The balance: the figure spent from, large, and what makes it. */
+/* The balance: the figure spent from, and what makes it. */
 .figures {
   display: grid;
   grid-template-columns: 1.3fr 1fr 1fr;
@@ -722,7 +719,7 @@ body[data-page="home"] main { background: var(--k-glow) top / 100% 520px no-repe
 .figures dd { margin: 4px 0 0; font-size: 1.375rem; font-weight: 650; letter-spacing: var(--k-track-title); }
 .figures > div:first-child dd { font-size: 2.25rem; letter-spacing: var(--k-track-display); }
 .figures .of { display: grid; gap: 6px; margin-top: 8px; color: var(--k-muted); font-size: .8125rem; font-weight: 500; letter-spacing: 0; }
-/* Amounts to add: one trough, a raised segment under the pointer. */
+/* Amounts to add: one trough, a raised segment. */
 #topup-add { margin: 0 0 8px; }
 .topup-options {
   display: flex;
@@ -735,14 +732,13 @@ body[data-page="home"] main { background: var(--k-glow) top / 100% 520px no-repe
 }
 .topup-options .btn { flex: 1 1 0; padding-inline: 6px; border-color: transparent; background: none; box-shadow: none; white-space: nowrap; }
 .topup-options .btn:hover { border-color: var(--k-line); background: var(--k-surface); box-shadow: var(--k-shadow-1); }
-/* Tables read down; an edge shows the scroll. */
 .table-wrap {
   overflow-x: auto;
   scrollbar-width: thin;
-  background: linear-gradient(to right, var(--k-surface), transparent) 0 0 / 24px 100% no-repeat local, linear-gradient(to left, var(--k-surface), transparent) 100% 0 / 24px 100% no-repeat local, linear-gradient(to right, color-mix(in srgb, var(--k-ink) 12%, transparent), transparent) 0 0 / 10px 100% no-repeat, linear-gradient(to left, color-mix(in srgb, var(--k-ink) 12%, transparent), transparent) 100% 0 / 10px 100% no-repeat, var(--k-surface);
+  background: linear-gradient(to right, color-mix(in srgb, var(--k-ink) 12%, transparent), transparent) 0 0 / 10px 100% no-repeat, linear-gradient(to left, color-mix(in srgb, var(--k-ink) 12%, transparent), transparent) 100% 0 / 10px 100% no-repeat, var(--k-surface);
 }
 .table-wrap + .table-wrap { margin-top: 20px; }
-/* The row's name stays at its edge while its figures scroll. */
+/* The row's name stays at the edge while its figures scroll. */
 .table-wrap th:first-child { position: sticky; left: 0; }
 .table-wrap tbody th { background: var(--k-surface); }
 table { width: 100%; border-collapse: collapse; font-size: .875rem; }
@@ -754,7 +750,7 @@ tbody th, tfoot th { color: var(--k-ink-2); font-weight: 500; }
 tbody tr:hover > * { background: var(--k-surface-2); }
 tfoot > tr > * { background: var(--k-surface-2); font-weight: 650; }
 .bar-cell { display: inline-grid; grid-template-columns: 72px minmax(8ch, max-content); align-items: center; justify-content: end; gap: 12px; }
-/* No result yet: a ruled entry, not a card. */
+/* No result: a ruled entry, not a card. */
 .empty { display: grid; justify-items: start; gap: 4px; padding: 12px 0; border-top: 1px solid var(--k-line); }
 .empty p { max-width: 44ch; margin: 0; }
 .empty-t { font-weight: 600; }
@@ -775,7 +771,7 @@ tfoot > tr > * { background: var(--k-surface-2); font-weight: 650; }
 .panel-quiet summary:focus-visible { outline-offset: -2px; }
 .panel-quiet form { max-width: 28rem; padding: 20px; }
 .panel-quiet h3 { margin: 0 0 16px; font-size: .9375rem; }
-/* The page's shape while it reads, so what arrives moves nothing. */
+/* The page's shape while it reads: nothing moves. */
 .sk {
   border-radius: var(--k-r-lg);
   background: linear-gradient(90deg, var(--k-sunken) 30%, var(--k-surface-2) 50%, var(--k-sunken) 70%) 0 0 / 300% 100%;
@@ -787,7 +783,7 @@ tfoot > tr > * { background: var(--k-surface-2); font-weight: 650; }
 .sk-card { height: 200px; margin-top: 40px; }
 .sk-plan { height: 360px; }
 
-/* ---- documents, and the page that is not there */
+/* ---- documents, and the missing page */
 .doc { display: grid; gap: 32px; padding-top: clamp(32px, 6vh, 64px); }
 .doc-end { margin-top: 48px; padding-top: 24px; border-top: 1px solid var(--k-line); }
 .doc-end p { margin-bottom: 12px; }
@@ -830,28 +826,41 @@ tfoot > tr > * { background: var(--k-surface-2); font-weight: 650; }
 
 /* ---- phones and fingers */
 @media (max-width: 720px) {
-  /* A phone stacks the facts; a wider page puts them in columns. */
-  .stat { display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "l v" "n v"; align-items: center; }
-  .stat dt { grid-area: l; }
-  .stat-v { grid-area: v; justify-content: flex-end; margin: 0 !important; }
-  .stat-n { grid-area: n; }
+  /* A phone reads the three facts as three ruled lines. */
+  .stat { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 10px; min-height: 44px; padding: 6px 0; }
+  .stat-v, .stat-n { margin: 0 !important; }
   .sk-tiles { grid-template-columns: 1fr; }
   .sk-tiles .sk { height: 60px; }
   .figures { grid-template-columns: 1fr 1fr; }
   .figures > div:first-child { grid-column: 1 / -1; }
-  .subnav a { min-height: 44px; }
-  /* The steps are a row of numbers: the rule needs 30px a phone has not got. */
+  .subnav { gap: 2px; margin-top: 12px; padding: 0; }
+  .subnav a { min-height: 44px; padding: 0 6px; }
+  /* The steps are a row: the rule needs 30px. */
   .steps { column-gap: 12px; }
   .steps li::after { display: none; }
   .check label { line-height: 44px; }
   .check label a { display: inline-block; min-height: 44px; }
-  /* A bar with too much text wraps rather than passing the edge. */
+  /* A bar with too much text wraps rather than pass the edge. */
   .bar, .bar nav { flex-wrap: wrap; }
   .figures > div { min-width: 0; }
   .figures dd { font-size: min(1.375rem, 9vw); }
-  /* The caption takes its own row; the host and Copy share the next. */
+  /* The caption takes a row; host and Copy the next. */
   .ws-address-l { flex: 1 0 100%; font-size: .75rem; }
   .ws .ws-address code { flex: 1 1 8rem; min-width: 0; }
+  /* A day is an entry on a phone. */
+  .table-wrap { overflow: visible; background: none; }
+  .table-wrap table, .table-wrap tbody, .table-wrap tfoot { display: block; }
+  .table-wrap thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+  .table-wrap tr { display: flex; flex-wrap: wrap; gap: 2px 10px; padding: 10px 0; border-top: 1px solid var(--k-line); }
+  .table-wrap caption, .table-wrap th, .table-wrap td { display: block; height: auto; padding: 0; border: 0; white-space: normal; background: none; }
+  .table-wrap tr > :first-child { flex: 0 0 7rem; }
+  .table-wrap tbody th { background: none; }
+  .table-wrap td { font-size: .75rem; }
+  .table-wrap td:nth-child(2) { color: var(--k-ink); font-size: 1rem; font-weight: 650; }
+  .table-wrap td::before { content: attr(data-h) / ""; }
+  .table-wrap .bar-cell { display: inline; }
+  .table-wrap meter { display: none; }
+  .table-wrap caption { padding-bottom: 8px; }
 }
 @media (max-width: 720px), (pointer: coarse) {
   .btn, .btn-small, .bar nav a, .bar nav button, input:not([type="checkbox"]), select { min-height: 44px; }
@@ -866,13 +875,13 @@ tfoot > tr > * { background: var(--k-surface-2); font-weight: 650; }
   .logo { height: 20px; }
 }
 
-/* ---- the system's own colours: a tick box is the browser's again */
+/* ---- forced colours: the tick box is the browser's */
 @media (forced-colors: active) {
   input[type="checkbox"] { appearance: auto; }
   input[type="checkbox"]::after { display: none; }
 }
 
-/* ---- motion: a page arrives once, and nothing moves when a person asks it not to */
+/* ---- motion: a page arrives once, and stills when asked */
 @keyframes spin {
   to { transform: rotate(360deg); }
 }

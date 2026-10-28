@@ -61,8 +61,8 @@
   <nav class="subnav" id="subnav" aria-label="On this page" hidden>
     <a href="#workspaces-panel">Workspaces</a>
     <a href="#plan-panel">Plan</a>
-    <a href="#balance-panel">Balance</a>
     <a href="#usage-panel">Usage</a>
+    <a href="#balance-panel">Balance</a>
     <a href="#settings-panel">Settings</a>
   </nav>
 
@@ -94,8 +94,15 @@
     <div id="plan"></div>
   </section>
 
+  <section class="panel" id="usage-panel" aria-labelledby="usage-h" hidden>
+    <h2 id="usage-h" data-entry="03">Usage</h2>
+    <p class="muted small">Every call your agents made, by day and by workspace, and what each one was charged to your balance. The text of the calls is not kept.</p>
+    <p class="sr" id="usage-say" role="status" aria-live="polite"></p>
+    <div id="usage"></div>
+  </section>
+
   <section class="panel" id="balance-panel" aria-labelledby="balance-h" hidden>
-    <h2 id="balance-h" data-entry="03">Balance</h2>
+    <h2 id="balance-h" data-entry="04">Balance</h2>
     <div class="card">
       <dl class="figures" id="figures"></dl>
       <div id="topup-fail" class="note note-warn" hidden></div>
@@ -111,13 +118,6 @@
       </form>
       <p id="topup-hint" class="muted small"></p>
     </div>
-  </section>
-
-  <section class="panel" id="usage-panel" aria-labelledby="usage-h" hidden>
-    <h2 id="usage-h" data-entry="04">Usage</h2>
-    <p class="muted small">Every call your agents made, by day and by workspace, and what each one was charged to your balance. The text of the calls is not kept.</p>
-    <p class="sr" id="usage-say" role="status" aria-live="polite"></p>
-    <div id="usage"></div>
   </section>
 
   <section class="panel panel-quiet" id="settings-panel" aria-labelledby="security-h">

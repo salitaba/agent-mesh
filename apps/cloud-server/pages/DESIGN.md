@@ -1389,3 +1389,148 @@ running workspace, the same plan with no workspace yet, and a fresh account with
   the workspaces entry. The Usage panel remains the place the bill is itemised.
 - **Nothing was added for the checkout stand-in, the dead reset link (closed 2026-10-26), the usage read's rate
   limit, or the prose-only inline links.** They are the previous entries, unchanged and still true.
+
+## 2026-10-28: the bill a phone can read
+
+Same harness: Chromium through `playwright-core`, 320 / 360 / 390 / 768 / 1440, light and dark, forced colours at
+360, the root raised to 32px at 360, `prefers-reduced-motion: reduce`, a touch pointer below 721. "Before" is the
+base commit's own `app.css` served by the same trial (`trial --port 7631`) and measured again today, not a figure
+copied from an earlier record. The fixture is the same on both sides: a Team account, one running workspace, and a
+four-day usage answer held by request interception (the trial's own usage is empty). Heights are
+`document.documentElement.scrollHeight`; positions are `getBoundingClientRect` plus `scrollY`.
+
+- **The usage tables are read, not scrolled, on a phone.** Below 721px the by-day table was **722px of content in
+  a 326px box**: `Day` at x = 17 and `Charged` at 131–295 were inside, `Calls` began at **311** and the two token
+  columns at 463 and 595, so four of the six columns — the calls, the failures and what the tokens were — could
+  only be reached by a sideways swipe, and the sticky first cell kept the day beside them but not their meaning.
+  Each row is now an entry: the day on the first line, `Charged $2.74` beside it, then `Calls 34  Failed 1
+  Input 184,000  Output 12,600` on the second. The wrap's scroll width is **326 = its client width** at 360
+  (**286** at 320, **356** at 390), and all six facts are on the card. The by-workspace table is the same story
+  (**693 → 326**).
+- **The date and its charge line up down the table.** The day's cell takes a fixed **7rem** so the money begins at
+  **x = 139** on every row — the body rows and the total — instead of at the end of each date's own width.
+- **The header row is the labels, drawn in the cells.** On a phone the `thead` is not drawn; each figure cell
+  carries its column's first word in generated content. The word is drawn and spoken — not the empty-alternative
+  form the section numbers use — because on a phone it is the only label the cell has. The wide table keeps its header
+  row and its sticky first cell unchanged; the labels are an attribute on the cells, so no test that reads the
+  table's text moves.
+- **The cards stop being cards under the entries.** The table wrap's fill, the day cell's sticky white background
+  and the total row's fill are off below 721, so the rows are ruled entries on the page's paper, with the section's
+  own caption above them.
+- **Widths, schemes and the floor.** 320 / 360 / 390 / 768 / 1440 in light with the four-day answer: no sideways
+  page scroll (320: 320; 360: 360; 390: 390; 768: 768; 1440: 1440), and the tables no longer scroll at all below
+  721. At 360 in dark and in forced colours the entries are legible and the rules are the system's. At 200% text
+  (root 32px) the row becomes four lines — the day, the charge and calls, then the failures and the tokens — and
+  the page is still 360 wide. The account with no calls is unchanged at **2,527** at 360: the empty state has no
+  table to lay out. Axe-core over 320, 360 and 768 with the four-day answer finds **no violation** (0).
+- **The cost is height, and it is small.** The by-day table is **327 → 369px** at 360 (five rows), the account
+  **2,914 → 2,939** with the four-day answer (**3,154 → 3,200** at 320, **2,893 → 2,918** at 390), and 768 and
+  1440 are unchanged at **2,452 / 2,432** because the table there is the table it was. A 14-day answer would be
+  about 500px taller on a phone than the sideways table; the reader gets every figure for it.
+- **The budget.** `app.css` is **40,929 bytes of 40,960** (was 40,906, a net **+23**): the phone rules cost about
+  850 bytes and the two scrolling surface fades on the table wrap (now only an edge shadow at 721–1000) plus
+  shortened comments paid for most of it. Thirty-one bytes remain.
+
+| measured at 360, light | before | after |
+| --- | --- | --- |
+| The by-day table, box / content | 326 / **722** | 326 / **326** |
+| Columns readable without a swipe | Day, Charged | **all six** |
+| `Calls` begins at | x = 311 (past the 326 box) | **x = 262**, inside it |
+| The by-workspace table | 326 / 693 | **326 / 326** |
+| The by-day table's height | 327px | **369px** |
+| The account with four days | 2,914px | **2,939px** |
+| … at 320 / 390 | 3,154 / 2,893 | **3,200 / 2,918** |
+| … at 768 / 1440 | 2,452 / 2,432 | **2,452 / 2,432** |
+| axe-core (320, 360, 768) | 0 | **0** |
+| `app.css` | 40,906 bytes | **40,929** |
+
+### What this pass leaves
+
+- **A phone pays about 8px a row for the labels.** A day is 68px against the 48px of a table row; a fortnight of
+  calls is about half a screen more scroll than the sideways table. It is the price of not hiding four columns.
+- **The edge cue at 721–767 is a shadow, not a fade.** The wrap's two `local` surface fades went to pay for the
+  phone rules; the fixed 10px edge shadow and the thin scrollbar remain. At 768 the by-day table still needs 17px
+  of scroll for its last column, as it did before.
+- **The date is fixed at 7rem.** A longer day label than this fixture's ("Oct 27, 2026") wraps inside its 112px
+  column rather than pushing the charge off its line; the by-workspace table's "A deleted workspace" takes two
+  lines for the same reason.
+- **The first screen is still 494px of summary.** The card, the three facts and the contents line have not moved;
+  making the page answer "what am I paying for and what am I using" any sooner means changing those, not the bill.
+  The Workspaces heading still begins at y = 735, at the foot of an 800px screen.
+
+## 2026-10-28: the first screen, and the bill before the form
+
+Same harness: Chromium through `playwright-core` against the base commit's pages served by `trial --port 7601` and
+this pass's pages by `trial --port 7631`, on the same fixture (a Team account with one running workspace), 320 /
+360 / 390 / 768 / 1440, light and dark, forced colours at 360, the root raised to 32px at 360, a touch pointer
+below 721. Heights are `document.documentElement.scrollHeight`; positions are `getBoundingClientRect` plus
+`scrollY`.
+
+- **The first screen ends on the workspace, not on its heading.** At 360 the order was a 195px card, 190px of
+  three stacked facts and a 109px contents line — 494px before the first section — so `01 Workspaces` began at
+  **y = 735** and the workspace's name at 794, with its three controls at 832, below an 800px screen. The three
+  facts are now three ruled lines with the note beside the figure (label, value and note on one line; the
+  workspaces note still wraps at 360, so the block is **154px**, not 132), and the contents line is one row of
+  five 13px links at 44px with 6px of side padding and 2px between them (their measured widths are 102, 53, 64,
+  75 and 77 = **319 in 328**). `01 Workspaces` begins at **y = 627**, the workspace's name at **687** and
+  `Open / Pause / More` at **725–769** — its whole row is on an 800px screen. The page is **2,527 → 2,420** at
+  360, **2,507 → 2,379** at 390 and **2,790 → 2,749** at 320.
+- **The bill comes before the form that buys more of it.** The Payment panel was 1,486px down and the Usage
+  panel 2,087px: a customer reading the bill met `Add credit`, the three amounts and `Another amount` first.
+  Usage is now the third section and Balance the fourth, in the page, the contents line and the numbers
+  (`03 Usage`, `04 Balance`), and the scrollspy reads them in that order. Usage begins at **1,378** (was 2,087),
+  Balance at **1,639** (was 1,486) and Settings at **2,241** (was 2,348). At 768 and 1440 the page height is
+  unchanged (2,065 / 2,046) and the swap is the same 479px.
+- **A phone's table keeps its column headers, drawn or not.** `display: none` took the header row out of the
+  accessibility tree, and the `data-h` word was the only name a cell had. The header row is now clipped
+  (`position: absolute; 1px; clip-path: inset(50%)`) so it is drawn for the eye nowhere but still a row of
+  `<th scope="col">` for a reader, and the `data-h` label is drawn with an empty alternative (`attr(data-h) /
+  ""`) so it is not said twice. Chromium's `Accessibility.getFullAXTree` at 360 lists the six `columnheader`
+  cells **DAY, CHARGED, CALLS, FAILED, INPUT TOKENS, OUTPUT TOKENS** in the by-day table and the same six in the
+  by-workspace table, with the value cells named **$2.74, 34, 1, 184,000, 12,600**; before the change there were
+  no `columnheader` nodes at all. axe-core with every rule (not only WCAG) finds **0** violations at 360 and
+  768.
+- **Widths, schemes and the floor.** 320 / 360 / 390 / 768 / 1440 in light, 360 in dark and in forced colours,
+  and the root at 32px: no sideways page scroll (320: 320; 360: 360; 390: 390; 768: 768; 1440: 1440), nothing
+  computes below **12px**, and the account with no calls is 2,749 / 2,420 / 2,379 / 2,065 / 2,046. With a four-day
+  usage answer both passes together give 3,138 / 2,831 / 2,790 / 2,452 / 2,432 against the base's 3,154 / 2,914 /
+  2,893 / 2,452 / 2,432: the table's 42px is given back by the first screen. At 200% text
+  the first screen is 5,105px tall, the facts wrap to two lines each and the strip to 137px, and the page is
+  still 360 wide. The plan-less account (1,516px at 360) draws its stage card with the steps and puts the first
+  plan at 544 in the first screen; a paid account with no workspace puts the create form in the stage card at
+  358.
+- **The budget.** `app.css` is **40,950 bytes of 40,960** (was 40,929, a net **+21**): the compact facts, the
+  one-row contents line and the clipped header row cost about 90 bytes, and shortened comments and the folding
+  of two media-query lines paid for the rest. Ten bytes remain.
+
+| measured at 360, light | before | after |
+| --- | --- | --- |
+| The three facts | 190px, label and note stacked | **154px**, label, figure and note on a line |
+| The contents line | 109px, two rows (Settings alone) | **45px**, five links in 319 of 328 |
+| `01 Workspaces` begins at | y = 735 | **y = 627** |
+| The workspace's name / controls | 794 / 832–876 | **687 / 725–769** |
+| Usage begins at | 2,087 | **1,378** |
+| Balance begins at | 1,486 | **1,639** |
+| Settings begins at | 2,348 | **2,241** |
+| The account at 360 / 390 / 320 | 2,527 / 2,507 / 2,790 | **2,420 / 2,379 / 2,749** |
+| … at 768 / 1440 | 2,065 / 2,046 | **2,065 / 2,046** |
+| `columnheader` nodes at 360 | 0 | **12** (six per table) |
+| axe-core, every rule, 360 / 768 | — | **0** |
+| `app.css` | 40,929 bytes | **40,950** |
+
+### What this pass leaves
+
+- **The workspaces note still takes a second line at 360.** "1 workspace in your plan" is 152px against the 328px
+  line and the figure and label need the rest; the block is 154 instead of 132. A shorter note ("1 in your
+  plan") would buy the 22px and lose the noun.
+- **The contents line is one 13px row because its padding went from 12 to 6.** The targets are still 44px tall;
+  the current section's pill hugs its word more tightly than before. At 320 the five links do not fit and the row
+  wraps (91px), with Settings alone on the second line, as the 2026-10-26 record had it.
+- **The Balance panel still carries the top-up form.** The order changed, so the form is no longer met on the way
+  to the bill; folding it behind an `Add credit` disclosure would have saved another ~220px and was the other
+  candidate. It was not taken because hiding the way to add credit from a customer whose balance is low is the
+  worse trade, and because the record's order was the thing that was wrong.
+- **The three facts at 768 and 1440 are unchanged** (102px, three columns): there is room for the columns, and
+  this pass changed the phone's composition only.
+- **Nothing was added for the auth pages or the signed-out home.** The first minute a stranger sees is still the
+  front page's; this pass is the account's own record.
