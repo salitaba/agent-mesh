@@ -312,7 +312,7 @@ recipe that a third page needs is written here.
   sentence about the mission on every seat, while the facts that differ — the turns that seat ran, when its last one ended, what
   it spent — are a column each. The Cards/List choice is offered there too; a team with anything to run (a seat to wake, a
   decision, a live turn) stays cards.
-- **On a phone** everything that is pressed is 44 px tall and a field is 16 px, so the page does not zoom.
+- **On a phone** everything that is pressed is 44 px tall and a field is 16 px, so the page does not zoom. A live list's hold is its glyph at 44 px beside the search, named in full, so the header is one row and the first row of the list is on the screen.
 
 **The working pages** (Steps, Events, Graph, Designer, Files, Product, Cost, Tool gates, the drawers):
 
@@ -324,7 +324,9 @@ recipe that a third page needs is written here.
 - **Steps draws its timeline**: rounded bars in the outcome's colour on a well with hairline ticks and a *now* line. Pointing at
   or focusing a bar says which turn it is (agent, outcome, time, how long, tokens, what it left, what woke it) and picks the
   same row, and the other way round; a filter dims the bars it hides. A mission that is over opens on **Fit** (§6a, `steps.ts`)
-  and says "Times in <zone>". The turns are rows of a table: rail, avatar, what happened, duration, tokens, started.
+  and says "Times in <zone>". The turns are rows of a table: rail, avatar, what happened, duration, tokens, started. On a phone
+  the strip's three figures are one row (the share written, "44% of tokens", where a desk draws the ring) and the closed timeline
+  is its caption row, so the turns begin on the first screen.
 - **Events is a ledger of lines**: when, who (the seat's avatar, or a tile for the kind of event), what, with the actor in
   bold, and the kind at the right. An alert is a red tile and rail; routine runs fold into one row (a switch turns that off).
   A row shows the clock time in the reader's zone, said once above the list ("Times are in CEST"), and not "2 minutes ago":
@@ -430,6 +432,73 @@ Known debt, so it is not rediscovered:
 
 The changes to the console that were measured against rendered screens, newest first. A pass is only in this list with the run
 that produced it, the before and the after, and what it deliberately did not change.
+
+### 2026-10-28 — a phone's Steps opens on its turns, and the hold is a glyph
+
+Run against `examples/demo-stub/mesh.yaml` at **Delivered** (the scripted demo, no model calls) on the production build from the
+worktree: a fresh state, the mission started from the console, every reading taken on the same delivered state within the hour.
+320, 360, 390, 768 and 1440, light at every width and dark at 360 and 1440, `prefers-reduced-motion: reduce`, Chromium 1248 with
+axe-core 4.14 in the page over the shared CDP browser. Before is the build at this branch's base (`c0762a2`, served from a second
+worktree at 7442) and, for the same run, the same page read on this build before the edit; after is this pass's.
+
+**What changed.**
+
+- **The hold is a glyph on a phone.** The live lists put "Pause updates" under the search, so at 360 the Steps header measured
+  **162 px** — the title row 91, the search 44 and the two words a third row of 44 — and the Events header 149, with the button
+  on a line of its own under the title. `PauseButton` takes `compact`, and Steps and Events pass the phone break: it is a 44 px
+  `IconButton` beside the search, whose name is still the whole label ("Pause updates", then "Resume updates") and whose tooltip
+  says it on a pointer. The header is one 44 px row and the lede under it: **110 px on both pages**, and the search keeps 280 of
+  its 332. No stop was added or moved: search, then the hold, as before.
+- **The Steps strip's three figures are one row on a phone.** The two counts and the no-output ring were a 2 × 2 ledger **126 px**
+  tall (45 for the counts, 69 for the 58 px ring and its words). At `sm`, with the share written where the ring is not drawn
+  ("44% of tokens", from the same `spendOf`), the three take **38 px** at 360 — and 58 at 320, where the unit wraps rather than
+  being cut. A desk keeps the ring: what is a picture at 1200 px is a number at 360, and the number is still labelled with what it
+  is a share of. Before the list arrives the figure is "– / not loaded", not a share of no turns.
+- **A closed timeline is its caption row.** The sheet put 12 px of padding and a 12 px margin around the 44 px caption whether the
+  lanes were open or not: **85 px** for a row that says "Who was busy, when". Closed, it is the 44 px row (**45** with its rule)
+  and the card's foot comes back when it opens.
+- **What that put on the first screen.** The first turn began **692 px** down a 736 px view, and one turn was wholly visible. It
+  begins at **512** and two are (the third starts 49 px below them). The page is 135 px shorter (3,323 → 3,188). Events, which
+  held four events on its first screen, holds five (first row 314 → 275).
+
+**Measured.**
+
+| | Before | After |
+|---|---|---|
+| Steps header, 360 / 320 | 162 / 162 px (title, search, the hold's words) | 110 / 110 (the hold is a 44 px glyph beside the search) |
+| Steps strip card, 360 / 320 | 317 / 317 px | 188 / 208 |
+| Steps figures, 360 / 320 | 126 / 126 px (two cells and a 69 px ring row) | 38 / 58 (three across) |
+| Steps closed timeline, 360 | 85 px | 45 |
+| Steps, first turn begins at, 360 / 320 | 692 / 711 px | 512 / 550 |
+| Steps, turns wholly on the first screen, 360 / 320 | 1 / 1 of 25 | 2 / 2 |
+| Steps page (#view scrollHeight), 360 / 320 | 3,323 / 3,382 px | 3,188 / 3,267 |
+| Steps search field, 360 | 332 px (the hold below it) | 280 px (the hold beside it, 44) |
+| Events header, 360 | 149 px | 110 |
+| Events, first event begins at, 360 | 314 px | 275 |
+| Events wholly on the first screen, 360 | 4 of 71 | 5 of 71 |
+| The hold, keyboard at 360 | a button named "Pause updates" | a button named "Pause updates", 44 × 44, a 2 px ring, tooltip on focus |
+| Controls in the page, Steps / Events at 360 | 59 / 119 (34 / 32 tab stops) | identical — the hold is one button, drawn smaller |
+| Axe, Steps and Events, 360 and 1440, both themes | 0 violations | 0 |
+| The 14 view addresses × 360 and 1440 × both themes | 0 horizontal scroll, 0 page scroll, 0 console errors, smallest text 11 px | identical |
+| Real controls under 44 × 44 at 360 | 0 | 0 |
+| The kit, `/kit.html`, 360 light and 1440 dark | 0 axe, no page scroll | identical |
+| Type sizes touched | — | 16 (a `Stat` at `sm`), 13 and 11, all on the ramp |
+
+`npm run typecheck`, `npm run lint` (0 errors; the same 211 cross-package warnings, none in the console) and `npm run build` pass;
+`node --test "dist/tests/dashboard/*.test.js"` passes **1,176 tests**, `node --test "dist/tests/build/console-palette.test.js"
+"dist/tests/build/icons.test.js"` passes **11**, and the full `node --test "dist/tests/**/*.test.js"` passes **6,390 tests — 6,387
+pass, 2 skipped and 1 failing outside this surface**: `licensing/pricing-export` ("a page that has not been written is out of
+date"), which fails the same way on the base commit's own pristine build (`before/dist`, from `c0762a2`), so it is not this pass's.
+`cloud/control-mail` failed once while three agents' suites ran on this machine at the same time and passes alone. The new
+`phone-head.test.ts` and the changed `views-phone.test.ts` rule were each mutation-checked (the compact hold refused, the grid put
+back to two columns, the closed caption given its padding — each seen to fail, then restored).
+
+**Left.** A desk is untouched: from 621 px up the ring, the words "Pause updates" and the sheet's 12 px padding are as they were,
+because a mouse and a 1200 px column have the room, and the pass is about the screen that did not. The third figure's unit wraps
+at 320 (58 px rather than 38): the figure is whole and the cell is one of three, so widening it would take width from the other
+two. With a turn in flight the live line's chips add a row to the strip; the scripted demo finished in about 20 s and this pass
+did not catch one, so the running state's height is unmeasured. No real phone, screen reader, Safari, Firefox or Windows High
+Contrast run this pass.
 
 ### 2026-10-26 — the window cannot scroll the console away, and the Files panel keeps the pen
 

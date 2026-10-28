@@ -116,7 +116,7 @@ function Strip({ steps, loaded, failed, onPick, filter, counts, missionTokens, h
 
           <div className="st-kpis">
             <div title="Turns that have finished.">
-              <Stat label="Turns done" value={loaded ? done : "–"} />
+              <Stat label="Turns done" value={loaded ? done : "–"} size={phone ? "sm" : undefined} />
             </div>
             <div
               title={
@@ -125,10 +125,11 @@ function Strip({ steps, loaded, failed, onPick, filter, counts, missionTokens, h
                   : `Every turn of the mission, from the budget ledger.${spend.partial ? ` The ${plural(steps.length, "turn")} loaded below account for ${fmt(spend.loaded)}.` : ""}`
               }
             >
-              <Stat label="Tokens" value={loaded || missionTokens != null ? fmt(spend.tokens) : "–"} />
+              <Stat label="Tokens" value={loaded || missionTokens != null ? fmt(spend.tokens) : "–"} size={phone ? "sm" : undefined} />
             </div>
             {/* Not "wasted": a turn that decided nothing needed doing, or was refused by policy, is working as designed. The figure says what is
-                measured (tokens that produced no output) and leaves the verdict to the reader. */}
+                measured (tokens that produced no output) and leaves the verdict to the reader. A desk reads it as a ring; a phone has three
+                figures in one row and reads the share as the same number and words, which is what the ring says aloud. */}
             <div
               className={`st-noout${warn ? " warn" : ""}`}
               title={`Share of the ${fmt(spend.loaded)} tokens in the ${plural(steps.length, "loaded turn")} that went to turns which wrote nothing or were refused.${spend.partial ? " Older turns are not counted." : ""}`}
@@ -145,7 +146,8 @@ function Strip({ steps, loaded, failed, onPick, filter, counts, missionTokens, h
               </Ring>
               <span className="st-noout-k">
                 <span className="stat-k">No output</span>
-                <span className="stat-s">{spend.partial ? `of ${plural(steps.length, "turn")} loaded` : "of tokens"}</span>
+                <span className="st-noout-v">{loaded ? `${spend.wastedPct}%` : "–"}{loaded ? <span className="stat-u"> {spend.partial ? `of ${plural(steps.length, "turn")}` : "of tokens"}</span> : null}</span>
+                <span className="stat-s">{!loaded ? "not loaded" : spend.partial ? `of ${plural(steps.length, "turn")} loaded` : "of tokens"}</span>
               </span>
             </div>
           </div>
@@ -165,7 +167,7 @@ function Strip({ steps, loaded, failed, onPick, filter, counts, missionTokens, h
         ) : null}
 
         {tl ? (
-          <div className="st-tl">
+          <div className={`st-tl${open ? " open" : ""}`}>
             <div className="st-tl-head">
               <button type="button" className="st-tl-cap" aria-expanded={open} onClick={() => setOpenPref(!open)}>
                 <Icon name="chevron-right" size={12} className={open ? "caret turned" : "caret"} />
@@ -358,6 +360,8 @@ function Rows(): React.JSX.Element {
 export default function Steps(): React.JSX.Element {
   const { steps, stepsLoaded, stepsError, stepsStale, stepFilter, setStepFilter, stepSearch, setStepSearch, openDetail, refreshSteps, stepLimit, setStepLimit, status, serverDown, setView } = useMesh();
   const { state } = useMission();
+  // The same phone break the strip uses: it decides whether the hold is a word or its glyph, so the header is one row.
+  const phone = useMedia(PHONE);
   const missionActions = useMissionActions();
   const [fold, setFold] = useState(true);
   // A retry asked for from the note above the ledger: its answer replaces the note, so focus has to be put back by hand.
@@ -446,7 +450,7 @@ export default function Steps(): React.JSX.Element {
         actions={
           <>
             <SearchField id="step-search" label="Filter steps" placeholder="Agent or word" hint="/" value={stepSearch} onChange={(e) => setStepSearch(e.target.value)} onClear={() => setStepSearch("")} />
-            <PauseButton paused={hold.paused} onToggle={() => hold.setPaused(!hold.paused)} noun="turns" />
+            <PauseButton paused={hold.paused} onToggle={() => hold.setPaused(!hold.paused)} noun="turns" compact={phone} />
           </>
         }
       />

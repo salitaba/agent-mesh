@@ -35,6 +35,8 @@
 .st-kpis .stat-v, .st-kpis .stat-k { white-space: nowrap; }
 .st-noout { display: flex; align-items: center; gap: var(--s3); }
 .st-noout-k { display: flex; flex-direction: column; gap: var(--s0); }
+/* The same figure written out, for the width where the ring does not fit (below 620). One of the two is always drawn. */
+.st-noout-v { display: none; }
 
 /* The shape of the run in one line. It is a picture of the filter's counts, which carry the words and the numbers. */
 .st-mix { display: flex; gap: 2px; height: 8px; margin: 0 var(--s5) var(--s4); border-radius: var(--k-r-pill); overflow: hidden; }
@@ -251,13 +253,22 @@
   /* Unfiltered, the button carries the count; with a search or a filter on, how many of how many is the fact that changed. */
   .st-count { display: none; }
   .st-count.on { display: inline; }
-  /* Three figures could not share 302 px: the third ran 76 px past the card and scrolled the whole view sideways at 360.
-     A 2 x 2 ledger gives the two counts the first line and the share that went nowhere the second, at full width. */
-  .st-kpis { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); width: 100%; gap: var(--s3) var(--s4); margin-left: 0; }
+  /* Three figures share one row. At `sm`, with the share written as a figure ("44% of tokens") instead of drawn as a 58 px
+     ring, they fit 302 px; the desk keeps the ring. Measured at 360 the old 2 x 2 ledger was 126 px, the row is 40. */
+  .st-kpis { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); width: 100%; gap: var(--s2) var(--s3); margin-left: 0; align-items: start; }
   .st-kpis > * + * { min-width: 0; padding-left: 0; border-left: 0; }
-  .st-kpis .st-noout { grid-column: 1 / -1; padding-top: var(--s2-5); border-top: 1px solid var(--line); }
+  .st-kpis .st-noout { grid-column: auto; padding-top: 0; border-top: 0; display: block; }
+  .st-kpis .st-noout .ring { display: none; }
+  .st-kpis .st-noout .stat-s { display: none; }
+  .st-kpis .st-noout-v { display: block; font: 650 16px/1.25 var(--sans); letter-spacing: var(--k-track-tight); color: var(--text); }
+  .st-kpis .st-noout-v .stat-u { font: 500 13px var(--sans); letter-spacing: 0; color: var(--muted); }
   .st-mix { margin: 0 var(--s4) var(--s3-5); }
-  .st-tl { padding-left: var(--s4); padding-right: var(--s4); }
+  /* The timeline is closed until it is asked for on a phone, so its caption is one 44 px row and not 85 px of padding and
+     margin around one: the closed card was a third of the pulse. */
+  .st-tl { padding: 0 var(--s4); }
+  .st-tl-head { margin-bottom: 0; min-height: 44px; }
+  .st-tl.open { padding-bottom: var(--s4); }
+  .st-tl.open .st-tl-head { margin-bottom: var(--s3); }
   .st-tl-head .seg { margin-left: 0; max-width: 100%; overflow-x: auto; }
   /* A lane is two lines: who and their totals, then a track the full width of the card. Eighty pixels for a name cut "developer"
      to "devel…", and a lane you cannot name is not worth drawing. */
