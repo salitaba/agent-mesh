@@ -252,23 +252,23 @@
     <div>
       <div class="section-head">
         <p class="eyebrow">Try it</p>
-        <h2 class="title">Run the demo on your own machine, with no API key.</h2>
-        <p class="lede">The demo runs a scripted team on the real runtime: no model, no credentials. Watch the whole flow before you commit to anything.</p>
+        <h2 class="title">Run the demo on your machine. No API key.</h2>
+        <p class="lede">The demo runs a scripted team on the real runtime: no model, no credentials. Watch the flow before you commit.</p>
       </div>
-      <p class="muted">You need Docker and git. The first command uses <code>openssl</code>; any random string of 32 or more characters will do as the token.</p>
+      <p class="muted">You need Docker and git; the first command uses <code>openssl</code>, and any random string of 32 or more characters is a token.</p>
       <p class="mt-m"><a class="arrow-link" href="docs/" data-doc="commercial/deployment.md">Deploying: Docker Compose, Helm and TLS</a></p>
     </div>
     <ol class="try">
       <li>
         <h3>Make a token, and keep it</h3>
-        <p>The container refuses to start without one. You will paste it into the sign-in page.</p>
+        <p>The container will not start without one; you paste it at sign-in.</p>
         <div class="code"><pre tabindex="0"><code>export MESH_API_TOKEN="$(openssl rand -hex 32)"
 echo "$MESH_API_TOKEN"</code></pre></div>
       </li>
       <li>
-        <h3>Build the image from the source</h3>
+        <h3>Build the image</h3>
         <!-- The caveat belongs to the step it explains: it used to stand in the preamble, above the first command. -->
-        <p data-image-off class="small muted">There is no published container image yet, so this step builds it from the source. Tagged releases will publish one.</p>
+        <p data-image-off class="small muted">No image is published yet, so this step builds it from the source; tagged releases will publish one.</p>
         <div class="code"><pre tabindex="0"><code>git clone https://github.com/salitaba/agent-mesh.git curule
 cd curule
 docker build -t curule .</code></pre></div>
@@ -281,9 +281,9 @@ docker build -t curule .</code></pre></div>
         <div data-image-slot></div>
       </li>
       <li>
-        <h3>Open it and press Start mission</h3>
+        <h3>Open the console</h3>
         <p>Go to <code>http://127.0.0.1:7420</code> and sign in with the token. Open the <b>demo-stub</b> project and press <b>Start mission</b>. Seven agents take a payment-API mission from requirements to a merged, reviewed, verified result, and QA blocks it once so you can see conflict handling.</p>
-        <p>With your own credentials the same seats are real: add <code>ANTHROPIC_API_KEY</code> (or Bedrock, Vertex or Foundry credentials), then <code>curule init</code> a project.</p>
+        <p>Your own credentials make the same seats real: add <code>ANTHROPIC_API_KEY</code> (or Bedrock, Vertex or Foundry), then <code>curule init</code> a project.</p>
       </li>
     </ol>
   </div>

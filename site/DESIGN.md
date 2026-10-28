@@ -1630,3 +1630,78 @@ is copied from an earlier pass.
 The next pass's first job is still the page's length: 12,973px at 360 is 16.2 screens, and the reorder changed the order a phone
 meets them in, not how many words it reads. The demo (2,033.5px of four steps and three command blocks) and the two ways in
 (1,206.5px of two cards) are the two places where fewer lines would take the most pixels off, and both are copy.
+
+## 2026-10-28, fourth pass: the demo says its instructions in fewer lines
+
+Measured with the same probe (Chrome 156 over CDP, reduced motion, light unless said, touch at 320/360/390, a mouse at 768 and
+1,440, print at 794, forced colours at 360, a 24px root at 320 and 360, a 32px root at 320 and 360). The before column is the
+site at `5b2205e`, served on a second port and measured in the same run; no number is copied from an earlier pass.
+
+### What changed
+
+- **The demo's preamble says the same in three lines fewer.** At 360 the heading is two lines instead of three (90.7 → 60.5):
+  "Run the demo on your machine. No API key." keeps both claims and loses a connective. The lede is three lines (106.1 → 79.6)
+  and the Docker/openssl line is three (102.4 → 76.8), still naming Docker, git, `openssl` and "32 or more characters". The
+  preamble is **477.6 → 395.2** and the first command stands **106.4px higher** (5,627.3 → 5,520.9).
+- **Two step headings name their step in one line.** "Build the image from the source" → "Build the image" (**49.4 → 24.7**) and
+  "Open it and press Start mission" → "Open the console" (**49.4 → 24.7**). What the short heading drops, the step keeps: the
+  caveat still says "this step builds it from the source", the command is still `git clone` and `docker build`, and step 4's
+  sentence still says "Open the **demo-stub** project and press **Start mission**".
+- **The fourth step's second paragraph is one line shorter.** "With your own credentials the same seats are real: …" is now
+  "Your own credentials make the same seats real: …", with the same four providers and the same `curule init`
+  (**120 → 96**). The step is **382.4 → 333.7** at 360 and 430.4 → 381.7 at 320.
+- **The section is 203.8px shorter at 360 and the page 203px** (12,973 → 12,770, 16.2 → 15.96 screens of 800). At 320 the page
+  is 74px shorter (13,790 → 13,716), at 390 27 (12,455 → 12,428), at 1,440 24 (12,199 → 12,175), and at 768 unchanged (12,515),
+  where the steps column already set the height. The words are **219 → 200** in the demo and **1,547 → 1,528** on the page.
+- **Nothing above or below moves except by that 203px.** The price line (522.8), the two ways (2,867.3), the console (4,073.8) and
+  the demo's own top (4,952) are where they were; `#why` is 6,985.5 → 6,781.7, and the footer 12,275.3 → 12,071.6. The three
+  command blocks keep their heights and hide 0px at 320/360/1,440, and the demo still has 1 link, 3 Copy buttons and 4 steps.
+
+### Measurements after this pass
+
+| The home page at 360, light | Before | After |
+|---|---|---|
+| The page | 12,973 (16.2 screens) | **12,770 (15.96)** |
+| The demo (`#try`) | 2,033.5 | **1,829.7** |
+| Its preamble | 477.6 | **395.2** |
+| Its heading / lede / need line | 90.7 / 106.1 / 102.4 | **60.5 / 79.6 / 76.8** |
+| Step 1 / step 2 | 330.9 / 400.4 | **306.9 / 351.7** |
+| Step 3 / step 4 | 314.3 / 382.4 | **314.3 / 333.7** |
+| The first command | 5,627.3 | **5,520.9** |
+| The demo's words | 219 | **200** |
+| The footer | 12,275.3 | **12,071.6** |
+
+| The page at 320 / 390 / 768 / 1,440 | Before | After |
+|---|---|---|
+| Home | 13,790 / 12,455 / 12,515 / 12,199 | **13,716 / 12,428 / 12,515 / 12,175** |
+| The demo | 2,126.2 / 1,812.1 / 1,418 / 1,263.3 | **2,052.8 / 1,785.4 / 1,418 / 1,239.3** |
+
+- No page scrolls sideways at 320, 360, 390, 768 and 1,440 in either theme (**0** on all 70 page/width/theme pairs), the probe
+  reports **0** console errors and **0** axe-core WCAG 2.0/2.1/2.2 A and AA violations on the home page at 320 dark, 360 light and
+  1,440 dark, and the smallest computed text is **12px**. The target census is unchanged: no standalone control under 44×44 at
+  320–768 on the home page (the four inline links in sentences are the exception the probe allows), and the same 29 mouse-sized
+  36–40px rows at 1,440 as before.
+- Without a script the home page is **12,769**, 0px over (was 12,972); with `forcedColors: active` at 360 it is **12,770**, 0px
+  over; print at 794 is **12,135**, unchanged; at a 24px root **20,072** at 360 and **21,820** at 320, 0px over (was 20,319 and
+  21,933); at a 32px root **30,076** and **33,313**, 6px and 26px over, exactly as before.
+- The keyboard is **74** stops at 360 before and after; the demo's first control is the **34th** (the Deploying link) and the
+  footer's the **57th**. The demo's four controls are the link and the three Copy buttons.
+- Every pin in `tests/build/site-copy.test.ts` holds without an edit: four steps, the three exact command blocks, the caveat
+  inside step 2, and "Open the demo-stub project and press Start mission". The site's own suites are **177** tests, all passing.
+
+### What this pass deliberately left
+
+- **The fourth step's first paragraph is still eight lines** (192px at 360). It carries the URL, the token, the project, the
+  button, the seven agents, the mission, the chain from requirements to merged, reviewed and verified, and the one block;
+  a line off means one of those off.
+- **At 320 the page loses 74px, not 204.** Only step 2's and step 4's headings and step 4's second paragraph change line at
+  232px of text; the heading, the lede and the Docker line keep their lines.
+- **At 768 nothing changes.** The steps column set the section's height before and its lines did not move.
+- **The demo is still a commitment before the argument** (6.2 screens), and each command block still carries its 48px Terminal
+  row. That component is shared with the documentation page and was not this pass's.
+- **The captures were not retaken**, and `site/ux/` was not edited.
+- `npm run site:check` still exits 1 on the owner's `TODO(owner)` at `site/legal/index.html:133`, as the last four passes recorded.
+
+The next pass's first job is the two ways in (`#ways`, 1,206.5px at 360): two 522.6px cards whose four answers repeat the pricing
+page's. A card is kept for something you act on, so the saving there is the words inside the two cards, not their surface; after it,
+the demo's fourth step's first paragraph is the only prose left in `#try` that is longer than its instruction.
