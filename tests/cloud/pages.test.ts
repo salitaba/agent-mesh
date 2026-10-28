@@ -471,6 +471,27 @@ test("a long table keeps the name of its row at the edge while its figures scrol
   assert.deepEqual(entries, [["01", "Workspaces"], ["02", "Plan"], ["03", "Usage"], ["04", "Balance"], ["05", "Settings"]]);
 });
 
+test("the balance is the record, and adding credit is one 44px row on a phone that opens the form", () => {
+  const account = pages().find((p) => p.name === "account")!;
+  const panel = account.all.find((n) => attr(n, "id") === "balance-panel")!;
+  const card = panel.querySelector(".card")!;
+  const [figures, fail, fold] = card.children.filter((n) => !n.isText);
+  assert.deepEqual([attr(figures!, "id"), attr(fail!, "id"), fold!.tag], ["figures", "topup-fail", "details"], "the figures, the note a failed read leaves, then the form");
+  assert.deepEqual([attr(fold!, "class"), attr(fold!, "id")], ["topup", "topup-details"]);
+  const summary = fold!.querySelector("summary")!;
+  assert.equal(summary.textContent.trim(), "Add credit", "the row is the action's name, and no separate caption shows with it");
+  assert.deepEqual(fold!.children.filter((n) => !n.isText && n.tag !== "summary").map((n) => attr(n, "id")), ["topup-add", "topup-options", "topup-status", "topup", "topup-hint"]);
+
+  const rules = cssRules(read(path.join(ASSETS, "app.css")));
+  const value = (selector: string, property: string, within = ""): string | undefined => {
+    const found = rules.filter((r) => r.selectors.includes(selector) && (within === "" ? r.at === "" : r.at.includes(within)) && declared(r, property) !== undefined);
+    return found.length > 0 ? declared(found[found.length - 1]!, property) : undefined;
+  };
+  assert.equal(value(".topup > summary", "display"), "none", "a wide screen keeps the whole form: the row is the phone's");
+  assert.equal(value(".topup > summary", "min-height", "max-width: 720px"), "44px", "and on a phone the row is a finger's target");
+  assert.equal(value(".topup > summary", "cursor", "max-width: 720px"), "pointer");
+});
+
 test("the stylesheet is held to its budget, and whatever it moves it stills for a person who asked for stillness", () => {
   const css = read(path.join(ASSETS, "app.css"));
   // The stylesheet stands between a visitor and the first paint of every page, so what it weighs is what a phone on a poor connection waits for.

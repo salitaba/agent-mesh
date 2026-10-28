@@ -29,7 +29,7 @@
     verify: ["bar-say", "status", "title", "again", "resend-form", "resend", "resend-wait", "resend-status", "email"],
     forgot: ["bar-say", "form", "status", "email"],
     reset: ["bar-say", "card", "form", "status", "title", "lede", "ask", "password"],
-    account: ["bar-say", "who", "notice", "retry-row", "skeleton", "glance", "glance-list", "subnav", "settings-panel", "stage", "stage-steps", "stage-title", "stage-text", "stage-status", "stage-actions", "stage-live", "workspaces-panel", "workspaces", "create-slot", "create-box", "create", "workspace-name", "create-plan-field", "workspace-plan", "create-note", "plan-panel", "plan-h", "plan-status", "plan", "balance-panel", "usage-panel", "usage-h", "usage-say", "figures", "topup-fail", "topup", "topup-amount", "topup-unit", "topup-hint", "topup-status", "topup-add", "topup-options", "usage", "password-form", "password-status", "current", "next"],
+    account: ["bar-say", "who", "notice", "retry-row", "skeleton", "glance", "glance-list", "subnav", "settings-panel", "stage", "stage-steps", "stage-title", "stage-text", "stage-status", "stage-actions", "stage-live", "workspaces-panel", "workspaces", "create-slot", "create-box", "create", "workspace-name", "create-plan-field", "workspace-plan", "create-note", "plan-panel", "plan-h", "plan-status", "plan", "balance-panel", "usage-panel", "usage-h", "usage-say", "figures", "topup-fail", "topup-details", "topup", "topup-amount", "topup-unit", "topup-hint", "topup-status", "topup-add", "topup-options", "usage", "password-form", "password-status", "current", "next"],
     terms: ["bar-say"],
     privacy: ["bar-say"],
     notfound: ["bar-say"],
@@ -2020,7 +2020,12 @@
           }
         } else if (fromBalance) {
           const back = state.topups ? $("topup-options").querySelector("button") : press;
-          if (back) back.focus();
+          if (back) {
+            // The amounts arrived inside the row the person opened from: open it before giving them the cursor, or a closed
+            // disclosure would swallow the focus and leave it on the body.
+            if (state.topups) $("topup-details").open = true;
+            back.focus();
+          }
         }
       });
     }
@@ -2149,6 +2154,7 @@
       // The amounts, the caption and the form are all read from the plans. Unread, there is nothing to offer, so the card says why and
       // carries the read that fills it, rather than a field and a Pay that cannot work and would blame the amount typed for it. A service
       // that sells no credit also has nothing to offer, but nothing failed, and its balance panel is not drawn at all.
+      $("topup-details").hidden = !t;
       $("topup-add").hidden = !t;
       $("topup-options").hidden = !t;
       $("topup").hidden = !t;
@@ -2169,6 +2175,7 @@
       $("topup-hint").textContent = `From ${money(t.minimumMinor, state.currency)} to ${money(t.maximumMinor, state.currency)}. Each ${money(10 ** d, state.currency)} adds ${format(rate, state.currency, d, Math.max(d, 4))} of usage, and credit does not expire.`;
       // The amount is what a reader compares; "Add credit" is the trough's caption, so the three fit one row on a phone, and each says its own action to a screen reader.
       $("topup-options").replaceChildren(...t.optionsMinor.map((minor) => button(money(minor, state.currency), { small: true, attrs: { "aria-label": `Add ${money(minor, state.currency)}` }, onclick: (event) => payTopup(minor, event.currentTarget) })));
+      fitTopup();
     }
 
     function payTopup(minor, trigger) {
@@ -2369,6 +2376,14 @@
     });
 
     // -- the first paint, and what a return from the payment page means --
+
+    // Adding credit is one named row on a phone and the whole form on a wide screen, where there is room for it.
+    const wide = typeof window.matchMedia === "function" ? window.matchMedia("(min-width: 721px)") : null;
+    function fitTopup() {
+      const d = $("topup-details");
+      if (!d.hidden) d.open = wide ? wide.matches : false;
+    }
+    if (wide && wide.addEventListener) wide.addEventListener("change", fitTopup);
 
     renderAll();
     if (state.picked) landOnPlan(state.picked);

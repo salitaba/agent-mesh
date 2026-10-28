@@ -106,17 +106,20 @@
     <div class="card">
       <dl class="figures" id="figures"></dl>
       <div id="topup-fail" class="note note-warn" hidden></div>
-      <p id="topup-add" class="muted small">Add credit</p>
-      <div class="btn-row topup-options" id="topup-options" role="group" aria-labelledby="topup-add"></div>
-      <div id="topup-status" class="note" role="status" aria-live="polite"></div>
-      <form id="topup" class="inline-form" novalidate>
-        <div class="field">
-          <label for="topup-amount">Another amount <span class="muted" id="topup-unit"></span></label>
-          <input id="topup-amount" name="amount" type="number" inputmode="decimal" min="0" step="any" autocomplete="off" aria-describedby="topup-hint">
-        </div>
-        <button class="btn" type="submit" data-busy="One moment">Pay</button>
-      </form>
-      <p id="topup-hint" class="muted small"></p>
+      <details class="topup" id="topup-details">
+        <summary class="fold">Add credit</summary>
+        <p id="topup-add" class="muted small">Add credit</p>
+        <div class="btn-row topup-options" id="topup-options" role="group" aria-labelledby="topup-add"></div>
+        <div id="topup-status" class="note" role="status" aria-live="polite"></div>
+        <form id="topup" class="inline-form" novalidate>
+          <div class="field">
+            <label for="topup-amount">Another amount <span class="muted" id="topup-unit"></span></label>
+            <input id="topup-amount" name="amount" type="number" inputmode="decimal" min="0" step="any" autocomplete="off" aria-describedby="topup-hint">
+          </div>
+          <button class="btn" type="submit" data-busy="One moment">Pay</button>
+        </form>
+        <p id="topup-hint" class="muted small"></p>
+      </details>
     </div>
   </section>
 

@@ -1058,6 +1058,30 @@ test("the balance is what the gateway says, rounded down; when it cannot be read
   assert.match(b.text(b.$("plan").querySelector(".row")!), /^Team Active \$149\.00 per month\. Paid until November 5, 2026\. /);
 });
 
+test("the balance is the record, and adding credit is one named row that holds the amounts and the form", async () => {
+  const w = world(paid);
+  const v = await visit("account", { routes: w.routes });
+  const details = v.$("topup-details");
+  assert.equal(details.tag, "details", "the disclosure is the browser's own, so it opens without the script doing anything");
+  assert.equal(details.hidden, false, "a service that sells credit offers it");
+  assert.equal(details.querySelector("summary")!.textContent.trim(), "Add credit", "the row is named with the action");
+  assert.equal(v.$("topup-add").parent, details, "the amounts, their answer and the form are inside it");
+  assert.deepEqual(details.children.filter((n) => !n.isText && n.tag !== "summary").map((n) => n.getAttribute("id")), ["topup-add", "topup-options", "topup-status", "topup", "topup-hint"]);
+
+  const down = world(paid);
+  down.plans = failure(503, "unavailable", "Down.");
+  const d = await visit("account", { routes: down.routes });
+  assert.equal(d.$("topup-details").hidden, true, "a read that failed hides the row with the form it cannot fill, and keeps its own note");
+  assert.equal(d.$("topup-fail").hidden, false);
+  // The balance's own Try again opens the row before giving the cursor to what arrived: a closed disclosure would swallow it.
+  down.plans = { json: PLANS };
+  d.click(d.button("topup-fail", "Try again"));
+  await d.idle();
+  assert.equal(d.$("topup-details").hidden, false);
+  assert.equal((d.$("topup-details") as unknown as { open: boolean }).open, true, "the row is open on the amounts it now holds");
+  assert.equal(d.doc.activeElement, d.$("topup-options").querySelector("button"), "and the cursor is on the first amount");
+});
+
 test("the plans being unavailable leaves the rest of the account usable, says what is missing, and asks again when told to", async () => {
   const w = world(paid);
   w.plans = failure(503, "unavailable", "Down.");
@@ -1079,6 +1103,7 @@ test("the plans being unavailable leaves the rest of the account usable, says wh
   assert.match(v.text(v.$("plan")), /Team Active \$149\.00 per month/, "and the summary is drawn from it");
   // The same read carries what credit may be bought; before, the amounts stayed empty until the page was reloaded.
   assert.equal(v.$("topup-add").hidden, false);
+  assert.equal(v.$("topup-details").hidden, false, "the row that holds the amounts is shown with them");
   assert.deepEqual(v.labels("topup-options"), ["$10.00", "$25.00", "$100.00"], "and the amounts to add, which the same read carries");
   assert.match(v.text("topup-hint"), /^From \$5\.00 to \$1,000\.00\./);
   assert.equal(v.button("plan", "Manage billing").tag, "button");

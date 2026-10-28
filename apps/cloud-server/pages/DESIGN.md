@@ -1534,3 +1534,89 @@ below 721. Heights are `document.documentElement.scrollHeight`; positions are `g
   this pass changed the phone's composition only.
 - **Nothing was added for the auth pages or the signed-out home.** The first minute a stranger sees is still the
   front page's; this pass is the account's own record.
+
+## 2026-10-28: the balance's one line, and the form behind it
+
+Same harness: Chromium through `playwright-core` over CDP, axe-core 4.14, 320 / 360 / 390 / 768 / 1440 in light and
+dark, forced colours at 360, the root raised to 32px at 360, `prefers-reduced-motion: reduce`, a touch pointer below
+721. "Before" is the base commit's own pages served by `trial --port 7601`; this pass's pages are served by
+`trial --port 7851`, because the allocation's 7611 is the before trial's gateway tenant port (`base + 10`) and the
+before service was left running. Both sides hold the same fixture: a Team account with one running workspace named
+Research and the same four-day usage answer, held by request interception on both sides — the trial's stand-in is
+never called on its own, so the real usage table is empty. Heights are `document.documentElement.scrollHeight`;
+positions are `getBoundingClientRect` plus `scrollY`; names are Chromium's accessibility tree.
+
+- **The balance is the record, and adding credit is one 44px line under it.** At 360 the panel was **562px**: the
+  three figures (242px), then the top-up block — a 22px caption, the 50px trough of three amounts, the 74px
+  "Another amount" and Pay, the 45px hint and the 20px under the figures, **240px** in all — inside a 523px card.
+  The block is now one native `<details>` whose summary is the row **"Add credit"** with the record's chevron; the
+  figures' own rule is its top edge, and the row is **44px** tall (286 × 44 at 360, 246 × 44 at 320, 316 × 44 at
+  390). The panel is **562 → 374** at 360, **603 → 393** at 320 and **541 → 353** at 390; the page
+  **2,812 → 2,624**, **3,119 → 2,909** and **2,771 → 2,583**, and Settings begins at **y = 2,633 → 2,445** at 360.
+  The row is the action's name; the old caption that repeated "Add credit" inside the form is not drawn on a phone.
+- **The row opens the whole form, unchanged.** Entering it at 360 opens the disclosure and the panel is **563px** —
+  the old 562 plus the row — with the three amounts, their status, the field and Pay, and the hint, exactly where
+  the 2026-10-25 pass put them. The first amount still sends one `POST /api/checkout` (`amountMinor`) and assigns the
+  payment page (measured). The summary is a `DisclosureTriangle`, focusable, named **"Add credit"**,
+  `expanded=false`; the `<details>` is the browser's own, so the form is in the markup and a browser without the
+  script still has it (the account's panels need the script, as before).
+- **A wide screen keeps the form open; the phone gets the row.** The summary is `display: none` above 720 and the
+  script opens the details where `min-width: 721px` matches, so at 768 and 1440 the panel is the panel it was —
+  **439** and **426px**, pages **2,452** and **2,432** — with the caption, trough and form drawn and no row. Crossing
+  the breakpoint closes or opens it (measured 1440 → 360 → 1440: open, 52px closed, open again); the open state is
+  not remembered across the crossing.
+- **A failed plans read is unchanged, and its retry now opens the row.** With `/api/plans` answering 503 the panel is
+  **473px** — the figures, the 157px "amounts could not be loaded" note and its 44px Try again — the page **2,361**,
+  in both halves; the row and the form are hidden with the amounts they cannot fill. Pressing that Try again fills
+  the amounts in place, and because the row is closed on a phone the retry opens it before giving the cursor to the
+  first amount: `document.activeElement` is **$10.00** (the cursor contract the 2026-10-25 pass set), and the panel
+  is 563px.
+- **Widths, schemes and the floor.** 320 / 360 / 390 / 768 / 1440 in light, 360 in dark and in forced colours, and
+  the root at 32px: no sideways page scroll (320: 320; 360: 360; 390: 390; 768: 768; 1440: 1440), nothing computes
+  below **12px**, and no control is under 44 × 44 below 721 except the stage title (a `tabindex="-1"` landing place)
+  and the 41 × 44 "Plan" contents link, both the record's existing exceptions. At 200% text the page is **6,285 →
+  5,728** and the panel **1,226 → 669**, still 360 wide. **14 axe-core runs** (WCAG and every rule, both the resting
+  and the opened panel at 320, 360, 390, dark, forced colours and 200% text, and the resting one at 768 and 1440)
+  find **no violation**; the before's three runs also found none. The row's accent is `--k-accent-ink` on the card,
+  the pair the stylesheet test already holds at 4.5:1.
+- **The budget.** `app.css` is **40,947 bytes of 40,960** (was 40,950, a net **−3**). The row, its marker and its
+  chevron and the phone's margin rule cost about 600 bytes; eighteen comments were shortened, one was removed and
+  the figures' margin was folded into the existing phone rule to pay for them. Thirteen bytes remain: the next pass
+  removes before it adds.
+- **Tests.** `dist/tests/cloud/pages*.test.js` — **177 pass, 0 fail**; the two page-related build tests — **11 pass,
+  0 fail**; typecheck and lint clean (0 errors). `pages.test.ts` pins the card's order (figures, failed note,
+  details), the summary's words, the four elements inside it and the 44px phone row;
+  `pages-app.test.ts` pins the row's hidden state when the plans are down and that the balance's retry opens it
+  before focusing the first amount.
+
+| measured at 360, light | before | after |
+| --- | --- | --- |
+| The Balance panel | 562px | **374px** |
+| … at 320 / 390 | 603 / 541 | **393 / 353** |
+| … at 768 / 1440 | 439 / 426 | **439 / 426** |
+| The account page | 2,812px | **2,624px** |
+| … at 320 / 390 | 3,119 / 2,771 | **2,909 / 2,583** |
+| Settings begins at | y = 2,633 | **y = 2,445** |
+| The top-up block | 239px: caption, trough, form, hint, margins | **a 286 × 44px row** |
+| Opening the row | — | panel 563px, the amounts and Pay return |
+| A failed plans read | 473px panel, 157px note, page 2,361 | **473 / 157 / 2,361**; the retry opens the row, cursor on **$10.00** |
+| At 200% text (root 32px) | 6,285px page / 1,226px panel | **5,728 / 669** |
+| axe-core | 3 runs, 0 | **14 runs, 0** |
+| `app.css` | 40,950 bytes | **40,947** |
+
+### What this pass leaves
+
+- **The three figures are still 242px of the panel's 374 at 360.** The 36px Available is a row of its own and the
+  allowance and purchased credit share the row below; the ruled-row shape the glance's three facts took on
+  2026-10-28 has not been applied here. They are now the largest block on the panel, and the next coherent fix.
+- **A quick amount costs one press more.** A customer who used to tap $10.00 now taps **Add credit** and then
+  $10.00. The row is named, 44px and in the same place, and the balance-left notice still says when credit is
+  needed; the trade bought 188px of the page.
+- **The open state is not remembered across the breakpoint.** A phone that had the form open, rotated to a wide
+  screen and back finds the row closed; the form is one press away and its contents are unchanged.
+- **The failed read's 20px gap is now the note's own margin.** The figures' margin is gone at phone so the row's
+  rule sits on them; `#topup-fail` takes the 20px back, which is why the failed state is the same 473px.
+- **The usage answer is still a fixture.** The trial's workspaces answer with a stand-in and make no call, so the
+  four-day table was held by request interception on both halves; a real model key behind the gateway is still the
+  first check for the bill's own arithmetic.
+- **The auth pages, the 19px prose links and the checkout stand-in are untouched.** They are the earlier entries.
