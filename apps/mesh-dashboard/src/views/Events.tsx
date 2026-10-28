@@ -15,7 +15,11 @@ import { titleWhenClipped } from "../domutil";
 import { localDateTime, localTime, plainEvent, plural, zoneLabel } from "../format";
 import { useMission } from "../useMission";
 import { useMissionActions } from "../useMissionActions";
+import { useMedia } from "../useMedia";
 import "./events.css";
+
+/** The phone break the rest of the console uses: here it decides whether the hold is a word or its glyph. */
+const PHONE = "(max-width: 620px)";
 
 /**
  * The events console.
@@ -91,6 +95,7 @@ export default function Events(): React.JSX.Element {
   const { events, evSearch, setEvSearch, evFilter, setEvFilter, primeEvents, client, detail, openDetail, closeDetail, status } = useMesh();
   const { state } = useMission();
   const missionActions = useMissionActions();
+  const phone = useMedia(PHONE);
 
   // "No matching events" used to be shown while the first fetch was still in flight and again after it failed, so an empty log,
   // a slow server and a dead one were the same screen. Three states, three answers.
@@ -272,7 +277,7 @@ export default function Events(): React.JSX.Element {
       <PageHeader
         title="Events"
         status={<FeedStatus />}
-        actions={<PauseButton paused={hold.paused} onToggle={() => hold.setPaused(!hold.paused)} noun="events" />}
+        actions={<PauseButton paused={hold.paused} onToggle={() => hold.setPaused(!hold.paused)} noun="events" compact={phone} />}
         lede={`Everything the mesh does, newest first. Times are in ${zone}.`}
       />
 

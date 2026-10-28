@@ -32,10 +32,12 @@ function mediaBlock(css: string, condition: RegExp): string {
   }).join("\n");
 }
 
-test("a phone gives the Steps strip's three figures two columns instead of a sideways scroll", () => {
+test("a phone gives the Steps strip's three figures three columns, and the share as a figure", () => {
   const phone = mediaBlock(view("steps.css"), /max-width:\s*620px/);
-  assert.match(phone, /\.st-kpis \{[^}]*grid-template-columns:\s*minmax\(0, 1fr\) minmax\(0, 1fr\)/, "the figures sit in a two-column grid, which cannot outgrow the card");
-  assert.match(phone, /\.st-kpis \.st-noout \{[^}]*grid-column:\s*1 \/ -1/, "the share that went nowhere takes the second line whole");
+  assert.match(phone, /\.st-kpis \{[^}]*grid-template-columns:\s*repeat\(3, minmax\(0, 1fr\)\)/, "the figures sit in a three-column grid, which cannot outgrow the card");
+  assert.match(phone, /\.st-kpis \.st-noout \{[^}]*grid-column:\s*auto/, "the share that went nowhere takes the third column, not a line of its own");
+  assert.match(phone, /\.st-kpis \.st-noout \.ring \{ display: none; \}/, "the ring is not drawn where the three figures must fit");
+  assert.match(phone, /\.st-kpis \.st-noout-v \{ display: block;/, "the share is written out instead, so the figure is not lost with the drawing");
   assert.doesNotMatch(phone, /\.st-kpis[^{]*\{[^}]*margin-left:\s*var\(--s6\)/, "the old negative margin that pushed the third figure past the card is gone");
 });
 

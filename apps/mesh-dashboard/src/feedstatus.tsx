@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { FocusEvent as ReactFocusEvent, PointerEvent as ReactPointerEvent, UIEvent as ReactUIEvent } from "react";
-import { Button, useNow } from "./components";
+import { Button, IconButton, useNow } from "./components";
 import { NOT_HELD, feedState, holdMark, holdText, isHolding, pauseControl } from "./feed";
 import { Icon } from "./icons";
 import { useMesh } from "./store";
@@ -40,9 +40,15 @@ export function FeedStatus(): React.JSX.Element {
  *
  * The label changes with the state (Pause updates, then Resume updates), so it carries no aria-pressed: a button named "Resume
  * updates" that also says it is pressed would be announced as the opposite of what it does.
+ *
+ * On a phone it is the glyph alone (`compact`): at 360 the two words took a row of their own under the search, and every view's
+ * first screen began with the header. Its name is still the whole label, and the tooltip says it on a pointer.
  */
-export function PauseButton({ paused, onToggle, noun }: { paused: boolean; onToggle: () => void; noun: "events" | "turns" }): React.JSX.Element {
+export function PauseButton({ paused, onToggle, noun, compact }: {
+  paused: boolean; onToggle: () => void; noun: "events" | "turns"; compact?: boolean;
+}): React.JSX.Element {
   const c = pauseControl(paused, noun);
+  if (compact) return <IconButton icon={paused ? "play" : "pause"} label={c.label} onClick={onToggle} />;
   return (
     <Button variant="soft" icon={paused ? "play" : "pause"} title={c.title} onClick={onToggle}>
       {c.label}
