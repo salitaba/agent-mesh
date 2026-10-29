@@ -833,8 +833,8 @@ tfoot > tr > * { background: var(--k-surface-2); font-weight: 650; }
   .sk-tiles { grid-template-columns: 1fr; }
   .sk-tiles .sk { height: 60px; }
   .figures { display: block; margin: 0; padding: 0; }
-  #balance-panel .card { padding: 0; border: 0; background: none; box-shadow: none; }
-  #plan-panel .row { padding: 0; border: 0; border-top: 1px solid var(--k-line); background: none; box-shadow: none; }
+  .row, #balance-panel .card { padding: 0; border: 0; background: none; box-shadow: none; }
+  .row { border-top: 1px solid var(--k-line); }
   .stat dt, .figures dt { margin-right: auto; }
   .figures dd { margin: 0; font-size: min(1.375rem, 9vw); line-height: 1.15; }
   .figures .of, .stat-n { display: flex; align-items: center; gap: 8px; flex: 1 0 100%; margin: 0; line-height: 1.4; }
@@ -852,6 +852,7 @@ tfoot > tr > * { background: var(--k-surface-2); font-weight: 650; }
   /* Caption, then host and Copy. */
   .ws-address-l { flex: 1 0 100%; font-size: .75rem; }
   .ws .ws-address code { flex: 1 1 8rem; min-width: 0; }
+  .ws .ws-address { margin: 0; padding: 10px 0; background: none; }
   /* A day is an entry. */
   .table-wrap { overflow: visible; background: none; }
   .table-wrap table, .table-wrap tbody, .table-wrap tfoot { display: block; }
