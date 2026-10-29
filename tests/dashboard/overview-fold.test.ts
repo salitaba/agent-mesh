@@ -62,3 +62,17 @@ test("each closed row's control is named by the section it opens", () => {
   assert.match(panel, /const named = typeof title === "string" \? `\$\{title\}: \$\{fold\?\.open \? "Hide" : "Show"\}` : undefined;/, "the name is the section's, then what the press does");
   assert.match(panel, /aria-label=\{named\}/, "four controls reading Show alone say nothing about what they open");
 });
+
+test("a closed row is one press across its width, not a handle at its end", () => {
+  // Measured at 320/360/390 before this rule: the row is 336 × 53 and its control 56 × 44 at the right edge, and a press 40 px
+  // into the section's name opened 0 of 4 rows. The button keeps its box, its name and its place in the tab order; the press it
+  // takes is the row's, because the pseudo-element of a button is the button.
+  assert.match(css, /\.ov \.card\.closed \{ position: relative;/, "the row is the box the control's stretched hit area is measured from");
+  assert.match(css, /\.ov \.card\.closed \.card-acts > button::after \{ content: ""; position: absolute; inset: 0; \}/, "the control's own pseudo-element covers the whole closed row");
+  assert.match(css, /\.ov \.card\.closed \.card-acts > button:active \{ transform: none; \}/, "and the press may not move the target out from under itself: a transformed button becomes its pseudo-element's containing block");
+  assert.match(css, /\.ov \.card\.closed:is\(:hover, :focus-within\) \{ background: var\(--panel-2\); \}/, "pointed at, or reached by the keyboard, the whole band says it is a door");
+});
+
+test("a forced-colours mode replaces the band with an outline it can keep", () => {
+  assert.match(css, /@media \(forced-colors: active\) \{[\s\S]*?\.ov \.card\.closed:is\(:hover, :focus-within\) \{ background: none; outline: 2px solid Highlight; outline-offset: -2px; \}/, "a background is not a signal the system's colours keep");
+});

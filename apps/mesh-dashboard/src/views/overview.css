@@ -254,8 +254,22 @@ details.ov-note { display: block; }
   /* Closed, the section is a ruled row, not a card with its heading and nothing under it: the four evidence sections read as one
      ledger under the index, and the surface returns when a row opens. Measured at 360: a closed card was 103 px (16 padding, a
      44 px control, a 12 px gap and a rule with no body under it); the row is 53, and the four rows are 212 against 412. */
-  .ov .card.closed { background: none; border: 0; border-top: 1px solid var(--line); border-radius: 0; box-shadow: none; padding: var(--s1) var(--s2); }
+  .ov .card.closed { position: relative; background: none; border: 0; border-top: 1px solid var(--line); border-radius: 0; box-shadow: none; padding: var(--s1) var(--s2); }
   .ov .card.closed .card-head { flex-wrap: nowrap; margin: 0; padding: 0; border: 0; }
+  /* The row is the door, not a label with a handle at its end. Its one control keeps the 56 × 44 box, the name it is announced by and
+     its place in the tab order; the press it takes is the row's, because a pseudo-element of the button *is* the button (a pseudo has
+     no element of its own), stretched over the whole closed section. Measured at 360 before: the row is 336 × 53 and the button 56 × 44
+     at its right edge — 17% of the row's width, and a press 40 px into the name opened **0 of 4** rows. The Graph's phone rows already
+     work this way (294 × 88 row, 294 × 88 button). The cost, stated: while a section is closed its words cannot be dragged to select —
+     a closed row is a door, and the words are read in the body one press later. */
+  .ov .card.closed .card-acts > button::after { content: ""; position: absolute; inset: 0; }
+  /* The press must not move the target out from under itself: a transformed button becomes the containing block of its own
+     pseudo-element, so the shared small button's half-pixel `:active` nudge collapsed the overlay back to 56 × 44 between
+     pointerdown and pointerup. Measured before this rule at 360: pointerdown target BUTTON.small, click target DIV.card-head, and
+     the row stayed closed. The nudge is decoration; the pressed fill and shadow stay. */
+  .ov .card.closed .card-acts > button:active { transform: none; }
+  /* And it says so before the press: pointed at, or reached by the keyboard, the whole band lights, not only the 56 px at its end. */
+  .ov .card.closed:is(:hover, :focus-within) { background: var(--panel-2); }
 }
 
 /* The narrowest phone cannot hold a state pill beside the file's type: at 320 the type's column measured 32 px, one word a line, a
@@ -276,6 +290,8 @@ details.ov-note { display: block; }
   .ov-seg i.skipped { border: 1px dashed CanvasText; }
   .ov-seat.on { outline: 2px solid Highlight; outline-offset: 1px; }
   .ck.done { forced-color-adjust: none; background: Highlight; color: HighlightText; }
+  /* A closed row says it is a door with a background it cannot keep here: the band becomes an outline instead. */
+  .ov .card.closed:is(:hover, :focus-within) { background: none; outline: 2px solid Highlight; outline-offset: -2px; }
 }
 
 /* The Overview's own index, under the attention list and above the long tail. A row of quiet doors, not a toolbar. It is drawn
