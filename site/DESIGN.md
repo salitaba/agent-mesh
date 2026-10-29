@@ -1789,3 +1789,85 @@ The next pass's first job is the demo's fourth step: its first paragraph is stil
 URL, the token, the project, the button, the seven agents, the mission and the one block. After that, the pricing page's Cloud
 answer (six lines, and the card that sets its row) and the three command blocks' 48px Terminal row, which is shared with the
 documentation page.
+
+## 2026-10-29, second pass: the footer's index fits its columns
+
+Measured with the same probe (Chrome 156 over CDP; reduced motion; touch at 320, 360 and 390; a mouse at 768 and 1,440;
+print at 794; forced colours at 360; a 24px root at 320, 360 and 720; a 32px root at 320 and 360). The before column is
+the site at `c10a48c`, served before any edit and measured in the same run; no number is copied from an earlier pass.
+
+### What changed
+
+- **On a narrow phone the footer's index is three stacked groups whose links wrap, not three columns.** At 320 the three
+  columns are **82.66px**; the site's own "Documentation" is **117px**, so it painted **14.33px into Contact's row** (and
+  12.95px into Licence's, 31.05px of the rows intersecting); "RESOURCES" broke to a lone "S" (its head **25.91px** where
+  the other two are **12.95**), and "Report a vulnerability" ran **11.33px past the wrap's right edge**. At 360
+  "Documentation" is 117px in a 96px column and its right edge sits **1px** inside Contact's 248px column: the words
+  touch. The index is now one full-width group per row, each group's links a flex row that wraps with a 20px column gap,
+  so every label is whole and every row is 44px. The 16 links and the three group names are unchanged.
+- **At 421 and up the three columns return; from 640 the four-column index is unchanged.** The breakpoint is measured:
+  at 420 the three columns would leave **19px** between "Documentation" and Contact, and at 421 the label has that 19px
+  to the next group. The 320/360/390 phone is the width where they do not, so it is the width the rule covers.
+- No markup, content, address or script changed. `site:domain` was run as this pass's fingerprint step says; its
+  unrelated rewrites of the contact address, `sitemap.xml` and the `security.txt` dates were reverted, so the owner's
+  address is exactly what it was. `scripts/site-chrome.mjs` wrote the new stylesheet fingerprint (`--check` passes).
+
+### Measurements after this pass
+
+| Page, height at 320 / 360 / 390 / 768 / 1,440 | Before | After |
+|---|---|---|
+| Home | 14,002 / 13,226 / 12,529 / 12,655 / 12,344 | **14,127 / 13,320 / 12,623 / 12,655 / 12,344** |
+| Pricing | 14,694 / 13,627 / 13,014 / 10,382 / 9,382 | **14,819 / 13,721 / 13,107 / 10,382 / 9,382** |
+| Documentation | 9,028 / 8,429 / 8,113 / 5,321 / 4,442 | **9,153 / 8,523 / 8,207 / 5,321 / 4,442** |
+| Security | 12,518 / 11,531 / 10,846 / 7,875 / 7,634 | **12,643 / 11,625 / 10,940 / 7,875 / 7,634** |
+| Contact | 4,690 / 4,379 / 4,176 / 3,407 / 2,850 | **4,815 / 4,473 / 4,269 / 3,407 / 2,850** |
+| Legal | 5,453 / 4,965 / 4,670 / 3,409 / 3,307 | **5,578 / 5,059 / 4,764 / 3,409 / 3,307** |
+| 404 | 2,137 / 2,030 / 1,986 / 1,438 / 1,514 | **2,262 / 2,123 / 2,080 / 1,438 / 1,514** |
+
+| The footer's index | 320 | 360 | 390 | 768 | 1,440 |
+|---|---|---|---|---|---|
+| The footer | 775.48 → **900.44** | 741.73 → **835.64** | 696.94 → **790.84** | 505.48 | 488.55 |
+| Its index | 481.91 → **606.86** | 468.95 → **562.86** | 444.95 → **538.86** | 282.95 | 234.95 |
+| The groups | 3 × 295.91 → **106.95 / 150.95 / 106.95** | 3 × 282.95 → **3 × 106.95** | 3 × 282.95 → **3 × 106.95** | 3 × 282.95 | 3 × 234.95 |
+| The Resources head | 25.91 (two lines) → **12.95** | 12.95 | 12.95 | 12.95 | 12.95 |
+| A link's row | 44 | 44 | 44 | 44 | 36 (a mouse) |
+| Overlapping link boxes | 2 → **0** | 1px touch → **0** | 0 | 0 | 0 |
+| Links outside the wrap | 1 (11.33px) → **0** | 0 | 0 | 0 | 0 |
+
+- **The footer's own top does not move on any page** (home: 13,225.66 / 12,482.92 / 11,830.86 at 320/360/390, before
+  and after), so only the footer grows; the page grows by the same 125px at 320 and 94px at 360 and 390. At 640, 768 and
+  1,440 the page is the same height as before, to the pixel.
+- At 320 the labels now read whole in their groups: Product is 2 + 3 (Overview, What it shows; Try the demo, Pricing,
+  Security), Resources 2 + 3 + 1 (Documentation, Quickstart; Deploying, Operating, Changelog; Source code) and Company
+  4 + 1; at 360 every group is two rows (Product 3 + 2, Resources 3 + 3, Company 4 + 1). Every link is 44px tall, the
+  narrowest is "Terms" at 44 × 44, and no link's right edge passes the wrap: at 360 the widest ends are 333 of 344
+  (Product), 328 of 344 (Resources) and 288 of 344 (Company), and at 320 they are 269, 290 and 288 of 304.
+- No page scrolls sideways at 320, 360, 390, 768 or 1,440 in either theme (**0** on all 70 page/width/theme pairs), the
+  probe reports **0** console errors, **0** axe-core WCAG 2.0/2.1/2.2 A and AA violations on all seven pages at 320,
+  360 and 1,440 in both schemes, and the smallest computed text is **12px**.
+- Without a script the home page is **14,126 / 13,319** at 320/360 (was 14,001 / 13,225) and pricing **13,471 / 12,482**
+  (was 13,346 / 12,388), 0px over; at 768 and 1,440 they are unchanged. With `forcedColors: active` at 360 every page is
+  the normal height, 0px over. Print at 794 is **12,326** (home) and **10,273** (pricing), unchanged: the footer is not
+  printed, as before. At a 24px root every page is 0px over at 320, 360 and 720, and the footer is **1,119.8 / 1,044.6**
+  at 320/360. At a 32px root the page's recorded debt is unchanged (home 40px over at 320, 20 at 360) and the footer has
+  **0** overlapping boxes; this pass adds no overflow.
+- The 16 links, three group names, three `nav` landmarks, the owner's contact line, the tagline and the legal block are
+  exactly what they were; the current page's underline, the 44px rows, the no-script page, forced colours and print are
+  untouched. `site.test.ts` holds the new rule and its reason; the site's own suites (150 tests over the `site*` files,
+  pages workflow and UI-kit tokens) pass.
+
+### What this pass deliberately left
+
+- **The index is 125px taller at 320 and 94px at 360/390.** That is the price of every label being whole where a third of
+  the phone cannot hold it; at 421 and up the three columns return and the footer is 94px shorter again. No link is hidden
+  behind a disclosure, and the footer is still far shorter than the two-column one the previous pass replaced.
+- **At 421–639 the index is still three columns.** At 421 "Documentation" is 117px in a 116.3px column but still 19px
+  from Contact; from 422 the column is wide enough, and the 20px gap holds to 639. A wider system font would eat that gap
+  before it collided with the next group; the phone widths the owner reads are the wrapped ones.
+- **The contact email is still 18px outside the wrap at a 32px root.** That is the recorded large-text debt of the
+  footer's address line, not the index; it is unchanged by this pass and the page's overflow there is the same 40/20px as
+  before.
+- **No capture was retaken**: the footer is type and rules, not a picture.
+- **`site/ux/` was not edited**, and `npm run site:check` still exits 1 on the owner's `TODO(owner)` for the terms at
+  `site/legal/index.html:133`, as the last five passes recorded. The pass's pair is
+  `site/ux/shots/20261029-0925-before.png` and `20261029-0925-after.png`.

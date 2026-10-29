@@ -510,6 +510,16 @@ main:has(.hero) .section-head .eyebrow::before { counter-increment: sec; content
 .foot-col a:hover { color: var(--ink); text-decoration: underline; }
 .foot-col a[aria-current="page"] { color: var(--ink); font-weight: 500; }
 @media (max-width: 859px), (pointer: coarse) { .foot-col a { min-height: 44px; } }
+/* A narrow phone's index is three stacked groups of links that wrap, not three columns. At 320 the columns are 82.66px
+   and the site's own "Documentation" is 117px: it painted 14.33px into Contact's row and 12.95px into Licence's,
+   "RESOURCES" broke to a lone "S" (its head 25.91px where the other two are 12.95), and "Report a vulnerability" ran
+   11.33px past the wrap's right edge. Each group takes the wrap's width and its links wrap in reading order, so every label
+   is whole and every row is 44. The index is 94px taller at 360 and 125px at 320; at 421 and up the longest label has
+   19px to the next group, and from 640 the four-column index is unchanged. */
+@media (max-width: 420px) {
+  .foot-grid { grid-template-columns: minmax(0, 1fr); }
+  .foot-col ul { display: flex; flex-wrap: wrap; column-gap: 20px; }
+}
 @media (min-width: 640px) { .foot-grid { grid-template-columns: 1.4fr repeat(3, minmax(0, 1fr)); gap: 40px 24px; } .foot-brand { grid-column: auto; max-width: none; } }
 .foot-legal { display: grid; gap: 6px; margin-top: clamp(32px, 5vw, 64px); padding-top: 20px; border-top: 1px solid var(--line); font-size: .8125rem; line-height: 1.6; }
 .foot-legal p { margin: 0; max-width: 60rem; }

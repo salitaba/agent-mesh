@@ -803,17 +803,19 @@ test("a section head is the page's rank wherever it stands, and an explanation i
 });
 
 /**
- * The footer's index, measured at 360 and at 768 before it changed: three groups laid in a grid of two columns put Product and
- * Resources side by side and left Company (five links) alone under them in the left half, so every page ended in a 1,012px wall
- * (1,081 at 320) — and a tablet, which has 706px of wrap, read the same two columns for 982px. Three columns at every width
- * narrower than a tablet, and the four-column grid from 640 where it was 860, is 697px at 360 and 505 at 768.
+ * The footer's index, measured at 320 and 360. Three columns of 82.66/96px cannot hold the site's own labels: at 320
+ * "Documentation" is 117px and painted 14.33px into Contact's row and 12.95px into Licence's, "RESOURCES" broke to a
+ * lone "S" (its head 25.91px against the other two's 12.95), and "Report a vulnerability" ran 11.33px past the wrap.
+ * Three stacked groups whose links wrap in reading order keep every label whole and every row 44px; the index is 94px
+ * taller at 360 and 125px at 320. At 421 the three columns are back with the longest label 19px from the next group's
+ * content, and from 640 the four-column index is unchanged.
  */
-test("the footer's three groups are three columns on a phone, and the brand a column of its own from 640", () => {
+test("the footer's index is three stacked groups of wrapped links on a narrow phone, and the brand a column of its own from 640", () => {
   const css = fs.readFileSync(path.join(SITE, "assets", "site.css"), "utf8");
-  assert.match(css, /\n\.foot-grid \{ display: grid; gap: 28px 20px; grid-template-columns: var\(--c3\); \}/, "the index is three columns, so no group dangles under the other two");
-  assert.match(css, /\n\.foot-brand \{ grid-column: 1 \/ -1; max-width: 22rem; \}/, "the brand is a banner above them while the columns are narrow");
+  assert.match(css, /\n@media \(max-width: 420px\) \{\n  \.foot-grid \{ grid-template-columns: minmax\(0, 1fr\); \}\n  \.foot-col ul \{ display: flex; flex-wrap: wrap; column-gap: 20px; \}\n\}/, "the index is three full-width groups whose links wrap, so a label wider than a third of a narrow phone cannot cross into another group");
+  assert.match(css, /\n\.foot-brand \{ grid-column: 1 \/ -1; max-width: 22rem; \}/, "the brand is a banner above them while the groups are stacked");
   assert.match(css, /@media \(min-width: 640px\) \{ \.foot-grid \{ grid-template-columns: 1\.4fr repeat\(3, minmax\(0, 1fr\)\); gap: 40px 24px; \} \.foot-brand \{ grid-column: auto; max-width: none; \} \}/, "from 640 the brand is a column of its own, and the three groups stand as the desktop grid");
-  assert.match(css, /\n\.foot-col a \{[^}]*line-height: 1\.3;/, "a label that wraps in a 96px column still fits inside the 44 a thumb needs");
+  assert.match(css, /\n\.foot-col a \{[^}]*line-height: 1\.3;/, "a label that wraps in a row still fits inside the 44 a thumb needs");
   assert.match(css, /\n\.foot-col h2 \{ margin: 0 0 6px; color: var\(--ink\); \}/, "and the group's name sits closer to its links than it did");
 });
 
