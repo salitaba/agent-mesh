@@ -1952,3 +1952,73 @@ both halves (the trial limits it to 60 reads an hour per session, and the table 
 - **Nothing was added for the glance's 13px balance note, the address strip's Copy, the steps at 320, the checkout
   stand-in, the dead reset link or the prose-only 19px links.** They are the earlier entries, unchanged and still
   true.
+
+## 2026-10-29: the workspaces are records too, on a phone
+
+Same harness: Chromium through `playwright-core` against this worktree's trial (`trial --port 7601`), with the
+half built from `main` on 7621 signing in to the same fixture, 320 / 360 / 390 / 719 / 720 / 721 / 768 / 1440 in
+light and dark, `prefers-reduced-motion: reduce`, a touch pointer below 721, and axe-core over the 320, 360, 768
+and 1440 views in both schemes. The fixture is a Team account with one running workspace named Research, made by
+the same script in both halves; the same workspace paused (Resume), a second account's first workspace caught
+while Starting, and the first account with `/api/plans` answering 503. Heights are
+`document.documentElement.scrollHeight`; positions are `getBoundingClientRect` plus `scrollY`.
+
+- **On a phone every row of the account is now a record at the page's edge, the workspace included.** The glance,
+  the balance and (since the last pass) the plan stopped being cards below 721; the workspace kept its 20px of
+  padding, so its content box was the page's 328px minus 42 — **286px** — and it began **21px in from every rule
+  above and below it**: the name at x = 37 where `01 Workspaces`, `02 Plan`, `Team`, `$10.00` and `Add credit` are
+  at 16, the actions at 37 where `Manage billing` is at 16, and its address strip at **17–343**, a pixel in from
+  both edges. The phone rule that zeros a record's card now names `.row` instead of the plan's own row: the
+  content box is **37–323 → 16–344**, the row **264.2 → 239.2px**, and the page **2,077 → 2,052**.
+- **At 320 that 42px was the width the three actions needed.** `Open 71.5 + Pause 75.7 + More 94.2` and two 8px
+  gaps are **257.4px** in the card's 248, so `More` took a second row: the row was **318.4px** and the page
+  **2,264**. Given the page's 288 they are one 44px row at x = 16–273.4, the row is **239.2** and the page
+  **2,185** — **79px**, the most any width gains. The address gains one too: `research-…localhost` is 217.9px and
+  had 180px, so it wrapped into a **177.9 × 46.2** chip of two lines; at the edge it has 219.9 and is
+  **219.9 × 25.4**, one line.
+- **390, 719 and 720 gain the same 25px, and 721 is the same page it was.** 2,055 → **2,030** at 390, 1,788 →
+  **1,763** at 719 and 720; at 721 the card returns in both halves and the page is **2,056**, as 768 (**2,065**)
+  and 1,440 (**2,102**) are unchanged to the pixel. Everything above the record is where it was — the stage
+  165–359.8, the glance 375.8–550.7, the contents line 562.7–607.7, `01 Workspaces` at 647.7 — and everything
+  below moves up by the saving: the plan 1,047.1 → **1,022.1**, Usage 1,357.4 → **1,332.4**, Balance 1,618.5 →
+  **1,593.5**, Settings 1,897.7 → **1,872.7**, the "Your plan includes 1 workspace…" note 962.3 → **937.3**.
+- **The other states keep the grammar.** A workspace that is Starting is **319.8 → 294.8px** with its phase bar,
+  its sentence and "Open it when it is ready" at the edge; paused, the record is 302.4px with `Resume` at 16 and
+  "Paused by you. Its files are kept…" under the name; with `/api/plans` answering 503 the record loses its plan
+  line and is **208.2 → 183.2px** (the panel 391 → **366**, the page 2,190 → **2,165**), and no state overflows.
+- **The budget.** `app.css` is **40,950 → 40,953 bytes of 40,960**. The address rule is 68 bytes, and it was
+  paid for by writing what was already two copies of one thing as one: the balance's card and the record's row
+  were the same four declarations twice, so `.row, #balance-panel .card { … }` with the top rule as `.row` turns
+  205 bytes of rules into 140 beside the new 68. Seven bytes remain.
+
+| measured at 360, light | before | after |
+| --- | --- | --- |
+| The record's content box | 37–323 (286px of the page's 328) | **16–344 (328)** |
+| The row | 264.2px | **239.2** |
+| `Open` / `Pause` / `More` | x = 37–294.4 | **x = 16–273.4** |
+| The address strip | 17–343px (1px in at both edges) | **16–344** |
+| `Copy` | 262.9–323 | **283.9–344** |
+| The account page | 2,077px | **2,052** |
+| … at 320 / 390 | 2,264 / 2,055 | **2,185 / 2,030** |
+| `More` at 320 | a second row, 318.4px | **the first row**, 239.2 |
+| The address chip at 320 | 177.9 × 46.2 (two lines) | **219.9 × 25.4** (one) |
+| … at 719 / 720 (rule's edge) | 1,788 | **1,763** |
+| … at 721 / 768 / 1,440 | 2,056 / 2,065 / 2,102 | **2,056 / 2,065 / 2,102** |
+| A workspace while Starting, 360 | 319.8px | **294.8** |
+| axe-core, 8 views | 0 | **0** |
+| `app.css` | 40,950 bytes | **40,953** |
+
+### What this pass leaves
+
+- **The address still holds three lines on a phone, where two would do above 390.** `Address` (45.4) + the chip
+  (217.9) + `Copy` (60.1) + two 8px gaps are **339.4px**, which is why the label takes a line of its own at 320
+  and 360 (288 and 328). From 390 the record is 358 and the three fit with 18.6px to spare, so the block is
+  **88.2px where 65 would do** — 23.2px, at 390, 480 and 720 alike. It needs a break rule of its own and the
+  last seven bytes of the stylesheet, and it is the next pass's to draw.
+- **The card was also the row's colour, and the address was a band.** A reader who scanned for a workspace as a
+  white panel now meets a ruled entry with a ruled address under it — the grammar the plan and the balance took
+  on 2026-10-28 and 29. The tint that separated the address from the record went with it.
+- **The stage card still repeats the record's own sentence and button.** At 360 `Research is running` + `Open it
+  to describe your team and start a mission.` + `Open` is **194.8px**, and the record 300px below says
+  `Research / Running / Open` again. It is the page's one call to action, not a decoration, so it is a question
+  for a pass that can change the script, not this one.
