@@ -290,9 +290,9 @@ main:has(.hero) .section-head .eyebrow::before { counter-increment: sec; content
 
 /* the product frame, and the choice of view */
 .frame { margin: 0; overflow: hidden; border: 1px solid var(--line2); border-radius: var(--k-r-lg); background: var(--panel); box-shadow: var(--k-hl), var(--k-shadow-2); }
-.frame-bar { position: relative; display: flex; align-items: center; gap: 6px; height: 40px; padding: 0 16px; border-bottom: 1px solid var(--line); background: var(--panel2); box-shadow: var(--k-hl); }
+.frame-bar { position: relative; display: flex; align-items: center; gap: 6px; height: 44px; padding: 0 16px; border-bottom: 1px solid var(--line); background: var(--panel2); box-shadow: var(--k-hl); }
 .frame-bar i { width: 10px; height: 10px; border-radius: 50%; background: var(--line2); }
-.frame-bar span { position: absolute; left: 50%; max-width: calc(100% - 140px); padding: 3px 14px; border-radius: var(--k-r-pill); background: var(--k-sunken); box-shadow: inset 0 0 0 1px var(--line); color: var(--muted); font: 12px/1.2 var(--mono); white-space: nowrap; transform: translateX(-50%); }
+.frame-bar .frame-address { position: absolute; left: 50%; max-width: calc(100% - 140px); padding: 3px 14px; border-radius: var(--k-r-pill); background: var(--k-sunken); box-shadow: inset 0 0 0 1px var(--line); color: var(--muted); font: 12px/1.2 var(--mono); white-space: nowrap; transform: translateX(-50%); }
 .frame img { display: block; width: 100%; height: auto; }
 .frame figcaption { margin: 0; padding: 14px 18px; border-top: 1px solid var(--line); background: var(--panel); color: var(--muted); font-size: .8125rem; line-height: 1.5; }
 .frame figcaption b { color: var(--ink); font-weight: 600; }
@@ -315,6 +315,9 @@ main:has(.hero) .section-head .eyebrow::before { counter-increment: sec; content
 .tab-input:nth-of-type(2):checked ~ .tabs::before, .billing-input:nth-of-type(2):checked ~ .billing::before { transform: translateX(100%); }
 .tab-input:nth-of-type(3):checked ~ .tabs::before { transform: translateX(200%); }
 .tab-input:focus-visible ~ .tabs, .billing-input:focus-visible ~ .billing { outline: 2px solid var(--accent); outline-offset: 2px; }
+/* On a phone the view switcher is the plate's width, so the control and the capture it switches share both edges:
+   the three labels sit in equal 109.3px cells at 360 instead of a 268.7px trough ending 59.3px short of the frame. */
+@media (max-width: 719px) { .tabs { display: grid; } }
 
 /* Surfaces are for things a person acts on: a plan, a place to start, an address, a way out of a
    missing page. Explanatory prose is a ruled entry: a top rule, a mark, a title and words, with no
@@ -434,6 +437,23 @@ main:has(.hero) .section-head .eyebrow::before { counter-increment: sec; content
    named way to its full size, at a thumb's height. */
 .shot-open { display: inline-flex; align-items: center; min-height: 44px; font-weight: 600; }
 .shot-open::after { content: "\2197"; margin-left: .35em; }
+/* The plate's own way to its full size is a chip in its chrome, not a 44px box in a 13px caption: inside the caption
+   the thumb-sized link made the last line 44px tall, so the line under it stood 31.8px from the one above instead of
+   19.5, and the pane was one caption line taller than its neighbours. It is the same link, the same words and the same
+   name; it is now 44px of the bar the browser window already had, and the caption is only text. */
+.frame-open { position: absolute; top: 0; right: 6px; display: none; align-items: stretch; height: 44px; border-left: 1px solid var(--line); }
+.frame-open .shot-open { padding: 0 10px; color: var(--ink2); font-size: .8125rem; text-decoration: none; }
+.frame-open .shot-open:hover { color: var(--link); }
+.frame-open .shot-open:focus-visible { outline-offset: -3px; }
+.tab-input:nth-of-type(1):checked ~ .frame .frame-open-1,
+.tab-input:nth-of-type(2):checked ~ .frame .frame-open-2,
+.tab-input:nth-of-type(3):checked ~ .frame .frame-open-3 { display: flex; }
+/* One caption height for the three views, so switching view moves nothing below the plate. The tallest is two lines
+   at a tablet's width and four at 360 (the Events caption); a 320 screen needs five. The 29px is the caption's 28px of
+   padding and its 1px rule, inside a border-box. */
+.hero-visual .frame figcaption { min-height: calc(2 * 1.5em + 29px); }
+@media (max-width: 719px) { .hero-visual .frame figcaption { min-height: calc(4 * 1.5em + 29px); } }
+@media (max-width: 359px) { .hero-visual .frame figcaption { min-height: calc(5 * 1.5em + 29px); } }
 .shot-meta { padding-block: 4px; }
 .shot-meta .shot-open { margin-left: 8px; }
 
