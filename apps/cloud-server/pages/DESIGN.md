@@ -1883,3 +1883,72 @@ height is `document.documentElement.scrollHeight`, every position `getBoundingCl
   column now puts it anyway.
 - **The address strip's Copy, the steps at 320, the checkout stand-in, the dead reset link and the prose-only
   19px links are unchanged.** They are the earlier entries.
+
+## 2026-10-29: the plan is a record on a phone
+
+Same harness: Chromium 156 through `playwright-core` against this worktree's trial (`trial --port 7812`, whose
+plans are the trial's own fixtures), 320 / 360 / 390 / 768 / 1440 in light and dark, `prefers-reduced-motion:
+reduce`, a touch pointer below 721, and axe-core 4.14 over all 100 views. "Before" is `main`'s own
+`app.css` served by the same trial through request interception in the same browser session as the after, not a
+figure copied from an earlier record. The fixtures are a Team account with one running workspace named Research,
+the same plan with no workspace yet, and a fresh account with no plan; `/api/usage` is held to one empty answer in
+both halves (the trial limits it to 60 reads an hour per session, and the table is empty anyway). Heights are
+`document.documentElement.scrollHeight`; positions are `getBoundingClientRect` plus `scrollY`.
+
+- **The plan is a record at the page's edge on a phone, as the balance is.** The balance stopped being a card below
+  721 on 2026-10-28 so its entries could take the page's 328px; the plan's row kept its card and its 20px of padding,
+  and its content box stayed **286px**. Its two actions need **296px** (`Manage billing` 136 + `Change plan` 148 + the
+  12px gap), so they stacked: **100px** of buttons in two rows. Its first term, `$10.00 of model usage each month`,
+  took **48px** for two lines. Below 721 the row now takes the page's width like the balance's entries, with its top
+  rule as the record's first line: at 360 the row is **353 → 232px**, the two actions are **one 44px row** (both at
+  x = 16–319), the term is **48 → 24**, the Plan panel **391 → 270** and the page **2,264 → 2,143**.
+- **The two phone widths the record draws gain the most.** At 390 the panel is **311 → 248** and the price's own line
+  `$149.00 per month. Paid until November 29, 2026.` is **45 → 22px** (the card's 316px could not hold it; the
+  page's 358px does). At 320 the panel is **391 → 350**: the row is 288px there, so the two actions still need two
+  rows (296 > 288) and the price line still takes two. Everything below the panel moves up by the same amount:
+  Usage 1,522 → 1,401, Balance 1,805 → 1,684 and Settings 2,085 → 1,964 at 360.
+- **A failed plans read is the same record.** With `/api/plans` answering 503 the panel is **330 → 288** at 360 and
+  the page **2,298 → 2,256**; at 1440 it is **290** before and after, as the row is still a card there.
+- **Nothing else moved.** 90 of the 102 views the harness takes are the same height to the pixel: the plan-less
+  account at 320 / 360 / 390 / 768 / 1440 (1,744 / 1,563 / 1,515 / 1,078 / 1,036) and the seven public pages at
+  every width and in both schemes. At 768 and 1440 the paid account is **2,008** and **2,045** in both halves and
+  the panel **277** — the rule is inside `max-width: 720px`. No view scrolls sideways (320: 320; 360: 360; 390: 390;
+  768: 768; 1440: 1440), nothing computes below **12px**, the list of controls under 44 × 44 is unchanged, **100
+  axe-core runs** find **no violation** in either half, and there is no console error. With scripts off the account
+  is the same **800px** and `/verify` the same **897px**, because the plan's row is the script's, as before.
+- **The budget.** `app.css` is **40,908 → 40,950 bytes of 40,960**: the phone rule is 98 bytes and the two comments
+  that only repeated their rules ("The sections: a contents line." and "Too much text wraps.") paid for it. Ten bytes
+  remain.
+
+| measured at 360, light | before | after |
+| --- | --- | --- |
+| The plan's content box | 286px of the page's 328 | **328** |
+| The row / the panel | 353 / 391px | **232 / 270** |
+| The two actions | two rows, **100px** | **one 44px row**, x = 16–319 |
+| `$10.00 of model usage each month` | 48px (two lines) | **24** |
+| The price's own line | 45px | 45 (330 in 328; see below) |
+| The account page | 2,264px | **2,143** |
+| … at 320 / 390 | 2,383 / 2,116 | **2,342 / 2,052** |
+| … with no workspace yet, 360 | 1,936 | **1,815** |
+| … at 768 / 1440 | 2,008 / 2,045 | **2,008 / 2,045** |
+| A failed plans read, 360 / 1440 | 2,298 / 1,986 | **2,256 / 1,986** |
+| axe-core, 100 views | 0 | **0** |
+| `app.css` | 40,908 bytes | **40,950** |
+
+### What this pass leaves
+
+- **The price is still a sentence, and still 14px.** `$149.00 per month. Paid until November 29, 2026.` needs
+  **330px** in the row's 328 at 360, so it keeps two lines there (it is one line at 390, and at 320 in neither).
+  Making it the section's figure — the account's 30px, as the balance's figures are — was built and measured first:
+  a `figures` block of `Price` and `Paid until` makes the panel 405px at 768 and 1440 (**+128** on the page there)
+  because the block's 36px figure and its note are taller than the sentence they replace, so it was not taken.
+  The next pass that wants the price as a figure at every width has to pay those 128px, or put the figure only where
+  a phone can afford it — which is two bodies for one fact.
+- **The two actions still stack at 320.** They need 296px and the page has 288: the same arithmetic the plan's row
+  had at 360 before this pass, one phone narrower.
+- **The card is gone at a phone, and the card was also the row's colour.** The plan's row is now the page's paper,
+  like the balance's entries; a plan that a person scans for as a panel now reads as a ruled entry. That is the
+  grammar the record chose for money on 2026-10-28 and this pass applied it to the plan.
+- **Nothing was added for the glance's 13px balance note, the address strip's Copy, the steps at 320, the checkout
+  stand-in, the dead reset link or the prose-only 19px links.** They are the earlier entries, unchanged and still
+  true.

@@ -602,7 +602,6 @@ body[data-page="home"] main { background: var(--k-glow) top / 100% 520px no-repe
 .stat .n { font-size: 1.625rem; font-weight: 650; letter-spacing: var(--k-track-title); line-height: 1.15; }
 .stat .u, .stat-n { color: var(--k-muted); font-size: .875rem; }
 .stat-n { margin-top: 2px !important; font-size: .8125rem; }
-/* The sections: a contents line. */
 .subnav {
   display: flex;
   flex-wrap: wrap;
@@ -827,7 +826,7 @@ tfoot > tr > * { background: var(--k-surface-2); font-weight: 650; }
 
 /* ---- phones and fingers */
 @media (max-width: 720px) {
-  /* A phone's money is ruled: name, figure at its end, note under. */
+  /* A phone's money is ruled: name, figure, note under. */
   .stat, .figures > div { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 10px; min-height: 44px; padding: 4px 0; border-top: 1px solid var(--k-line); }
   .stat-v, .stat-n { margin: 0 !important; }
   .stat-n:empty { display: none; }
@@ -835,6 +834,7 @@ tfoot > tr > * { background: var(--k-surface-2); font-weight: 650; }
   .sk-tiles .sk { height: 60px; }
   .figures { display: block; margin: 0; padding: 0; }
   #balance-panel .card { padding: 0; border: 0; background: none; box-shadow: none; }
+  #plan-panel .row { padding: 0; border: 0; border-top: 1px solid var(--k-line); background: none; box-shadow: none; }
   .stat dt, .figures dt { margin-right: auto; }
   .figures dd { margin: 0; font-size: min(1.375rem, 9vw); line-height: 1.15; }
   .figures .of, .stat-n { display: flex; align-items: center; gap: 8px; flex: 1 0 100%; margin: 0; line-height: 1.4; }
@@ -848,7 +848,6 @@ tfoot > tr > * { background: var(--k-surface-2); font-weight: 650; }
   .steps li::after { display: none; }
   .check label { line-height: 44px; }
   .check label a { display: inline-block; min-height: 44px; }
-  /* Too much text wraps. */
   .bar, .bar nav { flex-wrap: wrap; }
   /* Caption, then host and Copy. */
   .ws-address-l { flex: 1 0 100%; font-size: .75rem; }
