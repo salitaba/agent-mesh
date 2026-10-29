@@ -167,10 +167,11 @@ Breakpoints: **1280 1100 900 800 760 620 560**. 800 is the sidebar drawer (JS
   deliberate trade that made it one row; the goal leads Overview and is one tap
   away, but a reader on Events cannot see it without leaving the page. Watch
   whether that absence costs a visit in real use.
-- At **320** the Designer's save bar shows the file name and a few characters of its folder (the full path is the title), and a blocked
-  draft gives the state a 200 px column beside it, where "1 error blocks saving. Show the error" wraps to three lines and the bar grows to
-  **110.4 px** (still 15.6 px shorter than the 126 it was). When the state holds a button, giving it the line under the path is the next
-  shape; the header itself is now two rows at 320, 89.6 px.
+- At **320** the Designer's save bar gives the file name the line it needs, so a blocked draft's sentence sits under the path on one line and the
+  bar is **112 px** where it was 110.4 with three lines and 68 of its 70.5 px of name. The cost is one line, and only for a long name: the
+  36-character fixture is 93.4 at 320 and 360, the 56-character one 108.4 (two lines of name), and a blocked draft of either 112. The header
+  at 320 is still two rows, 89.6 px, and its title row and 155.8 px save-state chip are what remain of it. The one place the shape costs is
+  the **lag** state at 390: 146.8 against 127.8, because its four-line sentence now has the path's line above it.
 - The Designer's Inspector is a word on every phone layout now (91.7 px wide, no glyph); at 390 and 620 the glyph had room beside the word,
   so whether the phone should keep it is a reading question rather than a measurement one.
 - The Designer's YAML preview wraps by default at 620 and below (295/295 at 360, was 462 in 295). The choice is component state, so it is not
@@ -192,9 +193,9 @@ Breakpoints: **1280 1100 900 800 760 620 560**. 800 is the sidebar drawer (JS
 
 ## What the next pass should take
 
-1. Decide whether the Designer's save-bar state takes the line under the path when it holds a button: at 320 a blocked draft gets a
-   200 px column, wraps "1 error blocks saving. Show the error" to three lines and makes the bar 110.4 px, where the base state has
-   17.4 px beside the path. The base bar is 74.4 now, so this is the last row it can give back.
+1. Take the Designer's 320 header: 89.6 px of two rows, the title row and a 155.8 px save-state chip. The save bar has no row left to give —
+   74.4 while the path and the state share a line, 112 when a blocked sentence needs its own — so the chip is the next block to measure, and
+   shortening it is a words decision ("Parked · 4 events" is a sentence nobody has written yet).
 2. Decide whether the Steps filter fold belongs above 620: at 621–768 the chips take two rows and the switch a third (166 px),
    though the page's own reading is one button there. The same decision covers the tablet's 32 px `NextLinks`.
 3. Decide whether What shipped opens by default on a fresh delivery, and whether the phone's fold remembers a section (the page
@@ -206,6 +207,51 @@ Breakpoints: **1280 1100 900 800 760 620 560**. 800 is the sidebar drawer (JS
 8. Check the frame's safe-area claims on a notched device in both orientations; the insets are in the CSS but the stand-in browser reports them as zero.
 
 ## Pass log
+
+### 2026-10-29 — the save bar shows the whole file name, and a state that holds a button takes the line under it
+
+Surface: `designer/designer.css` (the 760 phone block) and one rule in `tests/dashboard/designer-phone.test.ts`. Measured on the
+**first-run** project (the scaffold's placeholder goal, one seat, 4 events) in the production build, Chromium over CDP at
+320/360/390/768/1440 in light, at 360 in dark, in forced colours and at a 32 px root, axe-core at 360 light and 1440 dark and on the
+blocked bar at 320 — and on two copies of the same fixture whose file is called `a-much-longer-mesh-config-name.yaml` (36 characters,
+273.9 px) and `an-even-longer-mesh-config-file-name-than-that-one.yaml` (56, 430.5 px), at 320 and 360. Before is the base build on 7986,
+after is this branch on 7956 and 7966, all read on the same four-event state within the hour.
+
+- **The file name is whole at every phone width.** The 88 px floor kept a nine-character name whole but not a name sharing the line with a
+  state: at 320 the 36-character name showed **97.8 of its 273.9 px**, and in a blocked draft **68 of 273.9** with the whole path only in a
+  `title` a phone cannot hover. The file row wraps now and the path takes the line its name needs
+  (`min-width: max(88px, min(100%, max-content))`, with the folder `contain: size` so its own text cannot decide the break): **273.9 of
+  273.9** in both states, the folder still 31.3 px of it. At 360 the same name reads 137.8 → **273.9**, and a 56-character name (430.5 px)
+  wraps onto a second line and is whole there too, where it showed 97.8.
+- **A blocked draft's sentence leaves its 200 px column.** With the goal emptied, "1 error blocks saving. Show the error" was three lines of
+  53.4 px in the column beside an 88 px path; with the row wrapped it has the whole 296 px and is one line of **36**, and the bar is
+  **110.4 → 112 px** at 320. At 360 nothing moves: the path and that state still fit one line (102.3 + 229.8 in 336), so the bar stays 93.
+  The shape the last entry proposed — giving the state its own line whenever it holds a button — measures **112 at both widths**, i.e. a
+  regression at 360; the wrap rule is what makes the move free there and affordable at 320.
+- **The good bar does not move.** 74.4 at 320, 360 and 390 as before, because the path and the state still share the line; the path gains the
+  row's 4 px gap (117.8 → 121.8 at 320, its folder 27.3 → 31.3; 157.8 → 161.8 and 67.3 → 71.3 at 360). The header (89.6), the guide (352.2 at
+  320, 334.8 at 360), the guide's goal field (316.8 / 299.4), the roster's first seat (628.3 / 597.4) and the page (792 in a 780 px frame at
+  320) are unchanged to the pixel, so the seat is still whole above the bar.
+- **A long name costs one line, and only that project's bar.** The 36-character fixture is 74.4 → **93.4** at 320 and 360 (its name takes the
+  line, the state goes under it), the 56-character one 74.4 → **108.4** at 320 for two lines of name, and a blocked draft of either 112. The
+  lag state, read from its own markup because no save was driven, is 181.2 → **146.8** at 320 and 145.2 → 146.8 at 360, but 127.8 → 146.8 at
+  390: the one width where the path's line above a four-line sentence costs 19 px.
+- **Nothing else moved.** 768 and 1440 are unchanged to the pixel (bar 65 and 57, guide 428.8 and 394); dark, forced colours and a 32 px root
+  read the same geometry in both states; no document or `#view` horizontal scroll at 320/360/390/768/1440; 0 text under 12 px (the bar's
+  smallest is 12) and 0 controls under 44 × 44 at 320/360/390; 1 console error in both halves (the one-mesh `/api/projects` 404; a blocked
+  read adds the 400 the emptied goal's own check makes, in both halves); axe-core **0** violations at 360 light and 1440 dark (24 and 32
+  rules passed, as before) and on the blocked bar at 320 (25). No markup changed, so the keyboard is untouched: **8** Tabs to the guide's
+  goal field, **13** to the roster's first seat, the same drawer order after Enter.
+
+Suite: typecheck and build clean; `dist/tests/dashboard` **1,180 pass, 0 fail**, with one rule in `designer-phone.test.ts` rewritten to the
+shape this entry describes (the `min-width` assertion reads the max-content claim, 88 px still its floor, and the row's `flex-wrap` is
+pinned); the build and primitive tests (`console-*`, `icons`, `type-ramp`, `css-vars`, `forced-colors`, `primitives-a11y`) **35 pass**;
+eslint on the changed test 0 errors (the stylesheet is not in eslint's config).
+
+**Left.** A long name buys the bar one line (93.4 at 320/360, 108.4 for 56 characters), and the lag state pays 19 px at 390 for that trade.
+The blocked state's action is still a 44 px inline link that inflates its line from 17.4 to 36: that 18.6 px is the last thing the bar could
+give back, and it needs either a glyph button (a name lost) or a target that overlaps the save row (a target collision). The 320 header's
+89.6 px and its 155.8 px chip are next.
 
 ### 2026-10-28 — the Designer's fixed chrome is two rows at every phone width
 

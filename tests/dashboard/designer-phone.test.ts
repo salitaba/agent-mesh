@@ -97,7 +97,9 @@ test("a phone's fixed chrome is two rows and one bar line, so the roster's first
   assert.ok(hasRule(designerCss, ".ms #ms-insp-toggle .icon", /display:\s*none/), "the phone's Inspector is its word, not a glyph plus a word");
   assert.ok(hasRule(designerCss, ".ms-bar", /padding:\s*var\(--s1\) var\(--s3\)/), "the bar's rhythm is 4 on a phone");
   assert.ok(hasRule(designerCss, ".ms-bar-file", /flex-direction:\s*row/), "the path and the draft state share one line");
-  assert.ok(hasRule(designerCss, ".ms-bar-file .ms-path", /min-width:\s*88px/), "the file name may not be truncated by the state");
+  assert.ok(hasRule(designerCss, ".ms-bar-file", /flex-wrap:\s*wrap/), "and the state takes the line under the path when a long file name needs it");
+  assert.ok(hasRule(designerCss, ".ms-bar-file .ms-path", /min-width:\s*max\(88px, min\(100%, max-content\)\)/), "the file name is whole: the path claims the line it needs, with 88 px as its floor");
+  assert.ok(hasRule(designerCss, ".ms-bar-file .ms-path-dir", /contain:\s*size/), "the folder's own text does not decide the line break");
   assert.ok(hasRule(designerCss, ".ms-bar-state", /min-width:\s*0/), "a long state wraps instead of pushing the path out");
 });
 

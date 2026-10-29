@@ -212,13 +212,24 @@ body:has(.ms-bar) #toasts { bottom: calc(var(--dock-clear) + var(--ms-bar-h, 0px
   .ms-bar-acts > button { flex: 1 1 0; }
   /* The bar said what file it writes and where the draft stands on two lines, so it was 107.4 px of a first-run phone and the roster's first
      seat ended 3.7 px under it at 320. Path and state share the line now (17.4 px), and the bar's rhythm is 4: 73.4 px plus its 1 px rule,
-     74.4 measured. The state takes
-     its sentence's width and the path takes the rest, so at 320 the folder truncates and "mesh.yaml" is whole. A state with actions in it
-     still wraps and the bar grows, which is the honest height for a sentence that has become a question. */
+     74.4 measured. A state with actions in it wraps and the bar grows, which is the honest height for a sentence that has become a question. */
   .ms-bar { padding: var(--s1) var(--s3); }
   .ms-bar-in { gap: var(--s1); }
-  .ms-bar-file { flex-direction: row; align-items: center; gap: var(--s2); }
-  /* 88 px is the icon, its gap and a nine-character file name: the folder may truncate, the name may not. */
-  .ms-bar-file .ms-path { flex: 1 1 0; min-width: 88px; }
+  /* The file row wraps: the path and the state share the line while both fit on it, and when they cannot, the state takes the line
+     under the path rather than the file name being cut. The name is what says which file a save writes, and a phone has no hover for
+     the whole path in the title. Measured at 320: the 88 px floor that keeps "mesh.yaml" whole still showed 68 of its 70.5 px in a
+     blocked bar (the state's 200 px column squeezed it), and a 36-character name showed 97.8 of its 273.9 px beside the state. With
+     the row wrapping the path claims the line its name needs, and the state — which a blocked draft fills with a 44 px action —
+     gets that whole line where it was three lines in a 200 px column: the blocked bar is 110.4 → 112 px at 320, and at 360 it is
+     unchanged at 93. The good bar is 74.4 at both widths, because there the path and the state still share the line. */
+  .ms-bar-file { flex-direction: row; flex-wrap: wrap; align-items: center; gap: var(--s1); }
+  /* Max-content is the icon, its gap and the whole name; 88 px is still the floor, for a nine-character name in a bar that is tight. */
+  .ms-bar-file .ms-path { flex: 1 1 auto; min-width: max(88px, min(100%, max-content)); }
+  .ms-bar-file .ms-path-text { flex: 1 1 auto; min-width: 0; white-space: normal; }
+  /* The folder's own text must not decide the line break: contained, it contributes no width and takes what the name leaves (at 360,
+     71.3 px of folder where it was 67.3, and at 320, 31.3 where it was 27.3). */
+  .ms-bar-file .ms-path-dir { flex: 1 1 0; contain: size; white-space: nowrap; }
+  /* A name wider than the whole line breaks rather than disappears: 430.5 px of name at 320 takes two lines, whole. */
+  .ms-bar-file .ms-path-text b { flex: 0 1 auto; min-width: 0; overflow-wrap: anywhere; }
   .ms-bar-state { flex: 0 1 auto; min-width: 0; }
 }
