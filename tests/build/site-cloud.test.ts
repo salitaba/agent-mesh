@@ -181,8 +181,8 @@ test("the home page's way in is two cards while Curule Cloud is open and one whi
     if (state === "closed") assert.ok(!/Curule Cloud/.test(visibleTextOf(ways)), "closed, the way in says nothing of what is not there");
   }
   const open = visit("index.html", APP).getElementById("ways")!.querySelectorAll(".way").filter((c) => shown(c));
-  assert.match(open[0]!.textContent, /the same dashboard and agents as the product you run yourself, on servers we operate/, "the account service's own words for what it is");
-  assert.match(open[0]!.textContent, /A flat monthly plan for the hosting\. Its plans and prices are on the sign-up page\. You bring your own model key and pay your model provider directly: we do not resell model usage\./);
+  assert.match(open[0]!.textContent, /No server to run: sign up, pick a plan, open a workspace in a browser\. Same console and agents, on our servers\./, "the account service's own words for what it is");
+  assert.match(open[0]!.textContent, /Flat monthly hosting, priced on the sign-up page\. Your own model key, billed by your provider: we do not resell model usage\./);
   assert.match(open[1]!.textContent, /Nothing phones home: no telemetry, no update check, no licence server\./);
   assert.match(open[1]!.textContent, /Nothing for the Community plan: one open project, up to ten agents, no licence key\. A paid licence lifts the limits\./);
 });
@@ -235,17 +235,18 @@ test("when it is open, the pricing page puts the two ways in side by side, says 
   const [cloud, licence] = ways.querySelectorAll(".way") as [FakeNode, FakeNode];
   assert.deepEqual([cloud, licence].map((c) => c.querySelector("h3")!.textContent), ["We run it for you", "You run it"]);
   for (const card of [cloud, licence]) assert.deepEqual(card.querySelectorAll("dt").map((t) => t.textContent), ["Who it is for", "What you pay"], "each says who it is for and what is paid");
-  assert.match(cloud.textContent, /A flat monthly plan for the hosting\./);
+  assert.match(cloud.textContent, /Flat monthly hosting, priced on the sign-up page and kept there\./);
   assert.match(
     cloud.textContent,
-    /Its plans and prices are on the sign-up page, because they are kept in one place\./,
+    /priced on the sign-up page and kept there\./,
+    "and says why its own prices are not repeated: they are kept in one place",
   );
   assert.match(
     cloud.textContent,
-    /, and each workspace is a host of its own, on a plan of its own\./,
+    /Your account's plan sets how many workspaces you run; each is a host on its own plan\./,
     "and says the thing that changed: a workspace runs on a plan of its own",
   );
-  assert.match(cloud.textContent, /You bring your own model key and pay your provider directly: we do not resell model usage\./);
+  assert.match(cloud.textContent, /Your model key, your provider's bill: we do not resell model usage\./);
   assert.match(licence.textContent, /The plans above are licences for the software you run yourself\./);
   assert.deepEqual(cloud.querySelectorAll("a").map((a) => [a.textContent, a.href]), [["See the Curule Cloud plans", `${APP}/`]], "one action in each");
   assert.deepEqual(licence.querySelectorAll("a").map((a) => [a.textContent, a.href]), [["See the licence plans", "#plans"]]);

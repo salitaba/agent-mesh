@@ -1705,3 +1705,87 @@ site at `5b2205e`, served on a second port and measured in the same run; no numb
 The next pass's first job is the two ways in (`#ways`, 1,206.5px at 360): two 522.6px cards whose four answers repeat the pricing
 page's. A card is kept for something you act on, so the saving there is the words inside the two cards, not their surface; after it,
 the demo's fourth step's first paragraph is the only prose left in `#try` that is longer than its instruction.
+
+## 2026-10-29: the two ways in carry one head each, and 206px of fewer words
+
+Measured with the same probe (Chrome 156 over CDP, reduced motion, light unless said, touch at 320, 360 and 390, a mouse at
+768 and 1,440, print at 794, forced colours at 360, a 24px root at 320 and 360, a 32px root at 320 and 360). The before
+column is the site at `36b4e25`, served on a second port and measured in the same run; no number is copied from an earlier
+pass.
+
+### What changed
+
+- **A card's head is one tinted block, not a band and a title 116.2px deep.** The head was a 65px tinted band with the way's
+  mark and name, then, outside it, a 24px title 20px under the band: **116.2px at 360** (65 + 20 + 31.2) before either answer
+  began. It is now a single `<header class="way-head">` whose grid holds the 40px mark, the name in the kind's 12px capitals
+  and the title under it: **73.4px**, **42.8px off each card** and 85.6 of the section's saving. Every word stayed: "Curule
+  Cloud" and "Self-hosted" are the name line, "We run it for you" and "You run it" the title, and the cloud card's head keeps
+  its tint and its accent rule. At 1,440 the head is 73.4px where the band and its title stood 128.2px deep.
+- **The four answers say the same in five lines fewer.** Four paragraphs of five lines each (145.2px) are now 3, 4, 4 and 4
+  lines (**97.2, 121.2, 121.2, 121.2**): the cloud card's "who it is for" drops two of its five lines (36 → 22 words), its
+  "what you pay" and the self card's "who it is for" one each (35 → 22 and 28 → 20). Every claim is still there — the
+  sign-up, plan and browser steps and "Same console and agents, on our servers"; the flat monthly plan priced on the sign-up
+  page, your own model key billed by your provider, "we do not resell model usage"; your own infrastructure and model
+  credentials, one container per team, "Nothing phones home: no telemetry, no update check, no licence server"; the Community
+  plan's one project and ten agents and no key, the paid licence that lifts the limits, and the Business Source License 1.1 —
+  and no figure is written by hand. The section's words are **171 → 134**, its cards **84/70 → 58/59**.
+- **The pricing page's own two ways in changed by the same rule.** Its Cloud "what you pay" was nine lines (216px) carrying
+  five claims; it is six (144), with the account's workspace count and each workspace's own plan still stated. Its four
+  answers are **21 lines → 15** and its section **1,230.5 → 1,000.9** at 360. The licence card keeps the sentence
+  `site-cloud.test.ts` holds ("The plans above are licences for the software you run yourself.").
+- **Nothing above the section moves, and everything below moves up by exactly its saving.** The price line is at 522.8 and
+  `#pricing` at 1,670.4 in both halves; at 360 the console is **4,073.8 → 3,868.2**, its six-view row 4,454.8 → 4,249.2, the
+  demo 4,952 → 4,746.4, its first command 5,520.9 → 5,315.3 and the footer 12,071.6 → 11,865.9. The cards still hold one
+  action each, the two dts ("Who it is for", "What you pay"), the same 42 links and 46 controls in `main`, and the same 73
+  keyboard stops, with the ways' action still the 20th.
+
+### Measurements after this pass
+
+| The home page at 320 / 360 / 390 / 768 / 1,440 | Before | After |
+|---|---|---|
+| The page | 13,716 / 12,770 / 12,428 / 12,515 / 12,175 | **13,487 / 12,564 / 12,199 / 12,388 / 12,120** |
+| `#ways` | 1,302.5 / 1,206.5 / 1,206.5 / 751.6 / 704.4 | **1,072.9 / 1,000.9 / 976.9 / 624.8 / 649.6** |
+| Its two cards at 360 | 522.6 / 522.6 | **407.8 / 431.8** |
+| A card's head at 360 | 116.2 | **73.4** |
+| The four answers at 360, lines | 5 / 5 / 5 / 5 | **3 / 4 / 4 / 4** |
+| `#ways`, words | 171 | **134** |
+
+| The pricing page at 320 / 360 / 390 / 768 / 1,440 | Before | After |
+|---|---|---|
+| The page | 14,249 / 13,271 / 12,713 / 10,367 / 9,210 | **14,043 / 13,042 / 12,507 / 10,241 / 9,107** |
+| `#ways` | 1,332.8 / 1,230.5 / 1,182.5 / 775.6 / 728.4 | **1,127.2 / 1,000.9 / 976.9 / 648.8 / 625.6** |
+| Its four answers at 360, lines | 3 / 9 / 4 / 5 | **2 / 6 / 3 / 4** |
+
+- The section loses **205.6px at 360**, 229.6 at 320 and 390, 126.8 at 768 and 54.8 at 1,440; the page loses the same. The
+  pricing page loses 229.6 at 360 (its longer Cloud answer), 206 at 320 and 390, 126 at 768 and 103 at 1,440.
+- No page scrolls sideways at 320, 360, 390, 768 and 1,440 in either theme (**0** on all 70 page/width/theme pairs), **0**
+  computed text under 12px and **0** console errors. The only controls under 44 × 44 are the pricing page's 24 × 24 checkbox,
+  whose label is 44, and the 29 mouse-sized 36–40px rows at 1,440 on the home page, as before.
+- axe-core WCAG 2.0/2.1/2.2 A and AA: **0** violations on the home page and on the pricing page at 320 dark, 360 light and
+  1,440 dark. Without a script the home page is **12,563** (was 12,769), 0px over; print at 794 is **12,032** (12,135);
+  `forcedColors: active` at 360 is 12,564, 0px over; at a 24px root **19,681** at 360 and **21,465** at 320 (were 20,072 and
+  21,820); at a 32px root 29,548 and 32,720 with 6px and 26px over, exactly as before (the recorded debt); a 720px viewport
+  is 12,486 (12,644), 0px over.
+- The site's own suites are **177** tests, all passing. Three of them changed with the head's markup, and none of their claims
+  did: `site-copy.test.ts` reads the mark from the new `<header class="way-head">`, `site.test.ts` names `.way-head .mark` as
+  the 40px tile, and `site-cloud.test.ts`'s four home and pricing copy pins hold the new sentences. `site-chrome --check` and
+  `export-pricing --check` pass; `site:check` still exits 1 on the owner's `TODO(owner)` at `site/legal/index.html:133`.
+
+### What this pass deliberately left
+
+- **The self card's "What you pay" ends "Source: Business Source License 1.1."** A label, not the full sentence the footer and
+  the FAQ print. Keeping "The source is available under the Business Source License 1.1." would have made the answer five
+  lines again and cost 24px; the licence's name is intact and the owner's sentence is a scroll away.
+- **The pricing page's Cloud "what you pay" is still six lines** (144px, was 216). It carries five claims — flat monthly
+  hosting, prices kept on the sign-up page, the account's workspace count, each workspace a host on its own plan, your own key
+  and no resale — and dropping one would be a claim, not a line.
+- **The answers still carry a label row and its 16px mark each** (25.2px per answer, 101px a card). Putting the label in the
+  sentence saves the row and costs the line it pushes, so it was measured and left.
+- **The pricing page's section is not the same height as the home page's** (both 1,000.9 at 360 now) because its Cloud answer
+  is one line longer than the home page's; the two pages' cards say different things on purpose.
+- **The captures were not retaken**, and `site/ux/` was not edited.
+
+The next pass's first job is the demo's fourth step: its first paragraph is still eight lines (192px at 360) and carries the
+URL, the token, the project, the button, the seven agents, the mission and the one block. After that, the pricing page's Cloud
+answer (six lines, and the card that sets its row) and the three command blocks' 48px Terminal row, which is shared with the
+documentation page.

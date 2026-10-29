@@ -449,7 +449,7 @@ test("the plans' table has equal columns after the one that names the row, and a
 test("a card's title has the tile's room above it, a plan's figures share a line whatever their labels take, a lone note is compact, and the closing band's words are one group", () => {
   const css = fs.readFileSync(path.join(SITE, "assets", "site.css"), "utf8");
   assert.match(css, /\n\.card h3 \{ margin: 16px 0 8px; \}/, "the 16 above a card's title is the tile's: every card starts with one (site-copy.test.ts holds the markup to it)");
-  assert.match(css, /\n\.card > \.mark, \.start > \.mark, \.glance-list \.mark, \.way-kind \.mark \{ width: 40px; height: 40px; padding: 10px;/, "a mark in a card, a place to start, a glance or a kind's label is on a 40 px tile");
+  assert.match(css, /\n\.card > \.mark, \.start > \.mark, \.glance-list \.mark, \.way-head \.mark \{ width: 40px; height: 40px; padding: 10px;/, "a mark in a card, a place to start, a glance or the way in's head is on a 40 px tile");
   assert.match(css, /\n\.start > \.mark \{ margin-bottom: 10px; \}/, "which has the same 16 under it as a card's, with the 6 of the card's rows");
   assert.match(css, /\n\.plan-limits div \{[^}]*flex-direction: column-reverse; justify-content: flex-end;/, "the figure is at the top of its cell, so a label of two lines does not lift it");
   assert.match(css, /\n\.section:has\(> \.wrap > p:only-child\) \{ padding-block: \d+px; \}/, "a section that holds one paragraph is as tall as the paragraph needs");
