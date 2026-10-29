@@ -827,17 +827,17 @@ tfoot > tr > * { background: var(--k-surface-2); font-weight: 650; }
 
 /* ---- phones and fingers */
 @media (max-width: 720px) {
-  /* A phone's facts are ruled: label, figure, note. */
-  .stat, .figures > div { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 10px; min-height: 44px; padding: 6px 0; border-top: 1px solid var(--k-line); }
+  /* A phone's money is ruled: name, figure at its end, note under. */
+  .stat, .figures > div { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 10px; min-height: 44px; padding: 4px 0; border-top: 1px solid var(--k-line); }
   .stat-v, .stat-n { margin: 0 !important; }
+  .stat-n:empty { display: none; }
   .sk-tiles { grid-template-columns: 1fr; }
   .sk-tiles .sk { height: 60px; }
-  /* Ruled entries at the page's edge: the figure ends its row, the measure sits under. */
   .figures { display: block; margin: 0; padding: 0; }
   #balance-panel .card { padding: 0; border: 0; background: none; box-shadow: none; }
-  .figures dt { margin-right: auto; }
+  .stat dt, .figures dt { margin-right: auto; }
   .figures dd { margin: 0; font-size: min(1.375rem, 9vw); line-height: 1.15; }
-  .figures .of { display: flex; align-items: center; gap: 8px; flex: 1 0 100%; margin: 0; line-height: 1.4; }
+  .figures .of, .stat-n { display: flex; align-items: center; gap: 8px; flex: 1 0 100%; margin: 0; line-height: 1.4; }
   .figures .of meter { flex: 1; min-width: 3em; }
   .topup > summary { display: flex; align-items: center; justify-content: space-between; gap: 16px; min-height: 44px; margin-bottom: 8px; color: var(--k-accent-ink); font-weight: 600; cursor: pointer; list-style: none; }
   #topup-fail { margin-top: 20px; }

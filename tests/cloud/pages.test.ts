@@ -496,6 +496,8 @@ test("the balance is the record, and adding credit is one 44px row on a phone th
   );
   assert.equal(value(".figures", "display", "max-width: 720px"), "block", "not the two-column grid that made the panel a form");
   assert.equal(value(".figures dt", "margin-right", "max-width: 720px"), "auto", "the figure goes to the row's end, so the three amounts are one column");
+  assert.equal(value(".stat dt", "margin-right", "max-width: 720px"), "auto", "and the glance's three facts are the same rows: the name at the start, the figure at the end");
+  assert.match(value(".stat-n", "flex", "max-width: 720px") || "", /1 0 100%/, "with the note on the line under it, as the allowance's measure is, so a phone reads one grammar for the money");
   assert.equal(value(".figures .of", "display", "max-width: 720px"), "flex", "and the allowance's note sits on its line with its bar");
   assert.match(value(".figures .of", "flex", "max-width: 720px") || "", /1 0 100%/, "which is the line under its row, as wide as the row");
   assert.equal(value(".figures .of meter", "flex", "max-width: 720px"), "1", "the bar takes the width the words leave");
