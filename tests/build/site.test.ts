@@ -819,4 +819,26 @@ test("the footer's index is three stacked groups of wrapped links on a narrow ph
   assert.match(css, /\n\.foot-col h2 \{ margin: 0 0 6px; color: var\(--ink\); \}/, "and the group's name sits closer to its links than it did");
 });
 
+/**
+ * The plate's chrome holds the address the demo runs on and the way to the full-size capture in one 44px row. The address
+ * was pinned to the bar's own centre and the chip to its right end, so at 320 the chip's cell began at 201.03 while the
+ * 129.16px address ended at 224.58: its 1px rule crossed the address's last two characters, and "Full size" began 1.45px
+ * after them (at 360 the pill was still 3.55px under the rule). They are siblings in the bar's flex row now: the address is
+ * centred in the room the lights and the chip leave, and at 359 and below the three decorative lights give way, because the
+ * lights, the address and the chip need 281px of the 254px a 320 phone's bar has. The chip keeps its 44px cell and the 6px
+ * inset it had as an absolutely placed span, and the address is whole at every width.
+ */
+test("the plate's address and its full-size chip share the bar without crossing, and the lights give way at 320", () => {
+  const css = fs.readFileSync(path.join(SITE, "assets", "site.css"), "utf8");
+  const home = page(pages, "index.html").markup;
+  assert.match(css, /\n\.frame-bar \.frame-address \{[^}]*flex: 0 1 auto;[^}]*margin-inline: auto;/, "the address takes the room the lights and the chip leave, and is centred in it");
+  assert.ok(!/\.frame-bar \.frame-address \{[^}]*position: absolute/.test(css), "it is laid out in the row, not centred over the chip");
+  assert.match(css, /\n\.frame-open \{ position: static; align-self: flex-start; flex: none;/, "the chip is a flex item of the same row");
+  assert.match(css, /\n\.frame-open \{[^}]*margin-right: -10px;/, "and the bar's 16px padding with this -10px keeps its edge 6px inside the frame, where it was");
+  assert.match(css, /@media \(max-width: 359px\) \{ \.frame-bar i \{ display: none; \} \}/, "at 320 the decorative lights give way so the address stays whole");
+  assert.match(css, /\n\.frame-bar i \{ flex: none;/, "a light is its 10px circle at every width");
+  assert.equal((home.match(/class="frame-open frame-open-\d"/g) ?? []).length, 3, "one chip for each of the three views");
+  assert.equal((home.match(/class="frame-bar"/g) ?? []).length, 1, "in the plate's one chrome");
+});
+
 
