@@ -416,7 +416,7 @@ test("the cards that carry a mark are the ones where it helps a reader find the 
   assert.deepEqual(addresses.map((m) => m.title), ["To sales", "To support", "To security"]);
   for (const group of [starts, trio, addresses]) assert.equal(new Set(group.map((m) => m.shape)).size, group.length, "no two cards in a row have the same drawing");
   const shapeOf = (group: Array<{ title: string; shape: string }>, title: string): string => group.find((m) => m.title === title)!.shape;
-  const ways = [...home.html.matchAll(new RegExp(`<p class="way-kind">${MARK}([\\s\\S]*?)</svg>`, "g"))].map((m) => m[1]);
+  const ways = [...home.html.matchAll(new RegExp(`<header class="way-head">\\s*${MARK}([\\s\\S]*?)</svg>\\s*<p class="way-kind">`, "g"))].map((m) => m[1]);
   assert.equal(shapeOf(starts, "Use Curule Cloud"), ways[0], "the cloud");
   assert.equal(shapeOf(starts, "Deploy it"), ways[1], "the stacked boxes");
   assert.equal(shapeOf(addresses, "To security"), answers[0]!.shape, "the shield");
