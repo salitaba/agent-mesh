@@ -428,6 +428,8 @@ test("what a finger has to hit is as tall as a button on a phone: the buttons, t
   assert.equal(value(".toc-phone a", "min-height", "max-width: 999px"), "44px", "a contents link on a phone, where the side contents are not drawn");
   assert.equal(value(".toc-phone summary", "min-height", "max-width: 999px"), "44px", "and the control that opens it");
   assert.equal(value(".subnav a", "min-height", "max-width: 720px"), "44px", "a section of the account, on a phone");
+  assert.equal(value(".subnav a", "min-width", "max-width: 389px"), "44px", "and the narrower pad on the smallest phones leaves each name a finger's width");
+  assert.equal(value(".subnav a", "font-size", "max-width: 389px"), ".75rem", "while the contents line drops to the caption's 12px, which is what lets its five names share one row");
   assert.equal(value(".subnav", "flex-wrap"), "wrap", "the account's sections wrap rather than hide the last one past the edge");
   assert.notEqual(value(".subnav", "overflow-x"), "auto", "and there is no sideways strip to discover");
 });
