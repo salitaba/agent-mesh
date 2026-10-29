@@ -119,6 +119,11 @@ Breakpoints: **1280 1100 900 800 760 620 560**. 800 is the sidebar drawer (JS
   lights as a whole band when pointed at or reached by the keyboard; the one
   control it carries keeps its own name, its 44 px box and its single tab stop
   (2026-10-29).
+- A drawing is not a set of controls where a mark cannot be a target. The Steps
+  timeline's 28 marks are 4–18 px wide: on the phone layout (620 and below) or a
+  coarse pointer they are spans, and a 12 px line under the axis says the turn is
+  a row below. A desk keeps the 28 buttons, their tooltips and their roving
+  keyboard (2026-10-29).
 - Filters that are not needed to read the page fold behind one 44 px button with
   a count, as Events and Steps do; the search stays out.
 - The first-run guide is a brief, not a box: at 760 px and below it drops the
@@ -212,6 +217,45 @@ Breakpoints: **1280 1100 900 800 760 620 560**. 800 is the sidebar drawer (JS
 8. Check the frame's safe-area claims on a notched device in both orientations; the insets are in the CSS but the stand-in browser reports them as zero.
 
 ## Pass log
+
+### 2026-10-29 — a phone's Steps timeline is a drawing, and each turn is a row
+
+Surface: `views/Steps.tsx` (the strip and `LaneRow`), `views/steps.css` (the mark rule and its caption) and one new rule in
+`tests/dashboard/steps-phone.test.ts`. Measured on the scripted demo at **Delivered** (28 turns, 49.3k tokens, 7 lanes) in the
+production build, Chromium over CDP at 320/360/390/620/768/1440 in light and 360/1440 in dark, reduced motion, a touch pointer at
+360 and 768, axe-core at 360 light and 1440 light/dark. Before is the base build rebuilt from this worktree, after is this branch;
+both were read on the same delivered mission within the hour, and the 360 × 800 captures are at **`#view.scrollTop` 500** on both
+sides — the console scrolls `#view`, not the window, so the camera sets that property rather than `window.scrollY`.
+
+- **The chart's 28 marks were buttons 4–18 px wide.** At 360 the timeline drew **28 buttons of 4.0–17.6 × 16** px (320: 4.0–15.2;
+  390: 4.0–19.3; 620: 4.5–32.7), every one under 44 × 44, and they were the only marks in the console that took a press below the floor
+  (the notify switch stays a 34 × 20 input inside its 44 px label; the timeline's window buttons are 44 px-tall text). At 621 and 768 a
+  touch tablet opens the chart **by default**, so those 28 buttons were 4.0–22.8 and 4.0–28.3 × 16 without a press. On the phone layout
+  (620 and below) or a coarse pointer the marks are spans: **28 → 0 of the chart's marks take a press** at 320/360/390/620 and at 768
+  coarse (the four window buttons stay, 35–41 px wide and 44 tall); the same 28 marks keep each turn's position, outcome colour and
+  duration.
+- **The turn is a row a thumb can hit, and the chart says so.** The same turn is the ledger's whole-row button — 294 × 86 at 320,
+  334 × 86 at 360, 594 × 86 at 620, 742 × 61 at 768, unchanged — and pressing a mark now opens nothing while the first row still opens
+  the turn's drawer (a tap on a mark left only the closed navigation layer; a click on the row added the step drawer). A 12 px sentence
+  under the axis, "Each turn is a row in the list below.", is the frame's visible change: the opened chart is **3,811 → 3,839** at 360,
+  **3,914 → 3,942** at 320, **3,770 → 3,797** at 390 and **3,430 → 3,457** at 620, and a touch tablet's default page **2,648 → 2,676**
+  at 768.
+- **Nothing else moves.** A phone's closed page is 3,191 at 360 (3,294 at 320) in both halves; a mouse's chart is unchanged to the
+  pixel at 768 (2,535) and 1,440 (2,438) and keeps its 28 buttons, tooltips and roving keyboard; every page is 0 px of horizontal
+  scroll at 320/360/390/620/768/1,440 (light and 360/1,440 dark); the desktop's walk from the caption to the first row stays 12 Tabs and
+  the phone's shortens **9 → 8**, because the chart no longer adds a roving stop. The marks still draw in Windows High Contrast
+  (CanvasText and Canvas at 360), the `hot` mark still lights when its ledger row is pointed at (`1`), and axe-core finds **0**
+  violations at 360 light and 1,440 light/dark (27 and 30 rules passed, as before); the console errors are the one-mesh
+  `/api/projects` 404 in both halves.
+
+Suite: typecheck and build clean; `dist/tests/dashboard` **1,185 pass, 0 fail**, with one new rule in
+`tests/dashboard/steps-phone.test.ts`; `npm test` **6,403 tests, 6,401 pass, 0 fail, 2 skipped**; eslint on the changed files 0
+errors (the stylesheet is not in eslint's config).
+
+**Left.** A phone can no longer open a turn by pressing its mark; the mark was 4–18 px wide, and the row below is the same door at
+thumb size. At 621–768 with a mouse the chart is open by default and its marks remain 4–28 px buttons — a mouse target, not a thumb's,
+which is the same tablet question the 44 px `NextLinks` left open. The chart's caption is a sentence, not a control: it says where the
+doors are but does not take the reader there.
 
 ### 2026-10-29 — a closed row is one press across its width, and it says so before the press
 
