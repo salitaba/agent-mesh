@@ -6,7 +6,8 @@
  * The honesty rules this module carries are the ones the page is built on:
  * - the tone of a meter is one function, mirroring the top bar (warn from 80%, bad from 95%, bad when the server says
  *   `exceeded`), so the bar and this page cannot disagree about how full the budget is;
- * - a share is a share of what was spent, so the shares add to 100%; a bar is scaled to the biggest row and says so;
+ * - a share is a share of what was spent, so the shares add to 100%, and a row's bar is that same share: the length beside a
+ *   percentage is the percentage, so the two can be read against each other and neither needs a scale of its own;
  * - a budget is named by what it limits, with its unit, because the three kinds (tokens, minutes, events) look alike in a table.
  *
  * What it does not do is price anything. The payload carries tokens only; the one dollar figure the console has is the host's
@@ -34,6 +35,32 @@ export function pctLabel(ratio: number | null): string {
   if (ratio < 0.01) return "under 1%";
   const p = Math.round(ratio * 100);
   return ratio < 1 && p >= 100 ? "99%" : `${p}%`;
+}
+
+/**
+ * What is left of a budget, in three significant figures.
+ *
+ * A remainder has to be addable to what was spent, and `fmt`'s one decimal under ten million could not do it: 2,000,000 minus
+ * 49,300 is 1,950,700, which `fmt` prints as "2.0M" — the same string as the limit it was subtracted from, so the page's three
+ * figures read as "49.3k used of 2.0M, 2.0M left". Three significant figures make the remainder its own number ("1.95M") and
+ * claim no digit the budget does not have.
+ */
+export function fmtRoom(n: unknown): string {
+  const v = Math.max(0, typeof n === "number" && Number.isFinite(n) ? n : 0);
+  if (v < 1000) return String(Math.round(v));
+  const unit = v >= 1_000_000 ? 1_000_000 : 1000;
+  const scaled = v / unit;
+  let text: string;
+  if (scaled >= 100) {
+    text = String(Math.round(scaled));
+  } else {
+    // Two decimals, unless the second one is a zero that says nothing: 2,000,000 is "2.0M" as it is everywhere else,
+    // and 1,950,700 is "1.95M" because it has to be.
+    const two = scaled.toFixed(2);
+    const one = scaled.toFixed(1);
+    text = two.endsWith("0") && Number(one) === Number(two) ? one : two;
+  }
+  return `${text}${unit === 1_000_000 ? "M" : "k"}`;
 }
 
 /** Dollars, as an estimate reads: cents under $100, whole dollars above, and "under $0.01" instead of a rounded zero. */
@@ -105,10 +132,8 @@ export interface OwnBudget { used: number; limit: number; ratio: number; tone: B
 export interface AgentRow {
   agentId: string;
   tokens: number;
-  /** Of everything spent, 0..1. The shares of all rows add to 1. */
+  /** Of everything spent, 0..1. The shares of all rows add to 1, and this is also the length of the row's bar. */
   share: number;
-  /** Against the biggest row, 0..1: the length of the bar. */
-  bar: number;
   activations: number;
   perTurn: number;
   /** What the seat has used of the budget that is its own, when it has one. */
@@ -123,8 +148,8 @@ export interface ModelRow {
   cacheRead: number;
   turns: number;
   agents: string[];
+  /** Of everything spent, 0..1: the percentage and the bar are this one number. */
   share: number;
-  bar: number;
   avgPerTurn: number;
   /** Which price the host's dollar estimate uses for this model. */
   basis: PriceBasis;
@@ -259,13 +284,11 @@ export function summarizeCost(p: BudgetsPayload | null | undefined, yours: reado
   }
 
   const spent = rawAgents.reduce((n, a) => n + num(a.tokens), 0);
-  const top = Math.max(1, ...rawAgents.map((a) => num(a.tokens)));
   const agents: AgentRow[] = rawAgents
     .map((a) => ({
       agentId: a.agentId,
       tokens: num(a.tokens),
       share: spent > 0 ? num(a.tokens) / spent : 0,
-      bar: num(a.tokens) / top,
       activations: num(a.activations),
       perTurn: num(a.perTurn),
       own: own.get(a.agentId) ?? null,
@@ -273,7 +296,6 @@ export function summarizeCost(p: BudgetsPayload | null | undefined, yours: reado
     .sort((a, b) => b.tokens - a.tokens || a.agentId.localeCompare(b.agentId));
 
   const rawModels = Array.isArray(cost.models) ? cost.models : [];
-  const modelTop = Math.max(1, ...rawModels.map((m) => num(m.tokens)));
   const models: ModelRow[] = rawModels
     .map((m) => ({
       model: m.model,
@@ -284,7 +306,6 @@ export function summarizeCost(p: BudgetsPayload | null | undefined, yours: reado
       turns: num(m.turns),
       agents: Array.isArray(m.agents) ? m.agents : [],
       share: num(m.share),
-      bar: num(m.tokens) / modelTop,
       avgPerTurn: num(m.avgPerTurn),
       basis: priceBasis(m.model, yours),
     }))

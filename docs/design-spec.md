@@ -346,7 +346,10 @@ recipe that a third page needs is written here.
 - **Files** shows what a file is before it is read (a tile for a patch, a release plan, a report or a document), its state as a
   word, and a patch by colour. **Product** is the checkout as ruled facts, a script as a button that says what it runs, and a
   failed run as a note with a rail. **Cost** leads with the figure (30 px); the meter turns amber and red by the host's own rule with
-  a line in words under it, and the strip shows everyone's slice in the colours of the rows below. **Tool gates**: a seat that
+  a line in words under it, and the strip shows everyone's slice in the colours of the rows below. Every column of its two ledgers
+  is named at every width, and a row's bar is its share — the percentage drawn, in the row's own colour, under the number it
+  equals — not a second scale the reader has to be told about in a caption. A remainder is printed with the digits that let it be
+  added back to the spend. **Tool gates**: a seat that
   asked is a block with a rail, a row for each tool with its own *Unlock*, and *Unlock all N* at the foot.
 - **Drawers** (step, agent, event, artifact) have their own sheet, `views/drawers.css`. A step reads as a ledger and an agent as
   a card of figures. A drawer's title row is a `div` and not a `header`, because the page has one banner landmark; a dialog's
@@ -433,6 +436,75 @@ Known debt, so it is not rediscovered:
 
 The changes to the console that were measured against rendered screens, newest first. A pass is only in this list with the run
 that produced it, the before and the after, and what it deliberately did not change.
+
+### 2026-10-29 — the Cost ledger names its columns everywhere, and every bar is the share beside it
+
+Run against `examples/demo-stub/mesh.yaml` at **Delivered** (the scripted demo, no model calls) on the production build from the
+worktree: a fresh state, the mission started from the console, every reading taken on that same delivered state (51,050 tokens,
+29 turns, 7 seats, 9 files) in both halves — each half of the pair was shot from its own fresh run of its own build, and both runs
+delivered the same figures. 320, 390, 620, 768, 900 and 1440 in light, 390 and 1440 in dark; `prefers-reduced-motion: reduce`;
+Chromium 1248 with axe-core 4.14 in the page. The three states were read at 390 and 1440 in both themes: **Parked** (before
+Start), **Running** (a shot taken 0.8 s after the confirm, while agents were in turns) and **Delivered**.
+
+**What changed.**
+
+- **Every column is named wherever its numbers are printed.** Below 900 px `.cost-cols` was `display: none`, so a phone's rows
+  were two bare figures — "16.2k", "32%" — that only the `sr-only` spans inside the cells named. The head is the grid's own
+  first row at every width now: `Agent · Tokens · Share` on a phone (the own-budget cell is a sentence, "16.2k of 200k", and
+  needs no heading), and the same four names as a desk. **Both number columns unnamed → both named.**
+- **A row's bar is the share printed beside it.** The length was a second scale — "bars are scaled to the biggest spender" —
+  so the biggest row's bar was full while the number beside it said 32%: at 1440 tech-lead's bar was **487.4 px of 487.4
+  (100%)** beside **"32%"**, and architect's **270.8 px (55.6%)** beside **"18%"**. `AgentRow.bar` / `ModelRow.bar` are gone;
+  the bar is `share`, drawn in the row's own colour (`--tint`, the seat's name colour) under the percentage in the Share cell,
+  and its length is the number above it: **85.3 px of 269 (31.7%)** beside 32%, **47.4 px (17.6%)** beside 18%. The caption that
+  had to explain the second scale is one sentence shorter, and no bar in either ledger is drawn to a number that is not printed
+  with it.
+- **The page's own arithmetic adds up.** A remainder was printed by `fmt`, whose one decimal under ten million made 1,948,950
+  read **"1.9M"** under "51.0k of 2.0M tokens" — 51.0k + 1.9M is 1.951M, 49k short of the limit — and in the Running state,
+  16.9k spent of 2.0M read **"Left 2.0M"**, the limit's own string. `fmtRoom` gives a remainder three figures and never fewer
+  digits than the number it was subtracted from: **"1.95M"** and **"1.98M"**, which add back to the limit.
+- **A 768 tablet keeps the table.** The row stacked into the phone's three bands below 900, though the table it replaces needs
+  578 px of the 686 a 768 window has. The head and the four-column row begin at 621 (the phone's own break), so the "By agent" card is
+  **728.97 → 488.23 px** at 768 and the page **1,411 → 1,171**. Between 801 and 900 the sidebar takes 330 px of the window and
+  the content is 471–570; the row's tracks are `minmax()`s that shrink, so nothing overflows there either (measured at 621, 700,
+  800, 801, 820, 860 and 1000: 0 horizontal scroll).
+
+**Measured.**
+
+| | Before | After |
+|---|---|---|
+| "By agent" card, 320 / 390 / 620 | 906.88 / 785.14 / 750.36 px | 854.48 / 715.36 / 693.97 |
+| "By agent" card, 768 / 900 / 1440 | 728.97 / 750.36 / 488.23 px | **488.23** / 609.97 / 488.23 |
+| An agent row, 320 / 390 | 109.17 / 91.78 px | 101.17 / 83.78 |
+| An agent row, 768 / 900 / 1440 | 91.78 / 91.78 / 54.39 px | 54.39 / 71.78 / 54.39 |
+| A model row, 390 / 1440 | 124.56 / 87.17 px | 116.56 / 69.78 |
+| Cost page (`#view` scrollHeight), 320 / 390 / 620 | 1,759 / 1,562 / 1,454 px | 1,720 / 1,505 / 1,411 |
+| Cost page, 768 / 900 / 1440 | 1,411 / 1,441 / 1,197 px | **1,171** / 1,319 / 1,179 |
+| Cost page in dark, 390 / 1440 | 1,562 / 1,197 px | 1,505 / 1,179 |
+| Column names drawn (`display` of `.cost-cols`) | `none` at 320–900, `grid` at 1440 | `grid` at every width |
+| tech-lead's bar / its printed share, 1440 | 487.4 of 487.4 px (100%) / 32% | 85.3 of 269 (31.7%) / 32% |
+| architect's bar / its printed share, 1440 | 270.8 of 487.4 (55.6%) / 18% | 47.4 of 269 (17.6%) / 18% |
+| The mission's remaining budget, Delivered | "1.9M" (51.0k + 1.9M = 1.951M, not 2.0M) | **"1.95M"** (adds back to 2.0M) |
+| The mission's remaining budget, Running | "2.0M" — the limit's own string | **"1.98M"** |
+| Axe, the Cost page, 320–1440 × both themes | 0 violations | 0 |
+| Axe, the 11 views × 390 and 1440 × both themes × 2 states | 0 | 0 |
+| Horizontal page scroll, 11 views × 2 widths × 2 themes × 2 states | 0 of 88 | 0 of 88 |
+| Smallest text, Cost at 390 / 1440 | 12 / 11 px | 12 / 11 |
+| Controls under 44 × 44, Cost at 320 / 390 | 0 / 0 | 0 / 0 |
+| Every other view's `#view` scrollHeight, 390 and 1440, Parked and Delivered | — | identical, view for view |
+| Console errors | one, the `/api/projects` 404 a single-mesh server answers on purpose | the same one |
+
+`npm run typecheck`, `npx eslint` on the changed files (0 errors) and `npm run build` pass; `node --test dist/tests/dashboard/*.test.js
+dist/tests/build/console-palette.test.js dist/tests/build/icons.test.js` passes **1,193 tests**. The three new rules in
+`cost.test.ts` (the remainder's digits, the bar drawn to `share`, the head not hidden) were each mutation-checked — `toFixed(1)`
+for the remainder, `bar(a.share * 2)` for the length, `display: none` for the head — each seen to fail, then restored.
+
+**Left.** The phone has no per-row bar: at 320–620 the share is a percentage and the card's strip is the only drawing of it,
+because a 32% bar in the 31 px a phone has left for the Share cell is a 10 px dash (the desk keeps the bar, the Steps strip's
+ring gives way to a figure at the same break). The own-budget cell still prints the row's figure a second time — "16.2k of
+200k" — because the cell has to read as a sentence on its own; its meter keeps the 3 px floor every bar in the console has, so a
+seat at 8% shows a dot rather than nothing. `.cost-share-bar` is drawn in Windows High Contrast from the browser's emulation
+(`forced-colors: active`), not on real Windows. No real phone, screen reader, Safari or Firefox run this pass.
 
 ### 2026-10-28 — a phone's Steps opens on its turns, and the hold is a glyph
 

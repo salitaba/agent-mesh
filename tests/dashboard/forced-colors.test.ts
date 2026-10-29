@@ -15,7 +15,7 @@ const SRC = path.resolve(__dirname, "..", "..", "..", "apps", "mesh-dashboard", 
 /** What each sheet draws as a background and must therefore draw again under forced colours. */
 const MARKS: Record<string, string[]> = {
   "views/steps.css": [".st-bar", ".st-mix-seg", ".st-f-dot", ".st-cost-bar", ".st-grid", ".st-track"],
-  "views/cost.css": [".cost-bar", ".cost-mini", ".cost-strip"],
+  "views/cost.css": [".cost-share-bar", ".cost-mini", ".cost-strip"],
   "views/drawers.css": [".prail-fill", ".prail-track", ".lw-dl-fill", ".lw-dl-track", ".sv-split"],
 };
 
