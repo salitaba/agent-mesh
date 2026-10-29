@@ -52,6 +52,8 @@
 .st-tl-cap:hover { color: var(--text); }
 .st-axis-note { font: var(--tx-meta); color: var(--muted); }
 .st-tl-none { margin: 0; padding: var(--s3) 0; font-size: 14px; color: var(--muted); }
+/* Where the chart is a drawing (LaneRow), say where the same turns are pressed. */
+.st-tl-doors { margin: var(--s2-5) 0 0; font: var(--tx-meta); color: var(--muted); }
 
 .st-lanes { display: flex; flex-direction: column; gap: var(--s1); }
 .st-lane { display: grid; grid-template-columns: var(--st-lab) minmax(0, 1fr) var(--st-sum); gap: var(--s3); align-items: center; min-height: 36px; }
@@ -74,6 +76,10 @@
 .st-bar.dim { opacity: .16; }
 /* A turn that began before the window starts gets a flat left edge, so a clipped bar never reads as "this is when it started". */
 .st-bar.clipped { border-radius: 0 4px 4px 0; }
+/* A mark, not a door: on the phone drawing or a coarse pointer the timeline's bars are spans (LaneRow), because a 4–18 px mark
+   cannot be pressed with a thumb. It keeps its shape, its colour and the "hot" mark the ledger row lights beside it; the turn is the
+   row below, at thumb size. */
+.st-bar.mark { cursor: default; pointer-events: none; }
 
 /* Nothing breathes while the server is silent: the pulse says "working now", and that is the one thing nobody can vouch for. */
 .st-page.offline .st-bar.o-live, .st-page.offline .st-row.o-live::before, .st-page.offline .st-row.o-live .otag::before, .st-page.offline .st-beacon::after { animation: none; }

@@ -48,3 +48,21 @@ test("a wake reason takes two lines on a phone and ends in an ellipsis; the fold
   assert.match(phone, /\.st-fold-head \{ flex-wrap: wrap;/, "the fold's count and cost take one line");
   assert.match(phone, /\.st-fold-who \{[^}]*flex: 1 1 100%;[^}]*white-space: normal;/, "and the names the next, whole");
 });
+
+test("on the phone drawing, or a coarse pointer, the timeline is a drawing and the turn below is the door", () => {
+  // Measured before this rule: the chart drew 28 buttons of 4–18 × 16 px at 320/360/390 (and 4–28 at 621/768, where a touch tablet
+  // opens the chart by default), every one under the 44 × 44 floor. A mark that narrow is a scale, not a target; on the phone drawing
+  // the chart keeps its shape and the same turn is the 334 × 86 (360) / 742 × 61 (768) whole-row button below it.
+  const tsx = read("views/Steps.tsx");
+  assert.match(tsx, /const DRAWING = "\(max-width: 620px\), \(pointer: coarse\)";/, "the phone layout or a thumb's screen: a 768 touch tablet opens the chart too");
+  assert.match(tsx, /const drawing = useMedia\(DRAWING\);/, "the strip asks which drawing it is");
+  assert.match(tsx, /onKeyDown=\{drawing \? undefined : roving\.onKeyDown\}/, "and a chart with no controls has no roving group to walk");
+  assert.match(tsx, /doors=\{!drawing\}/, "the lane is told whether its marks are controls");
+  assert.match(tsx, /if \(!doors\) return <span key=\{s\.turnId\} className=\{`\$\{cls\} mark`\} style=\{at\} aria-hidden="true" \/>;/, "on the phone drawing or a coarse pointer a mark is a span, not a 4 px button");
+  assert.match(sheet, /\.st-bar\.mark \{ cursor: default; pointer-events: none; \}/, "and it cannot take a press");
+  assert.match(tsx, /data-turn=\{s\.turnId\}/, "the same turn stays a button in the ledger");
+  assert.match(tsx, /className=\{`st-row \$\{meta\.cls\}\$\{hot \? " hot" : ""\}`\}/, "as the whole-row door a thumb can hit");
+  assert.match(tsx, /\{drawing \? <p className="st-tl-doors">Each turn is a row in the list below\.<\/p> : null\}/, "and the chart says once where its doors are");
+  assert.match(sheet, /\.st-tl-doors \{ margin: var\(--s2-5\) 0 0; font: var\(--tx-meta\); color: var\(--muted\); \}/, "in the page's caption type, not as a control");
+  assert.match(tsx, /aria-label=\{`\$\{s\.agentId\} turn, \$\{OUTCOME_META\[oc\]\.label\.toLowerCase\(\)\}/, "a desk keeps the 28 buttons, their names and their tooltips");
+});

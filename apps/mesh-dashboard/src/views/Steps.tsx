@@ -27,6 +27,8 @@ const css = (vars: Record<string, string | number>): CSSProperties => vars as CS
 
 /** Mirrors the phone rule in steps.css. A phone gets the numbers first and the swimlanes one tap away. */
 const PHONE = "(max-width: 620px)";
+/** Where the chart is a drawing, not a set of doors (see LaneRow): the phone layout, or any thumb's screen. */
+const DRAWING = "(max-width: 620px), (pointer: coarse)";
 
 /** The windows the timeline offers: the run first (it is the one that fits a mission that is over), then the ones that count back from now. */
 const WINDOW_OPTIONS = [FIT_WINDOW, ...WINDOWS].map((w) => ({
@@ -72,6 +74,8 @@ function Strip({ steps, loaded, failed, onPick, filter, counts, missionTokens, h
   const [win, setWin] = useState<string | null>(null);
   // Open on a wide screen and closed on a phone until the reader says otherwise; their choice then holds.
   const phone = useMedia(PHONE);
+  // A mark 4 px wide is not a target a thumb can use: on the phone drawing the timeline is drawn, and the turn below is its door.
+  const drawing = useMedia(DRAWING);
   const [openPref, setOpenPref] = useState<boolean | null>(null);
   const open = openPref ?? !phone;
   const auto = useMemo(() => autoPick(steps, Date.now(), state.phase), [steps, state.phase]);
@@ -180,17 +184,21 @@ function Strip({ steps, loaded, failed, onPick, filter, counts, missionTokens, h
             </div>
             {open ? (
               tl.lanes.length ? (
-                <div className="st-lanes" role="group" aria-label="Turns on a timeline, one lane per agent" onKeyDown={roving.onKeyDown}>
-                  {tl.lanes.map((ln) => (
-                    <LaneRow key={ln.agentId} lane={ln} filter={filter} ticks={tl.ticks} nowAt={tl.nowAt} hot={hot} onHot={onHot} stop={roving.stop} setLast={roving.setLast} onPick={onPick} />
-                  ))}
-                  <div className="st-axis" aria-hidden="true">
-                    {tl.ticks.filter((t) => t.label !== "now" && (tl.nowAt === null || Math.abs(t.at - tl.nowAt) > 7)).map((t) => (
-                      <span key={t.at} className={`st-tick${t.at === 0 ? " edge" : ""}${t.major ? " major" : ""}`} style={css({ "--at": `${t.at}%` })}>{t.label}</span>
+                <>
+                  <div className="st-lanes" role="group" aria-label="Turns on a timeline, one lane per agent" onKeyDown={drawing ? undefined : roving.onKeyDown}>
+                    {tl.lanes.map((ln) => (
+                      <LaneRow key={ln.agentId} lane={ln} filter={filter} ticks={tl.ticks} nowAt={tl.nowAt} hot={hot} onHot={onHot} stop={roving.stop} setLast={roving.setLast} onPick={onPick} doors={!drawing} />
                     ))}
-                    {tl.nowAt !== null ? <span className={`st-tick now${tl.nowAt > 96 ? " end" : ""}`} style={css({ "--at": `${tl.nowAt}%` })}>now</span> : null}
+                    <div className="st-axis" aria-hidden="true">
+                      {tl.ticks.filter((t) => t.label !== "now" && (tl.nowAt === null || Math.abs(t.at - tl.nowAt) > 7)).map((t) => (
+                        <span key={t.at} className={`st-tick${t.at === 0 ? " edge" : ""}${t.major ? " major" : ""}`} style={css({ "--at": `${t.at}%` })}>{t.label}</span>
+                      ))}
+                      {tl.nowAt !== null ? <span className={`st-tick now${tl.nowAt > 96 ? " end" : ""}`} style={css({ "--at": `${tl.nowAt}%` })}>now</span> : null}
+                    </div>
                   </div>
-                </div>
+                  {/* A thumb's chart is a drawing (LaneRow): say where its doors are, once, instead of making the reader guess why a mark does not press. */}
+                  {drawing ? <p className="st-tl-doors">Each turn is a row in the list below.</p> : null}
+                </>
               ) : (
                 <p className="st-tl-none" role="status">
                   No turn ran in this window.{" "}
@@ -204,9 +212,19 @@ function Strip({ steps, loaded, failed, onPick, filter, counts, missionTokens, h
   );
 }
 
-function LaneRow({ lane, filter, ticks, nowAt, hot, onHot, stop, setLast, onPick }: {
+/**
+ * One seat's lane: its marks on the time axis, and its totals.
+ *
+ * `doors` says whether a mark is a control. It is on the desk layout with a fine pointer, where a 4 px bar is a mouse target with a
+ * tooltip and a click; on the phone drawing (≤ 620 px) or a coarse pointer it is not, because a mark 4–18 px wide cannot be pressed
+ * with a thumb — the same turn is a whole-row button below (334 × 86 at 360, 742 × 61 at 768). The drawing keeps its shape, its
+ * outcome colour and the `hot` mark the list lights as you read it; what a phone loses is a 4 px shortcut to a door it already has at
+ * thumb size, and what it stops doing is claiming 28 sub-44 px targets (measured before: 28 of 28 marks under 44 × 44 at 360, 320
+ * and 768). The strip says so once under the axis, in a sentence.
+ */
+function LaneRow({ lane, filter, ticks, nowAt, hot, onHot, stop, setLast, onPick, doors }: {
   lane: Lane<TurnStep>; filter: string; ticks: { at: number }[]; nowAt: number | null; hot: string | null; onHot: (turnId: string | null) => void;
-  stop: string | null; setLast: (key: string) => void; onPick: (s: TurnStep) => void;
+  stop: string | null; setLast: (key: string) => void; onPick: (s: TurnStep) => void; doors: boolean;
 }): React.JSX.Element {
   return (
     <div className="st-lane">
@@ -221,14 +239,18 @@ function LaneRow({ lane, filter, ticks, nowAt, hot, onHot, stop, setLast, onPick
           const s = b.step;
           const oc = outcomeOf(s);
           const dim = filter && oc !== filter;
+          const cls = `st-bar ${OUTCOME_META[oc].cls}${dim ? " dim" : ""}${b.clipped ? " clipped" : ""}${hot === s.turnId ? " hot" : ""}`;
+          const at = css({ "--l": `${b.left}%`, "--w": `${b.width}%` });
+          // A thumb's chart is a drawing: the mark says when and how long, and the turn is the row below. See the docstring.
+          if (!doors) return <span key={s.turnId} className={`${cls} mark`} style={at} aria-hidden="true" />;
           return (
             <Tooltip key={s.turnId} content={<TurnTip s={s} />}>
               <button
                 type="button"
                 data-rv=""
                 tabIndex={stop === s.turnId ? 0 : -1}
-                className={`st-bar ${OUTCOME_META[oc].cls}${dim ? " dim" : ""}${b.clipped ? " clipped" : ""}${hot === s.turnId ? " hot" : ""}`}
-                style={css({ "--l": `${b.left}%`, "--w": `${b.width}%` })}
+                className={cls}
+                style={at}
                 onClick={() => onPick(s)}
                 onFocus={() => { setLast(s.turnId); onHot(s.turnId); }}
                 onBlur={() => onHot(null)}
