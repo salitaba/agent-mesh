@@ -51,11 +51,14 @@
 .cost-sec-h { display: flex; align-items: baseline; flex-wrap: wrap; gap: var(--s1) var(--s4); margin-bottom: var(--s3); }
 .cost-stack .cost-sec-h .cost-h { margin: 0; }
 .cost-cap { font: var(--tx-meta); color: var(--muted); }
-/* Everyone's slice of what was spent, in one line: the composition at a glance, in the colours the rows below are drawn in. */
+/* The composition at a glance, one line, in the colours the rows below are drawn in. */
 .cost-strip { display: flex; gap: 2px; height: 10px; margin: 0 0 var(--s3); border-radius: var(--k-r-pill); overflow: hidden; }
 .cost-strip > i { display: block; min-width: 3px; background: var(--tint, var(--k-accent)); }
+/* Four columns, each one named by the head above it: what spent it, how much, what share, and what is left of its own budget.
+   The bar lives in the share's own cell, under the percentage it measures, so a row never has an unnamed column or a length
+   that answers to a different number than the one beside it. */
 .cost-cols, .cost-row {
-  display: grid; grid-template-columns: minmax(150px, 1.3fr) minmax(100px, 3fr) 64px 56px minmax(160px, 1.4fr);
+  display: grid; grid-template-columns: minmax(0, 1.8fr) 72px minmax(74px, 1.2fr) minmax(96px, 1.4fr);
   gap: var(--s3); align-items: center;
 }
 .cost-cols { padding: 0 var(--s2) var(--s1-5); border-bottom: 1px solid var(--line); font: 600 12px var(--sans); color: var(--muted); }
@@ -73,29 +76,35 @@
 .cost-trunc { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 600 14px var(--sans); letter-spacing: var(--k-track-tight); }
 .cost-trunc.mono { font: 600 13px var(--mono); letter-spacing: 0; }
 .cost-meta { font: var(--tx-meta); color: var(--muted); overflow-wrap: anywhere; }
-.cost-bar { height: 8px; overflow: hidden; background: var(--sunken); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--line) 70%, transparent); border-radius: var(--k-r-pill); }
-.cost-bar > i { display: block; height: 100%; width: calc(var(--w, 0) * 100%); min-width: 3px; background: var(--tint); border-radius: inherit; transition: width var(--k-dur-3) var(--k-ease); }
-.cost-bar.zero > i { display: none; }
-.cost-num, .cost-share { text-align: right; font: 14px var(--sans); font-variant-numeric: tabular-nums; }
-.cost-num { font-weight: 650; }
-.cost-share { color: var(--text-dim); white-space: nowrap; }
+.cost-num { text-align: right; font: 650 14px/1.3 var(--sans); font-variant-numeric: tabular-nums; white-space: nowrap; }
+/* The share: the percentage, and under it the same share drawn to its own length in the row's colour. */
+.cost-share { display: flex; flex-direction: column; align-items: flex-end; gap: var(--s1); min-width: 0; font: 14px var(--sans); font-variant-numeric: tabular-nums; color: var(--text-dim); }
+.cost-share > span { white-space: nowrap; }
+.cost-share-bar { display: block; width: calc(var(--w, 0) * 100%); max-width: 100%; min-width: 3px; height: 4px; border-radius: var(--k-r-pill); background: var(--tint); }
+.cost-share-bar.zero { display: none; }
 .cost-own { display: grid; gap: var(--s1); justify-items: start; min-width: 0; font: var(--tx-meta); }
 .cost-basis { display: inline-flex; align-items: center; gap: var(--s1); color: var(--muted); }
 .cost-basis.default { color: var(--warn); font-weight: 600; }
-.cost-own-b { display: inline-flex; align-items: center; gap: var(--s2); color: var(--text-dim); font-variant-numeric: tabular-nums; }
+.cost-own-b { display: inline-flex; align-items: center; flex-wrap: wrap; gap: var(--s1) var(--s2); color: var(--text-dim); font-variant-numeric: tabular-nums; }
 .cost-own-b.warn { color: var(--warn); }
 .cost-own-b.bad { color: var(--bad); }
+/* A meter this small is a sliver at one per cent, and a used budget drawn as nothing reads as no budget at all: it keeps the
+   3 px floor the share bar has always had, so "some is spent" is visible and the words beside it say how much. */
 .cost-mini { flex: none; width: 56px; height: 6px; overflow: hidden; background: var(--sunken); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--line) 70%, transparent); border-radius: var(--k-r-pill); }
-.cost-mini > i { display: block; height: 100%; width: calc(var(--w, 0) * 100%); background: var(--k-accent); border-radius: inherit; }
+.cost-mini > i { display: block; height: 100%; width: calc(var(--w, 0) * 100%); min-width: 3px; background: var(--k-accent); border-radius: inherit; }
 .cost-own-b.warn .cost-mini > i { background: var(--warn); }
 .cost-own-b.bad .cost-mini > i { background: var(--bad); }
-@media (max-width: 900px) {
-  .cost-cols { display: none; }
-  .cost-row { grid-template-columns: minmax(0, 1fr) auto auto; grid-template-areas: "name num share" "bar bar bar" "own own own"; gap: var(--s1-5) var(--s3); }
+/* A phone stacks the row: the name and its figures share the first line, the own budget takes the second. The four columns keep
+   their names wherever they are printed, and the bar is the desk's drawing of the share (as the Steps strip's ring is):
+   the percentage above it is the whole measure at this width. */
+@media (max-width: 620px) {
+  .cost-cols, .cost-row { grid-template-columns: minmax(0, 1fr) auto auto; grid-template-areas: "name num share" "own own own"; }
+  .cost-cols { grid-template-areas: "name num share"; }
+  .cost-cols > span:last-child { display: none; }
   .cost-name { grid-area: name; }
-  .cost-bar { grid-area: bar; }
   .cost-num { grid-area: num; }
-  .cost-share { grid-area: share; min-width: 44px; }
+  .cost-share { grid-area: share; }
+  .cost-share-bar { display: none; }
   .cost-own { grid-area: own; }
 }
 
@@ -130,8 +139,8 @@
 
 /* ---- Windows High Contrast ----
  * The bars, the strip and the small meters are backgrounds, which it replaces with the system's, so each was an empty track. They are drawn again
- * in the system's highlight on a track with an edge; whose slice it is is told by the row it sits in, not by its colour. */
+ * in the system's colours on a track with an edge; whose slice it is is told by the row it sits in, not by its colour. */
 @media (forced-colors: active) {
-  .cost-bar, .cost-mini { border: 1px solid CanvasText; }
-  .cost-bar > i, .cost-mini > i, .cost-own-b:is(.warn, .bad) .cost-mini > i, .cost-strip > i { forced-color-adjust: none; background: Highlight; }
+  .cost-mini { border: 1px solid CanvasText; }
+  .cost-share-bar, .cost-mini > i, .cost-own-b:is(.warn, .bad) .cost-mini > i, .cost-strip > i { forced-color-adjust: none; background: CanvasText; }
 }

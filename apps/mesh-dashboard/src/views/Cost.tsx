@@ -16,6 +16,7 @@ import {
   budgetRules,
   budgetTone,
   defaultPriceNote,
+  fmtRoom,
   fmtUsd,
   idleCopy,
   longDate,
@@ -219,7 +220,7 @@ export default function Cost(): React.JSX.Element {
               {m.ratio !== null ? <Meter ratio={m.ratio} tone={m.tone} label={`${fmt(m.used)} of ${fmt(m.limit)} tokens used, ${pctLabel(m.ratio)}`} /> : null}
               {m.tone !== "ok" ? <p className={`cost-flagline ${m.tone}`}><Icon name="alert" size={14} />{m.short ? "Too little left for a turn" : m.used >= m.limit ? "Spent" : FLAG[m.tone]}</p> : null}
               <dl className="cost-facts">
-                <div><dt>{m.remaining !== null ? "Left" : "Limit"}</dt><dd>{m.remaining !== null ? fmt(m.remaining) : "none"}</dd></div>
+                <div><dt>{m.remaining !== null ? "Left" : "Limit"}</dt><dd>{m.remaining !== null ? fmtRoom(m.remaining) : "none"}</dd></div>
                 {s.turns ? <div><dt>{s.turns === 1 ? "Turn" : "Turns"}</dt><dd>{s.turns}</dd></div> : null}
                 {s.agents.length ? <div><dt>{s.agents.length === 1 ? "Agent" : "Agents"}</dt><dd>{s.agents.length}</dd></div> : null}
               </dl>
@@ -265,14 +266,14 @@ export default function Cost(): React.JSX.Element {
               <section className="card" aria-labelledby="ca-h">
                 <div className="cost-sec-h">
                   <h3 id="ca-h" className="cost-h">By agent <span className="cost-n">{s.agents.length}</span></h3>
-                  <span className="cost-cap">Bars are scaled to the biggest spender. Percentages are shares of everything spent.</span>
+                  <span className="cost-cap">Percentages are shares of everything spent.</span>
                 </div>
                 {s.agents.some((a) => a.tokens > 0) ? (
                   <div className="cost-strip" aria-hidden="true">
                     {s.agents.filter((a) => a.tokens > 0).map((a) => <i key={a.agentId} title={`${a.agentId}: ${pctLabel(a.share)}`} style={{ flexGrow: a.tokens, "--tint": agentColor(a.agentId) } as CSSProperties} />)}
                   </div>
                 ) : null}
-                <div className="cost-cols" aria-hidden="true"><span>Agent</span><span /><span className="r">Tokens</span><span className="r">Share</span><span>Its own budget</span></div>
+                <div className="cost-cols" aria-hidden="true"><span>Agent</span><span className="r">Tokens</span><span className="r">Share</span><span>Its own budget</span></div>
                 <ul className="cost-rows">
                   {s.agents.map((a) => (
                     <li className="cost-row" key={a.agentId} style={{ "--tint": agentColor(a.agentId) } as CSSProperties}>
@@ -281,9 +282,11 @@ export default function Cost(): React.JSX.Element {
                         <span className="cost-trunc">{a.agentId}</span>
                         <span className="cost-meta">{a.activations === 0 ? "has not taken a turn" : `ran ${a.activations} ${a.activations === 1 ? "time" : "times"} · ${fmt(a.perTurn)} per turn`}</span>
                       </span>
-                      <span className={`cost-bar${a.tokens > 0 ? "" : " zero"}`} aria-hidden="true"><i style={bar(a.bar)} /></span>
                       <span className="cost-num">{fmt(a.tokens)}<span className="sr-only"> tokens</span></span>
-                      <span className="cost-share">{pctLabel(a.share)}<span className="sr-only"> of everything spent</span></span>
+                      <span className="cost-share">
+                        <span>{pctLabel(a.share)}<span className="sr-only"> of everything spent</span></span>
+                        <i className={`cost-share-bar${a.tokens > 0 ? "" : " zero"}`} style={bar(a.share)} aria-hidden="true" />
+                      </span>
                       <span className="cost-own">{a.own ? <OwnBudget own={a.own} /> : <span className="muted">no budget of its own</span>}</span>
                     </li>
                   ))}
@@ -297,7 +300,7 @@ export default function Cost(): React.JSX.Element {
                 </div>
                 {s.models.length ? (
                   <>
-                    <div className="cost-cols" aria-hidden="true"><span>Model</span><span /><span className="r">Tokens</span><span className="r">Share</span><span>In and out</span></div>
+                    <div className="cost-cols" aria-hidden="true"><span>Model</span><span className="r">Tokens</span><span className="r">Share</span><span>In and out</span></div>
                     <ul className="cost-rows">
                       {s.models.map((mo) => (
                         <li className="cost-row" key={mo.model}>
@@ -305,9 +308,11 @@ export default function Cost(): React.JSX.Element {
                             <span className="cost-trunc mono">{mo.model}</span>
                             <span className="cost-meta">{mo.turns} {mo.turns === 1 ? "turn" : "turns"} · {fmt(mo.avgPerTurn)} per turn{mo.agents.length ? ` · ${agentList(mo.agents)}` : ""}</span>
                           </span>
-                          <span className={`cost-bar${mo.tokens > 0 ? "" : " zero"}`} aria-hidden="true"><i style={bar(mo.bar)} /></span>
                           <span className="cost-num">{fmt(mo.tokens)}<span className="sr-only"> tokens</span></span>
-                          <span className="cost-share">{pctLabel(mo.share)}<span className="sr-only"> of everything spent</span></span>
+                          <span className="cost-share">
+                            <span>{pctLabel(mo.share)}<span className="sr-only"> of everything spent</span></span>
+                            <i className={`cost-share-bar${mo.tokens > 0 ? "" : " zero"}`} style={bar(mo.share)} aria-hidden="true" />
+                          </span>
                           <span className="cost-own">
                             <span className="muted">{fmt(mo.input)} in, {fmt(mo.output)} out</span>
                             {BASIS[mo.basis] ? <span className={`cost-basis ${mo.basis}`}>{mo.basis === "default" ? <Icon name="info" size={12} /> : null}{BASIS[mo.basis]}</span> : null}

@@ -14,6 +14,7 @@ import {
   budgetTone,
   defaultPriceNote,
   describeBudget,
+  fmtRoom,
   fmtUsd,
   idleCopy,
   longDate,
@@ -25,6 +26,7 @@ import {
   type BudgetEntry,
   type BudgetsPayload,
 } from "../../apps/mesh-dashboard/src/cost";
+import { fmt } from "../../apps/mesh-dashboard/src/format";
 
 /**
  * What the Cost page says about money. The payload below is what a finished demo mission returned (seven seats, 29 turns,
@@ -79,6 +81,19 @@ test("a budget meter is one colour rule: amber from 80%, red from 95%, red whene
   assert.equal(budgetTone(Number.NaN), "ok");
 });
 
+test("a row's bar is its share, and the page draws the bar to that one number", () => {
+  // The length beside a percentage used to be a second scale ("scaled to the biggest spender"), so tech-lead's "29%" was drawn
+  // as a full bar and no two numbers in a row answered each other. The bar is the share now, and the row draws it from `share`.
+  const root = path.resolve(__dirname, "..", "..", "..");
+  const view = fs.readFileSync(path.join(root, "apps", "mesh-dashboard", "src", "views", "Cost.tsx"), "utf8");
+  assert.match(view, /cost-share-bar[\s\S]{0,60}style=\{bar\(a\.share\)\}/, "the agent row's bar is drawn to its share");
+  assert.match(view, /cost-share-bar[\s\S]{0,60}style=\{bar\(mo\.share\)\}/, "and the model row's");
+  assert.doesNotMatch(view, /style=\{bar\([a-z]+\.bar\)\}/, "no second scale is left on the page");
+  // The head that names the columns is the only place the numbers are named for a sighted reader, so it is drawn at every width.
+  const css = fs.readFileSync(path.join(root, "apps", "mesh-dashboard", "src", "views", "cost.css"), "utf8");
+  assert.doesNotMatch(css, /\.cost-cols\s*\{\s*display:\s*none/, "the column head is not hidden on a phone");
+});
+
 test("the top bar and this page use the same thresholds", () => {
   // shell.tsx is not DOM-free, so it is read: the bar's meter takes its tone from budgetTone, not from numbers of its own, so the two
   // cannot drift apart. (They were two copies of 0.8 and 0.95, and this test compared them by pattern.)
@@ -103,6 +118,20 @@ test("a percentage never rounds a real spend down to nothing or a budget that is
   assert.equal(pctLabel(null), "no limit");
 });
 
+test("a remainder is a number you can add to the spend: 2,000,000 less 49,300 is 1.95M, not the limit's own 2.0M", () => {
+  assert.equal(fmtRoom(1_950_700), "1.95M", "the remainder is not the string it was subtracted from");
+  assert.notEqual(fmtRoom(1_950_700), fmt(2_000_000));
+  assert.equal(fmtRoom(2_000_000 - 49_300), "1.95M");
+  assert.equal(fmtRoom(0), "0");
+  assert.equal(fmtRoom(999), "999");
+  assert.equal(fmtRoom(49_300), "49.3k", "the spend's own three figures");
+  assert.equal(fmtRoom(200_000), "200k");
+  assert.equal(fmtRoom(2_000_000), "2.0M", "a whole budget reads as it does everywhere else");
+  assert.equal(fmtRoom(12_345_678), "12.35M");
+  assert.equal(fmtRoom(Number.NaN), "0");
+  assert.equal(fmtRoom(-5), "0");
+});
+
 test("dollars read as an estimate does: cents under $100, whole dollars above, and never a rounded zero", () => {
   assert.equal(fmtUsd(0), "$0.00");
   assert.equal(fmtUsd(0.004), "under $0.01");
@@ -124,7 +153,7 @@ test("a finished mission: 51,050 of 2,000,000 tokens, nothing over, seven seats 
   assert.equal(pctLabel(s.mission.ratio), "3%");
   assert.equal(s.agents.length, 7, "the human is not a seat that spends");
   assert.deepEqual(s.agents.map((a) => a.agentId), ["tech-lead", "architect", "qa", "developer", "pm", "security", "explorer"], "most first, equal spends by name");
-  assert.equal(s.agents[0]!.bar, 1, "the biggest row fills the bar");
+  assert.ok(Math.abs(s.agents[0]!.share - s.agents[0]!.tokens / s.spent) < 1e-9, "a share is the row's tokens over everything spent, and the row's bar is that number");
   assert.ok(Math.abs(s.agents.reduce((n, a) => n + a.share, 0) - 1) < 1e-9, "shares add to a whole");
   assert.equal(Math.round(s.agents[0]!.share * 100), 28);
   assert.equal(s.spent, 51050);
@@ -155,7 +184,7 @@ test("nothing spent yet: every share and bar is zero, never not-a-number, and th
       models: [],
     },
   });
-  assert.deepEqual(idle.agents.map((a) => [a.share, a.bar]), [[0, 0], [0, 0]]);
+  assert.deepEqual(idle.agents.map((a) => a.share), [0, 0]);
   assert.equal(idle.spent, 0);
   assert.equal(idle.mission.tone, "ok");
   assert.equal(pctLabel(idle.mission.ratio), "0%");
@@ -251,8 +280,7 @@ test("models carry their shares and bars, the in and out split, and the replayed
     },
   });
   assert.deepEqual(s.models.map((m) => m.model), ["big", "small"]);
-  assert.equal(s.models[0]!.bar, 1);
-  assert.ok(Math.abs(s.models[1]!.bar - 1000 / 9000) < 1e-9);
+  assert.deepEqual(s.models.map((m) => m.share), [0.9, 0.1], "a model's bar is its share of everything spent");
   assert.equal(s.cacheTotal, 6_000_000);
 });
 
