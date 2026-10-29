@@ -2022,3 +2022,78 @@ while Starting, and the first account with `/api/plans` answering 503. Heights a
   to describe your team and start a mission.` + `Open` is **194.8px**, and the record 300px below says
   `Research / Running / Open` again. It is the page's one call to action, not a decoration, so it is a question
   for a pass that can change the script, not this one.
+
+## 2026-10-29: the contents line is one row on a 360 phone
+
+Same harness: Chromium through `playwright-core` against this worktree's trial (`trial --port 7511`, whose plans
+are the trial's own fixtures), 320 / 360 / 380 / 384 / 389 / 390 / 768 / 1440 in light, 360 in dark and forced
+colours, `prefers-reduced-motion: reduce`, a touch pointer below 721, the root raised to 32px at 360, and
+axe-core 4.14 over six views. "Before" is the base commit's own `app.css`, stashed, rendered at the same address
+on the same account and restored, not a figure copied from an earlier record. The fixture is a Team account with
+one running workspace named Research, $10.00 available, $10.00 from the plan and $0.00 from credit. Heights are
+`document.documentElement.scrollHeight`; positions are `getBoundingClientRect` plus `scrollY`.
+
+- **The account's five sections share one 45px line down to a 360 phone.** At 360 the five labels were 352.3px
+  of content in the 328px line (Workspaces 100, Plan 44, Usage 57.2, Balance 69.7, Settings 73.4 and four 2px
+  gaps): Settings fell to a second 44px row at **x = 16, y = 606.2**, the strip was **91px** rather than the
+  45px the page draws at 390, and `01 Workspaces` began at **691.2**. Below 390px the labels are now a caption's
+  **12px** with 4px of side padding and a 44px floor: the five are **89.2 / 44 / 49.7 / 61.3 / 64.7** wide from
+  x = 16 to 332.9, one 45px row, and Settings sits at **x = 268.2, y = 560.2**. The line ends 11px short of the
+  page's edge.
+- **The workspace's controls are back in the first screen.** The 46px the second row took put `Open / Pause /
+  More` at **768.7–812.7** on the 360 × 800 screen — 12.7px past its foot — with the workspace's name at 730.7.
+  The row is now **722.7–766.7**, the name at **684.7** and the heading at **645.2**, so the first screen ends on
+  the three controls as the 2026-10-28 pass intended. The page is **2,117.6 → 2,071.6** at 360 and everything
+  below moves up the same 46px: Plan 1,065.6 → 1,019.6, Usage 1,375.9 → 1,329.9, Balance 1,659.3 → 1,613.3,
+  Settings 1,938.6 → 1,892.6.
+- **The narrowest phones keep their page and lose one pixel of label type.** At 320 the five labels still need
+  **316.9px in 288** and Settings keeps its own row at 91px, so nothing there moves: the page is **2,242.3**
+  before and after, the heading 691.1 and the controls 768.6–812.6. The type is **12px** instead of 13 and the
+  padding 4 instead of 6, at the record's floor. At 390 the line is the 13px / 6px one it was — the links are
+  100 / 44 / 57.2 / 69.7 / 73.4 wide, the strip 45px and the page **2,027.1** — and 768 and 1440 are unchanged
+  at **2,008.5** and **2,044.7**.
+- **The line gives way with the bar, not at a break of its own.** The new rule is `@media (max-width: 389px)`:
+  at 389 the 13px line would have 4.7px to spare and at 390 it has 5.7, so the handover is where the full-size
+  line has room rather than at the 384.3px the arithmetic needs. The bar's own compact rules still start at 380,
+  so at 381–389 a reader sees the 12px contents line and the full-size bar; at 390 both are full size. The step
+  is 1px of type, not a second design.
+- **Widths, schemes and the floor.** 320 / 360 / 380 / 384 / 389 / 390 / 768 / 1440: no sideways page scroll
+  (320: 320; 360: 360; 384: 384; 389: 389; 390: 390; 768: 768; 1440: 1440), nothing computes below **12px**,
+  and the five labels are 44px tall and at least 44px wide (the Plan label is exactly 44). Dark and forced
+  colours at 360 are **2,072px** and draw the line as the system's own. At root 32px (200% text) the page is
+  **4,306px** before and after and still 360 wide. **Six axe-core runs** (320, 360, 390, 768, 1440 dark and 360
+  forced colours, WCAG 2.0–2.2 A and AA) find **no violation**, and there is no console error.
+- **The budget.** `app.css` is **40,953 → 40,950 bytes of 40,960** (a net **−3**). The 96-byte rule was paid for
+  by seven bytes from the opening comment, 21 from the icons' note, 11 from the price line's, 11 from the
+  section rule's, seven from the trough's, six from the sticky name's and 36 from the phone-money note.
+
+| measured at 360, light | before | after |
+| --- | --- | --- |
+| The contents line | 91px, Settings alone at x = 16, y = 606.2 | **45px**, Settings at x = 268.2, y = 560.2 |
+| The five labels' widths | 100 / 44 / 57.2 / 69.7 / 73.4, 13px | **89.2 / 44 / 49.7 / 61.3 / 64.7**, 12px |
+| `01 Workspaces` begins at | y = 691.2 | **645.2** |
+| The workspace's name | 730.7 | **684.7** |
+| `Open` / `Pause` / `More` | 768.7–812.7 (12.7px below an 800 screen) | **722.7–766.7** |
+| The account page | 2,117.6px | **2,071.6** |
+| … at 320 | 2,242.3 | **2,242.3** (two rows, 12px) |
+| … at 380 / 384 | 2,095.4 / 2,095 | **2,049.4 / 2,049** |
+| … at 390 / 768 / 1440 | 2,027.1 / 2,008.5 / 2,044.7 | **2,027.1 / 2,008.5 / 2,044.7** |
+| At root 32px, 360 | 4,306px | **4,306** |
+| axe-core, 6 views | — | **0** |
+| `app.css` | 40,953 bytes | **40,950** |
+
+### What this pass leaves
+
+- **A 320 phone keeps the old first screen.** The five labels need 316.9px and the page has 288; at the 12px
+  floor and 4px of padding it would take 1px of side padding and no gap to fit, and the names would touch. The
+  controls still end at 812.6, 12.6px below an 800px screen. The wrap is the better trade, as the 2026-10-26
+  record said.
+- **The contents line is 12px while the bar above it is full size at 381–389.** The line's breakpoint is 389 and
+  the bar's is 380; they are two rules because the bar's was measured for a different overflow (325 in 320).
+  Moving the bar's would take its 20px logo and 7px link padding to 389 for no gain of its own.
+- **The address strip still draws its caption on a row of its own.** At 360 and 390 it is **88.2px** where the
+  three things fit on one 65px row at 390; the break rule the 2026-10-29 workspaces pass named is still the next
+  pass's.
+- **The stage card still repeats the record's sentence and `Open`.** The 46px this pass returns is not the
+  duplicate; it is the page's own composition, unchanged.
+- **The checkout stand-in and the prose-only 19px links are untouched.** They are the earlier entries.
