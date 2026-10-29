@@ -114,6 +114,11 @@ Breakpoints: **1280 1100 900 800 760 620 560**. 800 is the sidebar drawer (JS
   available (tooltip or copy), never pushes the page wide.
 - No affordance is hover-only. A control that exists on a phone is visible or
   reachable by one press; a tooltip repeats a name, it does not supply one.
+- A row that does one thing is one press across its width. A closed evidence row
+  is a door from its left edge, not a label with a 56 px handle at its end, and it
+  lights as a whole band when pointed at or reached by the keyboard; the one
+  control it carries keeps its own name, its 44 px box and its single tab stop
+  (2026-10-29).
 - Filters that are not needed to read the page fold behind one 44 px button with
   a count, as Events and Steps do; the search stays out.
 - The first-run guide is a brief, not a box: at 760 px and below it drops the
@@ -207,6 +212,43 @@ Breakpoints: **1280 1100 900 800 760 620 560**. 800 is the sidebar drawer (JS
 8. Check the frame's safe-area claims on a notched device in both orientations; the insets are in the CSS but the stand-in browser reports them as zero.
 
 ## Pass log
+
+### 2026-10-29 — a closed row is one press across its width, and it says so before the press
+
+Surface: `views/overview.css` (the 620 phone block and the forced-colours block), the docstring in `views/Panel.tsx`, and two new rules in
+`tests/dashboard/overview-fold.test.ts`. Measured on the scripted demo at **Delivered** (9 files, 7 checks, 508 events) in the production
+build, Chromium over CDP at 320/360/390/768/1440 in light and at 360/1440 in dark, reduced motion, a touch pointer below 768, forced colours
+at 360, axe-core at 360 and 1440 in both schemes. Before is the base build served from its own checkout on 7462, after is this branch on
+7460; both were read on the same delivered mission within the hour, and every press below is a real pointer event at the coordinates named.
+
+- **A closed row opens where it is pressed.** At 360 the row is **336 × 53** and its Show control **56 × 44** at the right edge, so the
+  264 px of name and figure beside it were dead: a press 40 px into the row opened **0 of 4** sections at 320, 360 and 390, while a press at
+  the control's centre opened 4 of 4. The control's own pseudo-element now covers the closed section — a pseudo-element of a button *is* the
+  button — so the press the row takes is the press on Show: **4 of 4** at 320 (296 × 53 rows), 360 and 390 (366 × 53), with the control
+  still 56 × 44 and still the one tab stop. The Graph's phone rows have always been whole-row buttons (294 × 88 of a 294 × 88 row); the
+  Overview's four doors were the console's only handle-only row.
+- **The row says it is a door before the press.** Pointed at, the whole band takes `--panel-2` (its background was `rgba(0,0,0,0)`), and
+  reached by the keyboard the same band lights under the control's existing 2 px ring — 29 tab stops in both halves. In forced colours, where
+  a background is not a signal the system keeps, the band becomes a **2 px Highlight outline** where there was none.
+- **Nothing moves: 0 px at every width.** 320 **1,107** / 360 **1,088** / 390 **1,043** / 620 **915** / 621 **3,166** / 768 **3,103** / 1,440
+  **1,751**, identical in both halves in light and dark; the row is still 53 px, the control 56 × 44, the four names and their figures
+  unchanged, and no control was added or removed.
+- **The press cannot move its own target.** The shared small button nudges itself 0.5 px on `:active`, and a transformed button becomes the
+  containing block of its own pseudo-element: the first shape collapsed the overlay to 56 × 44 between pointerdown and pointerup — measured
+  at 360, pointerdown landed on `BUTTON.small` and the click on `DIV.card-head`, and the row stayed closed. The closed row's control keeps
+  `transform: none` on `:active`; the pressed fill and shadow stay.
+- **The floor holds.** 140 view × width × theme reads with no document or `#view` horizontal scroll, the smallest text 11 px (the avatar
+  glyph), no control under 44 × 44 below 768 beyond the recorded 34 × 20 checkbox inside its 44 px label, 0 console errors (the one-mesh
+  `/api/projects` 404), and axe-core 0 violations on Overview and the other thirteen views at 360 and 1440.
+
+Suite: typecheck and build clean; `dist/tests/dashboard` and `dist/tests/build` as reported in the pass record; eslint on the changed files
+0 errors (the stylesheet is not in eslint's config).
+
+**Left.** The words of a closed row can no longer be dragged to select, because the row is the control there; the heading and figure are read
+in the body one press later, and the four `h3`s are still the page's outline. For a screen reader the row is still a heading and a figure with
+one button beside them — a door for a thumb, a heading and a control for a reader — which is the shape that keeps one name per control and no
+second tab stop. Whether the head should be a real button (and the `h3` move into it) is the markup question this pass answered with CSS, and
+it is not measured on a hardware device.
 
 ### 2026-10-29 — the save bar shows the whole file name, and a state that holds a button takes the line under it
 

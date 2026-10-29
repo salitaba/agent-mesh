@@ -20,6 +20,8 @@ export interface Fold {
  *
  * With `fold` the head carries a Show/Hide control, the body is closed until it says otherwise, and the long `meta` gives way to
  * the one-figure `summary`: a phone can read the section's name and its count in one 44 px row. The desk shape is unchanged.
+ * While it is closed the row itself is that control's target (overview.css stretches the button's own hit area over the section),
+ * so the name is not a 264 px dead band beside a 56 px handle.
  *
  * The control is named by the section it opens: four controls reading "Show" one under the other say nothing about what each one
  * opens, and the heading beside them is not part of the name a button is announced with.
