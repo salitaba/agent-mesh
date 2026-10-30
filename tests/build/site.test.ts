@@ -907,3 +907,36 @@ test("the plate's address and its full-size chip share the bar without crossing,
 });
 
 
+/**
+ * A reader's larger text, measured at 320 and 360 with the root at 32px (200% of 16) and at 24px (150%), in both schemes.
+ * The page held its width at 16px and broke at 32px: the home page was 379px wide on a 360 screen (19 over) and 359 on a
+ * 320 one (39 over), the pricing page 338 (18), the security page 333 (13) and the other four 322 (2); the home page's
+ * contents index could not shrink (its label's longest word, 149.8px, in the 111px beside the number, and at 150% its
+ * number floated in the middle of a three-line label), the closing band's grid gave the h2's longest word its own 340.8px
+ * column in a 288px wrap, the six-view index's tabs needed 328.4px of a 320 phone's 288, the billing switch's "saves about
+ * 17%" grew to 24px (337.6px wide), the footer's address was 305.9px in 288, and the At a glance answer's title reached
+ * 333.1px in its 232px column. The Enterprise figure was cut by the card that holds it: "Let's talk" at 72px is 351.2px
+ * and the card clipped 83px of it at 320, 43 at 360 and 13 at 390. Every one is a child whose automatic minimum is its
+ * longest word; each may now shrink and break, wrap, or take a second line, and at 16px none of them moves (all seven
+ * pages are the same height, to the pixel, at 320/360/390/768/1440 in both schemes).
+ */
+test("at a reader's 200% text a phone's page keeps its width and the Enterprise figure is whole", () => {
+  const css = fs.readFileSync(path.join(SITE, "assets", "site.css"), "utf8");
+  const home = page(pages, "index.html").html;
+  const pricing = page(pages, "pricing/index.html").html;
+  // The index's label may break anywhere, which is what makes the flex item narrower than its longest word,
+  // and the entry wraps: the number above its label when the two cannot share a line.
+  assert.match(css, /\n\.index a \{ display: flex; flex-wrap: wrap; align-items: center; gap: 0 10px; min-height: 48px; padding: 0 4px; color: var\(--ink2\); font-size: \.9375rem; font-weight: 500; text-decoration: none; overflow-wrap: anywhere; \}/, "the contents index's entry wraps and its label can shrink");
+  // The six-view index takes a second row instead of pushing the page sideways.
+  assert.match(css, /\n  \.row-index ol \{ display: flex; flex-wrap: wrap; gap: 4px; list-style: none; \}/, "the six-view index wraps at a large text size");
+  // The closing band's grid children may be narrower than their content, as .cols > * already are.
+  assert.match(css, /\n\.cta \.wrap > \* \{ min-width: 0; \}/, "the band's h2 may be narrower than its longest word");
+  // A control's sub-label keeps its layout size, and the footer's address breaks like the contact page's.
+  assert.match(css, /\n  \.billing label small \{ font-size: 12px; \}/, "the billing switch's sub-label keeps its 12px");
+  assert.ok(!/\.billing label small \{ font-size: \.75rem; \}/.test(css), "and does not grow with the reader's root");
+  assert.match(css, /\n\.foot-contact \{ overflow-wrap: anywhere; \}/, "the footer's address breaks rather than widening the page");
+  // The Enterprise figure wraps inside its card rather than being cut by it, and is still the plan's own words.
+  assert.match(css, /\n\.teaser \.amount \{ max-width: 100%; font-size: 2\.25rem;/, "the teaser's amount may be no wider than its card");
+  assert.match(pricing, /<span class="amount">Let&rsquo;s talk<\/span>/, "and the Enterprise figure is still the plan's own words");
+  assert.match(home, /<p class="limits">No limit on projects, agents or concurrent turns<\/p>/, "the teaser still states the Enterprise allowance");
+});
