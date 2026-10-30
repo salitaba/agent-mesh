@@ -521,6 +521,18 @@ test("a workspace's address, its caption and Copy share one row on a 360 phone, 
   assert.equal(value(".ws .ws-address code", "font-size", widePhone), ".75rem", "the host is the caption's 12px, so the address is not cut");
 });
 
+test("a phone's bill names each figure: the column's word is the page's caption, set apart from the figure it names", () => {
+  const rules = cssRules(read(path.join(ASSETS, "app.css")));
+  const phone = "max-width: 720px";
+  const rule = rules.filter((r) => r.at.includes(phone) && r.selectors.includes(".table-wrap td::before") && declared(r, "content") !== undefined).at(-1);
+  assert.ok(rule, "a phone draws each figure's column name in its cell");
+  // Without the space the label and the figure are one word: at 360 the charge read "Charged$2.74" and the counts "Calls41", "Input180,000".
+  assert.match(declared(rule!, "content") ?? "", /^attr\(data-h\) " " \/ ""$/, "the name and its figure are two words, and the name is not said twice");
+  assert.equal(declared(rule!, "font-size"), ".75rem", "the name is the caption's 12px, not the figure's own type");
+  assert.equal(declared(rule!, "font-weight"), "500", "and lighter than the figure it names");
+  assert.equal(declared(rule!, "color"), "var(--k-muted)", "and in the record's muted ink, so the figure is the part that is read");
+});
+
 test("a field's refusal is said in the field it names, and takes the field's gap rather than the note's margin", () => {
   const css = read(path.join(ASSETS, "app.css"));
   const rule = cssRules(css).find((r) => r.selectors.includes(".field > .note"));

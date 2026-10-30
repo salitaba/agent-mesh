@@ -735,7 +735,6 @@ body[data-page="home"] main { background: var(--k-glow) top / 100% 520px no-repe
   background: linear-gradient(to right, color-mix(in srgb, var(--k-ink) 12%, transparent), transparent) 0 0 / 10px 100% no-repeat, linear-gradient(to left, color-mix(in srgb, var(--k-ink) 12%, transparent), transparent) 100% 0 / 10px 100% no-repeat, var(--k-surface);
 }
 .table-wrap + .table-wrap { margin-top: 20px; }
-/* The name stays. */
 .table-wrap th:first-child { position: sticky; left: 0; }
 .table-wrap tbody th { background: var(--k-surface); }
 table { width: 100%; border-collapse: collapse; font-size: .875rem; }
@@ -846,7 +845,6 @@ tfoot > tr > * { background: var(--k-surface-2); font-weight: 650; }
   .ws-address-l { flex: 1 0 100%; font-size: .75rem; }
   .ws .ws-address code { flex: 1 1 8rem; min-width: 0; }
   .ws .ws-address { margin: 0; padding: 10px 0; background: none; }
-  /* A day is an entry. */
   .table-wrap { overflow: visible; background: none; }
   .table-wrap table, .table-wrap tbody, .table-wrap tfoot { display: block; }
   .table-wrap thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
@@ -856,7 +854,7 @@ tfoot > tr > * { background: var(--k-surface-2); font-weight: 650; }
   .table-wrap tbody th { background: none; }
   .table-wrap td { font-size: .75rem; }
   .table-wrap td:nth-child(2) { color: var(--k-ink); font-size: 1rem; font-weight: 650; }
-  .table-wrap td::before { content: attr(data-h) / ""; }
+  .table-wrap td::before { content: attr(data-h) " " / ""; color: var(--k-muted); font-size: .75rem; font-weight: 500; }
   .table-wrap .bar-cell { display: inline; }
   .table-wrap meter { display: none; }
   .table-wrap caption { padding-bottom: 8px; }
@@ -871,7 +869,7 @@ tfoot > tr > * { background: var(--k-surface-2); font-weight: 650; }
 }
 
 @media (max-width: 380px) {
-  /* The bar gives way at 320. */
+  /* The bar at 320. */
   .site-header .wrap { padding-inline: 0; }
   .bar { gap: 8px; }
   .bar nav { gap: 0; }

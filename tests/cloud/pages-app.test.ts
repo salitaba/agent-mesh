@@ -1701,6 +1701,15 @@ test("usage is a table by day and one by workspace, with a total, the charge in 
     "Total $0.0096 6 600 120",
   ]);
   assert.deepEqual(rows(tables[1]!), ["Workspace Charged Calls Input tokens Output tokens", "Research $0.009 4 400 80", "A deleted workspace $0.0006 2 200 40", "No workspace $0.00 0 0 0"]);
+  // A phone draws no header row, so every figure carries the column's first word as the label beside it: check each one, and the total's.
+  for (const table of tables) {
+    const words = (table.querySelector("thead tr") as FakeNode).children.filter((n) => !n.isText).map((c) => v.text(c).split(" ")[0]);
+    for (const tr of [...table.querySelectorAll("tbody tr"), ...table.querySelectorAll("tfoot tr")]) {
+      const cells = tr.children.filter((n) => !n.isText);
+      assert.equal(cells[0]!.getAttribute("data-h"), null, "a row's own name is not a figure, and takes no label");
+      cells.slice(1).forEach((cell, i) => assert.equal(cell.getAttribute("data-h"), words[i + 1], `${v.text(cell)} is named ${words[i + 1]}, the word a phone draws beside it`));
+    }
+  }
   const wrap = v.$("usage").querySelector(".table-wrap")!;
   assert.equal(wrap.getAttribute("tabindex"), "0", "a table that scrolls sideways can be reached by keyboard");
   assert.equal(wrap.getAttribute("role"), "region");
