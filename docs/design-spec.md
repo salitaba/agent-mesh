@@ -331,7 +331,9 @@ recipe that a third page needs is written here.
   bold, and the kind at the right. An alert is a red tile and rail; routine runs fold into one row (a switch turns that off).
   A row shows the clock time in the reader's zone, said once above the list ("Times are in CEST"), and not "2 minutes ago":
   a log is an audit trail, rows that change every second cannot be compared or quoted, and the group headings carry
-  recency. The detail pane shows both.
+  recency. The detail pane shows both. On a phone or a tablet (900 and below) an open event is the page: the stream is
+  hidden, the log's search and filter fold step aside with it, and the pane's title row — the kind and Close — stays at its
+  top, so the way back to the log is one press at any scroll.
 - **Graph**: a seat is a disc in its role colour inside a ring for its state (solid working, amber waiting, red stopped, dashed
   paused); pointing at a seat draws only its lines, with counts on them; the key is chips, and the most active links are
   ranked with bars. On a phone the page is rows: the key is not the drawing's footer but sits above the ranked links it filters,

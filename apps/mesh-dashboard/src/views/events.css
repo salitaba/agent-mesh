@@ -100,9 +100,10 @@
 
 /* ============================ the pane: one event ============================ */
 
-.evd { display: flex; flex-direction: column; gap: var(--s4); padding: var(--s4) var(--s5) var(--s5); }
+/* The pane's gutter is a name because its title row bleeds by it when it sticks (a phone pads by 14, a tablet by 16 and 20). */
+.evd { --evd-x: var(--s5); --evd-y: var(--s4); display: flex; flex-direction: column; gap: var(--s4); padding: var(--evd-y) var(--evd-x) var(--s5); }
 .evd-head { display: flex; flex-direction: column; gap: var(--s2); }
-.evd-title { display: flex; align-items: center; gap: var(--s3); }
+.evd-title { display: flex; align-items: center; gap: var(--s3); /* the row is the pane's first, on the wider `.evd` rhythm: this cancels it back to the head's 8 */ margin-bottom: calc(var(--s2) - var(--s4)); }
 .evd-title h3 { flex: 1 1 auto; min-width: 0; margin: 0; font: 650 18px/1.3 var(--sans); letter-spacing: var(--k-track-title); overflow-wrap: anywhere; text-transform: none; color: var(--text); }
 /* The shared icon button stretches to fill a sidebar footer; here it is one fixed square at the end of the title. */
 .evd-title .icon-btn { flex: none; min-width: 32px; min-height: 32px; }
@@ -188,6 +189,26 @@
      way back to the stream. */
   .evc.split { grid-template-columns: minmax(0, 1fr); }
   .evc.split .evc-stream { display: none; }
+  /* The search and the filters are the log's tools, and here the log is not on screen: they narrowed a list nobody could see,
+     and pressing Filters open grew a 262 px panel at 360 and left the event 258 px of the 736 px view. While an event is open
+     they step aside and the event takes their height (a phone gives it 44 px back at 360 and 96 at 320; a tablet 168 at 768 and
+     163 at 900). Closing the event brings them back, and nothing is deleted. `tests/dashboard/events-phone.test.ts` reads this. */
+  .ev-page:has(.evc.split) .ev-tools,
+  .ev-page:has(.evc.split) .ev-facets { display: none; }
+  /* The way back to the log was at the top of a 1,527 px pane in a 530 px window: read the thread to its end at 360 and the
+     close is 742 px above the pane. The title row (the kind, its mark and Close) stays at the pane's top, bleeding by the pane's
+     own gutter as a drawer's head does, so it is one press away at any scroll. Its margins cancel its padding, so nothing moves
+     at rest: the meta line is at the same y as before. */
+  .evc-detail .evd-title {
+    position: sticky; top: 0; z-index: var(--z-sticky);
+    margin-top: calc(var(--evd-y) * -1);
+    margin-inline: calc(var(--evd-x) * -1);
+    margin-bottom: calc(var(--s4) * -1);
+    padding: var(--evd-y) var(--evd-x) var(--s2);
+    background: color-mix(in srgb, var(--panel) 94%, transparent);
+    -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px);
+    box-shadow: inset 0 -1px 0 var(--line);
+  }
 }
 
 @media (max-width: 620px) {
@@ -208,6 +229,6 @@
   /* The bucket heading above already says when this run happened; the exact range is the third thing in a 300 px row. */
   .evc-fold-range { display: none; }
   .evc-fold-do { margin-left: auto; }
-  .evd { padding: var(--s3-5); }
+  .evd { --evd-x: var(--s3-5); --evd-y: var(--s3-5); padding: var(--evd-y) var(--evd-x); }
   .evd-id .k { min-width: 92px; }
 }
