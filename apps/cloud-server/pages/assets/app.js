@@ -29,7 +29,7 @@
     verify: ["bar-say", "status", "title", "again", "resend-form", "resend", "resend-wait", "resend-status", "email"],
     forgot: ["bar-say", "form", "status", "email", "email-error"],
     reset: ["bar-say", "card", "form", "status", "title", "lede", "ask", "password", "password-error"],
-    account: ["bar-say", "who", "notice", "retry-row", "skeleton", "glance", "glance-list", "subnav", "settings-panel", "stage", "stage-steps", "stage-title", "stage-text", "stage-status", "stage-actions", "stage-live", "workspaces-panel", "workspaces", "create-slot", "create-box", "create", "workspace-name", "create-plan-field", "workspace-plan", "create-note", "plan-panel", "plan-h", "plan-status", "plan", "balance-panel", "usage-panel", "usage-h", "usage-say", "figures", "topup-fail", "topup-details", "topup", "topup-amount", "topup-unit", "topup-hint", "topup-status", "topup-add", "topup-options", "usage", "password-form", "password-status", "current", "next"],
+    account: ["bar-say", "who", "notice", "retry-row", "skeleton", "glance", "glance-list", "subnav", "settings-panel", "stage", "stage-steps", "stage-title", "stage-text", "stage-status", "stage-actions", "stage-live", "workspaces-panel", "workspaces", "create-slot", "create-box", "create", "workspace-name", "create-plan-field", "workspace-plan", "create-note", "plan-panel", "plan-h", "plan-status", "plan", "balance-panel", "usage-panel", "usage-h", "usage-say", "figures", "topup-fail", "topup-details", "topup", "topup-amount", "topup-unit", "topup-hint", "topup-status", "topup-add", "topup-options", "usage", "password-form", "password-status", "current", "current-error", "next", "next-error"],
     terms: ["bar-say"],
     privacy: ["bar-say"],
     notfound: ["bar-say"],
@@ -2375,14 +2375,14 @@
       const current = $("current");
       const next = $("next");
       say(status, "", "");
-      if (!current.value) return invalid(current, status, "Enter your current password.");
-      if (next.value.length < 10) return invalid(next, status, "Use at least 10 characters.");
+      if (!current.value) return invalid(current, $("current-error"), "Enter your current password.");
+      if (next.value.length < 10) return invalid(next, $("next-error"), "Use at least 10 characters.");
       const r = await call("POST", "/api/password", { current: current.value, next: next.value });
       if (signInAgain(r)) return;
       if (!r.ok) {
-        // The refusal that is about a field puts the cursor in it.
-        if (r.error.code === "invalid_credentials") invalid(current, status, r.error.message);
-        else if (r.error.code === "weak_password") invalid(next, status, r.error.message);
+        // The refusal that is about a field puts the cursor in it, and the sentence in the field's own block.
+        if (r.error.code === "invalid_credentials") invalid(current, $("current-error"), r.error.message);
+        else if (r.error.code === "weak_password") invalid(next, $("next-error"), r.error.message);
         else say(status, "bad", r.error.message);
         return;
       }

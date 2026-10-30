@@ -2167,3 +2167,67 @@ states: an address typed, a five-letter password typed, the tick ticked, and **C
   account's earlier passes kept to one.
 - **The address strip's caption row, the steps at 320, the stage card's duplicate, the checkout stand-in and the
   prose-only 19px links are untouched.** They are the earlier entries.
+
+## 2026-10-30: the settings' refusal at the field it names
+
+Same harness: Chromium 156 through `playwright-core` against this worktree's trial (`trial --port 7511`, whose plans are the
+trial's own fixtures), 320 / 360 / 390 / 768 / 1440 in light and dark, `prefers-reduced-motion: reduce`, a touch pointer below
+721, the root raised to 32px at 360, and axe-core 4.14 over the refused frame at 320, 360 (both schemes), 768, 1440 and 200%
+text. "Before" is the base commit's own page files, stashed and served by the same trial, measured again today in the same
+script and the same state: **Settings** opened, the current password typed, a five-letter new password typed, and **Change
+password** pressed. Heights are `document.documentElement.scrollHeight`; positions are `getBoundingClientRect` plus
+`scrollY`.
+
+- **The new password's refusal is said in the new password's field.** The sentence was written into the form's top status,
+  so at 360 "Use at least 10 characters." sat at **y = 1998.86–2048.86**, **140.78px above the input it names** (2,189.64)
+  and **16px above the Current password label** (2,064.86) — above the field that was right, while the cursor was in the one
+  that was wrong. The two fields now have the note the way-in pages have had since the last pass: `#next-error` is inside
+  the field, **8px under the hint** that states the rule (2,229.23) and 69.59px under the input, and `#current-error` is 8px
+  under its input. The sentence itself did not change.
+- **The refusal the service gives is in the same place.** A wrong current password put "The current password is not right."
+  (74px at 360) 46.39px above the input it named; it is `#current-error`, **8px under that input** (2,073.25 → 2,081.25),
+  and a password the service calls too weak is `#next-error`. `aria-describedby` on the new password reads
+  **"next-hint next-error"**, so the hint and the reason are read together, and typing one character clears the sentence,
+  the mark and the description (the 58px it took).
+- **One refusal answers the last, and the form's own line is the form's answer.** `invalid()` already cleared the other
+  field's note and mark; with the two notes it now clears a *sentence* too, so a refused current password does not stay
+  under a new password that is then refused. `#password-status` keeps what is the form's own: the 502 ("Something went
+  wrong on our side. Try again in a moment.") and the success ("Your password is changed. Every other device is signed
+  out."), so the top of the form is never about a field.
+- **Widths, schemes and the floor.** 320 / 360 / 390 / 768 / 1440 in light and dark: no sideways page scroll (320: 320;
+  360: 360; 390: 390; 768: 768; 1440: 1440), nothing computes below **12px** (the note is 15px, 30px at 200% text), and no
+  control is under 44 × 44 below 721 (no control changed). **6 axe-core runs** (320, 360 light, 360 dark, 768, 1440, 200%
+  text) find **no violation**, and there is no console error. The account with the refusal is **2,509 → 2,501** at 360
+  (320: 2,704 → 2,696; 390: 2,465 → 2,457; 768: 2,434 → 2,426; 1440: 2,470 → 2,462): the note's own 16px margin is no
+  longer added to the field's 8px gap. With Settings closed the page is unchanged — 2,242 / 2,072 / 2,027 / 2,008 / 2,045 —
+  and so is every other page.
+- **The budget.** `app.css` is untouched at **40,946 bytes of 40,960**: the note is the `.note` the pages already draw and
+  the `.field > .note { margin: 0 }` the last pass added, and the change is two empty lines of markup and four arguments.
+- **Tests.** `dist/tests/cloud/pages*.test.js` — **117 pass, 0 fail**; the whole suite — **6,404 pass, 0 fail**, 2 skipped;
+  typecheck clean. `pages-app.test.ts` pins each sentence's element, its clearing on input, the `aria-describedby`, the
+  one-at-a-time rule, the form's own 502 and success, and the cursor; `pages.test.ts` holds `#current-error` and
+  `#next-error` to "inside the field, a polite status".
+
+| measured at 360, light | before | after |
+| --- | --- | --- |
+| The new password's sentence | 50px at the top of the form, 140.78px above the input it names, above the Current password field | **50px inside the field, 8px under the hint** |
+| … its element | `#password-status` | **`#next-error`** |
+| The current password's sentence | 46.39px above its input, in the form's status | **8px under it, in `#current-error`** |
+| The field it names describes | "next-hint password-status" | **"next-hint next-error"** |
+| The account with the refusal | 2,509px | **2,501** |
+| … at 320 / 390 / 768 / 1440 | 2,704 / 2,465 / 2,434 / 2,470 | **2,696 / 2,457 / 2,426 / 2,462** |
+| axe-core, 6 views | — | **0** |
+| `app.css` | 40,946 bytes | **40,946** |
+
+### What this pass leaves
+
+- **The top of the form is empty while a field is refused.** A reader who scrolls back to the Settings card's top after a
+  refusal sees nothing there; the sentence is at the field, with the field's mark and the cursor. It is the trade the
+  2026-10-30 pass made for the way-in pages, now made here.
+- **The card has three status areas where the last record kept it to one.** Only one is written at a time (`invalid()`
+  clears the others) and the way-in cards have had the same shape since the last pass, but the Settings card's second and
+  third polite lines are new, and the note's 58px is inside a disclosure.
+- **The topup amount's refusal is still above its form.** `#topup-status` sits between the amounts and the amount field,
+  47px above the input it names (2026-10-25); that form has one field and the note is beside it, so it was left.
+- **The address strip's caption row above 390, the plan's two actions at 320, the stage card's duplicate, the checkout
+  stand-in and the prose-only 19px links are untouched.** They are the earlier entries.

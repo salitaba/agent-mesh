@@ -513,7 +513,7 @@ test("a field's refusal is said in the field it names, and takes the field's gap
   assert.ok(rule, "a note in a field has a rule of its own");
   assert.equal(declared(rule!, "margin"), "0", "it takes the field's gap, so the action below it keeps the screen");
   for (const p of pages()) {
-    for (const id of ["email-error", "password-error"]) {
+    for (const id of ["email-error", "password-error", "current-error", "next-error"]) {
       const note = p.all.find((n) => attr(n, "id") === id);
       if (!note) continue;
       assert.ok(note.parent && note.parent.className.split(/\s+/).includes("field"), `${p.name}: #${id} is in the field's own block`);
