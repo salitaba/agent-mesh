@@ -1767,33 +1767,49 @@ test("usage that cannot be read says so and can be asked for again", async () =>
 
 // ---- the password ----
 
-test("changing the password sends both, says it is done, and empties the fields; a wrong current password is said and does not sign the person out", async () => {
+test("changing the password sends both, says it is done, and empties the fields; a refusal about a field is said in that field, and does not sign the person out", async () => {
   const w = world(paid);
   w.answers.set("POST /api/password", failure(403, "invalid_credentials", "The current password is not right."));
   const v = await visit("account", { routes: w.routes });
   await v.send(v.$("password-form"));
-  assert.equal(v.text("password-status"), "Enter your current password.");
+  assert.equal(v.text("current-error"), "Enter your current password.");
+  assert.equal(v.text("password-status"), "", "a refusal about a field is not said at the top of the form");
+  assert.equal(v.doc.activeElement, v.$("current"));
   v.type("current", "old");
+  assert.equal(v.text("current-error"), "", "typing in the field clears its sentence");
   await v.send(v.$("password-form"));
-  assert.equal(v.text("password-status"), "Use at least 10 characters.");
+  assert.equal(v.text("next-error"), "Use at least 10 characters.");
+  assert.equal(v.text("password-status"), "", "and the form's own line stays empty");
   assert.equal(v.doc.activeElement, v.$("next"));
+  assert.deepEqual(v.$("next").getAttribute("aria-describedby")!.split(" "), ["next-hint", "next-error"], "the field describes its hint and its refusal");
   v.type("next", "a much better password");
+  assert.equal(v.text("next-error"), "", "typing in it clears that too");
+  w.answers.set("POST /api/password", failure(502, "unavailable", "Something went wrong on our side. Try again in a moment."));
   await v.send(v.$("password-form"));
-  assert.equal(v.text("password-status"), "The current password is not right.");
+  assert.equal(v.text("password-status"), "Something went wrong on our side. Try again in a moment.", "a failure that is not about a field is said by the form");
+  assert.equal(v.text("current-error"), "", "and no field is blamed for it");
+  assert.equal(v.$("current").getAttribute("aria-invalid"), null);
+  w.answers.set("POST /api/password", failure(403, "invalid_credentials", "The current password is not right."));
+  await v.send(v.$("password-form"));
+  assert.equal(v.text("current-error"), "The current password is not right.");
+  assert.equal(v.text("password-status"), "", "the form's own line is not used for it");
+  assert.equal(v.$("current").getAttribute("aria-invalid"), "true");
   assert.equal(v.doc.activeElement, v.$("current"), "the cursor is in the field that is wrong");
   assert.deepEqual(v.navigations, [], "a 403 for the wrong password is not a signed-out session");
   assert.equal(v.$("current").value, "old", "the fields are kept for another try");
   w.answers.set("POST /api/password", failure(400, "weak_password", "That password is too easy to guess."));
   await v.send(v.$("password-form"));
+  assert.equal(v.text("next-error"), "That password is too easy to guess.");
+  assert.equal(v.text("current-error"), "", "one refusal answers the last");
   assert.equal(v.doc.activeElement, v.$("next"), "and for a new password that is too weak, in that one");
-  w.answers.set("POST /api/password", failure(403, "invalid_credentials", "The current password is not right."));
-
   w.answers.set("POST /api/password", { json: { ok: true } });
+  v.type("next", "a much better password");
   v.type("current", "the right one");
   await v.send(v.$("password-form"));
   assert.deepEqual(v.to("POST", "/api/password").at(-1)!.body, { current: "the right one", next: "a much better password" });
   assert.equal(v.text("password-status"), "Your password is changed. Every other device is signed out.");
   assert.equal(v.$("password-status").className, "note note-ok");
+  assert.equal(v.$("next").getAttribute("aria-invalid"), null, "and nothing is left refused");
   assert.equal(v.$("current").value, "");
   assert.equal(v.$("next").value, "");
 });
