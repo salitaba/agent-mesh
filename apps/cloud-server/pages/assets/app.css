@@ -1,5 +1,5 @@
 /* One stylesheet; the scheme is the switch. */
-/* Icons: a 20-unit mask; --n picks the glyph, --s its size. */
+/* Icons: a 20-unit mask; --n the glyph, --s the size. */
 :root {
   color-scheme: light dark;
   --max: 1080px;
@@ -283,6 +283,8 @@ td, th, dd, .price, .num, .badge, .auth-points li::before { font-variant-numeric
 .field { display: grid; gap: 8px; margin-bottom: 20px; }
 .field label { font-size: .875rem; font-weight: 600; }
 .field .hint { color: var(--k-muted); font-size: .8125rem; }
+/* A refusal takes the field's gap, not a note's margin. */
+.field > .note { margin: 0; }
 input:not([type="checkbox"]), select {
   width: 100%;
   min-height: 40px;
@@ -379,7 +381,7 @@ meter::-moz-meter-bar { border-radius: var(--k-r-pill); background: currentColor
 .len { height: 4px; mask: repeating-linear-gradient(to right, black 0 calc(10% - 2px), transparent calc(10% - 2px) 10%); }
 .len[data-done] { color: var(--k-ok); }
 
-/* ---- notes and badges */
+/* ---- notes */
 .note, .confirm, .stage-warn, .stage-bad {
   border: 1px solid color-mix(in srgb, var(--tone) 30%, transparent);
   background: color-mix(in srgb, var(--tone) 8%, transparent);
@@ -434,7 +436,7 @@ meter::-moz-meter-bar { border-radius: var(--k-r-pill); background: currentColor
 .tile::before { --s: 24px; }
 .tile-mail::before { --n: 8; }
 
-/* ---- sign-in family */
+/* ---- sign-in */
 .auth { padding-block: clamp(24px, 4vh, 56px); }
 .auth-main, .auth-side { width: 100%; max-width: 28rem; margin-inline: auto; }
 .auth-main h1 { margin-bottom: 8px; }
@@ -594,7 +596,7 @@ body[data-page="home"] main { background: var(--k-glow) top / 100% 520px no-repe
 .steps .now { color: var(--k-ink); }
 .steps .now .num { border-color: var(--k-accent); background: var(--k-accent); color: var(--k-on-accent); }
 .glance { margin-top: 16px; }
-/* Three ruled facts. */
+/* Three facts. */
 .glance dl { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); margin: 0; border-bottom: 1px solid var(--k-line); }
 .stat { padding: 10px 0; border-top: 1px solid var(--k-line); }
 .stat dd { margin: 0; }
@@ -627,7 +629,6 @@ body[data-page="home"] main { background: var(--k-glow) top / 100% 520px no-repe
 .subnav a:focus-visible { outline-offset: -2px; }
 .panel { margin-top: 40px; scroll-margin-top: 124px; }
 .panel > h2 { scroll-margin-top: 124px; }
-/* A section's rule. */
 .panel > h2, .section > h2, .panel summary h2 { display: flex; align-items: center; gap: 16px; margin-bottom: 16px; font-size: 1.125rem; }
 .panel > h2::before, .panel summary h2::before { content: attr(data-entry) / ""; margin-right: -4px; color: var(--k-accent-ink); font: 650 .75rem var(--k-mono); letter-spacing: var(--k-track-caps); }
 .panel > h2::after, .section > h2::after { content: ""; flex: 1; height: 1px; background: var(--k-line); }
@@ -677,7 +678,7 @@ body[data-page="home"] main { background: var(--k-glow) top / 100% 520px no-repe
 .confirm .btn-danger[disabled] { background: var(--k-bad); }
 .inline-form { display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-end; max-width: 30rem; }
 .inline-form .field { flex: 1 1 10rem; margin: 0; }
-/* Plans: price first. */
+/* Price first. */
 .plans { display: grid; gap: 16px; }
 @media (min-width: 720px) {
   .plans { grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); }
@@ -728,7 +729,7 @@ body[data-page="home"] main { background: var(--k-glow) top / 100% 520px no-repe
 }
 .topup-options .btn { flex: 1 1 0; padding-inline: 6px; border-color: transparent; background: none; box-shadow: none; white-space: nowrap; }
 .topup-options .btn:hover { border-color: var(--k-line); background: var(--k-surface); box-shadow: var(--k-shadow-1); }
-/* Adding credit is one named line. */
+/* Credit is one line. */
 .topup > summary { display: none; }
 .topup > summary::-webkit-details-marker { display: none; }
 .topup > summary::after { --n: 7; --s: 16px; color: var(--k-muted); }
@@ -783,7 +784,7 @@ tfoot > tr > * { background: var(--k-surface-2); font-weight: 650; }
 .sk-card { height: 200px; margin-top: 40px; }
 .sk-plan { height: 360px; }
 
-/* ---- documents and 404 */
+/* ---- documents */
 .doc { display: grid; gap: 32px; padding-top: clamp(32px, 6vh, 64px); }
 .doc-end { margin-top: 48px; padding-top: 24px; border-top: 1px solid var(--k-line); }
 .doc-end p { margin-bottom: 12px; }
@@ -824,7 +825,7 @@ tfoot > tr > * { background: var(--k-surface-2); font-weight: 650; }
 .lost .lede { max-width: 28rem; margin-bottom: 28px; color: var(--k-muted); }
 .lost .btn-row { justify-content: center; }
 
-/* ---- phones and fingers */
+/* ---- phones */
 @media (max-width: 720px) {
   /* Money is ruled. */
   .stat, .figures > div { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 10px; min-height: 44px; padding: 4px 0; border-top: 1px solid var(--k-line); }

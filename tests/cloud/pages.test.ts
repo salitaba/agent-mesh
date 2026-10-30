@@ -507,6 +507,22 @@ test("the balance is the record, and adding credit is one 44px row on a phone th
   assert.equal(value("#balance-panel .card", "padding", "max-width: 720px"), "0", "on a phone the balance is ruled entries at the page's edge, not a card");
 });
 
+test("a field's refusal is said in the field it names, and takes the field's gap rather than the note's margin", () => {
+  const css = read(path.join(ASSETS, "app.css"));
+  const rule = cssRules(css).find((r) => r.selectors.includes(".field > .note"));
+  assert.ok(rule, "a note in a field has a rule of its own");
+  assert.equal(declared(rule!, "margin"), "0", "it takes the field's gap, so the action below it keeps the screen");
+  for (const p of pages()) {
+    for (const id of ["email-error", "password-error"]) {
+      const note = p.all.find((n) => attr(n, "id") === id);
+      if (!note) continue;
+      assert.ok(note.parent && note.parent.className.split(/\s+/).includes("field"), `${p.name}: #${id} is in the field's own block`);
+      assert.equal(attr(note, "role"), "status", `${p.name}: #${id} is read when the sentence arrives`);
+      assert.equal(attr(note, "aria-live"), "polite", `${p.name}: #${id} waits for the reader's place`);
+    }
+  }
+});
+
 test("the stylesheet is held to its budget, and whatever it moves it stills for a person who asked for stillness", () => {
   const css = read(path.join(ASSETS, "app.css"));
   // The stylesheet stands between a visitor and the first paint of every page, so what it weighs is what a phone on a poor connection waits for.

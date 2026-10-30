@@ -2097,3 +2097,73 @@ one running workspace named Research, $10.00 available, $10.00 from the plan and
 - **The stage card still repeats the record's sentence and `Open`.** The 46px this pass returns is not the
   duplicate; it is the page's own composition, unchanged.
 - **The checkout stand-in and the prose-only 19px links are untouched.** They are the earlier entries.
+
+## 2026-10-30: the refusal at the field it names
+
+Same harness: Chromium 156 through `playwright-core` against this worktree's trial (`trial --port 7521`, whose plans are
+the trial's own fixtures), 320 / 360 / 768 / 1440 at 800 tall in light and dark, `prefers-reduced-motion: reduce`, a touch
+pointer below 721, and axe-core 4.14 over the refused frame at 320, 360 (both schemes) and 1440. "Before" is the base
+commit's own page files, stashed and served by the same trial, measured again today in the same script and the same
+states: an address typed, a five-letter password typed, the tick ticked, and **Create account** pressed. Heights are
+`document.documentElement.scrollHeight`; positions are `getBoundingClientRect` plus `scrollY`.
+
+- **A field's refusal is said in the field's own block.** The sentence was written into the form's top status, so at 360
+  the password's refusal sat at **y = 314.4–388.4**, **214.8px above the input it names** (529.2); a phone reader looked
+  up from the field to find it. Each validating field on the four way-in pages now has its own note — `#email-error`,
+  `#password-error` — inside its `.field`, and `invalid()` writes there: the sentence is at **552.8–602.8**, **8px under
+  the password hint** and 69.6px under the input, in the same block. The sign-up email's is at 396.8, 8px under its
+  input; the sign-in and forgot emails are 8px under theirs (they were 96.4px above). The note's own 16px margin is not
+  added to the field's gap: `.field > .note { margin: 0 }`.
+- **The sentence is one line, so the action keeps the screen.** "Choose a password of at least 10 characters." wrapped
+  to two lines in the 44px-inset note (**74px**) and **Create account** ended at 818.8 — 18.8px below an 800px screen.
+  The page's own rule now reads **"Use at least 10 characters."** (the words the hint beside the field already uses);
+  the note is **50px** and the action **742.8–786.8**, inside the screen with 13.2px to spare. The sign-up page is
+  **1,530 → 1,498** at 360, **1,702 → 1,694** at 320 and **1,038 → 1,006** at 1440 (where the action was 756.1–800.1
+  and is 724.1–768.1).
+- **One sentence at a time.** With two notes a page could keep the last field's sentence while refusing the next: the
+  password's note and mark would stay after the address was refused. `invalid()` now clears the mark, the description
+  and the sentence of every other refused field first (`unrefused()`, the helper the input listener already needed), so
+  a new refusal answers the old one and the page never asks for two fixes in one try.
+- **The form's top status is the form's answer, not a field's.** Rate limits, a network failure, the wrong-address
+  sentence on sign-in and the dead-link sentence on reset stay in `#status`; the empty address and the short password
+  moved to their fields on signup, login, forgot and reset. The consent's `#agree-error` is unchanged (2026-10-24).
+- **Widths, schemes and the floor.** 320, 360, 768 and 1440 in light, 360 in dark, on the refused sign-up: no sideways
+  page scroll (320: 320; 360: 360; 768: 768; 1440: 1440) and nothing computes below **12px**; the field notes are
+  `role="status" aria-live="polite"` and the refused field keeps `aria-describedby` ("password-hint password-error") and
+  `aria-invalid` until it is edited; typing one character clears the note, the mark, the description and the 32px it
+  took (the action is back at 728.8). Four axe-core runs (320, 360 light, 360 dark, 1440) find **no violation**.
+- **The budget.** `app.css` is **40,950 → 40,946 bytes of 40,960**: the note rule and its one-line comment cost about
+  85 bytes, and five comments ("Adding credit is one named line.", "Three ruled facts.", "Plans: price first.", the
+  icons' note and "notes and badges") and three section headings were shortened, and one comment removed, to pay for
+  them. Fourteen bytes remain.
+- **Tests.** `dist/tests/cloud/*.test.js` — **873 pass, 0 fail**; `dist/tests/build/*.test.js` — **217 pass, 0 fail**;
+  typecheck and lint clean. `pages-app.test.ts` pins each note's words, its place (inside the `.field`), the cursor, the
+  `aria-describedby`, the clearing by input, the one-at-a-time rule and the new sentence; `pages.test.ts` pins the
+  `.field > .note { margin: 0 }` rule and that every `*-error` note is a polite status inside a field.
+
+| measured at 360, light | before | after |
+| --- | --- | --- |
+| The refused password's sentence | 74px at the top of the form, 214.8px above the input | **50px in the field, 8px under the hint** |
+| … its words | "Choose a password of at least 10 characters." (two lines) | **"Use at least 10 characters."** (one) |
+| **Create account** | 774.8–818.8 (18.8px below an 800px screen) | **742.8–786.8** (inside it) |
+| The sign-up page | 1,530px | **1,498** |
+| … at 320 | 1,702; action 874.6–918.6 | **1,694; 866.6–910.6** |
+| … at 1440 | 1,038; action 756.1–800.1 | **1,006; 724.1–768.1** |
+| The sign-in page's empty address | 96.4px above the input; page 1,351 | **8px under it; page 1,343** |
+| The forgot page's empty address | 96.4px above the input; page 1,227 | **8px under it; page 1,219** |
+| axe-core, 4 refused views | — | **0** |
+| `app.css` | 40,950 bytes | **40,946** |
+
+### What this pass leaves
+
+- **At 320 the action is still below the screen after a refusal.** The note is two lines there (its 184px measure is
+  narrower than the 197px sentence) and the action sits at 866.6–910.6; the *resting* sign-up page's action is already
+  at 784.6–828.6 at 320, so the page's opening, not the note, is what would bring it in.
+- **A field refusal empties the top of the form.** A reader who scrolls back there after a refusal sees an empty card
+  top; the sentence is at the field, with the field's mark and the cursor. The rate-limit and network sentences still
+  appear there.
+- **The Settings form's password refusal is still at the top of its form.** Only its sentence changed (to the one-line
+  rule); its field is about 100px below, inside a disclosure, and moving it would add a second live region to a card the
+  account's earlier passes kept to one.
+- **The address strip's caption row, the steps at 320, the stage card's duplicate, the checkout stand-in and the
+  prose-only 19px links are untouched.** They are the earlier entries.
