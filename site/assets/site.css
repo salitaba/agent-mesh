@@ -290,7 +290,7 @@ main:has(.hero) .section-head .eyebrow::before { counter-increment: sec; content
 
 /* the product frame, and the choice of view */
 .frame { margin: 0; overflow: hidden; border: 1px solid var(--line2); border-radius: var(--k-r-lg); background: var(--panel); box-shadow: var(--k-hl), var(--k-shadow-2); }
-.frame-bar { position: relative; display: flex; align-items: center; gap: 6px; height: 44px; padding: 0 16px; border-bottom: 1px solid var(--line); background: var(--panel2); box-shadow: var(--k-hl); }
+.frame-bar { display: flex; align-items: center; gap: 6px; height: 44px; padding: 0 16px; border-bottom: 1px solid var(--line); background: var(--panel2); box-shadow: var(--k-hl); }
 .frame-bar i { flex: none; width: 10px; height: 10px; border-radius: 50%; background: var(--line2); }
 /* The address and the full-size chip share the bar with the lights. The address was pinned to the bar's own centre and the
    chip to its right end, so at 320 the chip's cell began at 201.03 while the 129.16px address ended at 224.58: the chip's
@@ -430,20 +430,36 @@ main:has(.hero) .section-head .eyebrow::before { counter-increment: sec; content
   .tiles { grid-template-columns: none; grid-auto-flow: column; grid-auto-columns: min(86vw, 340px); gap: 12px; margin-inline: calc(-1 * var(--gutter)); padding: 0 var(--gutter) 12px; overflow-x: auto; scroll-snap-type: x proximity; scroll-padding-inline: var(--gutter); }
   .tiles > .tile { scroll-snap-align: start; }
 }
-.tile { padding: 10px 10px 24px; }
+/* A view card is the door its Full size link names. At 360 the card was 460.17 and the link under
+   the picture 74.97 × 44 (2.3% of it); a press 40px into the 285.59 × 178.48 picture did nothing,
+   though the whole card lifts under the pointer. The link is the card's own action row now, full
+   width at its foot, and its pseudo-element covers the card: one link, one name, one tab stop, and
+   every part of the card opens the capture. The row's words keep the caption's 13px; the figure
+   gives up its 73px caption, the row and its hairline take 53, and the card is 20px shorter at
+   320/360/390 and the row of six 60px shorter at 768/1,440, where the six are a grid. */
+.tile { position: relative; display: flex; flex-direction: column; padding: 10px 10px 24px; }
 .tile .frame { border-color: var(--line); border-radius: var(--k-r-md); box-shadow: none; }
 .tile .frame img { aspect-ratio: 8 / 5; object-fit: cover; }
-.tile h3 { margin: 20px 14px 6px; }
+.tile .tile-open { margin: auto 14px 0; padding-top: 8px; border-top: 1px solid var(--line); }
+.tile .tile-open .shot-open { display: flex; align-items: center; justify-content: space-between; width: 100%; font-size: .8125rem; }
+.tile .tile-open .shot-open::after { margin-left: auto; }
+.tile .tile-open .shot-open:hover { color: var(--link); }
 .tile p { max-width: 34rem; margin: 0 14px; }
 /* The six views are numbered like the sections and the contents, so the row reads as one ledger
    rather than six identical blocks, and a thumb can tell where in it it is. */
 .tiles { counter-reset: view; }
-.tile h3 { display: flex; align-items: baseline; gap: 10px; }
+.tile h3 { display: flex; align-items: baseline; gap: 10px; margin: 20px 14px 6px; }
 .tile h3::before { counter-increment: view; content: counter(view, decimal-leading-zero); flex: none; padding-right: 10px; border-right: 1px solid var(--line2); color: var(--muted); font-size: .75rem; font-weight: 600; letter-spacing: .04em; font-variant-numeric: tabular-nums; }
 /* A capture is 1440px wide; on a phone its words are not readable at page width. Every one has a
    named way to its full size, at a thumb's height. */
 .shot-open { display: inline-flex; align-items: center; min-height: 44px; font-weight: 600; }
 .shot-open::after { content: "\2197"; margin-left: .35em; }
+/* The picture is the door, not only the link: the six view cards' link covers the card, and the
+   graph's and the hero's plate's link covers the frame. A press on a 326 × 173 picture did nothing
+   at 360; it now opens the capture. It is still one control, one name and one tab stop. */
+.frame:has(.shot-open) { position: relative; }
+.frame:has(.shot-open) .shot-open::before,
+.tile .shot-open::before { content: ""; position: absolute; inset: 0; }
 /* The plate's own way to its full size is a chip in its chrome, not a 44px box in a 13px caption: inside the caption
    the thumb-sized link made the last line 44px tall, so the line under it stood 31.8px from the one above instead of
    19.5, and the pane was one caption line taller than its neighbours. It is the same link, the same words and the same
@@ -465,8 +481,6 @@ main:has(.hero) .section-head .eyebrow::before { counter-increment: sec; content
 .hero-visual .frame figcaption { min-height: calc(2 * 1.5em + 29px); }
 @media (max-width: 719px) { .hero-visual .frame figcaption { min-height: calc(4 * 1.5em + 29px); } }
 @media (max-width: 359px) { .hero-visual .frame figcaption { min-height: calc(5 * 1.5em + 29px); } }
-.shot-meta { padding-block: 4px; }
-.shot-meta .shot-open { margin-left: 8px; }
 
 /* code, and the steps of the demo */
 .code { position: relative; margin: 14px 0; padding-top: 48px; overflow: hidden; border: 1px solid var(--line); border-radius: var(--k-r-md); background: var(--code); }

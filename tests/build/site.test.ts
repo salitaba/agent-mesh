@@ -695,6 +695,30 @@ test("every capture has a named way to its full size, in the same window, and th
   assert.match(css, /@media \(max-width: 719px\) \{\n  \.row-index \{ display: block;/, "the index is shown where the row scrolls");
 });
 
+test("a capture is one press across its surface, not a chip beside it", () => {
+  const home = page(pages, "index.html").html;
+  const css = fs.readFileSync(path.join(SITE, "assets", "site.css"), "utf8");
+  // Each view card's Full size link is the card's own action row at its foot, after the view's words.
+  const tiles = [...home.matchAll(/<li class="tile" id="view-([a-z]+)">([\s\S]*?)<\/li>/g)];
+  assert.equal(tiles.length, 6, "six view cards");
+  for (const [, id, body] of tiles) {
+    assert.ok(!/<figcaption/.test(body!), `${id}: the picture no longer carries a caption row of its own`);
+    assert.match(body!, /<p>[\s\S]*<\/p>\s*<p class="tile-open"><a class="shot-open" href="[^"]+" aria-label="Open the .+ capture at full size">Full size<\/a><\/p>\s*$/, `${id}: the way to the full size is the card's last row, after its words`);
+  }
+  // The card is a flex column so its action rows stand on one line across a grid row, and the row's
+  // link covers the card: the picture, the name and the description are the same press.
+  assert.match(css, /\n\.tile \{ position: relative; display: flex; flex-direction: column; padding: 10px 10px 24px; \}/, "the card is the link's containing block");
+  assert.match(css, /\n\.tile \.tile-open \{ margin: auto 14px 0; padding-top: 8px; border-top: 1px solid var\(--line\); \}/, "the action row stands at the card's foot, on a hairline");
+  assert.match(css, /\n\.tile \.tile-open \.shot-open \{[^}]*width: 100%;/, "the action row is the card's width, not a 75px chip");
+  assert.match(css, /\n\.tile \.tile-open \.shot-open::after \{ margin-left: auto; \}/, "the arrow ends the row");
+  assert.match(css, /\n\.tile \.shot-open::before \{[^}]*position: absolute; inset: 0;/, "the row's link covers the card");
+  // The graph and the hero's plate are captures too, and their links cover their frames. The plate's
+  // chrome is laid out in the row, not positioned: if it were, the chip's cover would stop at its 44px.
+  assert.match(css, /\n\.frame:has\(\.shot-open\) \{ position: relative; \}/, "the capture's frame is a containing block");
+  assert.match(css, /\n\.frame:has\(\.shot-open\) \.shot-open::before,/, "the graph's and the plate's links share the cover");
+  assert.ok(!/\n\.frame-bar \{[^}]*position: relative/.test(css), "the plate's chrome is not the containing block");
+});
+
 test("the four plans are one snap row on a phone, and nothing off the row widens the page", () => {
   const pricing = page(pages, "pricing/index.html").html;
   assert.match(pricing, /<p class="eyebrow">Plans<\/p>\n      <h2 class="title plans-title">The licence plans\.<\/h2>\n      <p class="small muted plans-hint">Four plans\. Swipe or scroll sideways; the comparison below lists every line\.<\/p>/, "the section keeps its heading and the hint that the row swipes");
