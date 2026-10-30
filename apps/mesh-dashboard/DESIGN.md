@@ -222,6 +222,37 @@ Breakpoints: **1280 1100 900 800 760 620 560**. 800 is the sidebar drawer (JS
 
 ## Pass log
 
+### 2026-10-30 — a phone's step drawer is the whole screen, and its head meets its edges
+
+Surface: `views/drawers.css` (the 620 phone block) and one new rule in `tests/dashboard/drawer-phone.test.ts`. Measured on the
+scripted demo at **Delivered** (28 turns) in the production build, Chromium over CDP at 320/360/390/768/1440 in light and 360 in
+dark, a touch pointer at 768 and below, reduced motion, axe-core at 360 light and dark. Both frames are the first turn's drawer
+on the same delivered mission, read from the same server before and after the build; the turn's age reads 37m in the before frame
+and 39m in the after, and it is the same turn (`turn-48275b`).
+
+- **The step drawer is the one panel that kept a desk width on a phone.** Every other drawer's phone rule is `100vw`
+  (`styles.css`); the step's `:has(.stepv)` rule (`min(760px, 96vw)`) outranks it, so at 360 the drawer was **345.6 px at
+  x = 14.4** (320: **307.2 at 12.8**, 390: **374.4 at 15.6**) — 12.8–15.6 px of a page that cannot be read peeking beside it.
+  It is **320 / 360 / 390 at x = 0** now, and the body's content is **288 / 328 / 358** (was 275.2 / 313.6 / 342.4).
+- **Its sticky head was 12 px wider than the drawer, and the drawer scrolled 6 px sideways.** The head's bleed was written for
+  the desk's 22 px padding (`margin: … -22px`), but the phone drawer pads by 16: at 360 the head was **357.6 px at x = 8.4**,
+  **6 px past the drawer on each side**, its 1 px rule ran from 8.4 to 366 (a 6 px stub on the scrim), and the drawer's
+  `scrollWidth` was **352 in a 346 px client**. The head bleeds by `--s4` on a phone and sticks from the notch as the shared head
+  does: **320 / 360 / 390 at x = 0, 0 px of sideways scroll**, and the rule 0–320 / 0–360 / 0–390.
+- **The head is 44 px shorter at 360, because the content is 14.4 px wider.** At 360 the head was **281.1 px** and is **237.1**;
+  the first section moves up 44 px. At 320 it is **296.1 → 295.1** and at 390 **237.1 → 237.1**.
+- **Nothing else moves.** 768 and 1440 are outside the 620 query and unchanged to the pixel (drawer 737.3 / 1,180, head 736.3 /
+  1,179, the head inside the drawer's 1 px border); dark at 360 reads the same geometry; the close is still 44 × 44 at x = 300–344 at 360 and the walker's
+  arrows 44 × 44, the same tab stops (focus lands on the close, Tab goes to the first jump chip), 0 axe violations at 360 light
+  and dark (31 rules passed), no document or `#view` horizontal scroll, and the one console error is the one-mesh
+  `/api/projects` 404.
+
+Suite: typecheck and build clean; `dist/tests/dashboard` **1,186 pass, 0 fail**, with the new rule in `drawer-phone.test.ts`.
+
+**Left.** At 768 the step drawer is still 96vw (737.3 in 768, a 30.7 px peek): that is the tablet's slide-over, and its head
+already meets its edges because the tablet keeps the desk's 22 px padding. The phone's peek was the only visible sign that the
+page was behind; the close (44 × 44) and Escape are the ways out, as in the agent and file drawers, which were already 100vw.
+
 ### 2026-10-30 — a phone's Files filters share the search's row, and the first file is 52 px higher
 
 Surface: `views/files.css` (the 620 phone block) and one rule in `tests/dashboard/files-phone.test.ts`. Measured on the scripted
