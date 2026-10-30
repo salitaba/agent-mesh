@@ -150,7 +150,6 @@ code {
 }
 .muted { color: var(--k-muted); }
 .small { font-size: .875rem; }
-/* Figures line up. */
 td, th, dd, .price, .num, .badge, .auth-points li::before { font-variant-numeric: tabular-nums; }
 .stat dt, .figures dt, thead th, .toc-h {
   color: var(--k-muted);
@@ -596,7 +595,6 @@ body[data-page="home"] main { background: var(--k-glow) top / 100% 520px no-repe
 .steps .now { color: var(--k-ink); }
 .steps .now .num { border-color: var(--k-accent); background: var(--k-accent); color: var(--k-on-accent); }
 .glance { margin-top: 16px; }
-/* Three facts. */
 .glance dl { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); margin: 0; border-bottom: 1px solid var(--k-line); }
 .stat { padding: 10px 0; border-top: 1px solid var(--k-line); }
 .stat dd { margin: 0; }
@@ -678,7 +676,6 @@ body[data-page="home"] main { background: var(--k-glow) top / 100% 520px no-repe
 .confirm .btn-danger[disabled] { background: var(--k-bad); }
 .inline-form { display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-end; max-width: 30rem; }
 .inline-form .field { flex: 1 1 10rem; margin: 0; }
-/* Price first. */
 .plans { display: grid; gap: 16px; }
 @media (min-width: 720px) {
   .plans { grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); }
@@ -704,7 +701,6 @@ body[data-page="home"] main { background: var(--k-glow) top / 100% 520px no-repe
 .plan:only-child { max-width: 28rem; }
 .plans + p { margin-top: 16px; }
 .plan .btn { width: 100%; min-height: 44px; margin-top: auto; }
-/* The balance. */
 .figures {
   display: grid;
   grid-template-columns: 1.3fr 1fr 1fr;
@@ -751,7 +747,6 @@ tbody th, tfoot th { color: var(--k-ink-2); font-weight: 500; }
 tbody tr:hover > * { background: var(--k-surface-2); }
 tfoot > tr > * { background: var(--k-surface-2); font-weight: 650; }
 .bar-cell { display: inline-grid; grid-template-columns: 72px minmax(8ch, max-content); align-items: center; justify-content: end; gap: 12px; }
-/* No result. */
 .empty { display: grid; justify-items: start; gap: 4px; padding: 12px 0; border-top: 1px solid var(--k-line); }
 .empty p { max-width: 44ch; margin: 0; }
 .empty-t { font-weight: 600; }
@@ -772,7 +767,6 @@ tfoot > tr > * { background: var(--k-surface-2); font-weight: 650; }
 .panel-quiet summary:focus-visible { outline-offset: -2px; }
 .panel-quiet form { max-width: 28rem; padding: 20px; }
 .panel-quiet h3 { margin: 0 0 16px; font-size: .9375rem; }
-/* The skeleton. */
 .sk {
   border-radius: var(--k-r-lg);
   background: linear-gradient(90deg, var(--k-sunken) 30%, var(--k-surface-2) 50%, var(--k-sunken) 70%) 0 0 / 300% 100%;
@@ -827,7 +821,6 @@ tfoot > tr > * { background: var(--k-surface-2); font-weight: 650; }
 
 /* ---- phones */
 @media (max-width: 720px) {
-  /* Money is ruled. */
   .stat, .figures > div { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 10px; min-height: 44px; padding: 4px 0; border-top: 1px solid var(--k-line); }
   .stat-v, .stat-n { margin: 0 !important; }
   .stat-n:empty { display: none; }
@@ -850,7 +843,6 @@ tfoot > tr > * { background: var(--k-surface-2); font-weight: 650; }
   .check label { line-height: 44px; }
   .check label a { display: inline-block; min-height: 44px; }
   .bar, .bar nav { flex-wrap: wrap; }
-  /* Caption, then host and Copy. */
   .ws-address-l { flex: 1 0 100%; font-size: .75rem; }
   .ws .ws-address code { flex: 1 1 8rem; min-width: 0; }
   .ws .ws-address { margin: 0; padding: 10px 0; background: none; }
@@ -868,6 +860,11 @@ tfoot > tr > * { background: var(--k-surface-2); font-weight: 650; }
   .table-wrap .bar-cell { display: inline; }
   .table-wrap meter { display: none; }
   .table-wrap caption { padding-bottom: 8px; }
+}
+@media (min-width: 360px) and (max-width: 720px) {
+  .ws-address-l { flex: 0 0 auto; }
+  .ws .ws-address { gap: 4px; }
+  .ws .ws-address code { font-size: .75rem; }
 }
 @media (max-width: 720px), (pointer: coarse) {
   .btn, .btn-small, .bar nav a, .bar nav button, input:not([type="checkbox"]), select { min-height: 44px; }

@@ -507,6 +507,20 @@ test("the balance is the record, and adding credit is one 44px row on a phone th
   assert.equal(value("#balance-panel .card", "padding", "max-width: 720px"), "0", "on a phone the balance is ruled entries at the page's edge, not a card");
 });
 
+test("a workspace's address, its caption and Copy share one row on a 360 phone, and a 320 phone keeps the caption's row", () => {
+  const rules = cssRules(read(path.join(ASSETS, "app.css")));
+  const value = (selector: string, property: string, within = ""): string | undefined => {
+    const found = rules.filter((r) => r.selectors.includes(selector) && (within === "" ? r.at === "" : r.at.includes(within)) && declared(r, property) !== undefined);
+    return found.length > 0 ? declared(found[found.length - 1]!, property) : undefined;
+  };
+  const widePhone = "min-width: 360px";
+  assert.equal(value(".ws-address-l", "flex", widePhone), "0 0 auto", "at 360 the caption is the first thing on the host's row");
+  const fallback = rules.filter((r) => r.selectors.includes(".ws-address-l") && r.at.includes("max-width: 720px") && !r.at.includes("min-width") && declared(r, "flex") !== undefined).at(-1);
+  assert.equal(declared(fallback!, "flex"), "1 0 100%", "below 360 it takes its own row, because the host would wrap beside it");
+  assert.equal(value(".ws .ws-address", "gap", widePhone), "4px", "the row's gap is the record's 4px, which is what lets the three fit");
+  assert.equal(value(".ws .ws-address code", "font-size", widePhone), ".75rem", "the host is the caption's 12px, so the address is not cut");
+});
+
 test("a field's refusal is said in the field it names, and takes the field's gap rather than the note's margin", () => {
   const css = read(path.join(ASSETS, "app.css"));
   const rule = cssRules(css).find((r) => r.selectors.includes(".field > .note"));
