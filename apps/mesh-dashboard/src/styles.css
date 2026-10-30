@@ -1423,6 +1423,13 @@ ul.errs { margin: var(--s1-5) 0; padding-left: 18px; font-size: 14px; color: var
     min-height: 44px;
   }
   :is(.pj-home, .ptab-x, .ptab-add, .agent-open, .gr-open, .icon-btn, .close-x, .palette-x, .toast-x, .copy-btn.compact, .srch-clear) { min-width: 44px; }
+  /* A page head's title, its status and its action share one line where they fit, and on a phone the gap between them is the
+     row's own --s2, as the Designer's phone head already set it, not the desk's --s3. At 360 the Events head needed 333.1 px
+     in 332 — 88 title + 12 + 177.1 live chip + 12 + 44 hold — so the hold took a 44 px row of its own above the lede and the
+     log began 37.1 px lower than the same page at 390. With the phone's 8 px gap the row is 325.1, the head is 110 px and the
+     hold keeps the title row; at 320 the row is genuinely too narrow (325.1 in 292) and the action keeps the row the grammar
+     gives it. `tests/dashboard/phone-head.test.ts` reads this rule. */
+  .view-title { column-gap: var(--s2); }
   /* The Cards/List choice in a page head was 43 × 44 at 320–390: a 44 px row, a pixel short of a square, on the one control a
      thumb uses to change how the page reads. A segmented choice in a page head is a target, not a caption. */
   .page-head .seg button { min-width: 44px; }

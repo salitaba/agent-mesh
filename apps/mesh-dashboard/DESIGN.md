@@ -126,6 +126,12 @@ Breakpoints: **1280 1100 900 800 760 620 560**. 800 is the sidebar drawer (JS
   keyboard (2026-10-29).
 - Filters that are not needed to read the page fold behind one 44 px button with
   a count, as Events and Steps do; the search stays out.
+- A phone's page head is one line where its title, its status and its action
+  fit, and the columns use the row's own 8 px, not the desk's 12. The Events head
+  needed 333.1 px in 332 with the live chip at its widest, so the hold took a row
+  of its own above the lede (147.1 px) and dropped back to 110 a second later
+  when the chip read "Updated 1s ago": the whole log jumped 37.1 px as the clock
+  ticked. It is 110 px in both states now (2026-10-30).
 - The first-run guide is a brief, not a box: at 760 px and below it drops the
   card, each of its four steps is one 44 px ruled line, and the step to do now
   keeps its instruction and its field under its own line. At 360 it is 334.8 px
@@ -221,6 +227,44 @@ Breakpoints: **1280 1100 900 800 760 620 560**. 800 is the sidebar drawer (JS
 8. Check the frame's safe-area claims on a notched device in both orientations; the insets are in the CSS but the stand-in browser reports them as zero.
 
 ## Pass log
+
+### 2026-10-30 — a phone's page head stays one line, and the Events log starts 37 px higher
+
+Surface: `styles.css` (the thumb/pointer block) and one rule in `tests/dashboard/phone-head.test.ts`. Measured on the
+scripted demo at **Delivered** (481 events, 300 in the first bucket) in the production build, Chromium over CDP at
+320/360/390/768/1440 in light and 360/1440 in dark, a touch pointer at 768 and below, reduced motion, axe-core at 360 and
+1440 in both schemes. Before is the same worktree with only the stylesheet reverted, built and served in the same session;
+after is this branch, rebuilt; both halves were read on the same delivered mission within the minute, and both 360 × 800
+frames are `#/events` at `#view.scrollTop` 0 with the live chip at its widest ("Updated just now").
+
+- **The Events head was two rows whenever the live chip read "Updated just now".** At 360 the title row needed **333.1 px** in
+  332 — 88 title + 12 + 177.1 chip + 12 + the 44 px hold — so the hold took a 44 px row of its own above the lede with
+  **288 px of dead ground** beside it: the head was **147.1 px**, the lede at 165.1, the search at 223.1 and the first event
+  at **357**. A second later the chip reads "Updated 1s ago" (166.6 px), the row fits, and the head is **110**: the head, the
+  lede, the search and the whole log **jumped 37.1 px** as the clock ticked. 40 samples over 10 s at 360: **13 tall (147.1),
+  27 short (110)**.
+- **A phone's page head now uses the row's 8 px gap**, as the Designer's phone head already did, so the row is 325.1 px and the
+  hold keeps the title row whatever the chip says: head **147.1 → 110**, title row **81.1 → 44**, the hold **y = 115.1 → 78**
+  (still 44 × 44 at x = 302), the lede **165.1 → 128**, the search **223.1 → 186**, the bucket **278.1 → 241**, the first event
+  **357 → 319.9**. The first screen now holds **42 px of the seventh event** where it held 5, and 40 samples over the next 10 s
+  read **40 at 110** while the chip's words changed underneath.
+- **320 keeps its row, and the desk does not move.** At 320 the row is 325.1 in 292, so the hold still takes its own 44 px row
+  (head 147.1, first event 425.9, unchanged): on the narrowest phone the action row is the grammar's own. 390 is unchanged in
+  height (110, the row already fitted) and 768 / 1,440 are unchanged to the pixel (81; the hold is the 168 × 36 word at
+  y = 78 / 86.2, the first event at 368.9 / 367.6). Dark at 360 reads the same as light, and 1440 dark the same as 1440 light.
+- **The cost is 4 px of the status chip.** The chip now sits 8 px from its title instead of 12: at 360 it is at x = 110 (was
+  114), and the same 4 px applies on Agents, Steps and the Designer's already-8 px head. No control changed size or place at
+  768 and 1,440; the hold is still 44 × 44; no control in Events is under 44 × 44 at 320/360 (the `h2` is a heading, not a
+  target); no text is under 12 px; neither the document nor `#view` scrolls sideways at any width; axe-core finds **0**
+  violations at 360 light/dark and 1,440 light/dark (24/24/28/28 rules passed). The one console error is the one-mesh
+  `/api/projects` 404.
+
+Suite: typecheck and build clean; `dist/tests/dashboard` **1,187 pass, 0 fail**, with one new rule in
+`tests/dashboard/phone-head.test.ts` (mutation-checked: the gap put back to `--s3` fails it, then restored).
+
+**Left.** A 4 px tighter status on every phone head is the trade for a head that cannot grow on a clock; whether the desk's 12
+should stay the phone's too, on heads with no action, is a reading question the measurement does not answer. At 320 the action
+row stays: a 325.1 px row in 292 is not a gap problem, and closing it would need the live chip's words or a narrower search.
 
 ### 2026-10-30 — a phone's step drawer is the whole screen, and its head meets its edges
 
