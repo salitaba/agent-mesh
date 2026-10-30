@@ -2284,3 +2284,81 @@ and scroll 620. Heights are `document.documentElement.scrollHeight`; positions a
   82.9px, not 65: the chip takes the three lines it needs and `Copy` stays at the end. No address is cut.
 - **The stage card's duplicate, the checkout stand-in and the prose-only 19px links are unchanged.** They are the earlier
   entries.
+
+## 2026-10-30: the bill's figures are named
+
+Same harness: Chromium 156 (playwright-core 1.64) against this worktree's trial (`trial --port 7511`), 320 / 360 / 390 /
+720 / 768 / 1440 at 800 tall in light, 320 / 360 / 390 / 1440 in dark, `prefers-reduced-motion: reduce`, a touch pointer
+below 721, the root raised to 32px at 360 and 320, and axe-core 4.14 over the bill. "Before" is the base commit's own
+`app.css`, restored and served by the same trial and measured again today in the same frame, not a figure copied from an
+earlier record. The fixture is the same on both sides: a Team account with one running workspace named Research, `$10.00`
+available, and `/api/usage` held to a four-day answer (Oct 26–29, 96 calls, 3 failed, `$7.14` charged) with a deleted
+workspace's nine calls in the by-workspace table, because the trial's own workspaces make no model call and its bill is
+empty. Heights are `document.documentElement.scrollHeight`; positions are `getBoundingClientRect` plus `scrollY`.
+
+- **On a phone the bill's five figures have no names: each label is drawn in its figure's own type, with no gap.** The
+  by-day table's charge cell was **126.2px** wide and drew `Charged` at **16px, weight 650** in `--k-ink` — the same type
+  and ink as `$2.74`, from `content: attr(data-h) / ""` — so the cell read **"Charged$2.74"**. The four other cells drew
+  their label at 12px in the figure's own ink with no gap: **"Calls41"**, **"Failed2"**, **"Input180,000"**,
+  **"Output12,600"**. Five labels a row — the by-day table's four days and its total, the by-workspace table's two rows —
+  **35 labels** on this phone's bill, none of them set apart from the figure it names.
+- **The label is a caption now, and stands apart from its figure.** `.table-wrap td::before` draws `attr(data-h)` and then
+  a space, in `--k-muted` at **12px, weight 500** — the 12px the count cells' figures use, and the ink and weight of the
+  record's notes — so the figure is the part that is read: the charge cell is **105.1px** and the row reads
+  `Oct 29, 2026   Charged $2.74   Calls 41` over `Failed 2   Input 180,000   Output 12,600`. The empty alternative
+  (`/ ""`) is kept: the name is drawn and not said, because the header row, clipped rather than removed, is what a
+  reader hears.
+- **Nothing moves.** With the same answer the account is **2,527px** at 360, the Usage panel **722.5**, the by-day table
+  **371.3** and every row **67.8** — before and after, in light and in dark. 320: **2,720 / 743.7 / 392.5**; 390: **2,483 /
+  700.1 / 371.3**; 720: **2,069 / 529.4 / 265.4** (rows 46.6); 768: **2,443 / 633.1 / 328.9** (rows 48); 1440: **2,479 /
+  633.1**, where the rule does nothing because the header row is drawn. The bill with no calls is unchanged at every width
+  — the account 2,242 / 2,048 / 2,004 / 1,739 / 2,008 / 2,045 — because it has no table to label.
+- **At 320 the day's line gains the calls.** The 21px the charge cell's label gave back were the width the second line did
+  not have: the calls sat at **x = 17** on it, beside the failures and both token counts (280.8px of the row's 286), and
+  now sit at **x = 254.1** on the day's line. The row is the same 67.8px; the second line is three figures instead of
+  four.
+- **At 200% text the bill is 121px shorter.** With the root at 32px the four-day bill is **5,804px** at 360, its day rows
+  **240.2 / 199.8 / 199.8 / 199.8** and its total **240.2**; the captions fit each day's figures in the row's two lines:
+  **5,683px**, every day row and the total **199.8**. The Usage panel is **2,129.3 → 2,008.1** and the by-workspace table
+  **539.5 → 499.1**. At 320 it is 6,138 in both halves.
+- **Widths, schemes and the floor.** 320 / 360 / 390 / 720 / 768 / 1440 in light, 320 / 360 / 390 / 1440 in dark: no
+  sideways page scroll (320: 320; 360: 360; 390: 390; 720: 720; 768: 768; 1440: 1440), nothing computes below **12px**
+  (the labels are at the floor and were at it), and no control changed size or place. **8 axe-core runs** (320, 360, 768
+  and 1440, light and dark, over the same four-day bill) find **no violation**.
+- **The budget.** `app.css` is **40,935 → 40,940 bytes of 40,960** (a net **+5**). The rule costs **60 bytes**; three
+  comments that only named the rule under them ("A day is an entry.", "The name stays.", and the bar's note at 320
+  shortened) paid for 55 of them. Twenty bytes remain.
+- **Tests.** `pages.test.ts` pins the space, the empty alternative, the 12px, the weight and the muted ink;
+  `pages-app.test.ts` checks every figure cell of both tables, the total's included, against its column's first word,
+  and that a row's own name takes none. The whole suite — **6,410 pass, 0 fail**, 2 skipped; typecheck and lint clean.
+
+| measured at 360, light | before | after |
+| --- | --- | --- |
+| The charge cell | 126.2px, `Charged` at 16px/650 in the figure's ink | **105.1px**, `Charged` at 12px/500 muted |
+| … what the row reads | "Charged$2.74  Calls41" / "Failed2  Input180,000  Output12,600" | **"Charged $2.74  Calls 41"** / **"Failed 2  Input 180,000  Output 12,600"** |
+| The four count cells | 43.9 / 42.5 / 80.7 / 83.7px | **47.8 / 46.3 / 84.5 / 87.5** (the space) |
+| The labels' ink | `--k-ink`, 16.5:1 | **`--k-muted`**, 6.6:1 light, 7.6:1 dark |
+| The row / the table / the panel / the page | 67.8 / 371.3 / 722.5 / 2,527px | **67.8 / 371.3 / 722.5 / 2,527** |
+| … at 320 | 67.8 / 392.5 / 743.7 / 2,720; the calls at x = 17 on the second line | **same heights**; the calls at **x = 254.1** on the day's line |
+| … at 390 / 720 | 2,483 / 2,069 | **2,483 / 2,069** |
+| … at 768 / 1440 | 2,443 / 2,479 | **2,443 / 2,479** (the header row draws the names) |
+| At root 32px, 360 | 5,804px; day rows 240.2 / 199.8 / 199.8 / 199.8, the total 240.2 | **5,683**; every day row and the total **199.8** |
+| axe-core, 8 views | — | **0** |
+| `app.css` | 40,935 bytes | **40,940** |
+
+### What this pass leaves
+
+- **The token figures are still named by half their column.** The label is the column's first word, so a phone reads
+  `Input 180,000` and `Output 12,600`; the noun is in the wide table's header only. The whole name costs **+22px** at 360
+  and **+127px** at 320, where the second line would take a third, so the record's `data-h` rule stands.
+- **The by-workspace table's name is still the date's 7rem column.** A 54-character workspace name takes **90px** of the
+  row, four lines in its 112px column, and the row is **131.8px**. Giving the name its own line made a short name's row
+  **92.2px** (+24.4) and set the five figures as a run, so the column was kept.
+- **The charge's bar is not drawn on a phone.** It has been hidden below 721 since 2026-10-28, and the figures are the
+  picture.
+- **The sticky header can still cover a control at a scroll a person chose.** At 360 with the page at scroll 1,200 the
+  plan's `Change plan` sits at 22–66 under the bar (61px), and axe reports `target-size` on it in both halves: the
+  header is sticky and has been since the page had one (the 2026-10-26 pass fixed the strip, not the bar). The bill's
+  own runs at 320, 360, 768 and 1440 are clean.
+- **The stage card's duplicate, the checkout stand-in and the prose-only 19px links are unchanged.** They are the earlier
+  entries.
