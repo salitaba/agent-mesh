@@ -719,6 +719,28 @@ test("a capture is one press across its surface, not a chip beside it", () => {
   assert.ok(!/\n\.frame-bar \{[^}]*position: relative/.test(css), "the plate's chrome is not the containing block");
 });
 
+test("a place to start is one press across its card, not a 45.59px line inside it", () => {
+  const docs = page(pages, "docs/index.html").html;
+  const css = fs.readFileSync(path.join(SITE, "assets", "site.css"), "utf8");
+  // A card is for something a person acts on, and each of the four places to start names one document to open first
+  // (site-copy.test.ts holds that). At 360 the card was 328 × 356.08 and its link 173.8 × 45.59 — 6.8% of it — and a
+  // press on the card's title, on its description or on its path did nothing. The card that names one place is the
+  // place, as a view card is the capture its Full size row names; a card that named several could not be.
+  const cards = [...docs.matchAll(/<li class="start"([^>]*)>([\s\S]*?)<\/li>/g)].map((m) => m[2]!);
+  assert.equal(cards.length, 4, "four places to start");
+  for (const card of cards) {
+    assert.equal((card.match(/<a\b[^>]*\bdata-doc=/g) ?? []).length, 1, "one document to open first, so the card can be the door");
+    const others = [...card.matchAll(/<a\b([^>]*)>/g)].filter((m) => !/data-doc=/.test(m[1]!));
+    assert.ok(others.every((m) => /data-cloud="signup"/.test(m[1]!)), "the only other link in a place to start is the Cloud card's own sign-up");
+  }
+  assert.match(css, /\n\.start \{ position: relative; display: grid; grid-row: span 5; grid-template-rows: subgrid; margin-bottom: 16px; \}/, "the card is the link's containing block");
+  assert.match(css, /\n\.start-doc \.arrow-link::before \{ content: ""; position: absolute; inset: 0; \}/, "the document's link covers the card");
+  // With the cover as the target, the link's own box is a line of the card (25.59 at 360, its 16px line) and the card
+  // is 20px shorter: four cards 80px at 360, 40 at 768 and 20 at 1440.
+  assert.match(css, /\n\.start-doc \.arrow-link \{ padding: 0; font-size: 1rem; \}/, "the link is a line of the card, not a 45.59px control in it");
+  assert.match(css, /\n\.start p a:not\(\.arrow-link\) \{ position: relative; \}/, "an inline link in the card's words stays above the cover, so no control is lost to it");
+});
+
 test("a caption is text: the graph's way to the full size is a line of it, and the figure is the target", () => {
   const home = page(pages, "index.html").html;
   const css = fs.readFileSync(path.join(SITE, "assets", "site.css"), "utf8");
