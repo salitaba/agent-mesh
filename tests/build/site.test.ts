@@ -719,6 +719,25 @@ test("a capture is one press across its surface, not a chip beside it", () => {
   assert.ok(!/\n\.frame-bar \{[^}]*position: relative/.test(css), "the plate's chrome is not the containing block");
 });
 
+test("a caption is text: the graph's way to the full size is a line of it, and the figure is the target", () => {
+  const home = page(pages, "index.html").html;
+  const css = fs.readFileSync(path.join(SITE, "assets", "site.css"), "utf8");
+  // The one capture whose way to its full size is inside its caption: the plate's chip is in its chrome, and the six
+  // cards' links are rows of their own.
+  const captions = [...home.matchAll(/<figcaption>([\s\S]*?)<\/figcaption>/g)].map((m) => m[1]!);
+  const withLink = captions.filter((c) => /class="shot-open"/.test(c));
+  assert.equal(withLink.length, 1, "one capture's way to its full size is in its caption");
+  assert.match(withLink[0]!, /^<b>Graph\.<\/b>[\s\S]*<a class="shot-open" href="assets\/shots\/shot-graph\.jpg" aria-label="Open the Graph capture at full size">Full size<\/a>$/, "the graph's caption is its words, then its link");
+  // A 44px link in a 13px caption made its last line 44px tall: at 360 the line above stood 31.75px from it in a
+  // 19.5px caption, and the caption was 151px beside a 173px picture. The caption's link keeps the caption's line, and
+  // the cover above is what a thumb presses (326 × 300 at 360), so no target is smaller for it.
+  assert.match(css, /\n\.frame figcaption \.shot-open \{ min-height: 0; \}/, "a caption's link is a line of the caption");
+  assert.match(css, /\n\.shot-open \{[^}]*min-height: 44px;/, "every other way to the full size is a thumb's height");
+  assert.match(css, /\n\.frame-open \{ position: static;[^}]*height: 44px;/, "the plate's chip is 44px of its chrome");
+  assert.match(css, /\n\.tile \.tile-open \.shot-open \{[^}]*width: 100%;/, "the cards' rows are the cards' width");
+  assert.match(css, /\n\.frame:has\(\.shot-open\) \.shot-open::before,\n\.tile \.shot-open::before \{ content: ""; position: absolute; inset: 0; \}/, "the figure, not the caption's line, is the press");
+});
+
 test("the four plans are one snap row on a phone, and nothing off the row widens the page", () => {
   const pricing = page(pages, "pricing/index.html").html;
   assert.match(pricing, /<p class="eyebrow">Plans<\/p>\n      <h2 class="title plans-title">The licence plans\.<\/h2>\n      <p class="small muted plans-hint">Four plans\. Swipe or scroll sideways; the comparison below lists every line\.<\/p>/, "the section keeps its heading and the hint that the row swipes");

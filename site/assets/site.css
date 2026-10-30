@@ -454,6 +454,13 @@ main:has(.hero) .section-head .eyebrow::before { counter-increment: sec; content
    named way to its full size, at a thumb's height. */
 .shot-open { display: inline-flex; align-items: center; min-height: 44px; font-weight: 600; }
 .shot-open::after { content: "\2197"; margin-left: .35em; }
+/* A caption is text, and its way to the full size is a line of it. The graph's caption carried the 44px link the
+   plate's caption used to: at 360 its last line stood 31.75px below the one above it in a 19.5px caption, and the
+   caption was 151px beside a 173px picture. The link's box is the caption's line now (it is an inline link in a
+   sentence, the exception WCAG 2.5.5 allows); its target is not that box but the figure, which the cover below makes
+   one press — 326 × 300 at 360, larger than the 74.97 × 44 box it had. The plate's chip is in the frame's bar and
+   the cards' rows are rows, not captions, so both keep their 44. */
+.frame figcaption .shot-open { min-height: 0; }
 /* The picture is the door, not only the link: the six view cards' link covers the card, and the
    graph's and the hero's plate's link covers the frame. A press on a 326 × 173 picture did nothing
    at 360; it now opens the capture. It is still one control, one name and one tab stop. */
