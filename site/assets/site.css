@@ -233,10 +233,15 @@ main:has(.hero) .section-head .eyebrow::before { counter-increment: sec; content
 .btn-row { display: flex; flex-wrap: wrap; gap: 12px; }
 
 /* The home page's index: the ledger's contents, numbered, under the hero. Two columns on a
-   phone, four from 720; every entry is 48px tall. */
+   phone, four from 720; every entry is 48px tall. A label is a flex item of the entry, so its
+   automatic minimum is its longest word: at a reader's 32px text "Questions" is 149.8px in the
+   111px beside the number, and the entry ran past the wrap (the page 19px wider than a 360 phone;
+   at 150% the number floated in the middle of a 3-line label). The entry wraps — the number above
+   its label when the two cannot share a line — and the label may break anywhere, which is what
+   lets the item shrink; at 16px the number and its label share one line and nothing moves. */
 .index { border-block: 1px solid var(--line); background: var(--panel); }
 .index ol { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); margin: 0; padding: 0; list-style: none; }
-.index a { display: flex; align-items: center; gap: 10px; min-height: 48px; padding: 0 4px; color: var(--ink2); font-size: .9375rem; font-weight: 500; text-decoration: none; }
+.index a { display: flex; flex-wrap: wrap; align-items: center; gap: 0 10px; min-height: 48px; padding: 0 4px; color: var(--ink2); font-size: .9375rem; font-weight: 500; text-decoration: none; overflow-wrap: anywhere; }
 .index a:hover { color: var(--link); }
 .index span { flex: none; min-width: 2ch; color: var(--muted); font-size: .75rem; font-weight: 600; letter-spacing: .04em; font-variant-numeric: tabular-nums; }
 @media (min-width: 720px) { .index ol { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
@@ -318,7 +323,12 @@ main:has(.hero) .section-head .eyebrow::before { counter-increment: sec; content
 .tabs label, .billing label { position: relative; display: flex; align-items: center; justify-content: center; gap: 8px; min-height: 36px; padding: 0 clamp(8px, 3vw, 20px); color: var(--ink2); font-size: 14px; font-weight: 600; white-space: nowrap; cursor: pointer; user-select: none; }
 .billing label small { color: var(--muted); font-size: 13px; font-weight: 500; }
 @media (max-width: 719px), (pointer: coarse) { .tabs label, .billing label { min-height: 44px; } }
-@media (max-width: 420px) { .billing label { flex-direction: column; gap: 0; padding: 0 12px; line-height: 1.25; } .billing label small { font-size: .75rem; } }
+@media (max-width: 420px) {
+  .billing label { flex-direction: column; gap: 0; padding: 0 12px; line-height: 1.25; }
+  /* A control's sub-label keeps its 12px layout size, as the billing labels keep their 14px: at a reader's 32px
+     text this was 24px, and "saves about 17%" made the switch 337.6px wide in a 320 phone's 288. */
+  .billing label small { font-size: 12px; }
+}
 .tab-input:nth-of-type(2):checked ~ .tabs::before, .billing-input:nth-of-type(2):checked ~ .billing::before { transform: translateX(100%); }
 .tab-input:nth-of-type(3):checked ~ .tabs::before { transform: translateX(200%); }
 .tab-input:focus-visible ~ .tabs, .billing-input:focus-visible ~ .billing { outline: 2px solid var(--accent); outline-offset: 2px; }
@@ -414,11 +424,13 @@ main:has(.hero) .section-head .eyebrow::before { counter-increment: sec; content
    six views are one snap row with the next one showing, not six screens of scroll. */
 /* The six views are one snap row on a phone; this is its page index: six 44px tabs that also
    jump to a card, so a reader can reach the last view without five swipes. It is not shown where
-   the cards are a grid and every one is already on screen. */
+   the cards are a grid and every one is already on screen. At a reader's 32px text a tab is 51.4px
+   wide and the six need 328.4px of a 320 phone's 288: the row takes a second line instead of the
+   page taking a sideways scroll. At 16px the six are 284px and stay one line. */
 .row-index { display: none; }
 @media (max-width: 719px) {
   .row-index { display: block; margin: -4px 0 12px; }
-  .row-index ol { display: flex; gap: 4px; list-style: none; }
+  .row-index ol { display: flex; flex-wrap: wrap; gap: 4px; list-style: none; }
   .row-index a { display: inline-flex; align-items: center; justify-content: center; min-width: 44px; min-height: 44px; padding: 0 8px; border: 1px solid var(--line); border-radius: var(--k-r-sm); background: var(--panel); color: var(--ink2); font-size: .75rem; font-weight: 600; text-decoration: none; font-variant-numeric: tabular-nums; }
   .row-index a:hover { border-color: var(--k-line-control); color: var(--link); }
 }
@@ -534,8 +546,13 @@ main:has(.hero) .section-head .eyebrow::before { counter-increment: sec; content
 /* the closing band: deep, with the glow */
 .cta { position: relative; isolation: isolate; background: var(--deep); color: var(--on-deep); }
 .cta::after { content: ""; position: absolute; inset: 0; z-index: -1; background: var(--k-glow); pointer-events: none; }
+/* The band's children are grid items with automatic minimums, so at a reader's 32px text the h2's
+   longest word ("workspace," is 358.7px at 56px) set its column to 340.8px in a 320 phone's 288px
+   wrap, and the page was 39px wider than the screen. A grid's child may be narrower than its content,
+   as .cols > * already says; the heading's own break-word rule then takes the word that cannot fit. */
 .cta .wrap { display: grid; gap: 0 64px; }
 .cta .btn-row { margin-top: 28px; }
+.cta .wrap > * { min-width: 0; }
 .cta h2 { max-width: 20ch; }
 .cta .lede { margin-top: 16px; color: color-mix(in srgb, var(--on-deep) 74%, transparent); }
 .cta :focus-visible { outline-color: var(--on-deep); }
@@ -552,6 +569,10 @@ main:has(.hero) .section-head .eyebrow::before { counter-increment: sec; content
 .foot-brand { grid-column: 1 / -1; max-width: 22rem; }
 .foot-brand p { margin: 14px 0 0; color: var(--ink2); }
 .foot-brand .foot-contact { margin-top: 8px; color: var(--muted); font-size: .875rem; }
+/* The address is the one unbreakable word in the footer: at a reader's 32px text it was 305.9px in a
+   320 phone's 288, so the page was 17.9px wider than the screen. It breaks where it must, as the
+   contact page's own address rows do; at 16px it is 153px and nothing wraps. */
+.foot-contact { overflow-wrap: anywhere; }
 .foot-contact a { display: inline-flex; align-items: center; min-height: 44px; color: var(--ink); }
 .foot-col h2 { margin: 0 0 6px; color: var(--ink); }
 .foot-col ul { display: grid; }
@@ -622,7 +643,11 @@ body:has(#billing-monthly:checked) .head-price-monthly { display: inline; }
 .glance-list li { display: grid; grid-template-columns: 40px minmax(0, 1fr); align-content: start; gap: 2px 16px; }
 .glance-list .mark { grid-row: 1; }
 .glance-list h3 { font-size: 1.0625rem; line-height: 1.3; }
-.glance-list h3 a { display: inline-block; padding: 12px 0; color: var(--ink); text-decoration: none; }
+/* The title's link is an inline-block, whose width is its longest word: at a reader's 32px text
+   "environment" is 300px and the answer's title reached 333.1px in a 320 phone's 232px column, so the
+   page was 13.1px wider than the screen. It may be no wider than its column, and the heading's
+   break-word rule then takes the word; at 16px it is inside the column already. */
+.glance-list h3 a { display: inline-block; max-width: 100%; padding: 12px 0; color: var(--ink); text-decoration: none; }
 .glance-list h3 a:hover { color: var(--link); }
 /* The answer uses the box's width, not the 222px beside its mark: at 360 the three answers took 566px in the 278 column and
    two of them ran a line longer than the words need (measured at 320 too: 182 → 238, 96px saved). The mark and its title
@@ -820,7 +845,10 @@ body:has(#billing-monthly:checked) .head-price-monthly { display: inline; }
 .teaser li { display: flex; flex-direction: column; gap: 6px; padding: 24px; background: var(--panel); }
 .teaser p { margin: 0; }
 .teaser h3 { color: var(--ink2); font-size: .9375rem; letter-spacing: 0; }
-.teaser .amount { font-size: 2.25rem; font-weight: 650; line-height: 1.1; letter-spacing: var(--k-track-display); font-variant-numeric: tabular-nums; }
+/* A figure is no wider than the card that holds it: at a reader's 32px text "Let's talk" is 351.2px and the card
+   clipped 83px of it at 320 (43 at 360, 13 at 390). It wraps at its space instead; at 16px it is 175.6px in a 252px
+   line and nothing wraps. */
+.teaser .amount { max-width: 100%; font-size: 2.25rem; font-weight: 650; line-height: 1.1; letter-spacing: var(--k-track-display); font-variant-numeric: tabular-nums; }
 .teaser .per, .teaser .limits { color: var(--muted); font-size: .875rem; line-height: 1.45; }
 .teaser .limits { margin-top: auto; padding-top: 12px; border-top: 1px solid var(--line); font-variant-numeric: tabular-nums; }
 /* On a phone the four plans are four rows of one rate card, not four cards: the name and its
