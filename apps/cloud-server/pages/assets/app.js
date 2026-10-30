@@ -24,11 +24,11 @@
 
   const NEEDS = {
     home: ["bar-say", "plans", "topups"],
-    signup: ["bar-say", "card", "form", "status", "title", "lede", "email", "password", "agree", "agree-error"],
-    login: ["bar-say", "form", "status", "email", "password", "resend-form", "resend", "resend-wait", "resend-status"],
+    signup: ["bar-say", "card", "form", "status", "title", "lede", "email", "email-error", "password", "password-error", "agree", "agree-error"],
+    login: ["bar-say", "form", "status", "email", "email-error", "password", "password-error", "resend-form", "resend", "resend-wait", "resend-status"],
     verify: ["bar-say", "status", "title", "again", "resend-form", "resend", "resend-wait", "resend-status", "email"],
-    forgot: ["bar-say", "form", "status", "email"],
-    reset: ["bar-say", "card", "form", "status", "title", "lede", "ask", "password"],
+    forgot: ["bar-say", "form", "status", "email", "email-error"],
+    reset: ["bar-say", "card", "form", "status", "title", "lede", "ask", "password", "password-error"],
     account: ["bar-say", "who", "notice", "retry-row", "skeleton", "glance", "glance-list", "subnav", "settings-panel", "stage", "stage-steps", "stage-title", "stage-text", "stage-status", "stage-actions", "stage-live", "workspaces-panel", "workspaces", "create-slot", "create-box", "create", "workspace-name", "create-plan-field", "workspace-plan", "create-note", "plan-panel", "plan-h", "plan-status", "plan", "balance-panel", "usage-panel", "usage-h", "usage-say", "figures", "topup-fail", "topup-details", "topup", "topup-amount", "topup-unit", "topup-hint", "topup-status", "topup-add", "topup-options", "usage", "password-form", "password-status", "current", "next"],
     terms: ["bar-say"],
     privacy: ["bar-say"],
@@ -446,8 +446,25 @@
     node.textContent = said;
   }
 
+  /** A field's refusal is answered by the next one: the mark, the description and the sentence all go together, so two fields are never refused at once. */
+  function unrefused(field) {
+    field.removeAttribute("aria-invalid");
+    if (field.dataset.describedby !== undefined) {
+      if (field.dataset.describedby) field.setAttribute("aria-describedby", field.dataset.describedby);
+      else field.removeAttribute("aria-describedby");
+      delete field.dataset.describedby;
+    }
+    if (field.dataset.refused) {
+      const note = doc.getElementById(field.dataset.refused);
+      if (note) say(note, "", "");
+      delete field.dataset.refused;
+    }
+  }
+
   /** A field that cannot be sent as it is: say why, mark it, and put the cursor in it. Returns false, so a check can `return invalid(...)`. */
   function invalid(input, status, text) {
+    // The sentence is said in the field's own block, so the last field's sentence stops when this one starts.
+    for (const field of doc.querySelectorAll("[data-refused]")) if (field !== input) unrefused(field);
     say(status, "bad", text);
     input.setAttribute("aria-invalid", "true");
     // The reason stays with the field, not only in the live region: the cursor is about to land there, and a reader who comes back
@@ -856,10 +873,10 @@
 
   // ---- signing up and in ----
 
-  function checkEmailAndPassword(email, password, status, o = {}) {
-    if (!email.value.trim()) return invalid(email, status, "Enter your email address.");
-    if (!password.value) return invalid(password, status, "Enter your password.");
-    if (o.chosen && password.value.length < 10) return invalid(password, status, "Choose a password of at least 10 characters.");
+  function checkEmailAndPassword(email, password, emailNote, passwordNote, o = {}) {
+    if (!email.value.trim()) return invalid(email, emailNote, "Enter your email address.");
+    if (!password.value) return invalid(password, passwordNote, "Enter your password.");
+    if (o.chosen && password.value.length < 10) return invalid(password, passwordNote, "Use at least 10 characters.");
     return true;
   }
 
@@ -881,7 +898,7 @@
     focusFirst(email);
     onSubmit($("form"), status, async () => {
       say(status, "", "");
-      if (!checkEmailAndPassword(email, password, status, { chosen: true })) return;
+      if (!checkEmailAndPassword(email, password, $("email-error"), $("password-error"), { chosen: true })) return;
       if (!$("agree").checked) return invalid($("agree"), $("agree-error"), "Tick the box to continue.");
       const address = email.value.trim();
       // The link's life is the service's own, filled into the line above by paintPolicy; it is read before retitle clears that line.
@@ -890,8 +907,8 @@
       const r = await call("POST", "/api/signup", { email: address, password: password.value });
       if (!r.ok) {
         // A refusal that is about a field puts the cursor there: that is where the next try starts.
-        if (r.error.code === "invalid_email") invalid(email, status, r.error.message);
-        else if (r.error.code === "weak_password") invalid(password, status, r.error.message);
+        if (r.error.code === "invalid_email") invalid(email, $("email-error"), r.error.message);
+        else if (r.error.code === "weak_password") invalid(password, $("password-error"), r.error.message);
         else say(status, "bad", r.error.message);
         return;
       }
@@ -934,7 +951,7 @@
     if (new URLSearchParams(location.search).get("signedout") === "1") say(status, "", "You are signed out. Sign in to see your account.");
     onSubmit($("form"), status, async () => {
       say(status, "", "");
-      if (!checkEmailAndPassword(email, password, status)) return;
+      if (!checkEmailAndPassword(email, password, $("email-error"), $("password-error"))) return;
       const r = await call("POST", "/api/login", { email: email.value.trim(), password: password.value });
       if (r.ok) {
         location.assign(nextPath(location.search));
@@ -998,7 +1015,7 @@
     focusFirst(email);
     onSubmit($("form"), status, async () => {
       say(status, "", "");
-      if (!email.value.trim()) return invalid(email, status, "Enter your email address.");
+      if (!email.value.trim()) return invalid(email, $("email-error"), "Enter your email address.");
       const r = await call("POST", "/api/forgot", { email: email.value.trim() });
       say(status, r.ok ? "ok" : "bad", r.ok ? r.data.message : r.error.message);
       // The link is what the reader waits for now, and the rail says so.
@@ -1040,11 +1057,11 @@
     });
     onSubmit($("form"), status, async () => {
       say(status, "", "");
-      if (password.value.length < 10) return invalid(password, status, "Choose a password of at least 10 characters.");
+      if (password.value.length < 10) return invalid(password, $("password-error"), "Use at least 10 characters.");
       const r = await call("POST", "/api/reset", { token, password: password.value });
       if (!r.ok) {
         if (r.error.code === "invalid_token") dead(r.error.message).focus();
-        else if (r.error.code === "weak_password") invalid(password, status, r.error.message);
+        else if (r.error.code === "weak_password") invalid(password, $("password-error"), r.error.message);
         else say(status, "bad", r.error.message);
         return;
       }
@@ -2359,7 +2376,7 @@
       const next = $("next");
       say(status, "", "");
       if (!current.value) return invalid(current, status, "Enter your current password.");
-      if (next.value.length < 10) return invalid(next, status, "Choose a new password of at least 10 characters.");
+      if (next.value.length < 10) return invalid(next, status, "Use at least 10 characters.");
       const r = await call("POST", "/api/password", { current: current.value, next: next.value });
       if (signInAgain(r)) return;
       if (!r.ok) {
@@ -2456,19 +2473,7 @@
     doc.addEventListener("input", (event) => {
       const field = event.target;
       if (!field || !field.removeAttribute) return;
-      field.removeAttribute("aria-invalid");
-      // The refusal's sentence goes with the refusal: once the field is being corrected it describes what it originally did.
-      if (field.dataset.describedby !== undefined) {
-        if (field.dataset.describedby) field.setAttribute("aria-describedby", field.dataset.describedby);
-        else field.removeAttribute("aria-describedby");
-        delete field.dataset.describedby;
-      }
-      // A sentence about this field is answered by the change to it, so it stops being said rather than describing a value that is gone.
-      if (field.dataset.refused) {
-        const status = doc.getElementById(field.dataset.refused);
-        if (status) say(status, "", "");
-        delete field.dataset.refused;
-      }
+      unrefused(field);
     });
     // A link to a place on this page gives the cursor to what it names, so a reader who follows it hears the heading they arrived at
     // and the tab key goes on from there. One the page makes later (the card at the top's way to the plans) is wired where it is made.
