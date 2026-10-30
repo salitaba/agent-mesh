@@ -2231,3 +2231,56 @@ password** pressed. Heights are `document.documentElement.scrollHeight`; positio
   47px above the input it names (2026-10-25); that form has one field and the note is beside it, so it was left.
 - **The address strip's caption row above 390, the plan's two actions at 320, the stage card's duplicate, the checkout
   stand-in and the prose-only 19px links are untouched.** They are the earlier entries.
+
+## 2026-10-30: the address strip is one row on a phone
+
+Same harness: Chromium 156 through `playwright-core` against this worktree's trial (`trial --port 7511`, whose plans are the
+trial's own fixtures), 320 / 360 / 390 / 720 / 768 / 1440 in light and 360 in dark, `prefers-reduced-motion: reduce`, a touch
+pointer below 721, and axe-core 4.14 over nine views. "Before" is the base commit's own `app.css`, restored and served by the
+same trial and measured again today in the same frame: a Team account with one running workspace named Research, at 360 × 800
+and scroll 620. Heights are `document.documentElement.scrollHeight`; positions are `getBoundingClientRect` plus `scrollY`.
+
+- **A workspace's address, its caption and Copy share one row on a 360 phone.** The strip was **88.19px**: `Address` took a
+  328px line of its own at y = 225.66, the 13px host sat at 258.14 in a 254.95px chip, and `Copy` (65.05 × 44) at 248.84. At
+  360 and wider the caption is the first thing on the host's row, the gap is the record's **4px**, and the host is the
+  caption's **12px**: the strip is **65px**, `Address` is 47.8 × 19.19 at 238.06, the host is 207.16 × 23.56 at 235.88 and
+  `Copy` is unchanged at 278.95, 225.66.
+- **The record is 23.19px shorter and the page 2,072 → 2,048px.** The workspace's row is **239.19 → 216**, the plan-full note
+  314.84 → **291.66**, `02 Plan` 1,019.63 → **996.44**, `03 Usage` 1,329.91 → **1,306.72**, `04 Balance` 1,613.34 →
+  **1,590.16** and `05 Settings` 1,907.61 → **1,884.42**. At 390 the page is **2,027 → 2,004** and at 720 **1,762 → 1,739**.
+- **A 320 phone keeps the caption's row, because the three need 328px of its 288px line.** It is the same 88.2px strip and
+  the same 2,242px page there; the host stays 13px and on one line. At 768 and 1,440 the strip is still the 53px desktop
+  line, unchanged. No word, address or control was lost: `Copy` is 65.05 × 44 at 360 and 44 tall at every phone width.
+- **Widths, schemes and the floor.** 320 / 360 / 390 / 720 / 768 / 1440 in light and 360 in dark: no sideways page scroll
+  (320: 320; 360: 360; 390: 390; 720: 720; 768: 768; 1440: 1440), no text under **12px**, and no control under 44 × 44 below
+  721. **9 axe-core runs** (320, 360 light, 360 dark, 390, 720, 768, 1440 light, 1440 dark and 360 forced colours) find
+  **no violation**, and the console is clean.
+- **The budget.** `app.css` is **40,946 → 40,935 bytes of 40,960** (a net **−11**). The rule is paid for by eight
+  comments that only named the rule under them ("Figures line up.", "Three facts.", "Price first.", "The balance.", "No
+  result.", "The skeleton.", "Money is ruled." and "Caption, then host and Copy."). Twenty-five bytes remain.
+- **Tests.** `dist/tests/cloud/pages*.test.js` — **130 pass, 0 fail**; the whole suite — **6,407 pass, 0 fail**, 2 skipped;
+  typecheck clean. `pages.test.ts` pins the inline caption at `min-width: 360px`, the 4px gap, the 12px host and the
+  `max-width: 720px` fallback that gives 320 its caption row.
+
+| measured at 360, light | before | after |
+| --- | --- | --- |
+| The address strip | 88.19px: caption 328 × 19.19 at 225.66, host at 258.14, Copy at 248.84 | **65px**: caption 47.8 at 238.06, host 207.16 at 235.88, Copy at 225.66 |
+| The workspace's row | 239.19px | **216** |
+| The account page | 2,072px | **2,048** |
+| … at 390 / 720 | 2,027 / 1,762 | **2,004 / 1,739** |
+| … at 320 / 768 / 1,440 | 2,242 / 2,008 / 2,045 | **2,242 / 2,008 / 2,045** |
+| The host's type | 13px | **12px** (13px at 320, 768 and 1,440) |
+| axe-core, 9 views | — | **0** |
+| `app.css` | 40,946 bytes | **40,935** |
+
+### What this pass leaves
+
+- **The host is 12px from 360 to 720.** That is the caption's size and the floor; at 320 it stays 13px because the caption
+  keeps its own row, and at 768 and 1,440 it is 13px again. The address is the thing a person copies, and it is one step
+  down on the phone for the 23px the caption's row cost.
+- **A 320 phone gains nothing.** The three things need 328px and the page has 288; the caption's row is the better trade
+  there, and the 2026-10-29 workspaces pass's one-line host at 320 is kept.
+- **A long host wraps inside its chip rather than pushing `Copy` off the row.** At 360 a 55-character host makes the strip
+  82.9px, not 65: the chip takes the three lines it needs and `Copy` stays at the end. No address is cut.
+- **The stage card's duplicate, the checkout stand-in and the prose-only 19px links are unchanged.** They are the earlier
+  entries.
