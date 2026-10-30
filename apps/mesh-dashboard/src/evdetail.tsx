@@ -107,12 +107,15 @@ export function EventDetail({
 
   return (
     <div className="evd">
+      {/* The title row is the pane's head and sits outside `.evd-head` so it can stick to the pane's top for the whole scroll
+          (a sticky box stops at its own containing block). Its margin cancels the wider gap it now inherits, so the meta line
+          is where it always was. */}
+      <div className="evd-title">
+        <span className={`evd-tile ${sev}`}><SevMark s={sev} /></span>
+        <h3>{plainEvent(e.type, e.payload)}</h3>
+        <IconButton icon="x" label="Close event detail" title="Close (Esc)" onClick={onClose} />
+      </div>
       <div className="evd-head">
-        <div className="evd-title">
-          <span className={`evd-tile ${sev}`}><SevMark s={sev} /></span>
-          <h3>{plainEvent(e.type, e.payload)}</h3>
-          <IconButton icon="x" label="Close event detail" title="Close (Esc)" onClick={onClose} />
-        </div>
         <p className="evd-meta">
           <time dateTime={e.timestamp} title={`${localDateTime(e.timestamp)} (${e.timestamp})`}>{localTime(e.timestamp)} {zoneLabel()}</time>
           <span>{ago(e.timestamp)}</span>

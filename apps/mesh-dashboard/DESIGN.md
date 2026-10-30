@@ -119,6 +119,14 @@ Breakpoints: **1280 1100 900 800 760 620 560**. 800 is the sidebar drawer (JS
   lights as a whole band when pointed at or reached by the keyboard; the one
   control it carries keeps its own name, its 44 px box and its single tab stop
   (2026-10-29).
+- An open event is the page on a phone. Below 900 the stream is hidden while an
+  event is open, so the log's search bar and filter fold go with it — they narrow
+  a list that is not on screen, and pressing Filters open there grew a 262 px panel
+  and left the event 258 px of the 736 px view. The pane takes their height, and
+  its title row — the kind, its mark and Close — sticks to the pane's top, bleeding
+  by the pane's own gutter as a drawer's head does, so the way back is one press at
+  any scroll (at 360 the close was 1,036.6 px above the pane at its end). A desk
+  keeps the list beside the pane and keeps the tools (2026-10-30).
 - A drawing is not a set of controls where a mark cannot be a target. The Steps
   timeline's 28 marks are 4–18 px wide: on the phone layout (620 and below) or a
   coarse pointer they are spans, and a 12 px line under the axis says the turn is
@@ -227,6 +235,49 @@ Breakpoints: **1280 1100 900 800 760 620 560**. 800 is the sidebar drawer (JS
 8. Check the frame's safe-area claims on a notched device in both orientations; the insets are in the CSS but the stand-in browser reports them as zero.
 
 ## Pass log
+
+### 2026-10-30 — an open event is the page on a phone, and its close stays in reach
+
+Surface: `views/events.css` (the 900 block and the pane's own gutter) and `evdetail.tsx` (the title row moved out of the head so
+it can stick for the whole scroll), with one new rule in `tests/dashboard/events-phone.test.ts`. Measured on the scripted demo
+at **Delivered** (491 events, 300 in the first bucket; event #98, "tech-lead approved the architecture in payment-architecture")
+in the production build, Chromium over CDP at 320/360/390/620/768/900/1440 in light and at 360 in dark, a touch pointer at 768
+and below, reduced motion, axe-core at 360 and 768 in both schemes. Before and after are the **same delivered mission**, served
+from two builds in one session (the dashboard's `dist` swapped under a running server, `cache-control: no-cache`); both
+360 × 800 frames are `#/events` with the same event open, the pane at `scrollTop` 480 and the mission-delivered notice
+dismissed on both.
+
+- **The log's search and filters sat above a log that was not on screen.** Below 900 an open event hides the stream
+  (`display: none`), and the search row (44 px at 360, **96 at 320**) and the filter fold (112 px at 768, 114.5 at 900) stayed.
+  They narrow a list nobody can see: driven at 360 on the base build, pressing **Filters** open grew a 262 px panel and left the
+  event **258 px** of the 736 px view. With the split they step aside: the pane is **532 → 586** at 360, **442.9 → 548.9** at
+  320, **429 → 607** at 768 and **434.5 → 607** at 900, and its content (1,583 px here) is read in a 530 → 584 px window.
+- **The way back was at the top of that pane.** At 360 the pane held 1,583 px of content in 530, and the title row — the kind,
+  its mark and Close — scrolled with it: at the pane's end (`scrollTop` 1,053) the close was **1,036.6 px above the pane's top**
+  and 796.6 px above the top of the screen. The row sticks now, bleeding by the pane's own gutter as a drawer's head does: the
+  close is at **y = 202.4** at `scrollTop` 480 and at the pane's end (999) as at 0. Its margins cancel its padding, so nothing
+  moves at rest — at 360 the meta line is 255.8 with the pane at 186 as it was 309.8 with the pane at 240, and the thread's
+  first row 650 (464 into the pane) as it was 704 (464 into the pane).
+- **The desk does not move.** 1,440 keeps the list beside the pane: the pane **478.3** at y = 293.7, the title 310.7, the meta
+  354.7, the thread 612.3 and the close at x = 1,355 — identical to the pixel in both builds, tools and facets still above both
+  panes (a desk's pane still scrolls its title away; the list is beside it and Escape closes it). 620 and 390 gain the search
+  row (553 → 607 and 532 → 586); 320 gains **106** px (its 96 px tool bar and the row's margin) and 768 **178** (44 + 112 plus
+  the two margins).
+- **Nothing is lost, and the floors hold.** The search, the Filters button, its count and the chips are still in the page and
+  come back when the event closes; the close keeps its name ("Close event detail"), its 44 × 44 box and its one press. **0** axe
+  violations on the open pane at 360/768 light and dark (23 rules passed each) and on the closed page at 360 (24); no document
+  or `#view` sideways scroll at any width; the pane's smallest text is 12; one console error in both halves (the one-mesh
+  `/api/projects` 404).
+
+Suite: typecheck and build clean; `dist/tests/dashboard` **1,192 pass, 0 fail**, with the new `events-phone.test.ts` (each of
+its three rules mutation-checked: the `:has` rule removed, then `sticky` put back to `relative`, each failed its rule and was
+restored); `npm test` **6,416 tests, 6,414 pass, 0 fail, 2 skipped**; eslint on the changed `.tsx` and the new test 0 errors
+(the stylesheet is not in eslint's config).
+
+**Left.** A reader who wants to search the log while an event is open must close the event first — one press, now always in
+reach. The sticky band keeps the pane's top 66 px at 360 (14 + the 46.8 px two-line kind + 8), which is the row that was
+already there and is now painted with a hairline. A desk's pane still scrolls its title away, by choice; whether the desk
+should keep its title too is a reading question the list beside it answers.
 
 ### 2026-10-30 — a phone's page head stays one line, and the Events log starts 37 px higher
 
