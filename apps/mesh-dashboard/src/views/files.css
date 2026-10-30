@@ -23,10 +23,13 @@
 .files-bar .seg button { white-space: nowrap; }
 .files-latest { display: inline-flex; align-items: center; }
 
-/* On a phone the search keeps its own row and the three filters sit behind one button that counts the ones that are on. Without
-   it the filter block was 202 px tall at 360 px: search, type and two rows of status chips before the first file. */
+/* On a phone the three filters sit behind one button that counts the ones that are on, and that button shares the search's row
+   while the two fit. Without the fold the filter block was 202 px tall at 360 px: search, type and two rows of status chips before
+   the first file. With the search on a row of its own the button still took a second 44 px row and the first group began at 281.6;
+   at 360 the search takes 220.5 px, the 103.5 px button and their 12 px gap are 336 px exactly, and the first group begins at 229.6
+   (the first file 52 px higher, one more row of it on the screen). At 320 the search keeps its line whole and the button takes the next: the two do not fit. */
 @media (max-width: 620px) {
-  .files-bar .srch { flex: 1 0 100%; max-width: none; }
+  .files-bar .srch { max-width: none; }
   .files-bar .files-filters-toggle { flex: none; }
   .files-filters { display: grid; flex: 1 1 100%; gap: var(--s2); }
   .files-bar .files-filters select.sel { flex: none; width: 100%; max-width: 100%; }

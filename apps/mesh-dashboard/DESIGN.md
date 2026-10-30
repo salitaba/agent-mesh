@@ -200,6 +200,10 @@ Breakpoints: **1280 1100 900 800 760 620 560**. 800 is the sidebar drawer (JS
 - The Playground now leads with its terminal and puts the product card after the output. That is a deliberate reversal of the
   2026-10-22 "product first" reading for this one page: the page's own action was at the foot of the first screen. If real use
   says the product should lead there too, the card costs 487 px above the command box and the measurement is in this entry.
+- The Files bar is 44 px at 360 and 390 and 96 at 320: 220 + 103.52 + 12 = 335.5 in 296, so the button keeps the line under the
+  search there. The search's hint now reads "Name, owner,..." at 360; the next words decision is whether the 320 edge should
+  shorten the hint rather than give the button a row, or whether the button should be a 44 px glyph (which would keep the hint at
+  360 and 390).
 
 ## What the next pass should take
 
@@ -217,6 +221,35 @@ Breakpoints: **1280 1100 900 800 760 620 560**. 800 is the sidebar drawer (JS
 8. Check the frame's safe-area claims on a notched device in both orientations; the insets are in the CSS but the stand-in browser reports them as zero.
 
 ## Pass log
+
+### 2026-10-30 — a phone's Files filters share the search's row, and the first file is 52 px higher
+
+Surface: `views/files.css` (the 620 phone block) and one rule in `tests/dashboard/files-phone.test.ts`. Measured on the scripted
+demo at **Delivered** (9 files: 3 approved or merged, 6 in review) in the production build, Chromium over CDP at
+320/360/390/768/1440 in light and 360/1440 in dark, a touch pointer at 768 and below, reduced motion, axe-core at the same
+widths. Before is the base build from this worktree; after is this branch, delivered again because the demo was restarted for the
+new build: the file ages read 35m in the before frame and 1m in the after, and the same nine files are listed in both.
+
+- **The Files bar is one 44 px row at 360 and 390.** The search and the counted Filters button were two rows: the search 336 px
+  (366 at 390) on its own line, the **103.52 × 44** button alone at y = 221.59 with 232 px of dead ground beside it. The search now
+  takes a 220 px basis (220.48 at 360, 250.48 at 390) and the button sits beside it at x = 244.48 (274.48): the bar is
+  **96 → 44**, the first group, "Approved and merged 3", begins **281.59 → 229.59**, the first file is 52 px higher, and the page
+  is **1,135 → 1,083**. The first screen keeps the same nine files but 52 px more of the sixth row.
+- **At 320 the two do not fit, and the button keeps its row.** 220 + 103.52 + 12 = 335.5 px in 296: the search keeps its 296 px
+  line, the button takes the 44 px line under it, the group begins at 281.59 and the page is **1,259**, as before. The rule is the
+  search's own `max-width` over the base 220/200 basis; there is no 320 special case.
+- **768 and 1,440 are outside the 620 query and do not move** (954 and 926 px; the bars 104 and 52). Dark at 360 reads the same
+  geometry; the type stays on the ramp (the smallest word on the page is 12), no control is under 44 × 44 at 320/360/390, and
+  neither the document nor `#view` scrolls sideways at any width.
+- **The cost is the search's hint.** The field's text area is 130.48 px at 360, so "Name, owner, type or path" reads
+  **"Name, owner,..."** (at 390, "Name, owner, type..."). The field's name is still "Search files", the page's lede still says
+  "copy its path", and the search accepts all four; Events' 232 px search has already been read the same way ("Messages, ag...").
+- **The controls are unchanged.** The button is still 103.52 × 44, with its word and count ("Filters (2)" with two on), its
+  `aria-expanded`/`aria-controls` and its full-width panel; the search is the same 16 px field with its clear button. axe-core
+  finds **0** violations at 320/360/390/768/1,440 light and 360/1,440 dark (25/25/25/27/30 rules passed).
+
+Suite: typecheck and build clean; `dist/tests/dashboard` **1,185 pass, 0 fail**, with one rule rewritten in
+`files-phone.test.ts` to the shape this entry describes.
 
 ### 2026-10-29 — a phone's Steps timeline is a drawing, and each turn is a row
 

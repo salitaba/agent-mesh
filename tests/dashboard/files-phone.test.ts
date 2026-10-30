@@ -34,7 +34,12 @@ test("one \"Latest of each name\" switch, with the other filters, at every width
   assert.match(tsx, /filtersOpen \? <div className="files-filters" id="files-filters">\{filterControls\}<\/div> : null/, "opening the button renders the same controls");
 });
 
-test("the phone filter block gives the search its own row", () => {
-  assert.match(css, /@media \(max-width: 620px\)[\s\S]*?\.files-bar \.srch \{ flex: 1 0 100%; max-width: none; \}/, "the search owns the first row");
+test("the phone filter block shares the search's row while the two fit", () => {
+  // At 360 the search is 220.5 px, the counted button 103.5 px and the gap 12: 336 px, so the button no longer owns a second
+  // 44 px row and the first group begins at 229.6 instead of 281.6. At 320 the search keeps the line (296 px) and the button takes
+  // the next, as before. The fold itself is unchanged: the panel is still one full-width column under both.
+  assert.match(css, /\.files-bar \.srch \{ flex: 1 1 220px; min-width: 200px; \}/, "the search takes a 220px basis and gives way to the button");
+  assert.match(css, /@media \(max-width: 620px\)[\s\S]*?\.files-bar \.srch \{ max-width: none; \}/, "on a phone the search may grow into the row it shares");
+  assert.match(css, /\.files-bar \.files-filters-toggle \{ flex: none; \}/, "the button keeps its own width so the search gives way");
   assert.match(css, /\.files-filters \{[^}]*display: grid/, "the folded controls stack in one column");
 });
