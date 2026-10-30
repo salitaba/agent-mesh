@@ -859,12 +859,21 @@ body:has(#billing-monthly:checked) .head-price-monthly { display: inline; }
 .doc-card h3, .start h3 { font-size: 1.1875rem; line-height: 1.3; }
 /* Start here: four cards, or three without Curule Cloud; a card's rows are its neighbours' rows. */
 .starts { gap: 0 16px; }
-.start { display: grid; grid-row: span 5; grid-template-rows: subgrid; margin-bottom: 16px; }
+/* A place to start is one press across its card, as a view card is. At 360 the card is 328 × 356.08 and its one
+   link 173.8 × 45.59 — 6.8% of it — so a press on the card's title (the name it is for), on its description or on
+   its path did nothing, though a card is a surface for something a person acts on. The link's pseudo-element covers
+   the card, and the link is a line of the card now (25.59, its own 16px line) rather than a 45.59px control inside
+   it: the cover is the target, as the graph's figure is for its caption's link, so the press is the card and no
+   press is smaller; each of the four cards is 20px shorter. The Cloud card's inline "Sign up" is a link of its own
+   above the cover, so the card does not swallow it: one link, one name and one tab stop for each. */
+.start { position: relative; display: grid; grid-row: span 5; grid-template-rows: subgrid; margin-bottom: 16px; }
 .start > .mark { margin-bottom: 10px; }
 @media (min-width: 600px) { .starts { grid-template-columns: var(--c2); } }
 @media (min-width: 1160px) { .starts { grid-template-columns: var(--c4); } .starts:has(> .start[hidden]) { grid-template-columns: var(--c3); } }
 .start-doc { margin: 0; }
-.start-doc .arrow-link { font-size: 1rem; }
+.start-doc .arrow-link { padding: 0; font-size: 1rem; }
+.start-doc .arrow-link::before { content: ""; position: absolute; inset: 0; }
+.start p a:not(.arrow-link) { position: relative; }
 .start-meta { display: grid; justify-items: start; gap: 6px; margin: auto 0 0; padding-top: 6px; }
 .start .path { font: .75rem/1.4 var(--mono); overflow-wrap: anywhere; }
 .doc-list { margin-top: 12px; }
