@@ -495,6 +495,12 @@ span.caret { color: var(--ok); animation: blink 1s steps(1) infinite; }
   .sv-jump { flex-wrap: wrap; }
   .sv-jump-b { flex: 0 1 auto; min-width: 0; padding: 0 var(--s1); }
   .sv-jump-n { display: none; }
+  /* The step's drawer is the one panel that kept a desk width on a phone: `:has(.stepv)`'s 96vw outranks the phone's 100vw,
+     so 12.8–15.6px of a page that cannot be read peeked beside it, and its sticky head — drawn with the desk's 22px bleed —
+     ran 6px past the drawer's edge on both sides. That gave the drawer 6px of sideways scroll and left its 1px rule as a 6px
+     stub on the scrim. The head now bleeds by the phone drawer's own 16px and sticks from the notch, as the shared head does. */
+  .drawer:has(.stepv) { width: 100vw; max-width: 100vw; }
+  .sv-head { top: calc(-1 * (var(--s5) + env(safe-area-inset-top))); margin: calc(-1 * (var(--s5) + env(safe-area-inset-top))) calc(-1 * var(--s4)) 0; padding: var(--s3) var(--s4) 0; padding-top: calc(var(--s3) + env(safe-area-inset-top)); }
 }
 
 /* ---- A phone's drawer presses at 44 px ----

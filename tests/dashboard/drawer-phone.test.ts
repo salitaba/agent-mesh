@@ -67,3 +67,27 @@ test("a stop a person cannot see is not one: the body draws the panel's focus ri
   assert.match(drawersCss, /#drawer pre:focus-visible \{[^}]*outline:\s*2px solid var\(--k-accent\)/, "a focused body is ringed in the accent, as the drawer's rows are");
   assert.match(drawersCss, /#drawer pre:focus-visible \{[^}]*outline-offset:\s*-2px/, "inside the box, so the drawer's scroll does not clip it");
 });
+
+test("a phone's step drawer is the whole screen, and its head meets its edges", () => {
+  // Measured in the running console on the delivered demo with the first turn open. At 360 the drawer was 345.6 px at x = 14.4:
+  // the `:has(.stepv)` desk rule's 96vw outranked the phone's 100vw, so a page that cannot be read peeked beside it. Its sticky
+  // head was 357.6 px at x = 8.4 — 6 px past the drawer on both sides — because the head's -22 px bleed was written for the desk's
+  // 22 px padding while the phone drawer pads by 16. The drawer scrolled 6 px sideways (scrollWidth 352 in a 346 client) and the
+  // head's 1 px rule ran 6 px onto the scrim. 320: 307.2 / 319.2, 390: 374.4 / 386.4; 768 (737.3 / 736.3) and 1440 (1,180 / 1,179)
+  // already met their edges. After: the drawer and head are 320 / 360 / 390 at x = 0, no overhang and no sideways scroll, and the
+  // body's content is 288 / 328 / 358 (was 275.2 / 313.6 / 342.4).
+  const phone = phoneBlocks(drawersCss).join("\n");
+  const width = /\.drawer:has\(\.stepv\)\s*\{([^}]*)\}/.exec(phone);
+  assert.ok(width, "the phone block sets the step drawer's own width");
+  assert.match(width![1]!, /(?<!-)width:\s*100vw/, "the step drawer is the screen, not the desk's 96vw");
+  assert.match(width![1]!, /max-width:\s*100vw/, "and cannot be wider");
+  const head = /\.sv-head\s*\{([^}]*)\}/.exec(phone);
+  assert.ok(head, "the phone block sets the head's bleed");
+  assert.match(head![1]!, /margin:[^;]*calc\(-1 \* var\(--s4\)\)/, "the head bleeds by the phone drawer's own 16 px, not the desk's 22");
+  assert.match(head![1]!, /padding:\s*var\(--s3\) var\(--s4\) 0/, "and pads by the same");
+  assert.match(head![1]!, /top:\s*calc\(-1 \* \(var\(--s5\) \+ env\(safe-area-inset-top\)\)\)/, "the head sticks from the notch, as the shared drawer head does");
+  // A desk keeps the 22 px bleed its own padding uses.
+  const desk = /^\.sv-head \{([^}]*)\}/m.exec(drawersCss);
+  assert.ok(desk, "the base head rule is still there");
+  assert.match(desk![1]!, /-22px/, "a desk keeps its 22 px bleed");
+});
