@@ -1,5 +1,5 @@
-/* One stylesheet; the scheme is the switch. */
-/* Icons: a 20-unit mask; --n the glyph, --s the size. */
+/* One stylesheet. */
+/* Icons: a 20-unit mask. */
 :root {
   color-scheme: light dark;
   --max: 1080px;
@@ -177,7 +177,7 @@ td, th, dd, .price, .num, .badge, .auth-points li::before { font-variant-numeric
 .card, .row, .plan { box-shadow: var(--k-hl), var(--k-shadow-1); }
 .stage, .row, .confirm { overflow-wrap: anywhere; }
 
-/* ---- header and footer */
+/* ---- header */
 .site-header {
   position: sticky;
   top: 0;
@@ -482,7 +482,7 @@ meter::-moz-meter-bar { border-radius: var(--k-r-pill); background: currentColor
   .auth-side { margin-top: 0; }
 }
 
-/* ---- the front page */
+/* ---- home */
 body[data-page="home"] main { background: var(--k-glow) top / 100% 520px no-repeat; }
 .home { padding-top: clamp(24px, 5vw, 56px); }
 .hero { display: grid; gap: 40px; }
@@ -537,14 +537,15 @@ body[data-page="home"] main { background: var(--k-glow) top / 100% 520px no-repe
   .section .how { grid-template-columns: 1fr 1fr; column-gap: 40px; max-width: none; }
 }
 
-/* ---- the account */
+/* ---- account */
 .account-head {
   display: flex;
   flex-wrap: wrap;
-  align-items: center;
+  align-items: baseline;
   justify-content: space-between;
-  gap: 8px 16px;
-  padding: clamp(24px, 4vw, 40px) 0 20px;
+  gap: 4px 16px;
+  padding: clamp(24px, 4vw, 40px) 0 16px;
+  border-bottom: 1px solid var(--k-line-strong);
 }
 #who { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 6px; margin: 0; font-size: .8125rem; }
 #who .who-a { color: var(--k-ink-2); font-family: var(--k-mono); overflow-wrap: anywhere; }
@@ -555,13 +556,11 @@ body[data-page="home"] main { background: var(--k-glow) top / 100% 520px no-repe
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 20px 40px;
-  padding: clamp(20px, 3vw, 32px);
-  border: 1px solid var(--k-line);
-  border-radius: var(--k-r-xl);
-  background: var(--k-surface) linear-gradient(to bottom, color-mix(in srgb, var(--k-accent) 5%, transparent), transparent 60%);
-  box-shadow: var(--k-hl), var(--k-shadow-2);
+  gap: 16px 40px;
+  padding: 24px 0 28px;
+  border: 0;
 }
+.stage-warn, .stage-bad { border-top: 3px solid var(--tone); }
 .stage-body { flex: 1 1 24rem; min-width: 0; }
 .stage h2 { margin-bottom: 6px; font-size: clamp(1.375rem, 1.2rem + .8vw, 1.75rem); }
 .stage p { max-width: 42rem; color: var(--k-ink-2); }
@@ -594,37 +593,42 @@ body[data-page="home"] main { background: var(--k-glow) top / 100% 520px no-repe
 .steps .done .num { border-color: transparent; background: var(--k-accent-soft); color: var(--k-accent-ink); }
 .steps .now { color: var(--k-ink); }
 .steps .now .num { border-color: var(--k-accent); background: var(--k-accent); color: var(--k-on-accent); }
-.glance { margin-top: 16px; }
+.glance { margin-top: 0; }
 .glance dl { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); margin: 0; border-bottom: 1px solid var(--k-line); }
-.stat { padding: 10px 0; border-top: 1px solid var(--k-line); }
+.stat { padding: 12px 0; border-top: 1px solid var(--k-line); }
 .stat dd { margin: 0; }
 .stat-v { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; margin-top: 6px !important; }
-.stat .n { font-size: 1.625rem; font-weight: 650; letter-spacing: var(--k-track-title); line-height: 1.15; }
+.stat .n { font-size: 1.875rem; font-weight: 650; letter-spacing: var(--k-track-title); line-height: 1.15; }
 .stat .u, .stat-n { color: var(--k-muted); font-size: .875rem; }
 .stat-n { margin-top: 2px !important; font-size: .8125rem; }
 .subnav {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px;
-  margin-top: 20px;
-  padding: 8px 0;
-  border-bottom: 1px solid var(--k-line);
+  gap: 0 4px;
+  margin-top: 0;
+  padding: 0;
+  border-bottom: 1px solid var(--k-line-strong);
 }
 .subnav a {
   display: inline-flex;
   align-items: center;
   flex: none;
-  min-height: 32px;
-  padding: 0 12px;
-  border-radius: var(--k-r-pill);
+  min-height: 44px;
+  gap: 8px;
+  padding: 0 10px;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
   color: var(--k-muted);
   font-size: .8125rem;
   font-weight: 600;
   text-decoration: none;
 }
-.subnav a:hover { background: var(--k-surface-2); color: var(--k-ink); }
-.subnav a[aria-current] { background: var(--k-accent-soft); color: var(--k-accent-ink); }
+.subnav a:hover { color: var(--k-ink); }
+.subnav a[aria-current] { color: var(--k-accent-ink); border-bottom-color: var(--k-accent); }
 .subnav a:focus-visible { outline-offset: -2px; }
+@media (min-width: 721px) {
+  .subnav a::before { content: attr(data-entry) / ""; color: var(--k-accent-ink); font: 650 .75rem var(--k-mono); }
+}
 .panel { margin-top: 40px; scroll-margin-top: 124px; }
 .panel > h2 { scroll-margin-top: 124px; }
 .panel > h2, .section > h2, .panel summary h2 { display: flex; align-items: center; gap: 16px; margin-bottom: 16px; font-size: 1.125rem; }
@@ -725,7 +729,6 @@ body[data-page="home"] main { background: var(--k-glow) top / 100% 520px no-repe
 }
 .topup-options .btn { flex: 1 1 0; padding-inline: 6px; border-color: transparent; background: none; box-shadow: none; white-space: nowrap; }
 .topup-options .btn:hover { border-color: var(--k-line); background: var(--k-surface); box-shadow: var(--k-shadow-1); }
-/* Credit is one line. */
 .topup > summary { display: none; }
 .topup > summary::-webkit-details-marker { display: none; }
 .topup > summary::after { --n: 7; --s: 16px; color: var(--k-muted); }
@@ -835,8 +838,10 @@ tfoot > tr > * { background: var(--k-surface-2); font-weight: 650; }
   .topup > summary { display: flex; align-items: center; justify-content: space-between; gap: 16px; min-height: 44px; margin-bottom: 8px; color: var(--k-accent-ink); font-weight: 600; cursor: pointer; list-style: none; }
   #topup-fail { margin-top: 20px; }
   #topup-add { display: none; }
-  .subnav { gap: 2px; margin-top: 12px; padding: 0; }
+  .subnav { gap: 0 2px; margin-top: 0; padding: 0; }
   .subnav a { min-height: 44px; padding: 0 6px; }
+  .stage > .btn-row { flex: 1 0 100%; }
+  .stage > .btn-row > .btn { flex: 1 1 100%; }
   .steps { column-gap: 12px; }
   .steps li::after { display: none; }
   .check label { line-height: 44px; }
