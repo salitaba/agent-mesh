@@ -3,7 +3,7 @@ import { AgentAvatar, Button, IconTile, Menu, Pill, Progress, Stat, Tooltip, age
 import { Icon, type IconName } from "../icons";
 import { budgetTone } from "../cost";
 import type { HeroAction, MissionAction, MissionControl, MissionState, NextStep } from "../mission";
-import { checkSegments, heroLook, missionClock, seatStack, splitHeadline, agentTally, type CheckMark, type ChecksSummary, type HeroNote } from "../overview-model";
+import { checkSegments, heroActions, heroLook, missionClock, seatStack, splitHeadline, agentTally, type CheckMark, type ChecksSummary, type HeroNote } from "../overview-model";
 import { rightNowRows, type RightNowInput, type RightNowKind } from "../rightnow";
 import "./overview.css";
 
@@ -182,12 +182,20 @@ function RightNow({ input, roleOf }: { input: Omit<RightNowInput, "now">; roleOf
   );
 }
 
-function Note({ note }: { note: HeroNote }): React.JSX.Element {
+/**
+ * The name of the note when a phone folds it. A delivered mission's note is the gate's sentence, and the headline directly above
+ * it already says the checks are evidenced: at 360 the two sentences were 86 px of the first screen saying one thing twice. The
+ * door names what it holds instead, and the exact wording is the body's first line.
+ */
+const NOTE_FOLD: Partial<Record<MissionState["phase"], string>> = { done: "Why this is done" };
+
+function Note({ note, foldLabel }: { note: HeroNote; foldLabel?: string }): React.JSX.Element {
   if (!note.detail.length && !note.server) return <p className="ov-note"><Icon name="info" size={14} />{note.summary}</p>;
   return (
     <details className="ov-note disc">
-      <summary>{note.summary}</summary>
+      <summary>{foldLabel ?? note.summary}</summary>
       <div className="ov-note-body">
+        {foldLabel ? <p>{note.summary}</p> : null}
         {note.detail.map((p, i) => <p key={i}>{p}</p>)}
         {note.server ? <blockquote className="ov-server"><b>The server says</b>{note.server}</blockquote> : null}
       </div>
@@ -221,6 +229,13 @@ export interface HeroProps {
   next: NextStep[];
   /** What else the mission can do, behind "...": whatever `next` does not already show. */
   secondary: MissionControl[];
+  /**
+   * The navigation is a drawer and the five daily places sit at the thumb (800 px and below): the row is one action and the
+   * rest behind "...", because the dock and the figures already carry what the quiet links said. See the pass entry in DESIGN.md.
+   */
+  compact: boolean;
+  /** A phone folds the delivered note into a named door: its sentence restates the headline above it (see `NOTE_FOLD`). */
+  noteFold: boolean;
   /** Where a figure sends the reader: the section or page that explains the number. */
   go: (to: HeroIndex) => void;
   run: (a: HeroAction) => void;
@@ -236,8 +251,10 @@ export function MissionHero(p: HeroProps): React.JSX.Element {
   const look = heroLook(state.phase);
   const { lead, rest } = splitHeadline(p.headline);
   const roles = new Map(p.seats.map((s) => [s.id, String(s.role ?? "")]));
-  // An action the hero already shows is not offered again behind "...".
-  const items: MenuItem[] = p.secondary.filter((c) => !p.next.some((n) => n.action === c.action)).map((c) => ({ icon: MISSION_ICON[c.action], label: c.label, title: c.hint, onClick: () => p.run(c.action) }));
+  // One action in the row, the rest behind "...", where the navigation is a drawer (overview-model.ts says why, with the
+  // measurement). The first step is kept whatever its look, so a running mission still shows its Pause.
+  const { row: rowNext, menu } = heroActions(p.next, p.secondary, p.compact);
+  const items: MenuItem[] = menu.map((c) => ({ icon: HERO_ICON[c.action], label: c.label, title: c.hint, onClick: () => p.run(c.action) }));
   const tone: TileTone = state.tone;
   return (
     <section className={`ov-hero ${state.tone} ${state.phase}${p.stale ? " stale" : ""}`} aria-label="Mission status">
@@ -252,7 +269,7 @@ export function MissionHero(p: HeroProps): React.JSX.Element {
           {p.goalText ? <p className="ov-goal" title={p.goalText}><span className="caps">Goal</span><span className="ov-goal-line">{p.goalText}</span></p> : null}
         </div>
         <div className="ov-acts">
-          {p.next.map((n) => <NextButton key={n.action} step={n} run={p.run} />)}
+          {rowNext.map((n) => <NextButton key={n.action} step={n} run={p.run} />)}
           {items.length ? <Menu label={<Icon name="more" size={18} />} title="More actions on the mission" items={items} /> : null}
         </div>
       </div>
@@ -265,7 +282,7 @@ export function MissionHero(p: HeroProps): React.JSX.Element {
       </div>
 
       <RightNow input={p.live} roleOf={(id) => roles.get(id) ?? ""} />
-      {p.note ? <Note note={p.note} /> : null}
+      {p.note ? <Note note={p.note} foldLabel={p.noteFold ? NOTE_FOLD[state.phase] : undefined} /> : null}
     </section>
   );
 }

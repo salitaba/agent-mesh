@@ -15,7 +15,7 @@
  * - A number that cannot be known is `null`, never `0`.
  */
 import { RUNNING, criterionDone, opsSummary, outcomeOf, plainArtifact, type OutcomeInput } from "./format";
-import type { MissionPhase } from "./mission";
+import type { HeroAction, MissionControl, MissionPhase, NextStep } from "./mission";
 
 /* ------------------------------------------------------------------------- */
 /* Whether there is a mission to show                                         */
@@ -480,6 +480,31 @@ export function splitHeadline(text: string): { lead: string; rest: string } {
 
 /** The names of the icons the hero draws; every one is in the console's registry (icons.tsx), which the compiler checks where they are drawn. */
 export type HeroIcon = "refresh" | "alert" | "cost" | "check" | "pause" | "dot";
+
+/** One action the hero offers: the mission's own (`MissionControl`) or one of the ways on from a result (`NextStep`). */
+export interface HeroActionOffer {
+  action: HeroAction;
+  label: string;
+  hint: string;
+}
+
+/**
+ * Which actions share the hero's row and which wait behind "…".
+ *
+ * At a desk the row is every step, as `mission.ts` orders them: two that look like buttons and the quiet result links under them.
+ * Where the navigation is a drawer — 800 px and below, the dock's own break — the row is **the one thing to do** (`next[0]`,
+ * whatever its look, so a running mission still shows its Pause) and everything else is a menu item. Measured at 360 on the
+ * delivered demo: five actions took three rows and 148 px of the first screen, and the three quiet ones opened Files and Cost,
+ * which the dock and the figures already name. Nothing is dropped: every step and every secondary action is in one of the two
+ * lists exactly once, and a secondary action that is already a step is not offered a second time.
+ */
+export function heroActions(next: NextStep[], secondary: MissionControl[], compact: boolean): { row: NextStep[]; menu: HeroActionOffer[] } {
+  const row = compact && next.length ? [next[0]!] : next;
+  const steps = new Set(next.map((n) => n.action));
+  const menu = [...(compact ? next.slice(1) : []), ...secondary.filter((c) => !steps.has(c.action))]
+    .map((c) => ({ action: c.action, label: c.label, hint: c.hint }));
+  return { row, menu };
+}
 
 /**
  * The mark at the head of the hero: a shape for each state, so the state reads without telling hues apart. Only a mission with agents
