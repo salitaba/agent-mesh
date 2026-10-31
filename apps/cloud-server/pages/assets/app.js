@@ -1025,8 +1025,7 @@
       say(status, "", "");
       if (!email.value.trim()) return invalid(email, $("email-error"), "Enter your email address.");
       const r = await call("POST", "/api/forgot", { email: email.value.trim() });
-      // The card says what to do with what arrives, as the sign-up and confirmation pages do: the rail is not where a person looks first.
-      say(status, r.ok ? "ok" : "bad", r.ok ? `${r.data.message} Open it: it goes to a page where you choose a new password.` : r.error.message);
+      say(status, r.ok ? "ok" : "bad", r.ok ? r.data.message : r.error.message);
       // The link is what the reader waits for now, and the rail says so.
       if (r.ok) atStep(1);
     });

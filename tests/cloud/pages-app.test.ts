@@ -502,7 +502,7 @@ test("asking for a password reset says the same for every address, and says noth
   v.type("email", " ada@example.com ");
   await v.send(v.$("form"));
   assert.deepEqual(v.to("POST", "/api/forgot"), [{ method: "POST", path: "/api/forgot", body: { email: "ada@example.com" } }]);
-  assert.equal(v.text("status"), "If that address has an account, a link to choose a new password is on its way. Open it: it goes to a page where you choose a new password.");
+  assert.equal(v.text("status"), "If that address has an account, a link to choose a new password is on its way.");
   assert.equal(v.$("status").className, "note note-ok");
   w.answers.set("POST /api/forgot", failure(429, "rate_limited", "Too many attempts. Try again in 12 minutes."));
   await v.send(v.$("form"));

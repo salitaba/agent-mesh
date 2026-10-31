@@ -62,7 +62,7 @@ test("with several workspaces the stage is about the one that can be opened, the
   assert.equal(h.stageOf(view({ subscription: LATE, workspaces: [ws("Gone", "failed"), ws("Up", "running")] })).workspace.name, "Up", "and a late payment is about the one that is still running");
 });
 
-test("the steps are Plan, Workspace and Open, with Model key before Open on a plan that sells hosting only, and the person is at the first that is not done", () => {
+test("the steps are the journey's own four, numbered by their place in it, with the model key before the last on a plan that sells hosting only, and the person is at the first that is not done", () => {
   assert.equal(states(view({ subscription: null })), "plan:now workspace:next open:next");
   assert.equal(states(view()), "plan:done workspace:now open:next");
   assert.equal(states(view({ workspaces: [ws("A", "provisioning")] })), "plan:done workspace:now open:next", "a workspace that is starting is the step still being done");
@@ -74,7 +74,10 @@ test("the steps are Plan, Workspace and Open, with Model key before Open on a pl
   assert.equal(states(hostingView([ws("A", "running", { models: own(null) })])), "plan:done workspace:done key:now open:next", "the key can only be given to a workspace that has started, so it is after the workspace");
   assert.equal(states(hostingView([ws("A", "running", { models: own(KEY) })])), "plan:done workspace:done key:done open:now");
   assert.equal(states(hostingView([ws("A", "provisioning", { models: own(null) })])), "plan:done workspace:now key:next open:next");
-  assert.deepEqual(h.stageOf(hostingView([])).steps.map((s: { label: string }) => s.label), ["Plan", "Workspace", "Model key", "Open"]);
+  assert.deepEqual(h.stageOf(hostingView([])).steps.map((s: { label: string }) => s.label), ["Choose a plan", "Make a workspace", "Give it your model key", "Describe your team"]);
+  // The numbers are the front page's and the sign-up rail's: creating the account is 01 and is behind whoever is on the account.
+  assert.deepEqual(h.stageOf(view({})).steps.map((s: { n: string }) => s.n), ["02", "03", "04"]);
+  assert.deepEqual(h.stageOf(hostingView([])).steps.map((s: { n: string }) => s.n), ["02", "03", "04", "05"], "a hosting-only plan has one step more");
 
   // A visitor with no plan is shown the steps of what is on offer, so they do not change count when a plan is chosen.
   assert.equal(states(hostingView([], { subscription: null })), "plan:now workspace:next key:next open:next");
@@ -92,8 +95,8 @@ const card = (v: ReturnType<typeof view>) => h.nextStepOf(h.stageOf(v), v);
 
 test("the card says one thing for each stage, in a sentence, with the one action that is next", () => {
   const link = { kind: "link", label: "Choose a plan", href: "#plan-h" };
-  assert.deepEqual(card(view({ subscription: null })), { tone: "", title: "Choose a plan", text: "A plan is a flat monthly price for your account, and it says how many workspaces you may run at once. Each workspace runs on a plan of its own. Choose one below and pay on the next page.", action: link });
-  assert.deepEqual(card(hostingView([], { subscription: null })), { tone: "", title: "Choose a plan", text: "A plan is a flat monthly price for your account, and it says how many workspaces you may run at once. Each workspace runs on a plan of its own. Choose one below and pay on the next page. You bring your own model key and pay your model provider yourself.", action: link });
+  assert.deepEqual(card(view({ subscription: null })), { tone: "", title: "Choose a plan", text: "A plan is a flat monthly price for your account, and it says how many workspaces you may run at once. Choose one below and pay on the next page.", action: link });
+  assert.deepEqual(card(hostingView([], { subscription: null })), { tone: "", title: "Choose a plan", text: "A plan is a flat monthly price for your account, and it says how many workspaces you may run at once. Choose one below and pay on the next page. You bring your own model key and pay your model provider yourself.", action: link });
   assert.deepEqual(card(view({ subscription: null, plans: [], plansKnown: false })), { tone: "warn", title: "The plans could not be loaded", text: "No plan or price is shown just now, and nothing was changed.", action: { kind: "retry", label: "Try again" } }, "a plan is promised only when one was read");
   assert.deepEqual(card(view({ subscription: { plan: "team", title: "Team", status: "ended" } })), {
     tone: "warn",
@@ -199,11 +202,11 @@ test("each stage is said on the page: its title and sentence, the steps while a 
     return { v, steps: v.text("stage-steps"), title: v.text("stage-title"), actions: v.labels("stage-actions"), tone: v.$("stage").className };
   };
   let s = await stage(world(paid));
-  assert.deepEqual([s.title, s.steps, s.actions.length, s.tone], ["Make your first workspace", "✓ Plan (done) 2 Workspace (you are here) 3 Open (still to do)", 1, "stage"]);
+  assert.deepEqual([s.title, s.steps, s.actions.length, s.tone], ["Make your first workspace", "✓ Choose a plan (done) 03 Make a workspace (you are here) 04 Describe your team (still to do)", 1, "stage"]);
   assert.equal(s.v.text("stage-actions"), "Name a new workspace Plan Team Business A workspace runs on its own plan: its own limits and its own models. Your account's plan is what says how many workspaces you may run at once. Create workspace");
 
   s = await stage(world((x) => { paid(x); x.workspaces = [workspace({ status: "provisioning" })]; }));
-  assert.deepEqual([s.title, s.steps, s.actions], ["Research is starting", "✓ Plan (done) 2 Workspace (you are here) 3 Open (still to do)", []]);
+  assert.deepEqual([s.title, s.steps, s.actions], ["Research is starting", "✓ Choose a plan (done) 03 Make a workspace (you are here) 04 Describe your team (still to do)", []]);
 
   s = await stage(world((x) => { paid(x); x.workspaces = [workspace()]; }));
   assert.deepEqual([s.title, s.actions, s.tone], ["Research is running", ["Open"], "stage"]);
@@ -221,10 +224,10 @@ test("each stage is said on the page: its title and sentence, the steps while a 
   assert.equal(none.doc.querySelectorAll("a").filter((a) => a.textContent === "Contact the operator").length, 0, "with no address given none is made up");
 
   s = await stage(hosting());
-  assert.deepEqual([s.title, s.actions, s.steps], ["Add your model key", ["Add your model key"], "✓ Plan (done) ✓ Workspace (done) 3 Model key (you are here) 4 Open (still to do)"]);
+  assert.deepEqual([s.title, s.actions, s.steps], ["Add your model key", ["Add your model key"], "✓ Choose a plan (done) ✓ Make a workspace (done) 04 Give it your model key (you are here) 05 Describe your team (still to do)"]);
 
   s = await stage(world());
-  assert.equal(s.steps, "1 Plan (you are here) 2 Workspace (still to do) 3 Open (still to do)");
+  assert.equal(s.steps, "02 Choose a plan (you are here) 03 Make a workspace (still to do) 04 Describe your team (still to do)");
   assert.equal(s.v.doc.getElementById("stage-steps")!.querySelectorAll("li").filter((li) => li.getAttribute("aria-current") === "step").length, 1, "one step is the current one, for what reads the page aloud");
   assert.ok(s.v.doc.getElementById("stage-steps")!.querySelectorAll("span").filter((n) => n.className === "num").every((n) => n.getAttribute("aria-hidden") === "true"), "and the numbers are for the eye: the words say it all");
   assert.equal(s.v.$("stage-steps").getAttribute("aria-label"), "Where you are");
