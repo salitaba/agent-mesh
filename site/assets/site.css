@@ -100,6 +100,10 @@
 
 :root {
   --font: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  /* The display face. The site is the public half of a ledger, and a printed record is set in a serif: the
+     statement and the section heads are the page's print, while the body, the labels and every figure that is
+     compared stay in the text face (README, "Figures"). System faces only, so the page still makes no request. */
+  --display: Georgia, "Iowan Old Style", "Palatino Linotype", "Book Antiqua", "Liberation Serif", "DejaVu Serif", "Noto Serif", serif;
   --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   --c2: repeat(2, minmax(0, 1fr)); --c3: repeat(3, minmax(0, 1fr)); --c4: repeat(4, minmax(0, 1fr));
   --max: 1120px; --gutter: clamp(16px, 4vw, 32px); --section: clamp(48px, 7vw, 104px);
@@ -130,6 +134,13 @@ h1, h2, h3, h4 { margin: 0; font-weight: 650; text-wrap: balance; overflow-wrap:
 h1 { font-size: clamp(2.5rem, 1.2rem + 5.4vw, 4.75rem); line-height: 1.02; letter-spacing: var(--k-track-display); }
 h2 { font-size: clamp(1.75rem, 1.1rem + 2.5vw, 3rem); line-height: 1.08; letter-spacing: -.032em; }
 h3 { font-size: 1.1875rem; line-height: 1.3; letter-spacing: var(--k-track-title); }
+/* The statement and the section heads take the display face, at the ramp's own sizes: a serif needs a little
+   more leading and less negative tracking than the text face, and nothing else about the rank changes. A
+   card's title stays in the text face, and so does a footer group's name, which is a label, not a head. */
+h1, h2 { font-family: var(--display); font-weight: 600; }
+h1 { line-height: 1.05; letter-spacing: -.028em; }
+h2 { line-height: 1.12; letter-spacing: -.02em; }
+.foot-col h2 { font-family: var(--font); }
 p { margin: 0 0 1em; text-wrap: pretty; }
 p:last-child { margin-bottom: 0; }
 ul, ol { margin: 0; padding: 0; }
@@ -292,6 +303,21 @@ main:has(.hero) .section-head .eyebrow::before { counter-increment: sec; content
   .hero-visual { grid-row: 5; grid-column: 1 / -1; margin-top: 56px; }
   .proof { grid-row: 6; grid-column: 1 / -1; grid-template-columns: var(--c3); gap: 0 24px; margin-top: 40px; }
 }
+/* On a desk the first screen is a spread, not a banner: the statement, its actions and its price in the left
+   column, and the console in the right one, level with the statement. Before, the picture was a full-width
+   1,440px window below everything (at 1,440 it was 1,118 × 698, a 0.78 scale, and it began at y=682); a reader
+   saw the top of a window, not the product. The plate is now a 1:1 crop of the same capture, so the console's
+   own 13px text is 13px on the page, and the price section follows one screen lower. The rule between the
+   columns is the ledger's margin. */
+@media (min-width: 1040px) {
+  .hero .eyebrow, .hero h1 { grid-column: 1 / span 7; }
+  .hero .lede { grid-column: 1 / span 7; }
+  .hero-cta { grid-row: 4; grid-column: 1 / span 7; margin-top: 24px; }
+  .hero-price { grid-row: 5; grid-column: 1 / span 7; margin-top: 24px; }
+  .hero-visual { position: relative; grid-row: 1 / span 6; grid-column: 8 / -1; align-self: start; margin-top: 2px; }
+  .hero-visual::before { content: ""; position: absolute; left: -14px; top: 4px; bottom: 0; width: 1px; background: var(--line); }
+  .proof { grid-row: 7; }
+}
 
 /* the product frame, and the choice of view */
 .frame { margin: 0; overflow: hidden; border: 1px solid var(--line2); border-radius: var(--k-r-lg); background: var(--panel); box-shadow: var(--k-hl), var(--k-shadow-2); }
@@ -310,6 +336,14 @@ main:has(.hero) .section-head .eyebrow::before { counter-increment: sec; content
 .frame figcaption b { color: var(--ink); font-weight: 600; }
 /* The generic code rule shrinks inline code to .875em; a caption is already 13px, so it would land at 11.375px. */
 .frame figcaption code { font-size: 1em; }
+/* The plate is a 1:1 crop of the capture, not the whole window shrunk: at 360 the window was 326 × 204 (0.23 of
+   its 1,440 art), so its 13px words were about 3px, and at 1,440 it was 1,118 wide (0.78). The crop begins past
+   the sidebar, at the goal, so the first thing read is the mission's own answer; the frame's Full size link
+   still opens the whole capture. The percentages are where the crop starts in the art (x about 220, y about 60). */
+.hero-visual .pane img { object-fit: none; }
+@media (min-width: 720px) and (max-width: 1039px) { .hero-visual .pane img { height: 440px; object-position: 30% 14%; } }
+@media (max-width: 719px) { .hero-visual .pane img { height: 260px; object-position: 20% 9%; } }
+@media (min-width: 1040px) { .hero-visual .pane img { height: 420px; object-position: 23% 14%; } }
 .showcase .frame { border-radius: var(--k-r-xl); box-shadow: var(--k-hl), var(--k-shadow-5); }
 .tab-input, .billing-input { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
 .pane { display: none; margin: 0; }
@@ -318,6 +352,9 @@ main:has(.hero) .section-head .eyebrow::before { counter-increment: sec; content
 .tab-input:nth-of-type(3):checked ~ .frame .pane:nth-of-type(3) { display: block; }
 /* A segmented control: a trough, and a thumb that slides to the chosen radio's label. */
 .tabs, .billing { --n: 3; position: relative; display: inline-grid; grid-auto-flow: column; grid-auto-columns: 1fr; max-width: 100%; margin-bottom: 16px; padding: 3px; border-radius: var(--k-r-md); background: var(--k-sunken); box-shadow: inset 0 0 0 1px var(--line); }
+/* The plate's control is the plate's width at every width, so the two share both edges: a 351px trough over a
+   453px plate, or over a 706px one, read as a floating chip. */
+.hero-visual .tabs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); width: 100%; }
 .billing { --n: 2; margin-bottom: 24px; }
 .tabs::before, .billing::before { content: ""; position: absolute; top: 3px; bottom: 3px; left: 3px; width: calc((100% - 6px) / var(--n)); border-radius: var(--k-r-sm); background: var(--panel); box-shadow: var(--lift), 0 0 0 1px var(--line2); }
 .tabs label, .billing label { position: relative; display: flex; align-items: center; justify-content: center; gap: 8px; min-height: 36px; padding: 0 clamp(8px, 3vw, 20px); color: var(--ink2); font-size: 14px; font-weight: 600; white-space: nowrap; cursor: pointer; user-select: none; }
@@ -500,6 +537,9 @@ main:has(.hero) .section-head .eyebrow::before { counter-increment: sec; content
 .hero-visual .frame figcaption { min-height: calc(2 * 1.5em + 29px); }
 @media (max-width: 719px) { .hero-visual .frame figcaption { min-height: calc(4 * 1.5em + 29px); } }
 @media (max-width: 359px) { .hero-visual .frame figcaption { min-height: calc(5 * 1.5em + 29px); } }
+/* On a desk the plate is 453 wide, where the Events caption takes three lines: one caption height for the three
+   views, so switching one moves nothing below it. */
+@media (min-width: 1040px) { .hero-visual .frame figcaption { min-height: calc(3 * 1.5em + 29px); } }
 
 /* code, and the steps of the demo */
 .code { position: relative; margin: 14px 0; padding-top: 48px; overflow: hidden; border: 1px solid var(--line); border-radius: var(--k-r-md); background: var(--code); }
@@ -688,6 +728,9 @@ body:has(#billing-monthly:checked) .head-price-monthly { display: inline; }
    the page's section rank (28 on a phone, 48 on a desktop, as the home and pricing pages do). */
 .contact h3 { margin-bottom: 8px; font-size: 1.1875rem; line-height: 1.3; }
 .section > .wrap > h2.legend-title { font-size: clamp(1.75rem, 1.1rem + 2.5vw, 3rem); line-height: 1.08; letter-spacing: -.032em; }
+/* The serif's leading and tracking reach the heads that set their own rank, so every h2 on the site is set the
+   same way: the rank's size stays theirs, the face's leading is the display rule's. */
+.section > .wrap > h2.legend-title, .split > header h2 { line-height: 1.12; letter-spacing: -.02em; }
 .contact h4 { margin: 20px 0 8px; color: var(--muted); }
 /* Which address, for what: ruled rows; one a link points at gets a bar, not colour alone. */
 .addresses { overflow: hidden; }
@@ -1003,4 +1046,6 @@ body:has(#billing-monthly:checked) .head-price-monthly { display: inline; }
   .tiles, .plans { display: grid; grid-template-columns: var(--c2); grid-auto-flow: row; gap: 16px; margin-inline: 0; padding: 0; overflow: visible; }
   .table-wrap { overflow: visible; }
   .compare { min-width: 0; }
+  /* The plate is a crop of the capture on a screen; a printed page has room for the whole picture. */
+  .hero-visual .pane img { height: auto; object-fit: fill; }
 }

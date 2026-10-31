@@ -1871,3 +1871,107 @@ the site at `c10a48c`, served before any edit and measured in the same run; no n
 - **`site/ux/` was not edited**, and `npm run site:check` still exits 1 on the owner's `TODO(owner)` for the terms at
   `site/legal/index.html:133`, as the last five passes recorded. The pass's pair is
   `site/ux/shots/20261029-0925-before.png` and `20261029-0925-after.png`.
+
+## 2026-10-31: the first screen is a spread, and the record is set in a serif
+
+Measured with the same probe (Chrome 156, reduced motion, light unless said, touch at 320/360/390, a mouse at 768 and
+1,440, dark at 320/360/390/768/1,440, print at 794, a 24px and a 32px root at 320/360/720). The before column is the site at
+`dbb4b58`, exported from `git archive` and served on a second port, measured in the same run; no number is copied from an
+earlier pass.
+
+### What changed
+
+- **The statement and the section heads take a display serif.** The site is the public half of a ledger, and a printed record
+  is set in one: `--display` is a stack of system serifs (Georgia, Iowan Old Style, Palatino, Book Antiqua, Liberation Serif,
+  DejaVu Serif, Noto Serif) and only `h1`/`h2` take it. The ramp's sizes do not move (40/60.7/76 for the home `h1`, 28/36.8/48
+  for an `h2`); the serif gets the leading and tracking it needs (1.05/1.12, −.028em/−.02em). A card's title (`h3`), the
+  body, the labels and every figure that is compared stay in the text face, as the README's "Figures" rule says; a footer
+  group's name is a label and stays sans. 42 of the seven pages' 63 `h1`/`h2` take the serif (the other 21 are the footer's
+  three group names on each page). No face is downloaded and no request is made.
+- **On a desk the first screen is a spread, not a banner.** The hero's grid is 7/5 at 1,040 and up: the statement, the lede,
+  the actions and the price line in the left column, and the console in the right one, level with the statement. Before, the
+  picture was a full-width 1,440px window below everything, 1,118 × 699 at a 0.78 scale, beginning at y=682, so an 800px
+  screen held 173px of it. It is a 453 × 553 plate now, beginning at y=177 and wholly inside a 900px screen, and the price
+  section follows one screen lower.
+- **The plate is a 1:1 crop of the same capture, at every width.** The whole 1,440 × 900 window shrunk to a phone's 326px
+  made the console's own 13px text about 3px. The `img` is `object-fit: none` with an `object-position` that starts past
+  the sidebar, at the goal, so the mission's own answer (Delivered, 7 of 7 checks, 9.2s) is read at 13px: 326 × 260 at 360,
+  704 × 440 at 768, 451 × 420 at 1,440. The frame's Full size link still opens the whole capture. One caption height holds
+  the three views (3 lines at 1,440, 4 at 360, 5 at 320), so switching a tab moves nothing below the plate.
+- **The plate's control is the plate's width.** The three view labels were a 351px trough over a 1,118px plate; they are
+  now a grid of the plate's own width at every breakpoint, so the control and the picture share both edges, as the phone's
+  already did.
+
+### Measurements after this pass
+
+| The home page at | 320 | 360 | 390 | 768 | 1440 |
+|---|---|---|---|---|---|
+| Before | 14,082 | 13,255 | 12,577 | 12,534 | 12,259 |
+| After | **13,994** | **13,140** | **12,575** | **12,331** | **11,435** |
+
+| The home page at 1,440 | Before | After |
+|---|---|---|
+| The hero | 1,660.67 | **918.47** |
+| The statement | 155.03 (2 lines, 1,120 wide) | **239.39** (3 lines, 643 wide) |
+| The actions | y=340.83, right column | **y=570.19, left column** |
+| The price line | y=496 | **y=702.97** |
+| The plate's tabs / frame / image | 624.34 / 682.34 / 727.34 | **119 / 177 / 222** |
+| The image | 1,118 × 698.75, 0.78 scale | **450.67 × 420, 1:1** |
+| The image inside an 800px screen | 173 of 699px (25%) | **420 of 420 (100%)** |
+| The proof | y=1,573.48 | **y=831.28** |
+| The contents row / `#pricing` | 1,729.67 / 1,827.67 | **987.47 / 1,085.47** |
+
+| The home page at 360 | Before | After |
+|---|---|---|
+| The statement | 163.19 (4 lines) | **126 (3 lines)** |
+| The actions | y=499.55 | **y=462.36** |
+| The price line | y=563.55 | **y=526.36** |
+| The image | 326 × 203.75, 0.23 scale | **326 × 260, 1:1** |
+| The image's top / inside an 800px screen | 789.56 / 10px | **752.38 / 48px** |
+| The contents row / `#pricing` | 1,564.22 / 1,758.22 | **1,583.28 / 1,777.28** |
+| The page | 13,255 | **13,140** |
+
+| At 768 | Before | After |
+|---|---|---|
+| The statement | 185.63 (3 lines) | **127.41 (2 lines)** |
+| The image | 704.55 × 440.33, 0.49 scale | **704.55 × 440, 1:1** |
+| The image's top | 836.2 (not in an 800px screen) | **777.98** (22px in it) |
+| `#pricing` / the page | 1,711.78 / 12,534 | **1,653.23 / 12,331** |
+
+| Page, height at 360 before / after | Pricing | Docs | Security | Contact | Legal | 404 |
+|---|---|---|---|---|---|---|
+| 360 | 13,721 / **13,612** | 8,443 / **8,382** | 11,625 / **11,600** | 4,473 / **4,381** | 5,059 / **5,037** | 2,123 / **2,089** |
+| 1,440 | 9,382 / **9,354** | 4,422 / **4,429** | 7,634 / **7,638** | 2,850 / **2,857** | 3,307 / **3,313** | 1,514 / **1,516** |
+
+- The serif is narrower than the text face, so it costs a phone nothing and saves it lines: the home statement is one line
+  shorter at 360 and one at 768, and the six inner pages are 22–109px shorter at 360. At 1,440 the extra leading on a one-
+  line `h2` costs 2–7px on five pages, which is the price of the serif's 1.12 line-height.
+- No page scrolls sideways at 320, 360, 390, 768 or 1,440 in light or dark (**0** on all 70 page/width/theme pairs), the
+  probe reports **0** console errors, the smallest computed text is **12px** on every page, and the worst text pair is
+  **5.61:1** in light and **6.57:1** in dark, as before (AA normal text needs 4.5). The only targets under 44 × 44 at
+  320/360 are the same inline links in sentences, the 1 × 1 radios and the 24 × 24 checkbox whose label is 44; the plate's
+  tabs are 44 on a coarse pointer and its Full size chip is 44.
+- Switching the plate's three tabs leaves the frame at **553.5px at 1,440, 554 at 768 and 413 at 360** for Overview, Events
+  and Designer; the page height does not move. The three crops are the goal's answer, the Events log and the Designer canvas.
+- Print at 794 is **0px over** on all seven pages (home 12,006; pricing 10,198; docs 4,668; security 7,509; contact 3,076;
+  legal 3,082; 404 1,123), and the plate prints the whole capture, not the crop (`height: auto; object-fit: fill`). At a
+  24px root and at a 32px root every page is **0px over** at 320, 360 and 720.
+- `site-chrome --check` passes; the site's own suites are **159** tests, all passing. `npm run site:check` still exits 1 on
+  the owner's `TODO(owner)` for the terms at `site/legal/index.html:133`, as the last six passes recorded.
+
+### What this pass deliberately left
+
+- **The statement is three lines in the desk's 643px column** where it was two across 1,120. That is the spread: a statement
+  beside a product is narrower than a banner over one, and the plate's 553px sets the first screen's height with it. The
+  price line is still on the first screen (y=703), and the section that sells the plans is 742px higher.
+- **The crop cuts a line at its right edge.** The plate is a window on a 1,440px console; the goal's title, the Events
+  filters and the Designer's inspector continue past it, as they would in a narrow window, and the Full size link opens the
+  whole capture. A fade would have taken the RAN FOR figure with it; a narrower plate would have shown less.
+- **The phone still reaches the product one flick down.** At 360 the statement, the lede, the actions and the price take
+  the first 641px; the plate's tabs begin there and its image at 752, so the first screen holds 48px of the crop. Taking more
+  would mean cutting the price line or the lede, which the last four passes measured and left.
+- **The four plans, the comparisons, the console's six views and the footer are unchanged**, and no capture was retaken: the
+  plate crops the pictures that were already there.
+- **The serif is a system face**, so a Linux pass container draws it with Liberation Serif and a Mac or Windows reader gets
+  Georgia; the sizes, the ramp and the contrast are the same. No webfont is added, and the site still makes no request.
+- `site/ux/` was not edited: that record page is owned by another pass.
