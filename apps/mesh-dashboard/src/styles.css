@@ -1451,3 +1451,47 @@ ul.errs { margin: var(--s1-5) 0; padding-left: 18px; font-size: 14px; color: var
   /* The goal id under the wordmark was the last 11 px word on a phone (247 px wide at 360, measured). It is a name, not a glyph. */
   .brand .sub { font-size: 12px; }
 }
+
+/* ============ the dock: the five places, at the thumb ============
+   Where the navigation is a drawer (800 px and below) the five places the work lives sit in a row at the bottom of the screen: the
+   brief, the product, what it made, what it says, and what it wants. They are the owner's own path — "open the console" to "I am
+   using my product" — and on a phone the menu is in the far corner of a one-handed screen. The row is the same five at 320 and at
+   768, so a rotation does not relearn it; everything else stays one press further in, behind the menu, which still holds every page.
+   Measured at 360: from Events to the product was the drawer (one press), a scroll through twelve rows, then the row (one press);
+   it is one press here and nothing to scroll. `tests/dashboard/dock-phone.test.ts` reads these rules. */
+@media (max-width: 800px) {
+  #dock { position: fixed; left: 0; right: 0; bottom: 0; z-index: var(--z-dock);
+    display: flex; align-items: stretch; padding: 0 0 env(safe-area-inset-bottom);
+    background: color-mix(in srgb, var(--bg-2) 94%, transparent);
+    -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
+    border-top: 1px solid var(--line-strong);
+    box-shadow: 0 -12px 26px -20px color-mix(in srgb, var(--text) 30%, transparent); }
+  .dock-tab { position: relative; flex: 1 1 0; min-width: 0; min-height: 52px;
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--s0);
+    padding: var(--s1) var(--s0); border: 0; background: none; color: var(--muted);
+    font: 500 12px/1.1 var(--sans); cursor: pointer;
+    transition: color var(--k-dur-1), background var(--k-dur-1); }
+  .dock-tab .icon { color: var(--muted); transition: color var(--k-dur-1); }
+  .dock-tab:is(:hover, :active) { background: var(--wash); color: var(--text-dim); }
+  .dock-tab.active { color: var(--text); }
+  .dock-tab.active .icon { color: var(--accent-2); }
+  /* The chosen place is marked by a rule on the frame's own edge, not by a filled tab: the row is chrome, and a fill under it would
+     read as a button rather than as where you are. */
+  .dock-tab.active::before { content: ""; position: absolute; left: 18%; right: 18%; top: -1px; height: 2px; border-radius: 0 0 2px 2px; background: var(--accent-2); }
+  .dock-label { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  /* The count rides the icon's shoulder, as the sidebar's does on its row, and keeps its own 12 px word. */
+  .dock-badge { position: absolute; top: var(--s1); left: 50%; margin-left: var(--s1);
+    min-width: 18px; height: 18px; padding: 0 var(--s1-5); border-radius: 999px;
+    background: var(--accent); color: var(--text-on-accent); font: 600 12px/18px var(--sans); }
+  /* The row is a layer over the page, so the page keeps its last line clear of it: 52 px of tab, the frame's own gutter and the
+     home indicator of a notched phone. A page is 36 px taller than it was for this; the reader gains five places without the menu. */
+  #view { padding-bottom: calc(52px + var(--s3) + env(safe-area-inset-bottom)); }
+  /* The Designer owns the bottom of its own screen (its save bar is the last row), so the dock is not drawn over the work. */
+  #app:has(#view > .ms) #dock { display: none; }
+  #app:has(#view > .ms) #view { padding-bottom: 0; }
+}
+@media (forced-colors: active) {
+  /* A background wash is not a signal the system's colours keep: the chosen place wears an outline. */
+  .dock-tab.active { outline: 2px solid Highlight; outline-offset: -2px; }
+  .dock-tab.active::before { background: Highlight; }
+}
