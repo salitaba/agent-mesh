@@ -162,7 +162,10 @@ Breakpoints: **1280 1100 900 800 760 620 560**. 800 is the sidebar drawer (JS
   actions share row one, and the project switcher is row two. The goal and the
   telemetry leave the bar below 800 px (the Overview opens with both; the chip
   keeps the state); the bar's primary action moves to the first row of `⋯`
-  rather than wrapping. Pinned by `tests/dashboard/frame-phone.test.ts`.
+  rather than wrapping. Pinned by `tests/dashboard/frame-phone.test.ts`. Since
+  2026-10-31 the frame also has a row at the thumb — the five places the work
+  lives, on the bottom edge — and that is not the bar's third row: it belongs to
+  the navigation, which is a drawer at this width.
 - A panel or sheet is a **layer**, not a floating copy of the page: a scrim, a
   heading that stays put, a 44 px close control, `role="dialog"` and
   `aria-modal`, the page behind `inert` and not scrolling, Tab cycling inside it,
@@ -173,6 +176,30 @@ Breakpoints: **1280 1100 900 800 760 620 560**. 800 is the sidebar drawer (JS
   cover the page (pinned by `tests/dashboard/designer-layers.test.ts`).
 - A notice can be dismissed by hand; an action that resolves it dismisses it
   too. Nothing waits out a timer to get out of the way.
+- **Where the navigation is a drawer (800 px and below), the five places the
+  work lives sit at the thumb** — Overview, Product, Files, Events, Needs you —
+  as one 52 px row on the frame's bottom edge, the same five at 320 and at 768.
+  It is drawn only on a project page while the server is known, it is inert
+  under the navigation sheet, and it is not drawn in the Designer, whose save
+  bar owns that edge. The page reserves 64 px for it, so a page is 36 px taller
+  and no control is ever under it. Pinned by `tests/dashboard/dock-phone.test.ts`
+  (2026-10-31).
+- **A figure is a door.** The Overview's four figures each open what explains
+  the number (checks: the goal's own section here; ran-for: Steps; tokens: Cost;
+  agents: Agents), and the control covers the cell the way a closed section's
+  does. Its label carries the figure and the destination, because a button's
+  contents are flattened into its name. Pinned by
+  `tests/dashboard/overview-figures.test.ts` (2026-10-31).
+- **A page is named by the name you pressed.** One component behind two routes
+  ("Needs you" and "Tool gates") titles itself by the tab in front, never by a
+  fixed word (2026-10-31).
+- **A finger is a finger at every width.** The 44 px floor is a coarse pointer's,
+  not only a phone's: at 768 on a touch screen the end-of-page links were 32 px
+  (2026-10-31).
+- **A console with no host is not asked a host's routes.** A single-mesh server
+  answers neither `/api/projects` (the shell must ask it once to learn what it
+  is) nor `/api/host/config`; the second was a 404 on every visit to Cost
+  (2026-10-31).
 
 ## Open problems (carried forward)
 
@@ -217,6 +244,9 @@ Breakpoints: **1280 1100 900 800 760 620 560**. 800 is the sidebar drawer (JS
 - The Playground now leads with its terminal and puts the product card after the output. That is a deliberate reversal of the
   2026-10-22 "product first" reading for this one page: the page's own action was at the foot of the first screen. If real use
   says the product should lead there too, the card costs 487 px above the command box and the measurement is in this entry.
+- The thumb's row is 53 px of chrome and 36 px of page on every project page from 800 px down (2026-10-31). It buys one press
+  instead of two for five places, and the pages opened once pay it too. Whether it should hide on scroll, or be shorter than 52,
+  is a use question; the measurement is in this pass's entry.
 - The Files bar is 44 px at 360 and 390 and 96 at 320: 220 + 103.52 + 12 = 335.5 in 296, so the button keeps the line under the
   search there. The search's hint now reads "Name, owner,..." at 360; the next words decision is whether the 320 edge should
   shorten the hint rather than give the button a row, or whether the button should be a 44 px glyph (which would keep the hint at
@@ -224,20 +254,94 @@ Breakpoints: **1280 1100 900 800 760 620 560**. 800 is the sidebar drawer (JS
 
 ## What the next pass should take
 
-1. The Designer's 320 header is two rows now (168.59 px with its lede; 89.6 on the first-run guide, which has no lede). The save bar's
+1. The Overview's first screen is still the whole hero (737 px at 360, the four evidence rows at 903): the next lever is a
+   words decision — the goal sentence, the three ghost links (files, cost, replay) and the note are 190 px between them,
+   and two of the three links now have a figure and a dock tab that say the same thing.
+2. Whether the thumb's row earns its 36 px of every page: it is the owner's daily five, but a page opened once (Graph, the
+   Playground) pays too. Watch real use before shortening the list or hiding the row on scroll.
+3. Whether the Designer's bottom stays its own: the save bar and the dock cannot both own that edge, and the workbench is
+   the one screen that is not a brief.
+4. The events page's "Live" chip says what the stream is doing while the mission is delivered; decide whether one word can
+   say both, or whether the chip should read the mission's state here as it does in the bar.
+5. The figures cover their own numbers: selecting "51.0k" to paste it is no longer possible on the hero. A copy control, or
+   a door that covers only the label row, would give it back.
+6. The Designer's 320 header is two rows now (168.59 px with its lede; 89.6 on the first-run guide, which has no lede). The save bar's
    blocked state is the next block there: its 44 px inline action inflates the line from 17.4 to 36, and that 18.6 px is the last thing
    the bar could give back — it needs either a glyph button (a name lost) or a target overlap (a target collision).
-2. Decide whether the Steps filter fold belongs above 620: at 621–768 the chips take two rows and the switch a third (166 px),
-   though the page's own reading is one button there. The same decision covers the tablet's 32 px `NextLinks`.
-3. Decide whether What shipped opens by default on a fresh delivery, and whether the phone's fold remembers a section (the page
+7. Decide whether the Steps filter fold belongs above 620: at 621–768 the chips take two rows and the switch a third (166 px),
+   though the page's own reading is one button there. The tablet's `NextLinks` now take the 44 px floor on a coarse pointer, so the
+   chips are the last of that family.
+8. Decide whether What shipped opens by default on a fresh delivery, and whether the phone's fold remembers a section (the page
    resets to all closed on every visit).
-4. Measure the project strip at 621–800 with enough projects, in the hosted console where a registry exists; `curule console` cannot show it.
-5. Remember the YAML preview's wrap choice, or move the toggle into the pane's own head; either is a small addition to a layer that now fits.
-6. Check the Events and inbox end-caps against real live content before adding any row (the decision above).
-7. Read the console with a real thumb on a real phone: the measurements here are Chromium at 360 px with touch emulation only in CSS, not a hardware device.
-8. Check the frame's safe-area claims on a notched device in both orientations; the insets are in the CSS but the stand-in browser reports them as zero.
+9. Measure the project strip at 621–800 with enough projects, in the hosted console where a registry exists; `curule console` cannot show it.
+10. Remember the YAML preview's wrap choice, or move the toggle into the pane's own head; either is a small addition to a layer that now fits.
+11. Check the Events and inbox end-caps against real live content before adding any row (the decision above).
+12. Read the console with a real thumb on a real phone: the measurements here are Chromium at 360 px with touch emulation only in CSS, not a hardware device.
+13. Check the frame's safe-area claims on a notched device in both orientations; the insets are in the CSS but the stand-in browser reports them as zero.
 
 ## Pass log
+
+### 2026-10-31 — the five places the work lives sit at the thumb, and the Overview's figures are its index
+
+Surface: `shell.tsx` (the dock), `styles.css` (its rules and the page's clearance), `views/MissionHero.tsx`,
+`views/Overview.tsx`, `views/overview.css` (the figures' doors), `views/Escalations.tsx` (its title),
+`ui/next.css` (the coarse-pointer floor), `views/Cost.tsx` (a host-only read), and four new or extended tests.
+Measured on the scripted demo at **Delivered** (9 files, 7 checks, 491 events, 51.0k tokens, 7 seats) in the production
+build, Chromium at 320/360/390/768/1440 in light and at 360/1440 in dark, a touch pointer at 768 and below, reduced
+motion, axe-core 4.14. Before is the same worktree at `d1979b5`, built and served from the same server in the same
+session; both halves are the same delivered mission, and both 360 × 800 frames are `#/overview` at `#view.scrollTop` 0
+and `#/designer` at 0.
+
+- **The console's five daily places were two presses and a layer away, from a screen whose far corner is the menu.** At
+  360 from Events, the product was the menu (one press), then the sheet's Product row at y = 532–576 (one press), under a
+  288 px sheet and its scrim. The same five are now a 53 px row on the bottom edge — 360 × 53 at y = 747, five 72 × 52
+  tabs (64 × 52 at 320, 154 × 52 at 768) — and the product is **one press from every project page**, including the four
+  (Events, Steps, Needs you, the Designer) that had no product door in the page at all. The row is drawn only where the
+  navigation is a drawer, only when the server is known, never on a host page, and never on the Designer.
+- **A figure is a door.** The Overview's four figures were 148 and 151 px of inert cells: the pages that explain them
+  (Cost, Steps, Agents) were behind that same menu. Each cell is now its own control, covering the cell (167 × 148 and
+  166 × 151, the same boxes), with a chevron and a label that carries the figure: "7 of 7 mandatory checks evidenced.
+  Open goal checks.", "Ran for 10m 55s. See every step.", "Tokens: 51.0k of 2.0M. Open Cost.", "Agents: 7 seats. Open
+  Agents." Pressing the checks at 360 opens the closed Goal checks section and lands on it (`#view.scrollTop` 933, focus
+  on `#ov-goal`); the other three leave for their page. Pointed at or reached by the keyboard, the whole figure takes the
+  wash; in forced colours it takes a 2 px Highlight outline instead.
+- **A page is named by the name you pressed.** The sidebar's "Tool gates" and the palette's "Go to Tool gates" opened a
+  page headed "Needs you": the side says one name, the page said another, and the tab was the only thing that agreed with
+  the link. The heading follows the tab now ("Tool gates" at `#/gates`, "Needs you" at `#/escalations`), and the document
+  title already did.
+- **The 44 px floor reaches a touch-class 768.** Every `NextLink` on Agents, Files, Cost, Graph and the Playground was
+  **134.3 × 32** at 768 on a touch screen — the console's one control under its own floor there. A coarse pointer takes
+  **132 × 44** now; a mouse at 768 keeps the quiet 32.
+- **Cost stopped asking a route only a host has.** On every visit a single-mesh console asked `/api/host/config` and
+  logged a 404 for a context that cannot exist; the read waits for a registry to answer now. The one console error left
+  is `/api/projects`, which the shell must ask once to learn what kind of server this is.
+- **What the row costs is 36 px of page.** `#view` reserves 64 px at the bottom (52 of tab, 12 of gutter) on the pages
+  that draw it: Overview **1,171 → 1,207** at 320, **1,079 → 1,115** at 360 and 390, **3,129 → 3,165** at 768 and
+  **1,934 → 1,934** at 1,440; Agents 1,191 → 1,227 (1,120 → 1,168 at 768, the extra 12 being the NextLinks' floor);
+  Cost 1,614 → 1,650 (1,187 → 1,235); Files 1,083 → 1,119 (954 → 1,002); Steps 3,102 → 3,138 (2,626 → 2,674); Graph
+  1,881 → 1,917 (1,540 → 1,588); Product 1,508 → 1,544 (1,236 → 1,284); Playground 1,057 → 1,093 (736 → 765). Events,
+  Needs you, Tool gates and Host settings are exactly as they were (their content is a viewport-height pane), and the
+  Designer is unchanged at every width (1,088 / 1,050 / 1,015 / 839 / 736) because it draws no dock and reserves none.
+  At the end of every page no control is left under the row: the event list's own scroller ends 11 px above it.
+- **Nothing else moves.** No document or `#view` sideways scroll at 320/360/390/768/1440 in light or 360/1440 in dark;
+  axe-core **0** violations in 26 reads (13 views × 360 and 1,440 in light, 4 views at 360 and 1,440 in dark; 23–37 rules
+  passed each); one console error in both halves (the one-mesh `/api/projects` 404, and before it was two on Cost); the
+  smallest text stays 11 px (the avatar initials and the Designer's seat flags); the dock's tabs are 72 × 52 at 360, so
+  they clear the floor by 8 px in the narrow direction.
+
+Suite: typecheck and build clean; `node --test "dist/tests/**/*.test.js"` **6,431 tests, 6,429 pass, 0 fail, 2 skipped**;
+`dist/tests/dashboard` **1,203 pass, 0 fail**, with three new files (`dock-phone`, `overview-figures`, `inbox-title`)
+and one rule added to `page-exits` and to `failure-states`; eslint 0 errors (211 pre-existing cross-package warnings).
+
+**Left.** The dock hands 36 px of every page to the frame: the trade is one press instead of two for five places, and it
+is worth watching whether the row earns it on the pages opened once (Host settings is not one — it draws no dock). The
+Overview's hero is still 737 px at 360, so the four closed evidence rows begin below the fold (903 after the row); the
+figures now open what explains them, but the first screen is still the whole brief. The drawer's twelve rows still show
+a 1–9 key hint on a surface that has no keyboard — it is a hover for a mouse, so a thumb never sees it. The figures cover
+their own words, so the numbers can no longer be selected and copied (the fold accepted the same trade). The Designer
+keeps its own bottom and therefore its own grammar at that edge; whether a workbench should have the row too is a reading
+question. The events page's chip still says "Live" on a delivered mission because it describes the stream, not the
+mission — a word to revisit with the mission chip beside it.
 
 ### 2026-10-31 — a phone's Designer head is two rows at 320, because its status is its words
 
