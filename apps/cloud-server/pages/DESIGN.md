@@ -2509,3 +2509,98 @@ hour), and a fresh account with no plan. Heights are `document.documentElement.s
   rows are the other 46px.
 - The way-in pages at 200% text have not been measured since 2026-10-23 except sign-up; the account's head is now
   the tallest thing there.
+
+## 2026-10-31: the record is the account's statement
+
+Same harness: Chromium through `playwright-core` against this worktree's trial
+(`localhost:8102`), signed in as the trial account with one running workspace named `ux-demo`, 320 / 360 / 390 /
+768 / 1440 in light and 360 / 320 in dark, the root raised to 32px at 360 for the large-text check,
+`prefers-reduced-motion: reduce`, and axe-core 4.14 over seven views. "Before" is the base commit's own
+`account.html`, `app.css` and `app.js`, captured in the same signed-in state before any edit; the fixture is the
+same on both sides and `/api/usage` is the empty answer the trial gives. Heights are
+`document.documentElement.scrollHeight`; positions are `getBoundingClientRect` plus `scrollY`.
+
+- **The card and the record are one workspace no longer.** At 360 the card was **200.8px** (`ux-demo is running`,
+  `Open it to describe your team and start a mission.`, `Open`) and the record 300px below was **216px**
+  (`ux-demo`, `Running`, `Open`, `Pause`, `More`). The record's `Open` was the secondary `.btn` because the card
+  already offered it, so the page's main action was in the duplicate card. The stage is now the record's own for
+  `ready` and `stopped`: the card is not drawn, the record says the card's sentence (`Open it to describe your team
+  and start a mission.`) and its `Open` (or `Resume`) is `.btn-primary`. The record is **283.2px** at 360, its
+  `Open` is **48px** and at **y = 409.9**, and the page is **2,038 → 1,883**. At 1440 the record is
+  **213 → 258.6px** at **y = 535.1 → 306.6**, the page **2,023 → 1,990**.
+- **The card stays where the list has no action of its own.** No plan, no workspace, a late payment, a missing
+  key, starting and failed keep it: those are the states whose one action (`Choose a plan`, `Create workspace`,
+  `Update payment details`, `Add your model key`, the checking sentence, `Contact the operator`) is not a record's.
+  A late payment's card still carries `Open` beside the payment for a workspace that still runs, and its record's
+  `Open` stays the lesser of the two.
+- **The cursor goes where the card went.** A stage that had the cursor and becomes a record puts it on the record's
+  action: `Pause` leaves it on `Resume`, `Resume` on `Open` (measured in the browser). When a workspace becomes
+  ready while the page is open, `#stage-live` still announces `Research is running. Open it to describe your team
+  and start a mission.` and the card's button is the record's.
+- **The glance follows the record, and says only the money.** The `#glance` section was above the contents line
+  and counted the workspaces (`Workspaces 1 running`, `1 workspace in your plan`), the third statement of the one
+  fact. It now follows `01 Workspaces`, and `glanceOf` no longer emits the workspaces tile: it is the plan and the
+  balance, the two facts the panels below detail. At 360 it is **187.6 → 125.9px** and moves from y = 386 to
+  **687.7**; at 1440 it is **110px** and moves from 302.7 to **639.5**. A hosting-only plan has one fact to glance
+  at and its Plan panel directly below it, so `renderGlance` hides the section when it would have fewer than two
+  tiles.
+- **The gap the summary needed.** `.glance dl` takes the section rhythm's 40px above it (`margin: 40px 0 0`);
+  the comment `/* One stylesheet. */` paid for it. `app.css` is **40,943 bytes of 40,960** (was 40,958; 17 left).
+- **The 320 caption is no longer a first-screen cost.** At 320 the record's `Open` is at **472.7–520.7**, inside
+  an 800px screen, because the card above it is gone; the page is **2,036px**. At 390 it is **1,861**, at 768
+  **1,976**, at 1440 **1,990**. At 200% text (root 32px) the page is **3,882px**, the head 375.5 and the contents
+  line 87; the record's `Open` is at **832.7**, 32.7px below an 800px screen (the next item, below).
+- **Widths, schemes and the floor.** 320 / 360 / 390 / 768 / 1440 in light, 360 and 320 in dark, and 200% text at
+  360: no sideways page scroll (320: 320; 360: 360; 390: 390; 768: 768; 1440: 1440), nothing computes below
+  **12px**, and no control under 44 × 44 at 320/360/390 (at 768 and 1440 the 32/36/40px controls are the record's
+  pointer exceptions). **Seven axe-core runs** (320, 360, 390, 768, 1440, 360 dark and 200% text) find **no
+  violation**; there is no console error. Forced colours was not run this pass.
+- **Tests.** The page tests — **182 pass, 0 fail**; the whole suite — **6,433 tests, 6,431 pass, 0 fail**, 2
+  skipped; typecheck clean, lint at its 211 pre-existing warnings and 0 errors. `pages-stage.test.ts` now pins the
+  card hidden for `ready` and `stopped`, the record's sentence and primary button, the card kept for the six states
+  whose action is not in the list, and the record's answer where it was asked; `pages-workspace.test.ts` pins the
+  cursor through `Pause` → `Resume` → `Open` and the held record button; `pages-dashboard.test.ts` pins the glance
+  after the workspaces panel, its two tiles and its hidden state with one; `pages-app.test.ts` pins the record's
+  sentence in the states it covers.
+
+| measured at 360, light | before | after |
+| --- | --- | --- |
+| The stage card | 200.8px at y = 185.2 | **not drawn** |
+| The record | 216px, `Open` secondary 44px | **283.2px, `Open` primary 48px** |
+| The record's `Open` | y = 735.1 | **y = 409.9** |
+| `01 Workspaces` | y = 657.6 | **y = 269.2** |
+| The glance | 187.6px at y = 386, three facts | **125.9px at y = 687.7**, Plan and Balance |
+| The plan panel | y = 1,008.8 | **y = 853.6** |
+| The account | 2,038px | **1,883px** |
+| … at 320 / 390 / 768 / 1440 | — | **2,036 / 1,861 / 1,976 / 1,990** |
+| At 200% text, 360 | — | **3,882px**; head 375.5, `Open` at 832.7 |
+| axe-core, 7 views | — | **0** |
+| `app.css` | 40,958 bytes | **40,943** |
+
+### What this pass leaves
+
+- **At 200% text the record's `Open` is 32.7px below an 800px screen.** The head is 375.5px (a two-line caption, a
+  two-line h1 and a three-line identity) and the contents line 87px; the record begins at 704.5. The 320 caption's
+  cost is closed for normal text but not for the raised root.
+- **The glance still repeats the Plan and Balance panels.** It is a summary of the two money facts, not of the
+  record; removing it would put the balance figure below the first screen and undo the 2026-10-26 balance note.
+- **A missing key keeps its card.** The record holds the key form, but the card is the only place the step is
+  named and the only control that puts the cursor in the model field; the card and the record say the same
+  workspace there, and a later pass that moves the key form to the top of the record can take the card.
+- **The ready record's new sentence costs 67px.** The record was 216px with no sentence and is 283.2px with the
+  card's sentence and the 48px main button; the paused record already carried its sentence and is the same 283.2px.
+- **The glance's 40px gap is a page cost.** It is paid by the removal of the Workspaces tile (57.6px at 360), so
+  the page is still shorter than before; a phone that showed the glance above the record would not have the gap.
+- **The 320 contents line is still two rows (87px).** It is the earlier entry: the five labels need 316.9px of the
+  288 the page has. The record's `Open` is inside an 800px screen at 320 anyway now.
+- **The checkout stand-in, the prose-only 19px links, the sticky header over a target at a hand-chosen scroll and a
+  real usage table behind a model key are the earlier entries**, unchanged and still true.
+
+### Next pass
+
+- The account head at 200% text: 375.5px is the first screen's largest block, and the record's `Open` is 32.7px
+  below an 800px screen. A shorter identity line at a raised root, or a head that keeps the h1 and the identity on
+  one line when it can, is the next drawing.
+- Give the missing-key state its record: the card's `Add your model key` and the record's form are the same job,
+  and the record could carry the sentence and a primary `Save key` at its top.
+- Run forced colours on the new record and glance, and a real usage table behind a model key.
