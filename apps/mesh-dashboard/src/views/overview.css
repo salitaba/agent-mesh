@@ -48,6 +48,18 @@
 .stat-cell:first-child { padding-left: var(--s6); border-left: 0; }
 .stat-cell:last-child { padding-right: var(--s6); }
 .stat-cell .stat { height: 100%; gap: var(--s1); }
+/* A figure is a door. The four figures are the page's index: each one opens what explains it (checks: the goal's own section here;
+   ran for: Steps; tokens: Cost; agents: Agents). The control covers the cell the way a closed section's does, so the press is the
+   whole figure and not a handle at its edge; the chevron is the only thing drawn, and the label names both the number and where the
+   press leads. Measured at 360: the four cells were inert and 150 px tall with nothing to press. */
+.ov-hero .stat-cell { position: relative; }
+.ov-hero .stat-door { position: absolute; inset: 0; z-index: 1; padding: 0; border: 0; background: none; color: var(--muted); cursor: pointer; border-radius: inherit;
+  transition: background var(--k-dur-1); }
+.ov-hero .stat-door .icon { position: absolute; top: var(--s4); right: var(--s5); transition: color var(--k-dur-1), transform var(--k-dur-1); }
+.ov-hero .stat-door:is(:hover, :focus-visible) { background: var(--wash); }
+.ov-hero .stat-door:is(:hover, :focus-visible) .icon { color: var(--accent-2); transform: translateX(2px); }
+.ov-hero .stat-door:active { background: var(--wash-2); }
+.ov-hero .stat-door:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 .stat-vis { display: flex; align-items: center; min-height: 28px; }
 .stat-vis > .prog { flex: 1 1 auto; }
 .ov-seg { display: flex; gap: 3px; flex: 1 1 auto; }
@@ -339,6 +351,8 @@ details.ov-note { display: block; }
   .ship-state::before { forced-color-adjust: none; background: CanvasText; box-shadow: none; }
   /* A closed row says it is a door with a background it cannot keep here: the band becomes an outline instead. */
   .ov .card.closed:is(:hover, :focus-within) { background: none; outline: 2px solid Highlight; outline-offset: -2px; }
+  /* A figure's door is a background and a chevron; the system's colours keep the outline and the chevron's ink. */
+  .ov-hero .stat-door:is(:hover, :focus-visible) { background: none; outline: 2px solid Highlight; outline-offset: -2px; }
 }
 
 /* The Overview's own index, under the attention list and above the long tail. A row of quiet doors, not a toolbar. It is drawn

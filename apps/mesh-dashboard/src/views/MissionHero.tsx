@@ -34,6 +34,22 @@ export function NextButton({ step, run }: { step: NextStep; run: (a: HeroAction)
 /** A headline's first sentence longer than this is set a size smaller: the display size is for a short line, not for a sentence. */
 const LONG_LEAD = 44;
 
+/** Where a figure on the hero sends the reader: the section or page that explains the number. */
+export type HeroIndex = "goal" | "steps" | "cost" | "agents";
+
+/**
+ * The door on a figure. It covers the cell it sits in, so the whole figure is one press (the row shape the folded sections use), and
+ * it names the figure's own number in its label: a screen reader hears the figure and where the press leads, because the contents of a
+ * button are flattened into its name.
+ */
+function Door({ label, to, go }: { label: string; to: HeroIndex; go: (to: HeroIndex) => void }): React.JSX.Element {
+  return (
+    <button type="button" className="stat-door" aria-label={label} onClick={() => go(to)}>
+      <Icon name="chevron-right" size={16} aria-hidden="true" />
+    </button>
+  );
+}
+
 /** What each of the four figures is drawn with beside its number: a slot as tall as the avatars, so the four lines under it line up. */
 function Visual({ children }: { children?: React.ReactNode }): React.JSX.Element {
   return <div className="stat-vis">{children}</div>;
@@ -48,24 +64,26 @@ function Segments({ marks, label }: { marks: CheckMark[]; label: string }): Reac
   );
 }
 
-function ChecksKpi({ checks, marks }: { checks: ChecksSummary; marks: CheckMark[] }): React.JSX.Element {
-  if (checks.total === 0) {
-    return <Stat label="Checks" value="None" sub="This goal declares no mandatory checks."><Visual /></Stat>;
-  }
-  const claimed = checks.claimed > 0 ? `, ${checks.claimed} more claimed and not verified` : "";
+function ChecksKpi({ checks, marks, go }: { checks: ChecksSummary; marks: CheckMark[]; go: (to: HeroIndex) => void }): React.JSX.Element {
+  const label = checks.total === 0 ? "No mandatory checks declared. Open goal checks." : `${checks.done} of ${checks.total} mandatory checks evidenced. Open goal checks.`;
   return (
-    <Stat label="Checks" value={checks.done} unit={`of ${checks.total}`} sub={checks.claimed > 0 ? `${checks.claimed} more claimed, not verified` : `${checks.pct}% evidenced`}>
-      <Visual>
-        {marks.length <= 24
-          ? <Segments marks={marks} label={`${checks.done} of ${checks.total} mandatory checks evidenced${claimed}`} />
-          : <Progress value={checks.done} max={checks.total} label="Mandatory checks evidenced" tone={checks.done === checks.total ? "ok" : undefined} />}
-      </Visual>
-    </Stat>
+    <div className="stat-cell">
+      {checks.total === 0
+        ? <Stat label="Checks" value="None" sub="This goal declares no mandatory checks."><Visual /></Stat>
+        : <Stat label="Checks" value={checks.done} unit={`of ${checks.total}`} sub={checks.claimed > 0 ? `${checks.claimed} more claimed, not verified` : `${checks.pct}% evidenced`}>
+            <Visual>
+              {marks.length <= 24
+                ? <Segments marks={marks} label={`${checks.done} of ${checks.total} mandatory checks evidenced${checks.claimed > 0 ? `, ${checks.claimed} more claimed and not verified` : ""}`} />
+                : <Progress value={checks.done} max={checks.total} label="Mandatory checks evidenced" tone={checks.done === checks.total ? "ok" : undefined} />}
+            </Visual>
+          </Stat>}
+      <Door label={label} to="goal" go={go} />
+    </div>
   );
 }
 
 /** Time since the goal was created, or how long the mission ran. It owns its own tick so the rest of the page does not re-render every second. */
-function ClockKpi({ goal, ticking }: { goal: unknown; ticking: boolean }): React.JSX.Element | null {
+function ClockKpi({ goal, ticking, go }: { goal: unknown; ticking: boolean; go: (to: HeroIndex) => void }): React.JSX.Element | null {
   const now = useNow(ticking ? 1000 : 15000);
   const clock = missionClock(goal as Parameters<typeof missionClock>[0], now);
   if (!clock) return null;
@@ -84,22 +102,27 @@ function ClockKpi({ goal, ticking }: { goal: unknown; ticking: boolean }): React
           {ratio !== null ? <Progress value={clock.ms} max={clock.limitMs!} label="Share of the allowed time gone" tone={tone === "ok" ? undefined : tone} valueText={`${dur(clock.ms)} of ${spanLabel(clock.limitMs!)}`} /> : null}
         </Visual>
       </Stat>
+      <Door label={`${clock.ended ? "Ran for" : "Elapsed"} ${dur(clock.ms)}. See every step.`} to="steps" go={go} />
     </div>
   );
 }
 
-function TokensKpi({ tokens, events, messages }: { tokens: HeroProps["tokens"]; events: number; messages: number | null }): React.JSX.Element {
+function TokensKpi({ tokens, events, messages, go }: { tokens: HeroProps["tokens"]; events: number; messages: number | null; go: (to: HeroIndex) => void }): React.JSX.Element {
   const limited = tokens !== null && tokens.limit > 0;
   const tone = limited ? budgetTone(tokens.consumed / tokens.limit) : "ok";
+  const label = limited ? `Tokens: ${fmt(tokens!.consumed)} of ${fmt(tokens!.limit)}. Open Cost.` : `Tokens: ${fmt(tokens?.consumed ?? 0)}, no limit set. Open Cost.`;
   return (
-    <Stat
-      label="Tokens" value={fmt(tokens?.consumed ?? 0)} unit={limited ? `of ${fmt(tokens.limit)}` : "no limit set"}
-      sub={`${events} events${messages !== null ? ` · ${messages} messages` : ""}`}
-    >
-      <Visual>
-        {limited ? <Progress value={tokens.consumed} max={tokens.limit} size="lg" label="Mission token budget spent" tone={tone === "ok" ? undefined : tone} valueText={`${fmt(tokens.consumed)} of ${fmt(tokens.limit)} tokens`} /> : null}
-      </Visual>
-    </Stat>
+    <div className="stat-cell">
+      <Stat
+        label="Tokens" value={fmt(tokens?.consumed ?? 0)} unit={limited ? `of ${fmt(tokens!.limit)}` : "no limit set"}
+        sub={`${events} events${messages !== null ? ` · ${messages} messages` : ""}`}
+      >
+        <Visual>
+          {limited ? <Progress value={tokens!.consumed} max={tokens!.limit} size="lg" label="Mission token budget spent" tone={tone === "ok" ? undefined : tone} valueText={`${fmt(tokens!.consumed)} of ${fmt(tokens!.limit)} tokens`} /> : null}
+        </Visual>
+      </Stat>
+      <Door label={label} to="cost" go={go} />
+    </div>
   );
 }
 
@@ -108,21 +131,24 @@ function TokensKpi({ tokens, events, messages }: { tokens: HeroProps["tokens"]; 
  * counted. The figure over them (`agentTally`) counts who is working while anyone is, and names the team when nobody is: three zeros
  * are not a figure.
  */
-function AgentsKpi({ seats, agents }: { seats: HeroProps["seats"]; agents: HeroProps["agents"] }): React.JSX.Element {
+function AgentsKpi({ seats, agents, go }: { seats: HeroProps["seats"]; agents: HeroProps["agents"]; go: (to: HeroIndex) => void }): React.JSX.Element {
   const { shown, more } = seatStack(seats);
   const names = shown.map((s) => (s.working ? `${s.id} (working)` : s.id)).join(", ");
   const tally = agentTally(seats, agents);
   return (
-    <Stat label="Agents" value={tally.value} unit={tally.unit} sub={tally.sub}>
-      <Visual>
-        {shown.length ? (
-          <div className="ov-seats" role="img" aria-label={`The team: ${names}${more ? ` and ${more} more` : ""}`}>
-            {shown.map((s) => <span key={s.id} className={`ov-seat${s.working ? " on" : ""}`}><AgentAvatar id={s.id} color={agentColor(s.role)} size="sm" /></span>)}
-            {more ? <span className="ov-seat more">+{more}</span> : null}
-          </div>
-        ) : null}
-      </Visual>
-    </Stat>
+    <div className="stat-cell">
+      <Stat label="Agents" value={tally.value} unit={tally.unit} sub={tally.sub}>
+        <Visual>
+          {shown.length ? (
+            <div className="ov-seats" role="img" aria-label={`The team: ${names}${more ? ` and ${more} more` : ""}`}>
+              {shown.map((s) => <span key={s.id} className={`ov-seat${s.working ? " on" : ""}`}><AgentAvatar id={s.id} color={agentColor(s.role)} size="sm" /></span>)}
+              {more ? <span className="ov-seat more">+{more}</span> : null}
+            </div>
+          ) : null}
+        </Visual>
+      </Stat>
+      <Door label={`Agents: ${tally.value} ${tally.unit}. Open Agents.`} to="agents" go={go} />
+    </div>
   );
 }
 
@@ -195,6 +221,8 @@ export interface HeroProps {
   next: NextStep[];
   /** What else the mission can do, behind "...": whatever `next` does not already show. */
   secondary: MissionControl[];
+  /** Where a figure sends the reader: the section or page that explains the number. */
+  go: (to: HeroIndex) => void;
   run: (a: HeroAction) => void;
 }
 
@@ -230,10 +258,10 @@ export function MissionHero(p: HeroProps): React.JSX.Element {
       </div>
 
       <div className="stat-strip" role="group" aria-label="Mission figures">
-        <div className="stat-cell"><ChecksKpi checks={checks} marks={p.marks} /></div>
-        <ClockKpi goal={p.goal} ticking={p.ticking} />
-        <div className="stat-cell"><TokensKpi tokens={p.tokens} events={p.events} messages={p.messages} /></div>
-        <div className="stat-cell"><AgentsKpi seats={p.seats} agents={p.agents} /></div>
+        <ChecksKpi checks={checks} marks={p.marks} go={p.go} />
+        <ClockKpi goal={p.goal} ticking={p.ticking} go={p.go} />
+        <TokensKpi tokens={p.tokens} events={p.events} messages={p.messages} go={p.go} />
+        <AgentsKpi seats={p.seats} agents={p.agents} go={p.go} />
       </div>
 
       <RightNow input={p.live} roleOf={(id) => roles.get(id) ?? ""} />
