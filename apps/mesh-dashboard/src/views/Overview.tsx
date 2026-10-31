@@ -23,7 +23,7 @@ import { MissionHero } from "./MissionHero";
 import { Panel } from "./Panel";
 import type { Fold } from "./Panel";
 import { ReplayDrawer } from "./ReplayDrawer";
-import { Shipped } from "./Shipped";
+import { Shipped, shippedLine } from "./Shipped";
 import { MiniFeed, TimelineSkeleton, WorkTimeline } from "./Timeline";
 import "./overview.css";
 
@@ -331,7 +331,8 @@ export default function Overview(): React.JSX.Element {
   // What each folded row says in place of its body. A failure is said in the row too: "reading the files" forever would be the one
   // state the fold could invent, and the fold is the only thing a phone sees until the row is opened.
   const stepsFold = stepsErr && !steps.length ? "could not load" : steps.length ? `${steps.length} ${steps.length === 1 ? "step" : "steps"}` : stepsLoaded ? "none yet" : "reading the steps";
-  const artsFold = artsState === "error" ? "could not load" : artsState === "ready" ? `${goalArts.length} ${goalArts.length === 1 ? "file" : "files"}` : "reading the files";
+  // The closed row says the split, not the pile: "3 of 9 delivered" is what a person asks the result, and the body groups them by it.
+  const artsFold = artsState === "error" ? "could not load" : artsState === "ready" ? shippedLine(goalArts) : "reading the files";
   const eventsFold = sseState === "reconnecting" ? "paused while reconnecting" : behind && tailFailed ? "latest could not load" : `${status.eventCount ?? timeline.length} events`;
 
   return (

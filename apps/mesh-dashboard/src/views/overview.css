@@ -107,6 +107,46 @@ details.ov-note { display: block; }
 .ov-foot { margin: var(--s3) 0 0; font-size: 13px; color: var(--muted); overflow-wrap: anywhere; }
 .ov-foot .mono { color: var(--text-dim); }
 
+/* The result is a delivery receipt, not a grid of equals: what landed is drawn as cards, under its own caption, and what has not
+   is a ruled list of names. The panel used to draw six of nine files as identical cards — a merged patch beside a research report
+   still "ready for review" — so "what did I get?" was answered by a wall, and three of the files were not on the page at all.
+   A group's caption is the capital caption §3 gives a group of rows inside a card, never a second card title. */
+.ship-group + .ship-group { margin-top: var(--s4); padding-top: var(--s4); border-top: 1px solid var(--line); }
+.ship-h { display: flex; align-items: baseline; gap: var(--s2); margin: 0 0 var(--s3); font: 600 12px/1.2 var(--sans); letter-spacing: var(--k-track-caps); text-transform: uppercase; color: var(--muted); }
+.ship-n { font: 650 12px/1.2 var(--sans); letter-spacing: 0; color: var(--text-dim); }
+/* Three delivered files fill the card's width instead of leaving a fourth empty track. */
+.ship-cards { grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
+.ship-list { margin: 0; padding: 0; list-style: none; border-top: 1px solid var(--line); }
+.ship-list > li + li { border-top: 1px solid var(--line); }
+/* A file that has not landed is a row: the name, then what it is and where it lives, then the state. The row is the target (44 px
+   at every width). A phone stacks those lines, the shape the Files page's own rows use; from 621 a desk sets them on one line, so a
+   column of names reads down one edge and the states down the other. The state is the ledger's dot and word, not a pill: the group's
+   caption above already says it in the heading's voice, and a row of 110 px pills would compete with the names. */
+.ship-row { display: grid; grid-template-columns: 28px minmax(0, 1fr); grid-template-areas: "tile name" "tile meta" "state state"; align-items: center; column-gap: var(--s3); row-gap: var(--s0); width: 100%; min-height: 44px; padding: var(--s1-5) var(--s3); background: none; border: 0; border-radius: var(--k-r-sm); color: inherit; font: inherit; text-align: left; cursor: pointer; transition: background-color var(--k-dur-1) var(--k-ease); }
+.ship-row:is(:hover, .is-hover) { background: var(--panel-2); }
+.ship-row > .tile { grid-area: tile; }
+.ship-name { grid-area: name; font: 600 14px/1.3 var(--sans); letter-spacing: var(--k-track-tight); overflow-wrap: break-word; }
+.ship-meta { grid-area: meta; display: flex; flex-wrap: wrap; align-items: center; gap: var(--s1) var(--s2); min-width: 0; font-size: 12px; line-height: 1.4; color: var(--muted); }
+.ship-state { --tone: var(--muted); grid-area: state; justify-self: start; display: inline-flex; align-items: center; gap: var(--s1-5); font: 13px var(--sans); color: var(--text-dim); white-space: nowrap; }
+.ship-state::before { content: ""; flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--tone); }
+.ship-state.completed { --tone: var(--ok); }
+.ship-state.waiting { --tone: var(--warn); }
+.ship-state.failed { --tone: var(--bad); }
+.ship-state.idle::before { background: transparent; box-shadow: inset 0 0 0 1.5px var(--line-control); }
+.ship-path { max-width: 100%; padding: 0 var(--s2); background: var(--sunken); border: 1px solid var(--line); border-radius: var(--k-r-xs); font: 12px/18px var(--mono); color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* From the console's 760 break (the ladder's next step above the phone) the row has the width for one line, so a column of names
+   reads down one edge and the states down the other. */
+@media (min-width: 760px) {
+  /* The name's own width, not a share of the card: a name and what it is belong beside each other, and a 475 px first column
+     put the type halfway across the row. The longest name sets the column, so the types start on one edge. */
+  .ship-row { grid-template-columns: 28px minmax(0, max-content) minmax(0, 1fr) auto; grid-template-areas: "tile name meta state"; }
+  .ship-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .ship-state { justify-self: end; }
+}
+/* The loading shape of a row: a mark and two lines, the shape the files will take. */
+.ship-skel-row { display: flex; align-items: center; gap: var(--s3); min-height: 44px; padding: var(--s1-5) var(--s3); }
+.ship-skel-row > span { display: grid; flex: 1 1 auto; gap: var(--s1); min-width: 0; }
+
 /* ---------- the checks ---------- */
 .ov-goal-text { margin: var(--s3) 0 var(--s1-5); max-width: 70ch; white-space: pre-line; overflow-wrap: anywhere; }
 .ov-goal-text.clamp { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 4; line-clamp: 4; overflow: hidden; }
@@ -251,6 +291,11 @@ details.ov-note { display: block; }
   .ov .ov-ev .chip { min-height: 44px; padding: 0 var(--s3); }
   /* A folded section is one row: its name, one figure, Show. The figure may not wrap the row into two lines, so it truncates. */
   .ov .card-fold-sum { flex: 1 1 auto; min-width: 0; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  /* An open section's head is its title and its one control on the first row, and the count under them. Measured at 360 on the
+     delivered demo, "What shipped" with its split ("9 files · 3 delivered · 6 awaiting review") put the meta on two lines and
+     Show on a third: the head was 103 px of a phone's first screen. The title and Show share the row, the meta takes the next. */
+  .ov #ov-shipped:not(.closed) .card-head > .card-meta { order: 3; flex: 1 1 100%; }
+  .ov #ov-shipped:not(.closed) .card-head > .card-acts { order: 2; margin-left: auto; }
   /* Closed, the section is a ruled row, not a card with its heading and nothing under it: the four evidence sections read as one
      ledger under the index, and the surface returns when a row opens. Measured at 360: a closed card was 103 px (16 padding, a
      44 px control, a 12 px gap and a rule with no body under it); the row is 53, and the four rows are 212 against 412. */
@@ -290,6 +335,8 @@ details.ov-note { display: block; }
   .ov-seg i.skipped { border: 1px dashed CanvasText; }
   .ov-seat.on { outline: 2px solid Highlight; outline-offset: 1px; }
   .ck.done { forced-color-adjust: none; background: Highlight; color: HighlightText; }
+  /* A file's state in the receipt is a dot and a word; the word survives the system's colours, and the dot is drawn in them. */
+  .ship-state::before { forced-color-adjust: none; background: CanvasText; box-shadow: none; }
   /* A closed row says it is a door with a background it cannot keep here: the band becomes an outline instead. */
   .ov .card.closed:is(:hover, :focus-within) { background: none; outline: 2px solid Highlight; outline-offset: -2px; }
 }
