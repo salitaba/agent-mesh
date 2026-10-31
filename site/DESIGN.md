@@ -2147,3 +2147,95 @@ is copied from an earlier pass.
 - `npm run site:check` still exits 1 on the owner's `TODO(owner)` for the terms at `site/legal/index.html:133`, and
   `site/ux/` was not edited. The pass's before and after frames — the landing page at its top, and the pricing page's plans —
   were handed to the /ux page with the report; they are not in `site/ux/`, which belongs to that page's own pass.
+
+## 2026-10-31, fourth pass: the demo is one sequence, and its commands are the step's
+
+Measured with the same probe (Chrome over CDP, reduced motion, light unless said, touch at 320/360/390, a mouse at 768 and
+1,440, dark at all five, print at 794, forced colours at 360, a 24px and a 32px root at 320/360, no script at 360/768). The
+before column is the site at `fd913ac`, exported with `git archive` and served on a second port (8110), measured in the same
+run; no number is copied from an earlier pass.
+
+### What changed
+
+- **The demo's cost is four facts, not a sentence.** "You need Docker and git; the first command uses `openssl`, and any random
+  string of 32 or more characters is a token." was three lines (77px at 360, 51 at 1,440). It is a `ul.try-facts` of four
+  one-line facts now — Docker and git, No API key, 32+ character token, Mission: seconds — **77 → 48px at 360** (two rows)
+  and **51 → 22px at 1,440** (one row). Every fact is already in the deployment guide ("Try it in a minute, with no API key",
+  the 32-character token, the mission "in a few seconds"); no number is new.
+- **The step is the number, the heading and the Copy button on one line, and the command takes the column.** At 719px and
+  below the step is a `28px / 1fr / auto` grid: the number is static instead of a 36px absolute circle, the vertical rail is
+  gone, and the code block spans the column — **272 → 328px at 360 (+20.6%)** and **232 → 288px at 320**. The 48px Terminal
+  band is gone from the demo's three blocks; the Copy button belongs to the step, stands on its heading line, and is 44px on
+  a coarse pointer (36px on a mouse). The heading keeps 48px clear of it only while the script has put the button there
+  (`.try > li:has(.code-bar) h3`), so a page with no script has a full-width heading and no empty gutter.
+- **The three commands are broken where a shell breaks them.** The token is `export MESH_API_TOKEN=\` + `"$(openssl rand
+  -hex 32)"`; the run command is one flag per line, with `-e MESH_API_TOKEN=\` + `"$MESH_API_TOKEN"`; at a phone the build
+  URL fills its line (`word-break: break-all`) instead of leaving `git clone` alone while the URL moves whole to the next
+  line. The copied text is the same command, and `site-copy.test.ts` pins the new line breaks.
+- **The fourth step is an instruction and two notes.** Its first paragraph was eight lines (192px at 360) carrying the URL,
+  the token, the project, the button, the seven agents, the mission and the block. It is now the instruction (3 lines, 72px),
+  "what you'll see" (4 lines, 84px at 14px) and "your own credentials" (3 lines, 64px at 14px); the step is **334 → 297px**.
+  The 14px note is a new rule (`p.small` inside `.try`), so a note reads as a note and an instruction as an instruction.
+- **The pricing page's Cloud answer is five lines.** "Flat monthly hosting, priced at sign-up and kept there. Your plan sets
+  your workspaces; each is a host on its own plan. Your key, your provider's bill: we do not resell model usage." is **218 →
+  181 characters**, **6 → 5 lines (144 → 120px)**; the Cloud card is **432 → 408px**, the licence card's height, and `#ways`
+  is **1,002 → 978px**. Every claim is kept: the flat monthly hosting, where its prices live, the account's workspaces, each
+  workspace on its own plan, your own key and provider bill, and no resale.
+
+**The patterns that now bind.** A step in a recipe is its number, its heading and its Copy button on one line; the command
+spans the column and carries no chrome of its own. A command is broken at a shell's own boundaries, never inside a token. A
+note beside an instruction is 14px and muted; the instruction stays 15px. A demo's cost is a row of facts, not a sentence.
+
+### Measurements after this pass
+
+| The home page at 320 / 360 / 390 / 768 / 1,440 | Before | After |
+|---|---|---|
+| The page | 13,592 / 12,669 / 12,275 / 12,247 / 11,283 | **13,234 / 12,436 / 12,044 / 12,191 / 11,226** |
+| `#try` | 2,025 / 1,832 / 1,788 / 1,380 / 1,239 | **1,667 / 1,599 / 1,557 / 1,324 / 1,182** |
+
+| The demo at 360 | Before | After |
+|---|---|---|
+| The cost line / facts | 77 (3 lines) | **48 (2 rows)** |
+| Step 1 / 2 / 3 / 4 | 307 / 352 / 314 / 334 | **285 / 277 / 243 / 297** |
+| The three command blocks | 163 / 184 / 226 | **86 / 107 / 149** |
+| Step 4's first paragraph | 192 (8 lines) | **72 (3 lines) + 84 + 64 at 14px** |
+| The demo's words | 200 | **193** |
+
+| The pricing page at 360 | Before | After |
+|---|---|---|
+| `#ways` | 1,002 | **978** |
+| The Cloud card | 432 | **408** |
+| Its "What you pay" | 144 (6 lines) | **120 (5 lines)** |
+
+- No page scrolls sideways at 320, 360, 390, 768 and 1,440 in light or dark (**0** on the home and pricing pages' 20
+  page/width/theme pairs; the other five pages changed only their stylesheet fingerprint), **0** computed text under 12px,
+  **0** console errors. axe-core WCAG 2.0–2.2 A and AA: **0** violations on the home page at 360 light, 360 dark and 1,440
+  light, and on pricing at 360 light.
+- Without a script the home page is **12,414** at 360 and **12,190** at 768, 0px over; the four facts and four steps are
+  there, and there are no Copy buttons. At a 32px root the page is **29,227** at 360 and **32,646** at 320, 0px over (the
+  6/26px debt the last pass recorded did not appear in this run; this pass adds none). Print at 794 is **11,907** (11,963),
+  0px over; `forcedColors: active` at 360 is **12,436**, 0px over.
+- The site's own suites are **146** tests (the seven `site*` files), all passing; the full suite is **6,433** tests, 6,431
+  pass and 2 skip. `site-chrome --check` and `pricing:check` pass; `npm run site:check` still exits 1 on the owner's
+  `TODO(owner)` for the terms at `site/legal/index.html:134` (the line moved with the stylesheet fingerprint).
+
+### What this pass deliberately left
+
+- **"Make a token, and keep it" is two lines at 360 and 320.** The Copy button needs 48px of the heading's 280px column and
+  the heading is 238px wide at 19px. One line would mean a smaller type size or a Copy button below the heading, which would
+  cost the 44px row the Terminal band cost.
+- **The build command's URL still breaks inside itself at 320** (`.../sal` / `itaba/...`): a 45-character URL in a 260px
+  content box cannot fit, and the alternative (`overflow-wrap: anywhere`) leaves `git clone` alone on its own line at 360.
+  The URL is one word to a browser; the Copy button copies it whole.
+- **The Copy button is visually on the step's heading line but after the prose in the DOM.** It is still inside `.code`, so
+  the focus order is heading, prose, Copy, commands, while the visual order is heading+Copy, prose, commands. Moving it out
+  would change the docs page's copy-button structure too, and the button's name ("Copy these commands") says what it copies.
+- **The two ways in (`#ways`, 978px at 360) and the nine argument sections are unchanged.** The page is still 12,436 at 360
+  (15.5 screens) and the demo is 1,599 of it; the next saving is copy.
+- **The captures were not retaken**, and `site/ux/` was not edited.
+
+The next pass's first job is the two ways in (`#ways`, 978px at 360): two cards whose four answers repeat the pricing
+page's, and the pricing page's Cloud card is now 408px, the licence card's height, so the row no longer has a tall card
+setting it. After that, the page's length: 12,436 at 360 is 15.5 screens, and the console (`#product`, 3,868) and the nine
+argument sections are where the words are.
+

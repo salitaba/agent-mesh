@@ -581,6 +581,39 @@ main:has(.hero) .section-head .eyebrow::before { counter-increment: sec; content
 .try > li:last-child { padding-bottom: 0; }
 .try > li:last-child::after { display: none; }
 .try h3 { margin-bottom: 6px; }
+/* The Copy button stands on the heading line; the heading stops short of it, and only when the script
+   has put the button there. */
+.try > li:has(.code-bar) h3 { padding-right: 48px; }
+/* The Copy button is the step's, and stands on its heading line: the first paragraph starts below
+   its 44px target at every width, not under it. */
+.try > li > p:first-of-type { margin-top: 20px; }
+/* A note beside a step is smaller than its instruction: the command is the thing to do, the note is
+   what it will show or what changes with your own key. */
+.try p.small { font-size: .875rem; line-height: 1.5; }
+/* What the demo costs, as facts rather than a sentence: a phone reads them in two rows, a desk in one.
+   Every one is a claim the deployment guide already makes (Docker, no key, a 32+ character token, the
+   scripted mission in seconds), and none is a new number. */
+.try-facts { display: flex; flex-wrap: wrap; gap: 4px 12px; margin: 20px 0 0; padding: 0; list-style: none; }
+.try-facts li { position: relative; padding-left: 16px; color: var(--muted); font-size: .875rem; }
+.try-facts li::before { content: ""; position: absolute; left: 0; top: .62em; width: 6px; height: 6px; border-radius: 50%; background: var(--link); }
+/* The demo's commands are a recipe with a step above them: the Copy button belongs to that step, not to
+   a 48px Terminal band. On a phone the step is a number, a heading and the button on one line, and the
+   command takes the column's whole width, so a command wraps at a word rather than at the step's indent. */
+@media (max-width: 719px) {
+  .try > li { display: grid; grid-template-columns: 28px minmax(0, 1fr) auto; column-gap: 10px; align-items: start; padding: 0 0 32px; }
+  .try > li::before { position: static; grid-column: 1; grid-row: 1; width: 28px; height: 28px; margin-top: 0; font-size: .8125rem; }
+  .try > li::after { display: none; }
+  .try h3 { grid-column: 2; grid-row: 1; margin: 0; align-self: center; }
+  .try > li > p, .try > li > .code, .try > li > .copy-note, .try > li > div[data-image-slot] { grid-column: 1 / -1; }
+  /* Fill the line before breaking: a 45-character URL after "git clone " is one word to the browser,
+     and with `anywhere` alone it moves whole to the next line, leaving "git clone" alone. */
+  #try .code pre { word-break: break-all; }
+}
+#try .code { position: static; overflow: visible; padding-top: 0; margin-top: 20px; }
+#try .code::before { display: none; }
+#try .code pre { padding: 10px 14px 12px; }
+#try .code-bar { top: 0; right: 0; height: 44px; }
+
 
 /* notices and tags: a ring, a dot and a bar in the notice's colour; the tint, the edge and the bold words say it again */
 .notice { --i: var(--k-warn); position: relative; margin: 0; padding: 14px 16px 14px 48px; border: 1px solid color-mix(in srgb, var(--i) 30%, transparent); border-radius: var(--k-r-md); background: color-mix(in srgb, var(--i) 8%, var(--panel)); font-size: .9375rem; }

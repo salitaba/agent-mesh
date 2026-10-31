@@ -172,12 +172,12 @@ test("the home page says what it is, and the 'Try it' commands are the ones that
   const blocks = [...home.html.matchAll(/<div class="code"><pre[^>]*><code>([\s\S]*?)<\/code><\/pre><\/div>/g)].map((m) => decode(m[1]!));
   assert.equal(blocks.length, 3, "three blocks of commands");
   const [token, build, run] = blocks as [string, string, string];
-  assert.match(token, /^export MESH_API_TOKEN="\$\(openssl rand -hex (\d+)\)"\necho "\$MESH_API_TOKEN"$/, "the token is made, and shown, first");
+  assert.match(token, /^export MESH_API_TOKEN=\\\n"\$\(openssl rand -hex (\d+)\)"\necho "\$MESH_API_TOKEN"$/, "the token is made, and shown, first");
   assert.ok(Number(/-hex (\d+)/.exec(token)![1]) * 2 >= 32, "and is at least the 32 characters the server insists on");
   const script = read("site", "assets", "site.js");
   const repo = /var REPO_URL = "([^"]+)";/.exec(script)![1]!;
   assert.equal(build, `git clone ${repo}.git curule\ncd curule\ndocker build -t curule .`, "the image is built from a checkout, the way README.md says");
-  assert.equal(run, 'docker run --rm -p 127.0.0.1:7420:7420 -v mesh-demo:/data \\\n  -e MESH_API_TOKEN="$MESH_API_TOKEN" \\\n  curule demo', "and the demo runs from the image that was built");
+  assert.equal(run, 'docker run --rm \\\n  -p 127.0.0.1:7420:7420 \\\n  -v mesh-demo:/data \\\n  -e MESH_API_TOKEN=\\\n"$MESH_API_TOKEN" \\\n  curule demo', "and the demo runs from the image that was built");
   assert.ok(read("README.md").includes("docker build -t curule .") && read("README.md").includes("-e MESH_API_TOKEN=\"$(openssl rand -hex 32)\" curule demo"), "README.md gives the same commands");
   assert.ok(read("deploy", "docker", "entrypoint.sh").includes("demo)"), "the image's entrypoint has the demo command");
   assert.ok(home.copy.includes("Open the demo-stub project and press Start mission"), "and the steps in the dashboard");
