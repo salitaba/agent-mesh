@@ -324,7 +324,7 @@ and `#/designer` at 0.
   Designer is unchanged at every width (1,088 / 1,050 / 1,015 / 839 / 736) because it draws no dock and reserves none.
   At the end of every page no control is left under the row: the event list's own scroller ends 12 px above it.
 - **Nothing else moves.** No document or `#view` sideways scroll at 320/360/390/768/1440 in light or 360/1440 in dark;
-  axe-core **0** violations in 26 reads (13 views × 360 and 1,440 in light, 4 views at 360 and 1,440 in dark; 23–37 rules
+  axe-core **0** violations in 34 reads (13 views × 360 and 1,440 in light, 4 views at 360 and 1,440 in dark; 19–32 rules
   passed each); one console error in both halves (the one-mesh `/api/projects` 404, and before it was two on Cost); the
   smallest text stays 11 px (the avatar initials and the Designer's seat flags); the dock's tabs are 72 × 52 at 360, so
   they clear the floor by 8 px in the narrow direction.
