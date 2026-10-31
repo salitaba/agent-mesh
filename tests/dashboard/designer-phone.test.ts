@@ -95,6 +95,12 @@ test("a phone's fixed chrome is two rows and one bar line, so the roster's first
   // the Inspector's decorative glyph the three actions are one 280 px row in 292 (header 89.6), and the path and draft state share one
   // 17.4 px line (bar 74.4): the seat is 628.3-688.3, whole above 769.6. The word "Inspector", its 44 px target and its aria contract stay.
   assert.ok(hasRule(designerCss, ".ms #ms-insp-toggle .icon", /display:\s*none/), "the phone's Inspector is its word, not a glyph plus a word");
+  // Measured on the delivered demo at 320: the draft chip's dot and the verdict's alert glyph were the 5.3 and 9.5 px that kept the
+  // title row and the action row from fitting 292. With them the head was four rows (250.59 px) and the menu alone on the fourth;
+  // without them the rows are 284.57 and 281.5 and the head is two rows (168.59), so the roster's first seat is 82 px higher.
+  assert.ok(hasRule(designerCss, ".ms .view-title > .pill::before", /display:\s*none/), "the phone's draft chip is its words, not a dot plus a word");
+  assert.ok(hasRule(designerCss, ".ms .ms-verdict .icon", /display:\s*none/), "and the verdict is its words, not an alert glyph plus a word");
+  assert.ok(hasRule(designerCss, ".ms .view-title > .pill", /padding-left:\s*var\(--s2\)/), "a dotless chip does not keep the dot's inset");
   assert.ok(hasRule(designerCss, ".ms-bar", /padding:\s*var\(--s1\) var\(--s3\)/), "the bar's rhythm is 4 on a phone");
   assert.ok(hasRule(designerCss, ".ms-bar-file", /flex-direction:\s*row/), "the path and the draft state share one line");
   assert.ok(hasRule(designerCss, ".ms-bar-file", /flex-wrap:\s*wrap/), "and the state takes the line under the path when a long file name needs it");

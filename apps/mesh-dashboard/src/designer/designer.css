@@ -207,6 +207,16 @@ body:has(.ms-bar) #toasts { bottom: calc(var(--dock-clear) + var(--ms-bar-h, 0px
      = 337 in a 332 px row, so the menu alone fell to a second row. The title row's gap is 8 here; 329 fits, and the header gives
      the roster back the row the pair used to hold (52 px plus its 8 px gap). */
   .ms .view-title { column-gap: var(--s2); }
+  /* The head's two status marks were decoration around words: the draft chip's dot (6 px and its 6 px gap) and the verdict's alert
+     glyph (14 and 6). On the delivered demo's 320 the title row (116.88 + 8 + 171.69 = 296.57) and the action row (142.34 + 8 +
+     99.16 + 8 + 44 = 301.5) each needed more than the 292 px they had, so the chip took a row of its own and the 44 px menu a third:
+     the head was four rows, 250.59 px, 248 px of dead ground beside the menu, the roster's first seat at 425.17 and three whole seats
+     on the first screen. Without the marks the rows are 284.57 and 281.5: the head is two rows, 168.59 px, 82 px higher, and four
+     whole seats are on the first screen. The words, the names and the 44 px targets stay; at 360 and 390 no row changes height,
+     because the head already fitted there. */
+  .ms .view-title > .pill::before { display: none; }
+  .ms .view-title > .pill { padding-left: var(--s2); }
+  .ms .ms-verdict .icon { display: none; }
   .ms-side { width: 100%; border-left: 0; }
   .ms-bar-acts { margin-left: 0; width: 100%; }
   .ms-bar-acts > button { flex: 1 1 0; }

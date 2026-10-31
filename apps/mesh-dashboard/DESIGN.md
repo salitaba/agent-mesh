@@ -147,7 +147,9 @@ Breakpoints: **1280 1100 900 800 760 620 560**. 800 is the sidebar drawer (JS
   446.2 px card left 27.8 px of it (2026-10-28).
 - The Designer's fixed chrome is two rows and one bar line on a phone: the
   verdict, Inspector and ⋯ share one 44 px row even at 320 (the phone's
-  Inspector is its word, without the decorative glyph), and the save bar's path
+  Inspector is its word, without the decorative glyph, and so are the draft chip
+  and the verdict: a chip's dot and a status glyph are decoration and must not be
+  the 5 px that wrap the head), and the save bar's path
   and draft state share one 17.4 px line. The header is 141.6 → 89.6 px and the
   bar 107.4 → 74.4 at 320; the two blocks together are 164 px at 320 and 360,
   and the roster's first 60 px seat is wholly above the bar at both (2026-10-28).
@@ -194,7 +196,8 @@ Breakpoints: **1280 1100 900 800 760 620 560**. 800 is the sidebar drawer (JS
 - At **320** the Designer's save bar gives the file name the line it needs, so a blocked draft's sentence sits under the path on one line and the
   bar is **112 px** where it was 110.4 with three lines and 68 of its 70.5 px of name. The cost is one line, and only for a long name: the
   36-character fixture is 93.4 at 320 and 360, the 56-character one 108.4 (two lines of name), and a blocked draft of either 112. The header
-  at 320 is still two rows, 89.6 px, and its title row and 155.8 px save-state chip are what remain of it. The one place the shape costs is
+  at 320 is two rows since 2026-10-31: a 79.59 px title row (the title and a 157.69 px dotless save-state chip) and the 44 px verdict,
+  Inspector and menu, 168.59 with its lede; before that the chip and the menu each took a row of their own (250.59). The one place the shape costs is
   the **lag** state at 390: 146.8 against 127.8, because its four-line sentence now has the path's line above it.
 - The Designer's Inspector is a word on every phone layout now (91.7 px wide, no glyph); at 390 and 620 the glyph had room beside the word,
   so whether the phone should keep it is a reading question rather than a measurement one.
@@ -221,9 +224,9 @@ Breakpoints: **1280 1100 900 800 760 620 560**. 800 is the sidebar drawer (JS
 
 ## What the next pass should take
 
-1. Take the Designer's 320 header: 89.6 px of two rows, the title row and a 155.8 px save-state chip. The save bar has no row left to give —
-   74.4 while the path and the state share a line, 112 when a blocked sentence needs its own — so the chip is the next block to measure, and
-   shortening it is a words decision ("Parked · 4 events" is a sentence nobody has written yet).
+1. The Designer's 320 header is two rows now (168.59 px with its lede; 89.6 on the first-run guide, which has no lede). The save bar's
+   blocked state is the next block there: its 44 px inline action inflates the line from 17.4 to 36, and that 18.6 px is the last thing
+   the bar could give back — it needs either a glyph button (a name lost) or a target overlap (a target collision).
 2. Decide whether the Steps filter fold belongs above 620: at 621–768 the chips take two rows and the switch a third (166 px),
    though the page's own reading is one button there. The same decision covers the tablet's 32 px `NextLinks`.
 3. Decide whether What shipped opens by default on a fresh delivery, and whether the phone's fold remembers a section (the page
@@ -235,6 +238,42 @@ Breakpoints: **1280 1100 900 800 760 620 560**. 800 is the sidebar drawer (JS
 8. Check the frame's safe-area claims on a notched device in both orientations; the insets are in the CSS but the stand-in browser reports them as zero.
 
 ## Pass log
+
+### 2026-10-31 — a phone's Designer head is two rows at 320, because its status is its words
+
+Surface: `designer/designer.css` (the 760 block) and three rules in `tests/dashboard/designer-phone.test.ts`. Measured on the
+scripted demo at **Delivered** (9 seats, 36 wires, the draft "No unsaved changes", the verdict "Valid, 2 notes") in the
+production build, Chromium at 320/360/390/768/1440 in light and 360/1440 in dark, a touch pointer at 768 and below, reduced
+motion, axe-core at 320/360/390/1440 light and 360/1440 dark. Before is the same worktree with only the stylesheet reverted,
+built and served in the same session; both halves are `#/designer` at `#view.scrollTop` 0 on the same delivered mission.
+
+- **The head was four rows at 320, and the menu had a row to itself.** The title row needed **296.57 px** in 292 (title 116.88 +
+  8 + the draft chip 171.69) and the action row **301.5** (verdict 142.34 + 8 + Inspector 99.16 + 8 + the 44 px menu), so the
+  chip took a row of its own and the menu a third: the head was **250.59 px**, the menu at y = 195.59 with **248 px of dead
+  ground** beside it, and the roster's first seat at **425.17**.
+- **The two marks were decoration around words, and they were the 5.3 and 9.5 px that did not fit.** The draft chip's dot
+  (6 px and its 6 px gap) and the verdict's alert glyph (14 and 6) are not the state: "No unsaved changes" and "Valid, 2 notes"
+  are. Without them the rows are **282.57** and **281.5**, the head is **two rows, 168.59 px**, the lede is **82 px** higher
+  (165.59), the body is **256.59** (was 338.59) and the page **1,170 → 1,088**. The first seat is **343.17** (was 425.17) and
+  the first screen holds **four whole seats** where it held three (4.9 px of the fifth shows above the 725.61 bar).
+- **360 and 390 do not move a row.** The head is 168.59 at 360 and 147.59 at 390 in both builds; the chip is 12 px narrower
+  (171.69 → 157.69), the verdict 20 (142.34 → 122.34), Inspector starts at 144.34 (was 164.34) and the menu at 251.5 (was
+  271.5), so the menu now ends at 295.5 in a title row that ends at 346. 768 and 1,440 are outside the 760 block and keep the marks
+  (chip 171.69, verdict 142.34 with its glyph). Dark reads the same geometry as light.
+- **Nothing is lost, and the floors hold.** Every word, name and control stays: the chip is still `role="status"` with its
+  `title`, the verdict is still a 122.34 × 44 button with `aria-expanded`, `aria-haspopup` and its checks panel, Inspector is a
+  99.16 × 44 word and the menu a 44 × 44 glyph with the same five items; the same 16 targets and tab stops. No document or
+  `#view` sideways scroll at 320/360/390/768/1440; no text under 12 px (the 11 px avatar glyphs aside); no control under 44 × 44
+  at 320/360/390; **0** axe violations at 320/360/390/1440 light and 360/1440 dark (23/23/23/32/23/32 rules passed); the one
+  console error is the one-mesh `/api/projects` 404.
+
+Suite: typecheck and build clean; `dist/tests/dashboard` **1,192 pass, 0 fail** with three new rules in `designer-phone.test.ts`
+(each mutation-checked: the dot rule removed, then the glyph rule, then the chip's inset, each failed its assertion and was
+restored); `dist/tests/build` (`console-palette`, `icons`, `ui-kit-tokens`, `dist-coherence`, `no-mojibake`) **21 pass**.
+
+**Left.** The two marks are gone on every phone layout, not only at 320 (a 360 screen has the room and loses them too, because
+one phone shape is the rule). The 320 first screen now shows four seats and 4.9 px of the fifth; the head is 168.59 with its
+three-line lede, and that lede is the next 63 px.
 
 ### 2026-10-30 — an open event is the page on a phone, and its close stays in reach
 
