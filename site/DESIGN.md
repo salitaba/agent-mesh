@@ -2050,3 +2050,100 @@ with a scan of each image, not from an earlier record.
   pictures and the sections below them had not painted when it was captured).
 - `npm run site:check` still exits 1 on the owner's `TODO(owner)` for the terms at `site/legal/index.html:133`, as the
   last seven passes recorded.
+
+## 2026-10-31, third pass: the plan you choose, and a price that agrees with itself
+
+Measured with the same probe (Chrome 156 over CDP; reduced motion; light unless said; touch at 320/360/390, a mouse at 768
+and 1,440; dark at all five; print at 794; forced colours at 360; a 24px root at 360; no script at 360 and 768). The before
+column is the site at `d1979b5`, exported with `git archive` and served on a second port, measured in the same run; no number
+is copied from an earlier pass.
+
+### What changed
+
+- **On a phone a plan is read one at a time, chosen by its name and its figure.** A card at 360 is **978px** tall — a screen
+  and a quarter, once the tagline, both prices, three limits, four features, support and (on two plans) the roadmap are in it —
+  and the four stood in one sideways snap row. Comparing two figures meant swiping at four different heights, and the row
+  showed one card's figure at a time. The four names and their figures are one **2 × 2 chooser** now (each chip **160 × 62**
+  at 360, the block **328 × 131** at **869**), so all four prices are on one screen, one press each; the card below is the plan
+  chosen (**328 × 739** at 360, at **1,016**), and the comparison further down still lists every line of all four. The plans are
+  **1,006 → 739px** at 360 and the row scrolls no more (**1,306 → 328** of scroll width). It is radios and CSS, so it works with
+  no script; a chip's figure is the period the Annual/Monthly switch names; the chosen chip is a dot and a rule as well as a
+  tint (and an outline in High Contrast), so it is not colour alone. From 720 four cards fit and the chooser is not shown.
+- **The first figure is the same figure on the home page and on the page that sells it.** The hero line and the home rate card
+  said **$149 / $599** (monthly) while the pricing page opened on **$124 / $499** (annual, which is the switch's first choice):
+  the same plan had two prices, one page apart. The hero's line is now the pricing page's head line, in the period that page
+  opens on — *Billed annually: Community is free; Team is $124 a month; Business is $499 a month; Enterprise is quoted.* — and
+  the rate card's amount is the annual figure with the monthly one named beside it (*per month, billed annually; $149 billed
+  monthly*). Nothing was invented: both figures come from the plan table, and the monthly one is still on the page, labelled.
+- **The figures rank above the sentence they sit in.** The amounts in the hero line and the pricing page's head are bold and
+  tabular (`<b>`, `font-variant-numeric: tabular-nums`), the site's rule for every figure that is compared; they read as four
+  facts, not as a sentence to parse.
+- **A card no longer says what the section already says.** "One host, one plan: a licence installs on a single host, and the
+  three figures above are that host's." stood in **all four** plan cards and again in the paragraph under the table, where it
+  belongs. The cards lost it: the card is **1,043 → 946px** at 1,440 and the page **150px shorter** at 768. What a card keeps
+  is what only it says: its tagline, its figures, its limits, its includes, its support, its roadmap and its action.
+- **Contact is in the phone's menu.** It was in the footer and in a plan button's `mailto:` and nowhere a thumb reaches in one
+  press: a reader on the home page who wanted to ask a question had to scroll 12,000px or know the footer. The menu is six
+  48px rows (**302px** tall) and marks the page you are on; the bar's four links are unchanged, because at 768 a fifth would
+  sit within 20px of the actions.
+- **The six views' index says where the row is, not only where it goes.** The 01–06 chips above the console row were
+  destinations: a reader who had swiped to the fourth view still saw "01" as the only chip, so the index could not tell them
+  where they were in a row of six. The chip of the card nearest the row's left edge is marked (`aria-current`, the same
+  attribute the On this page bar uses) with a tint, a border and a line under the number, so it is not colour alone; the mark
+  is placed from the row's own scroll, once a frame, and the row's `scrollLeft` 0 / 322 / 1,590 marks **01 / 02 / 06**. It is
+  not shown from 720, where the six are a grid and every one is on screen.
+
+### Measurements after this pass
+
+| Page, height at 320 / 360 / 390 / 768 / 1,440 | Before | After |
+|---|---|---|
+| Home | 14,082 / 13,140 / 12,575 / 12,347 / 11,435 | **14,035 / 13,180 / 12,616 / 12,388 / 11,435** |
+| Pricing | 15,075 / 13,612 / 12,967 / 10,321 / 9,354 | **14,522 / 13,491 / 12,869 / 10,171 / 9,256** |
+| The other five pages | unchanged | **unchanged** |
+
+| Pricing at 360 | Before | After |
+|---|---|---|
+| The plans section | 1,724 | **1,603** |
+| Its content (the row / the chooser + card) | 869, **1,006** tall | **869, 131** then **1,016, 739** |
+| The first plan's figure | **1,018**, one at a time | **869–1,000**, all four |
+| The page | 13,612 | **13,491** |
+
+| The home page at 360 | Before | After |
+|---|---|---|
+| The hero | 1,514 | **1,514** (the price line is 81px in both) |
+| The plate's first pixel | 752 | **752** |
+| The rate card | 1,199 | **1,240** (three paid rows are one line longer) |
+| The page | 13,140 | **13,180** |
+
+- The pricing page is **553px shorter at 320**, 121 at 360, 98 at 390, 150 at 768 and 98 at 1,440; the cards are **946** at
+  1,440 (were 1,043) and **739** at 360 (a full-width card wraps less, and the scope line is gone). The home page is 41px
+  taller at 360–768 because each paid row now names both periods, and unchanged at 1,440 where the four columns had the line.
+- No page scrolls sideways at 320, 360, 390, 768 or 1,440 in light or dark (**0** on all 70 page/width/theme pairs), **0**
+  console errors, **0** axe-core WCAG 2.0–2.2 A and AA violations in **20** runs (home and pricing at five widths in both
+  schemes), and the smallest computed text is **12px**. The targets under 44 × 44 are the same 1 × 1 radios (the four new
+  choice inputs are 1 × 1, as the billing ones are) and the 24 × 24 checkbox whose label is 44.
+- Without a script the pricing page is **12,252** at 360, 0px over, and the chooser works: the first card shows, the radios
+  are real. With `forcedColors: active` at 360 it is 13,585 (with Business chosen) and the chosen chip keeps a 2px outline;
+  at a 24px root **22,207** (22,422 with Business chosen), 0px over. Print at 794 is **0px over** on all seven pages and prints
+  the **four** cards, not the chooser.
+- `tests/build/site.test.ts` now holds the chooser (four chips, one card, the switch's period in the chip, the chooser hidden
+  from 720) in place of the snap row it held before, `site-copy.test.ts` holds the hero line to the annual figures, and
+  `site-script.test.ts` holds `nearestStart` (the row's position to a chip) and the line that marks it. All three are changes
+  of a pinned shape the pass made on purpose, not of a claim.
+
+### What this pass deliberately left
+
+- **The home page is still 13,180px at 360 — 16.5 screens.** The length is nine argument sections of the owner's copy; this
+  pass changed what the price says and how a phone chooses a plan, not how many words the arguments take.
+- **Three of the four cards are not in the page at a phone width** (`display:none` until chosen). What the comparison below
+  does not repeat is each plan's *includes* list, so a reader must choose a plan to read what it adds. A chooser that kept
+  four includes lists would be the 1,006px row again.
+- **The cards still repeat the roadmap on Business and Enterprise** ("Planned, not included: …"), and the comparison still
+  repeats the limits. Both are the exporter's blocks, and the notice under the plans says the same for the section.
+- **The bar's navigation still has four links.** Contact is in the menu and the footer; a fifth link at 768 would sit within
+  20px of the actions. A bar that drops the wordmark to make room is a larger change than this pass.
+- **Curule Cloud's prices are still in the app**, as the last seven passes recorded, and **no capture was retaken** (the
+  console is being redesigned in parallel).
+- `npm run site:check` still exits 1 on the owner's `TODO(owner)` for the terms at `site/legal/index.html:133`, and
+  `site/ux/` was not edited. The pass's before and after frames — the landing page at its top, and the pricing page's plans —
+  were handed to the /ux page with the report; they are not in `site/ux/`, which belongs to that page's own pass.
