@@ -10,7 +10,7 @@
 <link rel="apple-touch-icon" href="assets/apple-touch-icon.png">
 <meta name="theme-color" content="#fbfaf8" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#131211" media="(prefers-color-scheme: dark)">
-<link rel="stylesheet" href="assets/site.css?v=b9847e7588">
+<link rel="stylesheet" href="assets/site.css?v=172f0f1c13">
 <meta property="og:type" content="website">
 <link rel="canonical" href="https://curule.dev/">
 <meta property="og:url" content="https://curule.dev/">
@@ -272,14 +272,20 @@
         <h2 class="title">Run the demo on your machine. No API key.</h2>
         <p class="lede">The demo runs a scripted team on the real runtime: no model, no credentials. Watch the flow before you commit.</p>
       </div>
-      <p class="muted">You need Docker and git; the first command uses <code>openssl</code>, and any random string of 32 or more characters is a token.</p>
+      <ul class="try-facts">
+        <li>Docker and git</li>
+        <li>No API key</li>
+        <li>32+ character token</li>
+        <li>Mission: seconds</li>
+      </ul>
       <p class="mt-m"><a class="arrow-link" href="docs/" data-doc="commercial/deployment.md">Deploying: Docker Compose, Helm and TLS</a></p>
     </div>
     <ol class="try">
       <li>
         <h3>Make a token, and keep it</h3>
         <p>The container will not start without one; you paste it at sign-in.</p>
-        <div class="code"><pre tabindex="0"><code>export MESH_API_TOKEN="$(openssl rand -hex 32)"
+        <div class="code"><pre tabindex="0"><code>export MESH_API_TOKEN=\
+"$(openssl rand -hex 32)"
 echo "$MESH_API_TOKEN"</code></pre></div>
       </li>
       <li>
@@ -292,15 +298,19 @@ docker build -t curule .</code></pre></div>
       </li>
       <li>
         <h3>Start the demo</h3>
-        <div class="code"><pre tabindex="0"><code>docker run --rm -p 127.0.0.1:7420:7420 -v mesh-demo:/data \
-  -e MESH_API_TOKEN="$MESH_API_TOKEN" \
+        <div class="code"><pre tabindex="0"><code>docker run --rm \
+  -p 127.0.0.1:7420:7420 \
+  -v mesh-demo:/data \
+  -e MESH_API_TOKEN=\
+"$MESH_API_TOKEN" \
   curule demo</code></pre></div>
         <div data-image-slot></div>
       </li>
       <li>
         <h3>Open the console</h3>
-        <p>Go to <code>http://127.0.0.1:7420</code> and sign in with the token. Open the <b>demo-stub</b> project and press <b>Start mission</b>. Seven agents take a payment-API mission from requirements to a merged, reviewed, verified result, and QA blocks it once so you can see conflict handling.</p>
-        <p>Your own credentials make the same seats real: add <code>ANTHROPIC_API_KEY</code> (or Bedrock, Vertex or Foundry), then <code>curule init</code> a project.</p>
+        <p>Go to <code>http://127.0.0.1:7420</code> and sign in with the token. Open the <b>demo-stub</b> project and press <b>Start mission</b>.</p>
+        <p class="small muted">Seven agents take a payment-API mission from requirements to a merged, reviewed, verified result, and QA blocks it once so you can see conflict handling.</p>
+        <p class="small muted">Your own credentials make the same seats real: add <code>ANTHROPIC_API_KEY</code> (or Bedrock, Vertex or Foundry), then <code>curule init</code> a project.</p>
       </li>
     </ol>
   </div>
