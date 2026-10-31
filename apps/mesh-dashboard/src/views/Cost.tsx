@@ -150,8 +150,11 @@ export default function Cost(): React.JSX.Element {
   }, [client, attempt, every, refreshStatus]);
 
   // The host's price settings say which price each model is billed at in the estimate. They are only context, so a failure is silent
-  // and the page then claims nothing about prices.
+  // and the page then claims nothing about prices. A single-mesh server (`curule console`) has no host routes at all: asking it was a
+  // 404 in the browser's console on every visit to Cost, for a context that cannot exist.
+  const hasHost = projects?.hasRegistry === true;
   useEffect(() => {
+    if (!hasHost) return;
     let dead = false;
     api("GET", "/api/host/config").then((res) => {
       const c = res.json?.config;
@@ -162,7 +165,7 @@ export default function Cost(): React.JSX.Element {
       });
     }).catch(() => undefined);
     return () => { dead = true; };
-  }, []);
+  }, [hasHost]);
 
   const s = useMemo(() => summarizeCost(payload, prices ? prices.yours : null), [payload, prices]);
   const hostSpend = projects?.hostSpend ?? null;

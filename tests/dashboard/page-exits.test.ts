@@ -45,5 +45,8 @@ test("the end-of-page doors are quiet links, and a thumb gets 44 px of each", ()
   const css = read("ui/next.css").replace(/\/\*[\s\S]*?\*\//g, "");
   assert.match(css, /\.next-link \{[^}]*background: none; border: 0;[^}]*color: var\(--accent-2\)/, "drawn as links, not as another row of buttons");
   assert.match(css, /@media \(max-width: 620px\)[\s\S]*\.next-link \{ min-height: 44px; \}/, "the phone floor, on the component's own class");
+  // A finger does not stop at the phone break: at 768 on a touch screen every NextLink measured 32 px, the console's one control
+  // under its own 44 px floor on a touch-class tablet. A mouse at 768 keeps the quiet 32.
+  assert.match(css, /@media \(pointer: coarse\) \{\s*\.next-link \{ min-height: 44px; \}/, "a coarse pointer above the phone break takes the same floor");
   assert.match(css, /\.next-links \{ display: flex; flex-wrap: wrap;/, "one row that wraps rather than scrolls sideways");
 });

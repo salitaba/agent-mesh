@@ -97,3 +97,15 @@ test("a registry that never answers is a failure with a retry, not the loading p
   assert.match(down, /<ErrorState\s+what="the projects list"/, "and the failure names what could not be read");
   assert.match(shell, /registry === "known" && !holdView/, "a failed registry does not poll tool requests against a host that did not answer");
 });
+
+test("a single-mesh server is not asked a route only a host has", () => {
+  // Cost asked for /api/host/config on every visit. A host answers it with the prices; `curule console` has no host routes at all, so
+  // the page made a 404 on every visit for a context that cannot exist (the only other error in the one-mesh console was
+  // /api/projects, which the shell must ask to learn what kind of server this is). The read is now behind the registry's answer.
+  const cost = fs.readFileSync(path.join(SRC, "views", "Cost.tsx"), "utf8");
+  const guard = cost.indexOf("const hasHost = projects?.hasRegistry === true;");
+  const effect = cost.indexOf("if (!hasHost) return;");
+  const read = cost.indexOf('api("GET", "/api/host/config")');
+  assert.ok(guard > -1 && effect > guard && read > effect, "the price read waits for a host");
+  assert.match(cost, /\}, \[hasHost\]\);/, "and follows that answer when it lands");
+});

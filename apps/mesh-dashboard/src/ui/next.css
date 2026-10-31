@@ -16,3 +16,10 @@
   .next-links { gap: var(--s1) var(--s3); }
   .next-links-row { gap: 0 var(--s4); }
 }
+
+/* A finger does not stop at the phone break. Measured at 768 on a touch screen: every NextLink on Agents, Files, Cost, Graph and
+   the Playground was 32 px tall, the console's one control under its own 44 px floor on a touch-class tablet (the drawer's marks
+   and the Designer's guide already take the floor there). A mouse at 768 keeps the quiet 32. */
+@media (pointer: coarse) {
+  .next-link { min-height: 44px; }
+}
