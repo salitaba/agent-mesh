@@ -267,7 +267,7 @@ test("every call the script makes is to a route the API has, with the method it 
 
 /** Each page's rail: the job it is for, the steps through it, and the one the reader is on. The claims the rail repeats are proven against the pages that first say them below. */
 const PANEL: Record<string, { at: string; steps: string[] }> = {
-  signup: { at: "Create your account", steps: ["Create your account", "Choose a plan", "Open your workspace", "Describe your team"] },
+  signup: { at: "Create your account", steps: ["Create your account", "Choose a plan", "Make a workspace", "Describe your team"] },
   login: { at: "Sign in", steps: ["Sign in", "Your workspaces", "Plan and balance", "Settings"] },
   forgot: { at: "Enter your email", steps: ["Enter your email", "Open the link", "Then sign in"] },
   reset: { at: "Choose a new password", steps: ["The link", "Choose a new password", "Sign in again"] },
@@ -305,6 +305,21 @@ test("the way through a sign-in page's job is on the page at every width, not on
   const base = css.slice(css.indexOf(".auth-side { margin-top"), css.indexOf("\n.card {", css.indexOf(".auth-side { margin-top")));
   assert.ok(base.includes(".auth-points li[aria-current=\"step\"]"), "its steps are styled where the rail is, unconditionally");
   assert.ok(!base.includes("@media"), "and not only inside a width that a phone never reaches");
+});
+
+test("every page opens the same way: the record's caption names the part of Curule Cloud it is, and the title sits under it", () => {
+  // The pages were two hands before: the way in and the home page had a caption over the title, the account, the page that is not
+  // there and the documents did not. One caption above one title, in the same place, is what lets a reader know which page they are on
+  // before reading its heading.
+  for (const { name, all } of pages()) {
+    const h1 = all.find((n) => n.tag === "h1")!;
+    const siblings = h1.parent!.children.filter((n) => !n.isText);
+    const caption = siblings[siblings.indexOf(h1) - 1];
+    assert.ok(caption, `${name}: something comes before the title`);
+    assert.equal(caption!.tag, "p", name);
+    assert.ok((attr(caption!, "class") || "").split(/\s+/).includes("eyebrow"), `${name}: the line above the title is the record's caption`);
+    assert.match(caption!.textContent.trim(), /^Curule Cloud · \S/, `${name}: and it says which part of Curule Cloud the page is`);
+  }
 });
 
 test("the words are the product's: a stranger is never given the internal name for a running team, the password advice is grammar, and the page for a forgotten password is named after the link that brings people there", () => {
@@ -354,7 +369,7 @@ test("a document ends on the way back to the product, marked for whoever is read
     assert.equal(attr(end, "aria-label"), "After this document");
     assert.deepEqual(
       end.querySelectorAll("a").map((a) => [a.textContent, attr(a, "href"), attr(a, "data-when")]),
-      [["Create an account", "/signup", "out"], ["Sign in", "/login", "out"], ["Go to your account", "/account", "in"], ["See the plans", "/", ""]],
+      [["Create an account", "/signup", "out"], ["Sign in", "/login", "out"], ["Go to your account", "/account", "in"], ["See the plans and prices", "/", ""]],
       `${name}: the same doors the header offers for each state, and the plans`,
     );
   }

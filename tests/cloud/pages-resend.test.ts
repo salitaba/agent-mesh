@@ -185,7 +185,7 @@ test("the sign-in page offers the confirmation link again after a refusal of the
   assert.equal(v.text("status"), "That email and password do not match an account.", "the service says the same for every way it can fail, and so does the page");
   assert.equal(v.doc.activeElement, v.$("password"), "and the cursor is in the field to try again");
   assert.equal(v.shows(v.$("resend-form")), true);
-  assert.equal(v.text("resend-form"), "Your address may not be confirmed yet. Send the confirmation link again");
+  assert.equal(v.text("resend-form"), "Your address may not be confirmed yet. Send a new link");
 
   v.click(v.$("resend"));
   await v.idle();

@@ -481,12 +481,14 @@ test("a link that is no good says so, offers a way on, and also leaves the addre
   assert.equal(v.text("status"), "That link is not valid, or it has expired. Ask for a new one.");
   assert.equal(v.$("status").className, "note note-bad");
   assert.equal(v.$("again").hidden, false);
+  assert.equal(v.doc.activeElement, v.$("resend"), "the way out is what there is to do, so it has the cursor: a rubber-stamped failure is not a place to leave a keyboard");
   assert.deepEqual(v.history, ["/verify"]);
   assert.deepEqual(v.navigations, []);
 
   const none = await visit("verify", { routes: w.routes });
   assert.equal(none.text("status"), "This link is incomplete. Open the link in the email again.");
   assert.equal(none.$("again").hidden, false);
+  assert.equal(none.doc.activeElement, none.$("resend"), "and a link with no token in it is the same page as one that was spent");
   assert.deepEqual(none.to("POST", "/api/verify"), [], "with no token there is nothing to send");
 });
 
@@ -500,7 +502,7 @@ test("asking for a password reset says the same for every address, and says noth
   v.type("email", " ada@example.com ");
   await v.send(v.$("form"));
   assert.deepEqual(v.to("POST", "/api/forgot"), [{ method: "POST", path: "/api/forgot", body: { email: "ada@example.com" } }]);
-  assert.equal(v.text("status"), "If that address has an account, a link to choose a new password is on its way.");
+  assert.equal(v.text("status"), "If that address has an account, a link to choose a new password is on its way. Open it: it goes to a page where you choose a new password.");
   assert.equal(v.$("status").className, "note note-ok");
   w.answers.set("POST /api/forgot", failure(429, "rate_limited", "Too many attempts. Try again in 12 minutes."));
   await v.send(v.$("form"));
@@ -596,13 +598,13 @@ test("a reset link that has been used sends the person to a new one; a password 
 test("the page for a wrong address offers a visitor the plans and the way in, and a customer their account", async () => {
   const out = world((x) => (x.signedIn = false));
   const v = await visit("404", { routes: out.routes });
-  assert.equal(v.text("main"), "That page is not here. The address may have changed, or it may never have existed. These pages do exist. See the plans and prices Sign in Create an account");
+  assert.equal(v.text("main"), "Curule Cloud · not found That page is not here The address may have changed, or it may never have existed. These pages do exist. See the plans and prices Sign in Create an account");
   assert.deepEqual(v.doc.querySelectorAll("a").filter((a) => v.shows(a) && !a.className.includes("brand") && a.getAttribute("href") !== "#main" && !v.doc.querySelector("footer")!.contains(a)).map((a) => a.getAttribute("href")), ["/", "/login", "/", "/login", "/signup"], "the header's two, then the page's three");
   const filled = (x: typeof v): string[] => x.doc.querySelectorAll(".btn-primary").filter((a) => x.shows(a)).map((a) => a.textContent!);
   assert.deepEqual(filled(v), ["See the plans and prices"], "a signed-out visitor is offered one filled answer");
   const signedIn = world(paid);
   const u = await visit("404", { routes: signedIn.routes });
-  assert.equal(u.text("main"), "That page is not here. The address may have changed, or it may never have existed. These pages do exist. See the plans and prices Go to your account");
+  assert.equal(u.text("main"), "Curule Cloud · not found That page is not here The address may have changed, or it may never have existed. These pages do exist. See the plans and prices Go to your account");
   assert.equal(u.link("main", "Go to your account").getAttribute("href"), "/account");
   // Measured before this: signed in, the page had two filled buttons, so the one answer a lost person needs was the one thing it did not give.
   assert.deepEqual(filled(u), ["Go to your account"], "and a customer is offered their account, not two answers at once");
@@ -611,11 +613,11 @@ test("the page for a wrong address offers a visitor the plans and the way in, an
 
 // ---- what a page does for the person at it ----
 
-test("a page's heading and the tab's title say what the page is now: a link that was sent is no longer \"Start with an email and a password\"", async () => {
+test("a page's heading and the tab's title say what the page is now: a link that was sent is no longer \"Create your account\"", async () => {
   const w = world((x) => (x.signedIn = false));
   w.answers.set("POST /api/signup", { status: 202, json: { ok: true, message: "Check your email for a link to confirm your address." } });
   const v = await visit("signup", { routes: w.routes });
-  assert.equal(v.text("title"), "Start with an email and a password");
+  assert.equal(v.text("title"), "Create your account");
   assert.equal(v.shows(v.$("lede")), true);
   v.type("email", "ada@example.com");
   v.type("password", "correct horse battery staple");
@@ -877,9 +879,9 @@ test("a new account sees what to do first: choose a plan, and nothing to create,
   assert.equal(v.text("who"), "Signed in as ada@example.com");
   assert.equal(v.shows(v.$("stage")), true);
   assert.equal(v.text("stage-title"), "Choose a plan");
-  assert.equal(v.text("stage-text"), "A plan is a flat monthly price for your account, and it says how many workspaces you may run at once. Each workspace runs on a plan of its own. Choose one below and pay on the next page.");
+  assert.equal(v.text("stage-text"), "A plan is a flat monthly price for your account, and it says how many workspaces you may run at once. Choose one below and pay on the next page.");
   assert.equal(v.link("stage-actions", "Choose a plan").getAttribute("href"), "#plan-h");
-  assert.equal(v.text("stage-steps"), "1 Plan (you are here) 2 Workspace (still to do) 3 Open (still to do)");
+  assert.equal(v.text("stage-steps"), "02 Choose a plan (you are here) 03 Make a workspace (still to do) 04 Describe your team (still to do)");
   assert.equal(v.shows(v.$("workspaces-panel")), false, "there is no workspace to list");
   assert.equal(v.shows(v.$("create")), false);
   assert.equal(v.text("plan-h"), "Plans");
@@ -1973,15 +1975,15 @@ test("the front page says how it works in four steps, in order, from what the se
   assert.equal(h.$("main").querySelector("ol.how")!.getAttribute("role"), "list", "a list that is drawn with no bullets is still a list, to every screen reader");
   assert.equal(h.$("main").querySelector("ol.how")!.parent!.getAttribute("aria-labelledby"), "how-h", "and it is a region named by its heading");
   assert.deepEqual(steps(h).map((li) => h.text(li)), [
-    "Sign up An email and a password. We send a link to confirm your address. Nothing is charged yet.",
-    "Pick a plan One flat price for each period, paid on the payment provider's page. The card says what it includes and how many workspaces your account may run at once.",
+    "Create your account An email and a password. We send a link to confirm your address. Nothing is charged yet.",
+    "Choose a plan One flat price for each period, paid on the payment provider's page. The card says what it includes and how many workspaces your account may run at once.",
     "Make a workspace One click starts your own Curule host on our servers. You give it your model key once it has started.",
-    "Describe your team and start Open the workspace in your browser, describe the team you want, and start a mission. Every action is recorded.",
+    "Describe your team Open the workspace in your browser, describe the team you want, and start a mission. Every action is recorded.",
   ]);
 
   const sells = await visit("home", { routes: world((x) => (x.signedIn = false)).routes });
   assert.equal(sells.text(steps(sells)[2]!), "Make a workspace One click starts your own Curule host on our servers. Its plan's model usage is ready to use.");
-  assert.deepEqual(steps(sells).map((li) => sells.text(li.querySelector("strong")!)), ["Sign up", "Pick a plan", "Make a workspace", "Describe your team and start"]);
+  assert.deepEqual(steps(sells).map((li) => sells.text(li.querySelector("strong")!)), ["Create your account", "Choose a plan", "Make a workspace", "Describe your team"]);
 
   const unknown = await visit("home", { routes: world((x) => { x.signedIn = false; x.plans = failure(503, "unavailable", "The plans are not available just now."); }).routes });
   assert.equal(unknown.text(steps(unknown)[2]!), "Make a workspace One click starts your own Curule host on our servers. The plan says what it includes.", "when the plans cannot be read the step is true of either arrangement");
