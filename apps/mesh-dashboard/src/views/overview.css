@@ -252,9 +252,10 @@ details.ov-note { display: block; }
   .ov-hero-top, .ov-now, .ov-note { padding-left: var(--s4); padding-right: var(--s4); }
   .ov-hero-top { gap: var(--s3); }
   /* The mark and the headline are the hero's first row; the goal and the actions take the hero's whole width under them.
-     The goal was a 197 px text column inside a 242 px lead (242 − the mark's 48, its 16 gap and the "Goal" label), so a
-     fifty-character goal took three lines and 67.5 px; across the width it takes two and 45, and the first evidence row
-     comes up 21 px. `display: contents` lets the lead's two children join the hero's own grid. */
+     The goal was a 197 px text column inside a 242 px lead (302 of content − the mark's 48 − its 12 gap, then the "Goal"
+     label and its 8), so a fifty-character goal took three lines and 67.5 px; across the width it takes two and 45, and the
+     first evidence row comes up 26.5 px (22.5 of them the goal, 4 the row gap). `display: contents` lets the lead's two
+     children join the hero's own grid. */
   .ov-hero-top { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: start; row-gap: var(--s2); }
   .ov-hero-lead { display: contents; }
   .ov-hero-lead > .ov-headline { grid-column: 2; grid-row: 1; }
