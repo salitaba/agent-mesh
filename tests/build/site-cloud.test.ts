@@ -235,18 +235,18 @@ test("when it is open, the pricing page puts the two ways in side by side, says 
   const [cloud, licence] = ways.querySelectorAll(".way") as [FakeNode, FakeNode];
   assert.deepEqual([cloud, licence].map((c) => c.querySelector("h3")!.textContent), ["We run it for you", "You run it"]);
   for (const card of [cloud, licence]) assert.deepEqual(card.querySelectorAll("dt").map((t) => t.textContent), ["Who it is for", "What you pay"], "each says who it is for and what is paid");
-  assert.match(cloud.textContent, /Flat monthly hosting, priced on the sign-up page and kept there\./);
+  assert.match(cloud.textContent, /Flat monthly hosting, priced at sign-up and kept there\./);
   assert.match(
     cloud.textContent,
-    /priced on the sign-up page and kept there\./,
+    /priced at sign-up and kept there\./,
     "and says why its own prices are not repeated: they are kept in one place",
   );
   assert.match(
     cloud.textContent,
-    /Your account's plan sets how many workspaces you run; each is a host on its own plan\./,
+    /Your plan sets your workspaces; each is a host on its own plan\./,
     "and says the thing that changed: a workspace runs on a plan of its own",
   );
-  assert.match(cloud.textContent, /Your model key, your provider's bill: we do not resell model usage\./);
+  assert.match(cloud.textContent, /Your key, your provider's bill: we do not resell model usage\./);
   assert.match(licence.textContent, /The plans above are licences for the software you run yourself\./);
   assert.deepEqual(cloud.querySelectorAll("a").map((a) => [a.textContent, a.href]), [["See the Curule Cloud plans", `${APP}/`]], "one action in each");
   assert.deepEqual(licence.querySelectorAll("a").map((a) => [a.textContent, a.href]), [["See the licence plans", "#plans"]]);
