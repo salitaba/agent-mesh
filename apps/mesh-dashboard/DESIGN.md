@@ -57,7 +57,10 @@ ring), not only how wide it is.
 
 Overview is the one deliberate variation: its brief is short because the mission
 hero directly under it is the page's real headline. The two are not peers: the
-page name is a signpost, the hero is the news. Below the mission's first cards,
+page name is a signpost, the hero is the news. On a phone the hero is a **delivery
+receipt**: the verdict, the goal, one action and the four figures as the index, with
+the first evidence row at the fold; every other action of the mission is behind the
+hero's own `…` (2026-10-31). Below the mission's first cards,
 on a wide screen, it carries `JumpRow`, its own four-door index, because the page
 runs to 1,751 px at 1440 and past 3,000 at 621–768; each button scrolls to the
 section **and focuses it**, and every `Panel` section is the anchor (`id` +
@@ -190,6 +193,24 @@ Breakpoints: **1280 1100 900 800 760 620 560**. 800 is the sidebar drawer (JS
   does. Its label carries the figure and the destination, because a button's
   contents are flattened into its name. Pinned by
   `tests/dashboard/overview-figures.test.ts` (2026-10-31).
+- **A number is data where a pointer can drag.** The figure's value sits above
+  the door — selectable, with an I-beam — while the door still covers the cell;
+  the wash is on the cell so the raised number still lights the whole figure. A
+  coarse pointer puts the value back under the door: a thumb cannot select, and a
+  28 px hole in a 148 px target is a press that does nothing. Pinned by
+  `tests/dashboard/overview-receipt.test.ts` (2026-10-31).
+- **A phone's hero is one action and a menu.** Where the navigation is a drawer
+  (800 and below, the dock's own break) the row is `next[0]` — the one thing to
+  do, whatever its look, so a running mission still shows its Pause — and every
+  other action is a 44 px item behind a 44 × 44 `…`. At 360 the five actions were
+  three rows and 148 px, and the three quiet ones opened Files and Cost, which the
+  dock and the figures already name. A desk keeps the row of five. Pinned by
+  `heroActions` in `overview-model.ts` (2026-10-31).
+- **The delivered note folds where it restates the headline.** Its summary is the
+  gate's sentence, and the headline directly above says the same claim: on a phone
+  it is a 44 px door ("Why this is done") and the exact words are the body's first
+  line. Only `done` folds; every other phase's note says something the headline
+  does not (2026-10-31).
 - **A page is named by the name you pressed.** One component behind two routes
   ("Needs you" and "Tool gates") titles itself by the tab in front, never by a
   fixed word (2026-10-31).
@@ -203,13 +224,15 @@ Breakpoints: **1280 1100 900 800 760 620 560**. 800 is the sidebar drawer (JS
 
 ## Open problems (carried forward)
 
-- The Overview is now **1,088 px** at 360 px with a delivered mission (1,223 on this pass's base build, 4,132 before the 2026-10-22 folding and
+- The Overview is now **952 px** at 360 px with a delivered mission (1,124 on this pass's base build, 4,132 before the 2026-10-22 folding and
   shipped-card work, 8,582 before that): the four evidence sections are one ruled row each until opened, and since 2026-10-28 those rows are
   also the phone's index. The open question is the default, not the length: What shipped is closed like the other three, and a mission that
   has just delivered may deserve its six file rows open; measured, the closed row is 53 px and the open panel 847, so the whole difference is
   one press or two screens.
-- A phone's first screen is the whole hero (**746 px** at 360), so the four evidence rows start 76 px below the fold even after the index
-  went. Shortening the brief is a words-and-shape decision about the mission, not a layout one, and it is the next lever on this page.
+- A phone's first screen now holds the receipt and the first evidence row: at 360 the hero is **574.7 px**, the row begins at **704** on
+  screen and 44 of its 53 px are above the dock at 748 (it was 128 px below it). At **320** it does not: the goal's third line (67.5 px in
+  262) puts the row at 726.8, 21 px above the dock with its words under it. The narrowest phone is the next 40 px, and they are the
+  goal's: the hanging label leaves 224 px of text where the sentence needs about 230.
 - Events and the approvals inbox still close without `NextLinks`, and that is now a decision rather than a pending question: Events ends on
   its window status (the newest 300 of 491 events) and the inbox on its empty state's Back to the Overview; a row of doors would repeat
   the navigation each page already has (`Pause`/`Filters`, `Decisions`/`Tool gates`) rather than continue it.
@@ -254,17 +277,16 @@ Breakpoints: **1280 1100 900 800 760 620 560**. 800 is the sidebar drawer (JS
 
 ## What the next pass should take
 
-1. The Overview's first screen is still the whole hero (737 px at 360, the four evidence rows at 867): the next lever is a
-   words decision — the goal sentence, the three ghost links (files, cost, replay) and the note are 190 px between them,
-   and two of the three links now have a figure and a dock tab that say the same thing.
+1. The 320 first screen: the goal's third line holds the first evidence row 21 px above the dock, its words under it. At 360 the
+   receipt ends at 574.7 with the row whole above the dock (2026-10-31).
 2. Whether the thumb's row earns its 36 px of every page: it is the owner's daily five, but a page opened once (Graph, the
    Playground) pays too. Watch real use before shortening the list or hiding the row on scroll.
 3. Whether the Designer's bottom stays its own: the save bar and the dock cannot both own that edge, and the workbench is
    the one screen that is not a brief.
 4. The events page's "Live" chip says what the stream is doing while the mission is delivered; decide whether one word can
    say both, or whether the chip should read the mission's state here as it does in the bar.
-5. The figures cover their own numbers: selecting "51.0k" to paste it is no longer possible on the hero. A copy control, or
-   a door that covers only the label row, would give it back.
+5. Whether the hero's `…` and the frame's `…` should both offer `Reopen with feedback` on a phone, and whether a pointer's
+   press on a figure's number doing nothing is the right price for being able to select it (2026-10-31).
 6. The Designer's 320 header is two rows now (168.59 px with its lede; 89.6 on the first-run guide, which has no lede). The save bar's
    blocked state is the next block there: its 44 px inline action inflates the line from 17.4 to 36, and that 18.6 px is the last thing
    the bar could give back — it needs either a glyph button (a name lost) or a target overlap (a target collision).
@@ -280,6 +302,64 @@ Breakpoints: **1280 1100 900 800 760 620 560**. 800 is the sidebar drawer (JS
 13. Check the frame's safe-area claims on a notched device in both orientations; the insets are in the CSS but the stand-in browser reports them as zero.
 
 ## Pass log
+
+### 2026-10-31 — the Overview opens as a delivery receipt, and its figures give their numbers back
+
+Surface: `views/MissionHero.tsx`, `views/Overview.tsx`, `views/overview.css`, `overview-model.ts` (`heroActions`),
+and `tests/dashboard/overview-receipt.test.ts` with the changed selectors in `overview-figures.test.ts`.
+Measured on the scripted demo at **Delivered** (9 files, 7 checks, 481 events, 49.3k of 2.0M tokens, 7 seats, ran 18s) in
+the production build, Chromium over CDP at 320/360/390/620/768/1440 in light and at 360/1440 in dark, a touch pointer at
+360 and below, reduced motion, forced colours at 360, axe-core 4.14. Before is the same worktree at `fd913ac`, built and
+served from the same server in the same session; both halves are the same delivered mission, and both 360 × 800 frames are
+`#/overview` at `#view.scrollTop` 0.
+
+- **A phone has 684 px of content above its dock, and the hero was 746.2.** The topbar ends at 64 and the dock's tabs start
+  at 748; the first evidence row was at 811.8 px in the page — **875.8 on screen, 128 px below the dock** (76 px below the
+  736 px `#view`). It is at **640.3 (704 on screen)** now: 44 of its 53 px, its name, figure and Show, are above the dock.
+  The hero is **574.7**, the page **952** (was 1,124). 320: 765.2 → **597.2**, page 1,143 → **975**; 390: 701.3 → **552.3**,
+  1,079 → **930**; 620: 573.6 → **489.6**, 951 → **867**; 768: 571.8 → **527.8**, 2,944 → **2,900**; 1,440 unchanged to the
+  pixel (324.8 / 462.4 / 1,934).
+- **One action in the row where the navigation is a drawer.** The five actions were three rows and **148 px** at 320/360/390
+  (96 at 620, 88 at 768): `Open the product` and `Reopen with feedback` each took the width, then the three quiet links shared
+  a row — and two of those opened Files and Cost, which the dock names and the tokens figure opens. The row is `next[0]` (the
+  one thing to do, whatever its look, so a running mission still shows its Pause) and the rest is behind a **44 × 44 `…`** with
+  four 44 px items; it is **44 px** at 320/360/390 and 620/768. The decision is `heroActions` in `overview-model.ts`: every
+  step and every secondary action appears once, and a secondary that is already a step is not listed again. A desk keeps all
+  five (the 1,440 row does not move).
+- **The delivered note was 86 px of the headline's own claim.** "Every mandatory check is evidenced." is the headline's
+  second sentence, and the note's summary was "Every mandatory acceptance criterion was evidenced, with no open escalations
+  and no work still claimed." — the same claim, five words longer, at the foot of the hero. On a phone it is a **44 px door**
+  ("Why this is done") whose body's first line is the gate's exact sentence and then the parked line (measured open: 188 px).
+  Only `done` folds; every other phase's note says something the headline does not.
+- **The goal took three lines in a 197 px column.** The lead was 242 px (302 of content − the mark's 48 − its 12 gap), and
+  the hanging "Goal" label and its 8 px gap left 197 of that for the sentence, so it was 67.5 px at 360 and 320. Across the
+  hero's width (302) it is **45**, and the mark and headline keep the first row (`display: contents` on the lead, the hero's
+  own grid, the phone's 8 px row gap instead of the desk's 12).
+  At 320 the goal keeps its third line: the hanging label leaves 224 px where the sentence needs about 230.
+- **The figures covered their own numbers.** The door's `inset: 0` sat over `49.3k of 2.0M`, so a drag opened Cost instead of
+  selecting the figure. The value sits above the door now — **dragging it selects "49.3k of 2.0M" and does not navigate**, and
+  the I-beam says the line is text — while the door still covers the cell; the wash moved to the cell so the raised number
+  still lights the whole figure, and forced colours still take the 2 px Highlight outline. Under a coarse pointer the value
+  goes back under the door (`elementFromPoint` at 360 returns the 167 × 151 door): a thumb cannot select, and a hole in the
+  target would be a press that does nothing.
+- **Nothing else moves, and the floors hold.** No document or `#view` sideways scroll at any width in either scheme; axe-core
+  **0** violations in 8 reads (320/360/390/620/768/1,440 light and 360/1,440 dark); no control under 44 × 44 at 320/360/390/620
+  beyond the 1 × 1 skip link (the desk's 36 px sidebar rows are pointer density, §5); the smallest text stays 11 (the avatar
+  initials); one console error in both halves (the one-mesh `/api/projects` 404). Keyboard at 360: **11 Tabs** from the body to
+  `What shipped: Show` (skip, navigation, the bar's `…`, `Open the product`, the hero's `…`, four figures, the note's door, the
+  row) — three fewer than when the quiet links were on the row.
+
+Suite: typecheck and build clean; `node --test "dist/tests/**/*.test.js"` **6,443 tests, 6,441 pass, 0 fail, 2 skipped**;
+`dist/tests/dashboard` + `dist/tests/build` **1,436 pass, 0 fail**, with the new `overview-receipt.test.ts` (10 tests: `heroActions`' four cases, the note fold, the goal's grid and the value's layer) and two selectors updated in `overview-figures.test.ts`; eslint 0
+errors (211 pre-existing cross-package warnings).
+
+**Left.** At 320 the goal's third line holds the first evidence row 21 px above the dock, its words under it; that is the
+next 40 px. The hero's `…` and the frame's `…` both offer `Reopen with feedback` on a phone — the hero's is the mission's
+own secondary action and the hero is where the result lives, but two menus with one item in common is a reading question.
+On a pointer, a press on a figure's number now does nothing (the value is the selectable layer): the trade is selection for
+a 246 × 28 px hole in a 287 × 132 cell, and the I-beam is what says so. The delivered note's exact wording is one press
+further away on a phone; the headline above it says the claim. The 320 goal, the note's fold for other phases, and the
+`display: contents` grid on a notched device are not read on hardware.
 
 ### 2026-10-31 — the five places the work lives sit at the thumb, and the Overview's figures are its index
 
