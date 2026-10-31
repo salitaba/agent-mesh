@@ -65,7 +65,7 @@ test("the row is fixed at the thumb, above the page and below every layer", () =
   assert.match(narrow, /display: flex; align-items: stretch; padding: 0 0 env\(safe-area-inset-bottom\);/, "it stretches its five tabs and keeps the home indicator clear");
   assert.match(narrow, /\.dock-tab \{ position: relative; flex: 1 1 0; min-width: 0; min-height: 52px;/, "each tab is a fifth of the width and 52 px tall");
   assert.match(narrow, /\.dock-tab\.active::before \{ content: ""; position: absolute; left: 18%; right: 18%; top: -1px; height: 2px;/, "the chosen place wears a rule on the frame's own edge");
-  assert.match(narrow, /#view \{ padding-bottom: calc\(52px \+ var\(--s3\) \+ env\(safe-area-inset-bottom\)\); \}/, "the page keeps its last row clear of the layer: a control under a bottom bar is a bug");
+  assert.match(narrow, /#app\.dock #view \{ padding-bottom: calc\(52px \+ var\(--s3\) \+ env\(safe-area-inset-bottom\)\); \}/, "the page keeps its last row clear of the layer: a control under a bottom bar is a bug");
 });
 
 test("the Designer keeps its own bottom, and forced colours keep the chosen tab", () => {

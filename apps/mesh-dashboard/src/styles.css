@@ -1484,8 +1484,9 @@ ul.errs { margin: var(--s1-5) 0; padding-left: 18px; font-size: 14px; color: var
     min-width: 18px; height: 18px; padding: 0 var(--s1-5); border-radius: 999px;
     background: var(--accent); color: var(--text-on-accent); font: 600 12px/18px var(--sans); }
   /* The row is a layer over the page, so the page keeps its last line clear of it: 52 px of tab, the frame's own gutter and the
-     home indicator of a notched phone. A page is 36 px taller than it was for this; the reader gains five places without the menu. */
-  #view { padding-bottom: calc(52px + var(--s3) + env(safe-area-inset-bottom)); }
+     home indicator of a notched phone. A page is 36 px taller than it was for this; the reader gains five places without the menu.
+     Only where the row is drawn: a host page and the Designer keep their own bottom. */
+  #app.dock #view { padding-bottom: calc(52px + var(--s3) + env(safe-area-inset-bottom)); }
   /* The Designer owns the bottom of its own screen (its save bar is the last row), so the dock is not drawn over the work. */
   #app:has(#view > .ms) #dock { display: none; }
   #app:has(#view > .ms) #view { padding-bottom: 0; }

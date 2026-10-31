@@ -699,7 +699,7 @@ export function Shell({ viewNode }: { viewNode: React.ReactNode }): React.JSX.El
     : state.phase === "loading" ? (status ? "Loading the mission…" : "Connecting…") : "";
 
   return (
-    <div id="app" className={`${focusOn ? "focus-mode" : ""}${hasProjects ? " with-tabs" : ""}`}>
+    <div id="app" className={`${focusOn ? "focus-mode" : ""}${hasProjects ? " with-tabs" : ""}${showDock ? " dock" : ""}`}>
       {/* WCAG 2.4.1. Roughly 20 chrome tab stops -- the project strip, the nav
           buttons, the sidebar footer, the topbar -- sit ahead of the content on
           every single view, with no way past them.
