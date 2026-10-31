@@ -2553,7 +2553,7 @@ same on both sides and `/api/usage` is the empty answer the trial gives. Heights
 - **Widths, schemes and the floor.** 320 / 360 / 390 / 768 / 1440 in light, 360 and 320 in dark, and 200% text at
   360: no sideways page scroll (320: 320; 360: 360; 390: 390; 768: 768; 1440: 1440), nothing computes below
   **12px**, and no control under 44 × 44 at 320/360/390 (at 768 and 1440 the 32/36/40px controls are the record's
-  pointer exceptions). **Seven axe-core runs** (320, 360, 390, 768, 1440, 360 dark and 200% text) find **no
+  pointer exceptions). **Eight axe-core runs** (320, 360, 390, 768 and 1440 light, 360 and 320 dark, and 200% text) find **no
   violation**; there is no console error. Forced colours was not run this pass.
 - **Tests.** The page tests — **182 pass, 0 fail**; the whole suite — **6,433 tests, 6,431 pass, 0 fail**, 2
   skipped; typecheck clean, lint at its 211 pre-existing warnings and 0 errors. `pages-stage.test.ts` now pins the
