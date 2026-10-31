@@ -1,4 +1,3 @@
-/* One stylesheet. */
 /* Icons: a 20-unit mask. */
 :root {
   color-scheme: light dark;
@@ -592,7 +591,7 @@ body[data-page="home"] main { background: var(--k-glow) top / 100% 520px no-repe
 .steps .done .num { border-color: transparent; background: var(--k-accent-soft); color: var(--k-accent-ink); }
 .steps .now { color: var(--k-ink); }
 .steps .now .num { border-color: var(--k-accent); background: var(--k-accent); color: var(--k-on-accent); }
-.glance dl { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); margin: 0; border-bottom: 1px solid var(--k-line); }
+.glance dl { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); margin: 40px 0 0; border-bottom: 1px solid var(--k-line); }
 .stat { padding: 12px 0; border-top: 1px solid var(--k-line); }
 .stat dd { margin: 0; }
 .stat-v { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; margin-top: 6px !important; }

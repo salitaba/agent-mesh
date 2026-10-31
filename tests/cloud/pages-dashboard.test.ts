@@ -19,25 +19,24 @@ const tiles = (v: ReturnType<typeof view>, b: ReturnType<typeof balance> | null 
 
 // ---- what the account is, at a glance ----
 
-test("the tiles say what the account has in a few words: the workspaces that are running and what else there is, the plan and its state, the balance where usage is sold", () => {
+test("the tiles say what the account has in a few words: the plan and its state, the balance where usage is sold", () => {
   assert.deepEqual(tiles(view({ subscription: null })), [], "a visitor with no plan has nothing to glance at: the card at the top is for them");
   assert.deepEqual(tiles(view({ subscription: { plan: "team", title: "Team", status: "ended" } })), []);
 
   assert.deepEqual(tiles(view()), [
-    { id: "workspaces", label: "Workspaces", value: "0", unit: "running", note: "1 workspace in your plan" },
     { id: "plan", label: "Plan", value: "Team", unit: "", note: "$149.00 per month", badge: ["Active", "ok"] },
     { id: "balance", label: "Balance", value: "$20.00", unit: "", note: "$0.00 of $20.00 used" },
-  ]);
+  ], "the workspaces are the record above it, not a count repeated here");
   const several = tiles(view({ subscription: { ...ACTIVE!, plan: "business", title: "Business" }, workspaces: [ws("A", "running"), ws("B", "running"), ws("C", "suspended"), ws("D", "provisioning"), ws("E", "requested"), ws("F", "failed")] }));
-  assert.deepEqual([several[0]!.value, several[0]!.note], ["2", "2 starting, 1 stopped, 1 could not start"], "what is not running is said in the same breath, so that a count of running is not read as all there is");
-  assert.deepEqual(tiles(view({ subscription: LATE }))[1]!.badge, ["Payment overdue", "warn"]);
+  assert.deepEqual(several.map((t) => t.id), ["plan", "balance"], "however many workspaces there are");
+  assert.deepEqual(tiles(view({ subscription: LATE }))[0]!.badge, ["Payment overdue", "warn"]);
   assert.equal(tiles(view({ plans: [], plansKnown: false, workspaces: [ws("A", "running")] }))[0]!.note, "", "with the plans unreadable no allowance is made up");
-  assert.equal(tiles(view({ plans: [], plansKnown: false }))[1]!.note, "");
+  assert.equal(tiles(view({ plans: [], plansKnown: false }))[0]!.note, "");
 
   const hostingOnly = tiles(view({ subscription: HOSTING_SUB, plans: HOSTING_PLANS.plans, topups: null, workspaces: [ws("A", "running", { models: { source: "own", key: null } })] }), null);
-  assert.deepEqual(hostingOnly.map((t) => t.id), ["workspaces", "plan"], "a plan that sells hosting only has no balance to glance at");
-  assert.equal(tiles(view(), balance({ included: 0, purchased: 0, available: 0 }))[2]!.value, "$0.00", "a balance that is gone is a figure, and is said");
-  assert.deepEqual([tiles(view(), null)[2]!.value, tiles(view(), null)[2]!.note], ["", "Not available just now"], "and one that could not be read is not a figure");
+  assert.deepEqual(hostingOnly.map((t) => t.id), ["plan"], "a plan that sells hosting only has no balance to glance at");
+  assert.equal(tiles(view(), balance({ included: 0, purchased: 0, available: 0 }))[1]!.value, "$0.00", "a balance that is gone is a figure, and is said");
+  assert.deepEqual([tiles(view(), null)[1]!.value, tiles(view(), null)[1]!.note], ["", "Not available just now"], "and one that could not be read is not a figure");
   assert.deepEqual(h.planState({ status: "past_due" }), ["Payment overdue", "warn"]);
   assert.deepEqual(h.planState({ status: "trialing" }), ["trialing", ""], "a state the page has no word for is said as the service says it");
 });
@@ -48,16 +47,18 @@ test("the tiles are on the page for an account that has a plan, in words that ar
 
   const running = await visit("account", { routes: world((x) => { paid(x); x.workspaces = [workspace()]; }).routes });
   assert.equal(running.shows(running.$("glance")), true);
-  assert.equal(running.text("glance-list"), "Workspaces 1 running 1 workspace in your plan Plan Team Active $149.00 per month Balance $20.00 $0.00 of $20.00 used");
+  assert.equal(running.text("glance-list"), "Plan Team Active $149.00 per month Balance $20.00 $0.00 of $20.00 used");
   assert.equal(running.$("glance").getAttribute("aria-labelledby"), "glance-h");
   assert.equal(running.text("glance-h"), "At a glance");
   assert.equal(running.$("glance-h").className, "sr", "the heading is for a reader who has not the tiles in front of them");
+  const blocks = running.doc.querySelector("main .wrap")!.children;
+  assert.ok(blocks.indexOf(running.$("workspaces-panel")) < blocks.indexOf(running.$("glance")), "the glance follows the workspaces record, which is the page's statement");
 
   const late = await visit("account", { routes: world((x) => { x.subscription = LATE; x.workspaces = [workspace()]; }).routes });
   assert.match(late.text("glance-list"), /Plan Team Payment overdue \$149\.00 per month/);
 
   const keyless = await visit("account", { routes: hosting().routes });
-  assert.equal(keyless.text("glance-list"), "Workspaces 1 running 1 workspace in your plan Plan Hosting Active $49.00 per month");
+  assert.equal(keyless.shows(keyless.$("glance")), false, "a hosting-only plan has one fact to glance at, and its Plan panel is the place for it");
 
   const evil = '<img src=x onerror="alert(1)">';
   const named = await visit("account", { routes: world((x) => { x.subscription = { ...ACTIVE!, title: evil }; x.workspaces = [workspace()]; }).routes });
@@ -224,7 +225,7 @@ test("a workspace that is starting shows how far it is, as steps for the eye, an
   w.workspaces = [workspace({ status: "provisioning" })];
   await v.until("the step to move on", () => phase()?.getAttribute("data-step") === "2");
   w.workspaces = [workspace()];
-  await v.until("the workspace to be running", () => v.text("stage-title") === "Research is running");
+  await v.until("the workspace to be running", () => /^Research Running /.test(v.text("workspaces")));
   assert.equal(phase(), null, "a workspace that is up has no steps to show");
   assert.doesNotMatch(v.$("workspaces").querySelector(".row-head .badge")!.className, /badge-live/);
 });

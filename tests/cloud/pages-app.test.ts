@@ -1160,7 +1160,7 @@ test("each workspace shows its state in words, with only what can be done to it 
   const v = await visit("account", { routes: w.routes });
   const rows = v.$("workspaces").querySelectorAll("li");
   assert.equal(rows.length, 4);
-  assert.equal(v.text(rows[0]!), "Alpha Running Open Pause More Plan Team Change plan Address alpha.ws.example.com", "a workspace that is ready says its state and offers what can be done, and the plan it is on");
+  assert.equal(v.text(rows[0]!), "Alpha Running Open it to describe your team and start a mission. Open Pause More Plan Team Change plan Address alpha.ws.example.com", "a workspace that is ready says what the card used to say, and offers what can be done");
   assert.equal(v.text(rows[1]!), "Beta Stopped Stopped because the last payment did not go through. Resume it to open it. Resume More Plan Team Change plan Address beta.ws.example.com", "the plan is paid up, so it can be started");
   assert.equal(v.text(rows[2]!), "Gamma Starting It starts in the background, and this page updates when it is ready. Open it when it is ready Plan Team Address gamma.ws.example.com", "a workspace that is starting cannot be moved to another plan yet: there is no host to make again");
   assert.equal(v.text(rows[3]!), "Delta Could not start The container did not start. Delete it and make a new one. If it fails again, tell the operator. Delete this workspace Plan Team Address delta.ws.example.com");
@@ -1248,7 +1248,7 @@ test("a change that went through and a read back that did not says so in the car
   await v.idle();
   // The pause was made. The page could not read the account again, so it still says Running, and it has to say why.
   assert.equal(reads, 2);
-  assert.match(v.text("workspaces"), /^Research Running Open Pause /, "the card shows what it showed before the change, because it cannot know more");
+  assert.match(v.text("workspaces"), /^Research Running Open it to describe your team and start a mission\. Open Pause /, "the record shows what it showed before the change, because it cannot know more");
   const note = v.$("workspaces").querySelector(".ws-note")!;
   assert.equal(v.text(note), "That worked, but your account could not be read again just now, so this page is out of date. Try again", "the sentence and its way to ask again are in the card's own note");
   assert.equal(note.className, "note note-bad ws-note", "drawn as the card's notes are, not as a hint under it");
@@ -1295,9 +1295,10 @@ test("a new workspace whose read back failed is not a form that emptied itself f
 });
 
 test("a change asked from the card at the top, whose read back failed, answers in that card", async () => {
+  // A late payment's card keeps Open beside the payment: it is the one workspace action still asked from the card.
   const w = world((x) => {
-    paid(x);
-    x.workspaces = [workspace({ status: "suspended", statusReason: "paused by its owner" })];
+    x.subscription = { plan: "team", title: "Team", status: "past_due", periodEnd: "2026-11-05T12:00:00.000Z", pastDueSince: "2026-10-05T12:00:00.000Z" };
+    x.workspaces = [workspace()];
   });
   let reads = 0;
   const before = { account: w.view(), balance: w.balance };
@@ -1306,28 +1307,24 @@ test("a change asked from the card at the top, whose read back failed, answers i
     if (reads === 1) return { json: before };
     return failure(503, "unavailable", "Something went wrong on our side. Try again in a moment.");
   });
-  w.answers.set("POST /api/workspaces/ws_1/resume", () => {
-    w.workspaces = [workspace()];
-    return { json: {} };
-  });
+  w.answers.set("POST /api/workspaces/ws_1/open", { json: { url: "https://research-1a2b3c.ws.example.com/__enter?code=abc" } });
   const v = await visit("account", { routes: w.routes });
-  assert.deepEqual(v.labels("stage-actions"), ["Resume"]);
-  v.click(v.button("stage-actions", "Resume"));
+  assert.deepEqual(v.labels("stage-actions"), ["Update payment details", "Open"]);
+  v.click(v.button("stage-actions", "Open"));
   await v.idle();
   assert.equal(
     v.text("stage-status"),
     "That worked, but your account could not be read again just now, so this page is out of date. Try again",
     "the card at the top answers under its own sentence, where the button was",
   );
-  assert.equal(v.text("stage-title"), "Research is paused", "and still says what it said, because the page could not read more");
-  assert.equal(v.doc.activeElement, v.button("stage-actions", "Resume"), "the cursor stays on the Resume it was pressed on");
-  assert.equal(v.button("stage-actions", "Resume").getAttribute("aria-disabled"), null, "and it can be pressed again");
+  assert.equal(v.text("stage-title"), "Your last payment did not go through", "and still says what it said, because the page could not read more");
+  assert.equal(v.doc.activeElement, v.button("stage-actions", "Open"), "the cursor stays on the Open it was pressed on");
+  assert.equal(v.button("stage-actions", "Open").getAttribute("aria-disabled"), null, "and it can be pressed again");
   w.answers.delete("GET /api/me");
   v.click(v.button("stage-status", "Try again"));
   await v.idle();
-  assert.equal(v.text("stage-title"), "Research is running", "the answer is drawn from the read");
   assert.equal(v.text("stage-status"), "", "and the card's own status is empty again");
-  assert.equal(v.doc.activeElement, v.button("stage-actions", "Open"), "the cursor goes to what the card offers now");
+  assert.ok(v.$("stage-actions").contains(v.doc.activeElement!), "the cursor goes back to the card's own actions");
   assert.deepEqual(v.consoleErrors, []);
 });
 
@@ -1367,7 +1364,7 @@ test("opening a workspace asks for a one-time address and goes there; an answer 
   o.click(o.button("workspaces", "Open"));
   await o.idle();
   assert.deepEqual(o.navigations, []);
-  assert.equal(o.text("workspaces"), "Research Running Open Pause More Plan Team Change plan The address of this workspace is not one this page will open. Tell the operator. Address research-1a2b3c.ws.example.com");
+  assert.equal(o.text("workspaces"), "Research Running Open it to describe your team and start a mission. Open Pause More Plan Team Change plan The address of this workspace is not one this page will open. Tell the operator. Address research-1a2b3c.ws.example.com");
 
   const still = world((x) => {
     paid(x);
@@ -1401,7 +1398,7 @@ test("pausing and resuming are one request each, with the row saying what is und
   assert.equal(v.text("workspaces"), "Research Stopped Paused by you. Its files are kept. Resume it to open it. Resume More Plan Team Change plan Address research-1a2b3c.ws.example.com");
   v.click(v.button("workspaces", "Resume"));
   await v.idle();
-  assert.match(v.text("workspaces"), /^Research Running Open Pause More Plan Team Change plan Address /);
+  assert.match(v.text("workspaces"), /^Research Running Open it to describe your team and start a mission\. Open Pause More Plan Team Change plan Address /);
   assert.equal(v.to("POST", "/api/workspaces/ws_1/suspend").length, 1);
   assert.equal(v.to("POST", "/api/workspaces/ws_1/resume").length, 1);
 
@@ -1842,7 +1839,8 @@ test("names and addresses are shown as text: a workspace named like markup is a 
   assert.ok(v.text("workspaces").startsWith(`${evil} Running `), v.text("workspaces"));
   assert.ok(v.text("workspaces").includes("<i>why</i>. Delete it and make a new one."), "a reason is text too");
   assert.ok(v.text("usage").includes(evil), "and so is a name in the usage tables");
-  assert.equal(v.text("stage-title"), `${evil} is running`, "and in the card at the top");
+  assert.equal(v.text("stage-title"), "", "the card is not drawn for a workspace that can be opened");
+  assert.ok(v.text("workspaces").includes(`${evil} Running`), "the record says the name it was given, as text");
   const inside = (id: string): string[] => v.$(id).descendants().map((n) => n.tag);
   for (const id of ["workspaces", "usage", "who", "stage"]) for (const tag of ["img", "script", "b", "i"]) assert.ok(!inside(id).includes(tag), `no <${tag}> inside #${id}`);
   v.click(v.button("workspaces", "More"));

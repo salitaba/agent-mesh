@@ -198,6 +198,13 @@
   }
 
   /**
+   * The stages whose work is the workspace list's own: a workspace that can be opened, and one that can be resumed, are records
+   * with the sentence and the button the card would have said. The card is not drawn for them, so the first screen says one thing
+   * about the account instead of the same workspace twice. Every other stage keeps the card: it is the only place its action is.
+   */
+  const ON_RECORD = new Set(["ready", "stopped"]);
+
+  /**
    * Where the account is, from what the service says of it. `view` is `{ subscription, workspaces, plans, plansKnown, topups, policy }`:
    * the account's, and the plans on offer. The stage is one of `no-plan`, `late` (the last payment failed), `no-workspace`, `ready`
    * (a workspace can be opened), `needs-key` (running, on a plan that sells hosting only, with no key), `starting`, `stopped` and
@@ -308,16 +315,14 @@
   }
 
   /**
-   * What the account is, at a glance: the workspaces that are running, the plan, and the balance where the plan sells usage. Only what the
-   * account has is a tile, and each says in a few words what the section below says of it. `balance` is what the service sent, or null.
+   * What the account is, at a glance: the plan and the balance where the plan sells usage. The workspaces are the record above it,
+   * not a count repeated here, and only what the account has is a tile. `balance` is what the service sent, or null.
    */
   function glanceOf(view, balance, currency) {
     const sub = view.subscription;
     if (!holdsPlan(sub)) return [];
     const plan = view.plans.find((p) => p.id === sub.plan);
-    const count = (...states) => view.workspaces.filter((w) => states.includes(w.status)).length;
-    const others = [[count("requested", "provisioning"), "starting"], [count("suspended"), "stopped"], [count("failed"), "could not start"]].filter(([n]) => n > 0).map(([n, what]) => `${n} ${what}`);
-    const tiles = [{ id: "workspaces", label: "Workspaces", value: String(count("running")), unit: "running", note: others.join(", ") || (plan ? `${plural(plan.workspaces, "workspace")} in your plan` : "") }];
+    const tiles = [];
     const [state, tone] = planState(sub);
     tiles.push({ id: "plan", label: "Plan", value: sub.title || "Your plan", unit: "", note: plan ? `${money(plan.priceMinor, currency)} per ${plan.period}` : "", badge: [state, tone] });
     if (sectionsOf(view).balance) {
@@ -382,6 +387,17 @@
       default:
         return "";
     }
+  }
+
+  /**
+   * What a record says when it is the page's statement: for a ready workspace the card is not drawn, so its sentence moves to
+   * the one record it was about. With several to open there is no one to open, and no sentence is repeated on every row.
+   */
+  function recordSays(w, view) {
+    const stage = stageOf(view);
+    if (stage.id !== "ready" || stage.workspace !== w) return "";
+    const openable = view.workspaces.filter((x) => x.status === "running" && !lacksKey(x));
+    return openable.length === 1 ? nextStepOf(stage, view).text : "";
   }
 
   /** What the account looks like in the ways a payment changes it. */
@@ -1184,6 +1200,8 @@
       stageId: undefined,
       /** Set by something the person did, so that the card they were using is not left without the cursor when it says something else. */
       focusStage: false,
+      /** The workspace whose record has taken the card's place and should take the cursor with it, once the list is drawn. */
+      focusRecord: "",
       createAt: "panel",
       /** What the card at the top offers, and of which workspace, so that the workspace's own button is not a second one of the same weight. */
       stageTarget: null,
@@ -1259,7 +1277,8 @@
 
     function renderGlance() {
       const tiles = glanceOf(viewOf(), state.me.balance, state.currency);
-      $("glance").hidden = tiles.length === 0;
+      // A summary of one fact is not a summary: a hosting-only plan's tile would repeat the Plan panel directly under it.
+      $("glance").hidden = tiles.length < 2;
       $("glance-list").replaceChildren(...tiles.map(stat));
     }
 
@@ -1599,7 +1618,7 @@
       const id = w.workspaceId;
       const card = cardFor(id);
       const [label, kind] = STATES[w.status] || [w.status, ""];
-      const says = workspaceSays(w, view);
+      const says = workspaceSays(w, view) || recordSays(w, view);
       // Ready is not running only: on a plan that sells hosting only a workspace with no key is up, and has nothing to open for.
       const waiting = isStarting(w) || (w.status === "running" && lacksKey(w));
       const showAuto = isStarting(w) || (waiting && state.autoOpen.has(id));
@@ -1637,6 +1656,12 @@
       if (shown.length <= lis.length && shown.every((li, i) => li === lis[i])) list.append(...lis.slice(shown.length));
       else list.replaceChildren(...lis);
       $("workspaces-panel").hidden = items.length === 0;
+      // The card that had the cursor has become this record: its Open, or Resume, is what the card said, so the cursor goes there.
+      if (state.focusRecord) {
+        const target = cardFor(state.focusRecord).boxes.actions.querySelector("button, a");
+        state.focusRecord = null;
+        if (target) target.focus();
+      }
       renderCreate(items);
     }
 
@@ -1766,7 +1791,17 @@
       }
       if (state.focusStage) {
         state.focusStage = false;
-        $("stage-title").focus();
+        // When the stage is the record, its title is not drawn: the cursor goes to the record's own action instead.
+        if (Boolean(w) && ON_RECORD.has(stage.id)) state.focusRecord = w.workspaceId;
+        else $("stage-title").focus();
+      }
+      // A record that is already drawn can take the cursor now; one that is drawn after this keeps it for renderWorkspaces.
+      if (state.focusRecord) {
+        const target = $(`open-${state.focusRecord}`) || $(`resume-${state.focusRecord}`);
+        if (target) {
+          state.focusRecord = "";
+          target.focus();
+        }
       }
     }
 
@@ -1774,12 +1809,15 @@
       const box = $("stage");
       // The cursor goes back to what it was on, or, when that is gone (Resume is not offered once it is running), to what the card says now.
       const had = box.contains(doc.activeElement) ? doc.activeElement.id : null;
-      state.stageTarget = card.action && w ? { kind: card.action.kind, id: w.workspaceId } : null;
-      box.hidden = false;
+      // A workspace that can be opened, or resumed, is a record: its own sentence and button are the page's statement, and the card
+      // would say the same thing a card-length above it. The card is drawn for every state whose action is not in the list.
+      const onRecord = Boolean(w) && ON_RECORD.has(stage.id);
+      state.stageTarget = !onRecord && card.action && w ? { kind: card.action.kind, id: w.workspaceId } : null;
+      box.hidden = onRecord;
       box.className = card.tone ? `stage stage-${card.tone}` : "stage";
       // The steps are for a person who is getting started; one whose workspace can be opened is not shown them.
       const steps = $("stage-steps");
-      steps.hidden = stage.step === "open";
+      steps.hidden = onRecord || stage.step === "open";
       steps.replaceChildren(...stage.steps.map(stepItem));
       $("stage-title").textContent = card.title;
       const text = $("stage-text");
@@ -1789,7 +1827,13 @@
       if (card.contact && /^(mailto:|https:)/.test(CONTACT)) text.append(" ", el("a", { href: CONTACT }, "Contact the operator"), ".");
       const actions = $("stage-actions");
       const form = $("create-box");
-      if (card.action && card.action.kind === "create") {
+      if (onRecord) {
+        actions.replaceChildren();
+        if (state.createAt === "stage") {
+          $("create-slot").append(form);
+          state.createAt = "panel";
+        }
+      } else if (card.action && card.action.kind === "create") {
         actions.replaceChildren(form);
         state.createAt = "stage";
       } else {
@@ -1802,7 +1846,11 @@
       // What a screen reader is told, once, when the account moves on: the page was not asked, and nothing it was looking at is gone.
       if (state.stageId !== undefined && state.stageId !== stage.id) $("stage-live").textContent = `${card.title}. ${card.text}`;
       state.stageId = stage.id;
-      if (had !== null) ((had ? doc.getElementById(had) : null) || $("stage-title")).focus();
+      if (had !== null) {
+        // The card that had the cursor is gone: the cursor goes to the record that now says the same thing.
+        if (onRecord) state.focusRecord = w.workspaceId;
+        else ((had ? doc.getElementById(had) : null) || $("stage-title")).focus();
+      }
     }
 
     /** While a workspace is starting the page asks again every few seconds, for ten minutes at most, and not while the tab is hidden. */

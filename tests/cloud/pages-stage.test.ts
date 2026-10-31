@@ -174,12 +174,10 @@ const mainFocusable = (v: Visit): FakeNode[] =>
     .querySelectorAll("a, button, input, select, textarea")
     .filter((n) => v.shows(n) && !n.disabled && n.getAttribute("type") !== "hidden");
 
-test("the card is the first thing on the account after its heading, and its action is the first thing a keyboard reaches", async () => {
+test("the account opens with one statement: the card, or the record that has taken its place", async () => {
   const cases: Array<[string, () => ReturnType<typeof world>]> = [
     ["no plan", () => world()],
     ["a plan and no workspace", () => world(paid)],
-    ["a workspace to open", () => world((x) => { paid(x); x.workspaces = [workspace()]; })],
-    ["a workspace that is stopped", () => world((x) => { paid(x); x.workspaces = [workspace({ status: "suspended", statusReason: "paused by its owner" })]; })],
     ["a late payment", () => world((x) => { x.subscription = LATE; x.workspaces = [workspace()]; })],
     ["a key that is missing", () => hosting()],
   ];
@@ -193,6 +191,23 @@ test("the card is the first thing on the account after its heading, and its acti
     for (const panel of blocks.filter((n) => n.tag === "section" && n.className.split(/\s+/).includes("panel"))) assert.ok(blocks.indexOf(panel) > at("stage"), `${what}: ${panel.id} is after the card`);
     const first = mainFocusable(v)[0]!;
     assert.ok(v.$("stage").contains(first), `${what}: the first thing a keyboard reaches is in the card, and is ${first.tag} ${first.id || first.textContent}`);
+  }
+  // A workspace that can be opened, or resumed, is its own record: the card would say the same thing a card-length above it.
+  const records: Array<[string, () => ReturnType<typeof world>, string]> = [
+    ["a workspace to open", () => world((x) => { paid(x); x.workspaces = [workspace()]; }), "Open"],
+    ["a workspace that is stopped", () => world((x) => { paid(x); x.workspaces = [workspace({ status: "suspended", statusReason: "paused by its owner" })]; }), "Resume"],
+  ];
+  for (const [what, make, action] of records) {
+    const v = await visit("account", { routes: make().routes });
+    assert.equal(v.shows(v.$("stage")), false, `${what}: the card is not drawn`);
+    const blocks = v.doc.querySelector("main .wrap")!.children.filter((n) => !n.isText);
+    const at = (id: string): number => blocks.findIndex((n) => n.id === id);
+    assert.ok(at("workspaces-panel") > at("account-head"), `${what}: the record comes before the sections below it`);
+    const first = mainFocusable(v)[0]!;
+    assert.equal(first.textContent, "Workspaces", `${what}: the contents line is the first thing a keyboard reaches, as it is above the record`);
+    const actionButton = v.button("workspaces", action);
+    assert.equal(actionButton.className, "btn btn-primary", `${what}: and the record's own ${action} is the page's main action`);
+    assert.ok(v.$("workspaces").contains(actionButton), `${what}: the action is in the record`);
   }
 });
 
@@ -209,12 +224,18 @@ test("each stage is said on the page: its title and sentence, the steps while a 
   assert.deepEqual([s.title, s.steps, s.actions], ["Research is starting", "✓ Choose a plan (done) 03 Make a workspace (you are here) 04 Describe your team (still to do)", []]);
 
   s = await stage(world((x) => { paid(x); x.workspaces = [workspace()]; }));
-  assert.deepEqual([s.title, s.actions, s.tone], ["Research is running", ["Open"], "stage"]);
+  assert.deepEqual([s.title, s.actions, s.tone], ["", [], "stage"], "the card is not drawn: the record is the statement");
+  assert.equal(s.v.shows(s.v.$("stage")), false);
+  assert.match(s.v.text("workspaces"), /^Research Running Open it to describe your team and start a mission\. Open Pause More /, "the record carries the card's sentence and its action");
+  assert.equal(s.v.button("workspaces", "Open").className, "btn btn-primary", "and the page's main button is the record's Open");
+  assert.equal(s.v.button("workspaces", "Open").getAttribute("aria-label"), "Open Research");
   assert.equal(s.v.shows(s.v.$("stage-steps")), false, "a person whose workspace can be opened is not shown the steps of getting started");
-  assert.equal(s.v.button("stage-actions", "Open").getAttribute("aria-label"), "Open Research");
 
   s = await stage(world((x) => { paid(x); x.workspaces = [workspace({ status: "suspended", statusReason: "paused by its owner" })]; }));
-  assert.deepEqual([s.title, s.actions, s.v.text("stage-text")], ["Research is paused", ["Resume"], "Its files are kept. Resume it to open it."]);
+  assert.deepEqual([s.title, s.actions], ["", []], "a paused workspace is a record too: the card would say the same thing");
+  assert.equal(s.v.shows(s.v.$("stage")), false);
+  assert.match(s.v.text("workspaces"), /^Research Stopped Paused by you\. Its files are kept\. Resume it to open it\. Resume /);
+  assert.equal(s.v.button("workspaces", "Resume").className, "btn btn-primary");
 
   s = await stage(world((x) => { paid(x); x.workspaces = [workspace({ status: "failed", statusReason: "the container did not start" })]; }));
   assert.deepEqual([s.title, s.tone, s.actions], ["Research could not start", "stage stage-bad", []]);
@@ -238,12 +259,12 @@ test("each stage is said on the page: its title and sentence, the steps while a 
   assert.deepEqual([live.getAttribute("role"), live.getAttribute("aria-live"), live.className], ["status", "polite", "sr"], "what it says when it changes is announced politely, to a screen reader and to nobody else");
 });
 
-test("what the card offers is done from the card: open the workspace, resume it, add its key, and a request that is out holds the button", async () => {
+test("what the account offers is done where it is said: the record for a workspace that can be opened or resumed, the card for the rest", async () => {
   const open = world((x) => { paid(x); x.workspaces = [workspace()]; });
   open.answers.set("POST /api/workspaces/ws_1/open", { json: { url: "https://research-1a2b3c.ws.example.com/__enter?code=abc" } });
   const v = await visit("account", { routes: open.routes });
-  v.click(v.button("stage-actions", "Open"));
-  assert.equal(v.button("stage-actions", "Open").held, true, "while the request is out the button is held");
+  v.click(v.button("workspaces", "Open"));
+  assert.equal(v.button("workspaces", "Open").held, true, "while the request is out the record's button is held");
   await v.idle();
   assert.deepEqual(v.navigations, ["assign https://research-1a2b3c.ws.example.com/__enter?code=abc"]);
   assert.equal(v.to("POST", "/api/workspaces/ws_1/open").length, 1);
@@ -254,10 +275,10 @@ test("what the card offers is done from the card: open the workspace, resume it,
     return { json: { workspace: paused.workspaces[0] } };
   });
   const p = await visit("account", { routes: paused.routes });
-  p.click(p.button("stage-actions", "Resume"));
+  p.click(p.button("workspaces", "Resume"));
   await p.idle();
   assert.equal(p.to("POST", "/api/workspaces/ws_1/resume").length, 1);
-  assert.equal(p.text("stage-title"), "Research is running", "and the card says what is now true");
+  assert.match(p.text("workspaces"), /^Research Running Open it to describe your team and start a mission\./, "and the record says what is now true");
 
   const keyless = await visit("account", { routes: hosting().routes });
   keyless.click(keyless.button("stage-actions", "Add your model key"));
@@ -279,36 +300,35 @@ test("what the card offers is done from the card: open the workspace, resume it,
   assert.equal(l.doc.activeElement, update, "the cursor is still on the button that was pressed");
 });
 
-test("a thing asked from the card at the top, when it fails, is answered in the card itself, not in the workspace's card a screen below it", async () => {
-  // The workspace's own card is where a workspace's failures used to land, and at a phone it is a card-length under the card that asked.
+test("a thing asked is answered where it was asked: in the record for a workspace, in the card for the card's own action", async () => {
+  // A workspace's action is the record's now, and its refusal belongs to the record it was asked from.
   const w = world((x) => { paid(x); x.workspaces = [workspace()]; });
   w.answers.set("POST /api/workspaces/ws_1/open", failure(500, "provision_failed", "The workspace could not be started. Try again in a minute."));
   const v = await visit("account", { routes: w.routes });
-  const open = v.button("stage-actions", "Open");
+  const open = v.button("workspaces", "Open");
   v.click(open);
   await v.idle();
-  assert.equal(v.text("stage-status"), "The workspace could not be started. Try again in a minute.", "the refusal is in the card whose button was pressed");
-  assert.ok(v.$("stage").contains(v.$("stage-status")));
-  assert.equal(/The workspace could not be started/.test(v.text("workspaces")), false, "and is not said again in the card below");
+  assert.match(v.text("workspaces"), /The workspace could not be started\. Try again in a minute\./, "the refusal is in the record whose button was pressed");
+  assert.equal(v.text("stage-status"), "", "and the card at the top, which is not drawn, says nothing");
   assert.equal(v.doc.activeElement, open, "the cursor is still on the button that asked");
   assert.equal(open.held, false, "and the button can be pressed again");
 
   const paused = world((x) => { paid(x); x.workspaces = [workspace({ status: "suspended", statusReason: "paused by its owner" })]; });
   paused.answers.set("POST /api/workspaces/ws_1/resume", failure(503, "unavailable", "The workspace could not be started just now."));
   const p = await visit("account", { routes: paused.routes });
-  p.click(p.button("stage-actions", "Resume"));
+  p.click(p.button("workspaces", "Resume"));
   await p.idle();
-  assert.equal(p.text("stage-status"), "The workspace could not be started just now.", "Resume, which the card also offers, answers there too");
-  assert.equal(/just now/.test(p.text("workspaces")), false);
+  assert.match(p.text("workspaces"), /The workspace could not be started just now\./, "Resume, which the record offers, answers there too");
+  assert.equal(p.text("stage-status"), "");
 
-  // The workspace's own button still answers in its own card, and the card at the top says nothing about it.
-  const card = world((x) => { paid(x); x.workspaces = [workspace()]; });
-  card.answers.set("POST /api/workspaces/ws_1/open", failure(500, "provision_failed", "The workspace could not be started. Try again in a minute."));
+  // The card at the top still answers for its own action, the payment.
+  const card = world((x) => { x.subscription = LATE; x.workspaces = [workspace()]; });
+  card.answers.set("POST /api/portal", failure(409, "no_portal", "There is no billing portal for payments made by invoice or transfer. Contact the operator to change or cancel a plan."));
   const c = await visit("account", { routes: card.routes });
-  c.click(c.button("workspaces", "Open"));
+  c.click(c.button("stage-actions", "Update payment details"));
   await c.idle();
-  assert.match(c.text("workspaces"), /The workspace could not be started/);
-  assert.equal(c.text("stage-status"), "", "and the card at the top says nothing about an action it did not offer");
+  assert.match(c.text("stage-status"), /There is no billing portal/);
+  assert.equal(/There is no billing portal/.test(c.text("workspaces")), false, "and the record below says nothing about an action it did not offer");
 });
 
 test("a late payment puts the payment first and keeps Open beside it for a workspace that still runs, which is how a person comes back to work", async () => {
@@ -372,14 +392,15 @@ test("a card that says something else is announced once, and one that says the s
   assert.equal(v.$("current").value, "typing in the password form while the page waits");
 });
 
-test("a workspace that becomes ready is announced and the card offers to open it; one that is still starting after ten minutes of looking says the page has stopped", async () => {
+test("a workspace that becomes ready is announced and its record offers to open it; one that is still starting after ten minutes of looking says the page has stopped", async () => {
   const w = world((x) => { paid(x); x.workspaces = [workspace({ status: "provisioning" })]; });
   const v = await visit("account", { routes: w.routes });
   assert.equal(v.text("stage-live"), "");
   w.workspaces = [workspace()];
-  await v.until("the workspace to be seen running", () => v.text("stage-title") === "Research is running");
+  await v.until("the workspace to be seen running", () => /^Research Running Open it to describe/.test(v.text("workspaces")));
   assert.equal(v.text("stage-live"), "Research is running. Open it to describe your team and start a mission.");
-  assert.deepEqual(v.labels("stage-actions"), ["Open"]);
+  assert.equal(v.shows(v.$("stage")), false, "the card is gone: the record says the same thing");
+  assert.equal(v.button("workspaces", "Open").className, "btn btn-primary");
 
   const never = world((x) => { paid(x); x.workspaces = [workspace({ status: "provisioning" })]; });
   const s = await visit("account", { routes: never.routes });
@@ -402,29 +423,30 @@ test("a page in a tab that is not shown does not look at the account while a wor
   await v.until("the page to look again", () => v.to("GET", "/api/me").length > looks);
 });
 
-test("the workspace's own button is not a second one of the same weight when the card at the top offers the same thing, and is the main one when it does not", async () => {
+test("the record's own button is the page's main one when the card is not drawn, and every record keeps its own weight", async () => {
   const one = await visit("account", { routes: world((x) => { paid(x); x.workspaces = [workspace()]; }).routes });
-  assert.equal(one.button("stage-actions", "Open").className, "btn btn-primary");
-  assert.equal(one.button("workspaces", "Open").className, "btn", "the workspace's Open is the same thing, said again where the workspace is");
+  assert.equal(one.shows(one.$("stage")), false);
+  assert.equal(one.button("workspaces", "Open").className, "btn btn-primary", "the record's Open is the page's main action");
 
   const paused = await visit("account", { routes: world((x) => { paid(x); x.workspaces = [workspace({ status: "suspended", statusReason: "paused by its owner" })]; }).routes });
-  assert.equal(paused.button("stage-actions", "Resume").className, "btn btn-primary");
-  assert.equal(paused.button("workspaces", "Resume").className, "btn");
+  assert.equal(paused.shows(paused.$("stage")), false);
+  assert.equal(paused.button("workspaces", "Resume").className, "btn btn-primary");
 
   const two = await visit("account", { routes: world((x) => { x.subscription = { ...ACTIVE!, plan: "business", title: "Business" }; x.workspaces = [workspace({ workspaceId: "ws_a", name: "Alpha" }), workspace({ workspaceId: "ws_b", name: "Beta" })]; }).routes });
-  assert.deepEqual(two.labels("stage-actions"), [], "with two to open the card does not choose");
+  assert.equal(two.shows(two.$("stage")), false, "with two to open there is no card to choose between them");
   assert.deepEqual(two.buttons("workspaces").filter((b) => b.textContent === "Open").map((b) => b.className), ["btn btn-primary", "btn btn-primary"], "so each is the main button of its own");
 
   const mixed = await visit("account", { routes: world((x) => { x.subscription = { ...ACTIVE!, plan: "business", title: "Business" }; x.workspaces = [workspace({ workspaceId: "ws_a", name: "Alpha" }), workspace({ workspaceId: "ws_b", name: "Beta", status: "suspended", statusReason: "paused by its owner" })]; }).routes });
-  assert.equal(mixed.button("workspaces", "Open").className, "btn", "the one the card is about");
-  assert.equal(mixed.button("workspaces", "Resume").className, "btn btn-primary", "and one that it is not about keeps its own main button");
+  assert.equal(mixed.shows(mixed.$("stage")), false);
+  assert.equal(mixed.button("workspaces", "Open").className, "btn btn-primary", "one that can be opened");
+  assert.equal(mixed.button("workspaces", "Resume").className, "btn btn-primary", "and one that can be resumed: neither is weakened for a card that is not there");
 
   const stopped = (workspaceId: string, name: string) => workspace({ workspaceId, name, status: "suspended", statusReason: "paused by its owner" });
   const twoPaused = await visit("account", { routes: world((x) => { x.subscription = { ...ACTIVE!, plan: "business", title: "Business" }; x.workspaces = [stopped("ws_a", "Alpha"), stopped("ws_b", "Beta")]; }).routes });
   const [alpha, beta] = twoPaused.$("workspaces").querySelectorAll("li");
-  assert.equal(twoPaused.text("stage-title"), "Alpha is paused");
-  assert.equal(twoPaused.button(alpha!, "Resume").className, "btn", "the card is about the first, and offers its Resume");
-  assert.equal(twoPaused.button(beta!, "Resume").className, "btn btn-primary", "and the second one's Resume is not made weaker by a button that is for another workspace");
+  assert.equal(twoPaused.shows(twoPaused.$("stage")), false);
+  assert.equal(twoPaused.button(alpha!, "Resume").className, "btn btn-primary");
+  assert.equal(twoPaused.button(beta!, "Resume").className, "btn btn-primary");
 });
 
 test("the account is as long as the person's stage needs: only what they can use is shown, and the password is a setting at the end", async () => {
