@@ -254,7 +254,7 @@ Breakpoints: **1280 1100 900 800 760 620 560**. 800 is the sidebar drawer (JS
 
 ## What the next pass should take
 
-1. The Overview's first screen is still the whole hero (737 px at 360, the four evidence rows at 903): the next lever is a
+1. The Overview's first screen is still the whole hero (737 px at 360, the four evidence rows at 867): the next lever is a
    words decision — the goal sentence, the three ghost links (files, cost, replay) and the note are 190 px between them,
    and two of the three links now have a figure and a dock tab that say the same thing.
 2. Whether the thumb's row earns its 36 px of every page: it is the owner's daily five, but a page opened once (Graph, the
@@ -322,7 +322,7 @@ and `#/designer` at 0.
   1,881 → 1,917 (1,540 → 1,588); Product 1,508 → 1,544 (1,236 → 1,284); Playground 1,057 → 1,093 (736 → 765). Events,
   Needs you, Tool gates and Host settings are exactly as they were (their content is a viewport-height pane), and the
   Designer is unchanged at every width (1,088 / 1,050 / 1,015 / 839 / 736) because it draws no dock and reserves none.
-  At the end of every page no control is left under the row: the event list's own scroller ends 11 px above it.
+  At the end of every page no control is left under the row: the event list's own scroller ends 12 px above it.
 - **Nothing else moves.** No document or `#view` sideways scroll at 320/360/390/768/1440 in light or 360/1440 in dark;
   axe-core **0** violations in 26 reads (13 views × 360 and 1,440 in light, 4 views at 360 and 1,440 in dark; 23–37 rules
   passed each); one console error in both halves (the one-mesh `/api/projects` 404, and before it was two on Cost); the
@@ -335,7 +335,7 @@ and one rule added to `page-exits` and to `failure-states`; eslint 0 errors (211
 
 **Left.** The dock hands 36 px of every page to the frame: the trade is one press instead of two for five places, and it
 is worth watching whether the row earns it on the pages opened once (Host settings is not one — it draws no dock). The
-Overview's hero is still 737 px at 360, so the four closed evidence rows begin below the fold (903 after the row); the
+Overview's hero is still 737 px at 360, so the four closed evidence rows begin at 867, below the 800 px fold; the
 figures now open what explains them, but the first screen is still the whole brief. The drawer's twelve rows still show
 a 1–9 key hint on a surface that has no keyboard — it is a hover for a mouse, so a thumb never sees it. The figures cover
 their own words, so the numbers can no longer be selected and copied (the fold accepted the same trade). The Designer
