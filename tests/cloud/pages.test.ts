@@ -434,6 +434,22 @@ test("what a finger has to hit is as tall as a button on a phone: the buttons, t
   assert.notEqual(value(".subnav", "overflow-x"), "auto", "and there is no sideways strip to discover");
 });
 
+test("a phone's bar is part of the page, so no control is ever under it, and the section a contents link names opens at the edge", () => {
+  const rules = cssRules(read(path.join(ASSETS, "app.css")));
+  const value = (selector: string, property: string, within = ""): string | undefined => {
+    const found = rules.filter((r) => r.selectors.includes(selector) && (within === "" ? r.at === "" : r.at.includes(within)) && declared(r, property) !== undefined);
+    return found.length > 0 ? declared(found[found.length - 1]!, property) : undefined;
+  };
+  const phone = "max-width: 720px";
+  assert.equal(value(".site-header", "position"), "sticky", "a wide page keeps its bar: a pointer can scroll a little further around it");
+  assert.equal(value(".site-header", "position", phone), "static", "a phone's bar scrolls with the page: held over it, the plan's two 44px actions sat at 21.9-65.9 under the 61px bar, and axe scored target-size serious at 320 and 360");
+  assert.equal(value(".panel", "scroll-margin-top", phone), "24px", "and the section a contents link names opens at the top, not 124px down a bar that is no longer there");
+  assert.equal(value(".panel > h2", "scroll-margin-top", phone), "24px", "the heading Focus lands on included");
+  assert.equal(value(".prose h2", "scroll-margin-top", phone), "24px", "as does a clause reached from a legal page's own contents");
+  assert.equal(value(".panel", "scroll-margin-top"), "124px", "while a wide page still clears the bar it keeps");
+  assert.equal(value(".prose h2", "scroll-margin-top"), "84px");
+});
+
 test("a name a person typed cannot widen the page: the cards that show one break a word that has nowhere to break, and the header fits a small phone", () => {
   const rules = cssRules(read(path.join(ASSETS, "app.css")));
   const own = (selector: string, property: string, within = ""): string | undefined => {

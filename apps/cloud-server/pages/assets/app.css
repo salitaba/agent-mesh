@@ -282,7 +282,7 @@ td, th, dd, .price, .num, .badge, .auth-points li::before { font-variant-numeric
 .field { display: grid; gap: 8px; margin-bottom: 20px; }
 .field label { font-size: .875rem; font-weight: 600; }
 .field .hint { color: var(--k-muted); font-size: .8125rem; }
-/* A refusal takes the field's gap, not a note's margin. */
+/* A refusal takes the field's gap. */
 .field > .note { margin: 0; }
 input:not([type="checkbox"]), select {
   width: 100%;
@@ -491,7 +491,6 @@ body[data-page="home"] main { background: var(--k-glow) top / 100% 520px no-repe
 .hero .lede { max-width: 36rem; margin: 16px 0 24px; color: var(--k-ink-2); font-size: clamp(1rem, .95rem + .3vw, 1.1875rem); }
 .hero .btn, .stage .btn { min-height: 48px; padding-inline: 24px; font-size: 1rem; }
 .price-line { margin: 16px 0 0; color: var(--k-ink); font-size: .9375rem; font-weight: 600; }
-/* No read, no line. */
 .price-line:has([data-from-price]:empty) { display: none; }
 .byline { margin: 8px 0 0; color: var(--k-muted); font-size: .9375rem; }
 .record { margin: 0; padding: 16px; border: 1px solid var(--k-line); border-radius: var(--k-r-lg); background: var(--k-surface); box-shadow: var(--k-hl), var(--k-shadow-1); }
@@ -716,7 +715,6 @@ body[data-page="home"] main { background: var(--k-glow) top / 100% 520px no-repe
 .figures dd { margin: 4px 0 0; font-size: 1.375rem; font-weight: 650; letter-spacing: var(--k-track-title); }
 .figures > div:first-child dd { font-size: 2.25rem; letter-spacing: var(--k-track-display); }
 .figures .of { display: grid; gap: 6px; margin-top: 8px; color: var(--k-muted); font-size: .8125rem; font-weight: 500; letter-spacing: 0; }
-/* Amounts: one trough. */
 #topup-add { margin: 0 0 8px; }
 .topup-options {
   display: flex;
@@ -823,6 +821,8 @@ tfoot > tr > * { background: var(--k-surface-2); font-weight: 650; }
 
 /* ---- phones */
 @media (max-width: 720px) {
+  .site-header { position: static; }
+  .panel, .panel > h2, .prose h2 { scroll-margin-top: 24px; }
   .stat, .figures > div { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 10px; min-height: 44px; padding: 4px 0; border-top: 1px solid var(--k-line); }
   .stat-v, .stat-n { margin: 0 !important; }
   .stat-n:empty { display: none; }
@@ -874,7 +874,6 @@ tfoot > tr > * { background: var(--k-surface-2); font-weight: 650; }
 }
 
 @media (max-width: 380px) {
-  /* The bar at 320. */
   .site-header .wrap { padding-inline: 0; }
   .bar { gap: 8px; }
   .bar nav { gap: 0; }
