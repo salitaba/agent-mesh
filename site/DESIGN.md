@@ -1975,3 +1975,78 @@ earlier pass.
 - **The serif is a system face**, so a Linux pass container draws it with Liberation Serif and a Mac or Windows reader gets
   Georgia; the sizes, the ramp and the contrast are the same. No webfont is added, and the site still makes no request.
 - `site/ux/` was not edited: that record page is owned by another pass.
+
+## 2026-10-31, second pass: each of the plate's three views is cropped to the thing it is about
+
+Measured with the same probe (Chrome over CDP, reduced motion, light unless said, touch at 320/360/390/719, a mouse at
+768/1,040/1,440, print at 794 and at 360, forced colours at 360, a 24px root at 320/360). The before column is the site at
+`5d9c20d`, exported with `git archive` and served on the same port before any edit, measured in the same run; no number is
+copied from an earlier pass. The landmarks below (a row's rule, a seat's card) were read from the captures' own pixels
+with a scan of each image, not from an earlier record.
+
+### What changed
+
+- **Each of the plate's three views has its own crop on a phone.** The three panes shared one `object-position`
+  (`20% 9%`), so the 326 × 260 window at 360 began at **y = 57.6** of the 1,440 × 900 art. That is the Overview's goal,
+  and it is only the Overview's: the Events log's first bucket is at **y = 306** of its capture and its first row at
+  **345**, and the Designer's canvas starts at **304** with its first row of seats at **410**, so the Events tab ended
+  on the filter row and the Designer tab on its Add seat toolbar. The window is stated in the capture's own pixels now,
+  one aim per view: **−223 / −58** (the goal, where it already was), **−231 / −300** (the page's content column and the
+  log's first bucket) and **−219 / −340** (above the seats, with the window's right edge on the seat beside explorer at
+  360). At 360 the Events crop holds the bucket, the red "pm could not be woken" row and two more rows; the Designer
+  crop holds the explorer and security seats and the wires leaving them.
+- **The window is the same at every phone width.** A percentage is relative to the window, so the same `20%` began the
+  crop at **222.8** at 360 and at **156.1** at 719 — 75px of the console's sidebar at the widest phone. The four phone
+  widths now show the same pixels of the art (223 / 231 / 219 at 320, 360, 390 and 719), and no sidebar at any of them.
+- **Nothing above 719 moved.** 720–1,039 keeps its 440px window and `30% 14%`, and 1,040 and up its 420px and `23% 14%`,
+  where each crop already reaches its view's content: at 768 the bucket and **2 of the log's 8 rows** and the canvas's
+  first **3 seats**; at 1,440 the same 2 rows. Only `max-width: 719px` changed, and no type, colour, radius or spacing
+  step was added.
+
+### Measurements after this pass
+
+| The plate at 360 | Before | After |
+|---|---|---|
+| The window, in the art's pixels | x 222.8–548.8, y 57.6–317.6, one for the three panes | **223–549 / 58–318** (Overview), **231–557 / 300–560** (Events), **219–545 / 340–600** (Designer) |
+| The Events tab | **0 of the log's 8 rows**, 0 of its 2 red lines (the crop ended 6px into the bucket's top rule at 306–311) | **3 of 8 rows, the first of them red** ("pm could not be woken: miss…"), the bucket and 3 folds |
+| The Designer tab | **0 of the 7 seats** (the crop ended at 317.6, the canvas's first 13px) | **2 of 7 seats** (explorer 355–450, security 310–475) and their wires; 5 of the 7 are in the window's band |
+| The art's box / the frame / the caption | 326 × 260 / 413 / 107 | **326 × 260 / 413 / 107**, all three tabs |
+| At 719, the window | x 156.1–815.6 (75px of the sidebar) | **223 / 231 / 219** (no sidebar) |
+| At 719, the two tabs | the page head | the three whole log sentences ("pm could not be woken: mission is completed", …); pm, explorer, architect, security and tech-lead |
+
+| Page height at 320 / 360 / 390 / 719 / 768 / 1,040 / 1,440 | Before | After |
+|---|---|---|
+| Home | 14,041 / 13,116 / 12,623 / 11,591 / 12,347 / 10,739 / 11,476 | **unchanged, to the pixel** |
+
+- `object-position` is paint, not layout: the art's box is the same at every width (286 × 260 at 320, 326 × 260 at 360,
+  356 × 260 at 390, 659.5 × 260 at 719) and every height is the same — at a 24px root **20,500** at 360 and **22,821** at
+  320 (0px over), measured with the old aim and the new one in the same run.
+- No page scrolls sideways at 320, 360, 390, 719, 768, 1,040 and 1,440 in light, or at 360 and 1,440 in dark; **0**
+  console errors; the smallest computed text is **12px**; no target changes size (the tabs are 44 on a coarse pointer and
+  the plate's chip 44, as before).
+- axe-core WCAG 2.0–2.2 A and AA: **0** violations on the home page at 320 with the Designer tab chosen, at 360 light,
+  360 dark and 1,440 light. `ux-render` at 360 × 844 reports the **same 18** rows before and after (the closed phone
+  menu's links, the cards that sit off the snap row, the 1px hairlines under the 3:1 boundary floor).
+- Print prints the whole capture, not the window: at 360 the picture is **326 × 203.8** and at 794 **728.5 × 455.3**
+  (`object-fit: fill`), so the aim has no effect on paper; the printed page is 12,080 at 794 and 13,642 at 360, 0px over.
+  Without a script the page is 13,115 at 360; with `forcedColors: active` it is 13,116.
+
+### What this pass deliberately left
+
+- **At 390 the Designer crop shows 30px of the seat beside explorer** (219 + 356 = 575), as a narrow window on a canvas
+  does; at 360 the window's right edge falls exactly on that seat's border, and at 320 the seat is outside it.
+- **A 326px window holds one column of the canvas**, so the Designer tab shows 2 of the 7 seats however it is aimed: the
+  seats are about 165px wide with 95px between them, and three of them span 425px. The other five, with who may contact
+  whom, are one press away in the Full size capture.
+- **The Events crop cuts its rows' sentences** at 360 ("pm could not be woken: miss…", whole at 719): a 326px window of
+  a 1,440px log holds the time, the mark and 130px of the message; the reason column is only in the full size.
+- **At 1,040 the Events caption is one line longer than the other two** (107 against the 87.5px min-height the three
+  share), so pressing Events at that width moves everything below the plate by 7px (the frame 553.5 → 573). It is a band
+  of widths below 1,100 — at 1,100 all three captions are 87.5 — and a caption's measure, not a crop; it was measured and left,
+  and it is this plate's next job.
+- **The pictures were not retaken**: the crop is a window on the captures that were already there, and `site/ux/` was not
+  edited. The pass's pair is `site/ux/shots/20261031-0910-before.png` and `20261031-0910-after.png`, and the standing
+  picture `site/ux/shots/landing-now.png` was taken again (the one it replaces was mostly blank below the hero: the lazy
+  pictures and the sections below them had not painted when it was captured).
+- `npm run site:check` still exits 1 on the owner's `TODO(owner)` for the terms at `site/legal/index.html:133`, as the
+  last seven passes recorded.
