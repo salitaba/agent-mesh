@@ -510,12 +510,18 @@ test("the price stands on the first screen, between the actions and the picture,
   assert.ok(block, "the hero's price is a fenced block of scripts/export-pricing.mjs");
   const price = textOf(block![1]!);
   for (const plan of Object.values(PLANS)) assert.ok(price.includes(plan.name), `the hero's price names ${plan.name}`);
-  for (const plan of Object.values(PLANS)) if (plan.priceMonthlyUsd) assert.ok(price.includes(`$${plan.priceMonthlyUsd}`), `${plan.name}: its monthly price, in the first screen's line`);
+  // The annual figure, which is the one the pricing page opens on and the one the home page's own rate card states: before
+  // this pass the first figure a visitor read here was $149 and the first on the pricing page $124, for the same plan.
+  for (const plan of Object.values(PLANS)) if (plan.priceMonthlyAnnualUsd) assert.ok(price.includes(`$${plan.priceMonthlyAnnualUsd}`), `${plan.name}: its annual price, in the first screen's line`);
+  assert.match(price, /Billed annually/, "and the period is said, so the figure cannot be read as the monthly one");
   assert.match(block![1]!, /<a href="pricing\/">Compare the plans<\/a>/, "and the rows of figures lead to the plans");
   // A phone places it with CSS order; the stylesheet must say so, or it lands under the picture with the note.
   const css = fs.readFileSync(path.join(SITE, "assets", "site.css"), "utf8");
   assert.match(css, /@media \(max-width: 719px\) \{[\s\S]*?\.hero-price \{ order: 5;[\s\S]*?\.hero-visual \{ order: 6;/, "on a phone: actions, price, picture");
   assert.match(css, /@media \(min-width: 1040px\) \{[\s\S]*?\.hero-price \{ grid-row: 4;/, "and on a desk it takes the row under the lede");
+  // The figures rank above the sentence they are in: bold, and tabular, as every compared figure on the site is.
+  assert.match(block![1]!, /Team is <b>\$\d+<\/b> a month/, "the figure is the mark in its sentence");
+  assert.match(css, /\n\.hero-price b, \.head-price b \{ color: var\(--ink\); font-weight: 650; font-variant-numeric: tabular-nums; \}/, "and it is set as a figure, not as a word");
 });
 
 /**

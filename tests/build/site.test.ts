@@ -505,7 +505,7 @@ test("nothing is hidden by the stylesheet to be shown later: what arrives as the
   const invisible = [...outside.replace(/\/\*[\s\S]*?\*\//g, "").matchAll(/([^{}]+)\{([^{}]*)\}/g)]
     .filter((m) => /\bopacity: 0;|\bvisibility: hidden;/.test(m[2]!))
     .map((m) => m[1]!.trim().replace(/\s+/g, " "));
-  assert.deepEqual(invisible, [".tab-input, .billing-input", ".to-top:not(.is-shown)"], "nothing else is made invisible by the stylesheet alone");
+  assert.deepEqual(invisible, [".tab-input, .billing-input, .choice-input", ".to-top:not(.is-shown)"], "nothing else is made invisible by the stylesheet alone");
   assert.match(/@media print \{[\s\S]*?\n\}/.exec(css)![0], /\.rv \{ opacity: 1 !important; transform: none !important; \}/, "and a page printed half-way down is printed whole");
   // A browser does not print backgrounds unless it is told to: the primary button's white label and the closing band's light one would
   // be white on white. On paper a button is black text in a black line, and the band is black text on the paper.
@@ -792,15 +792,28 @@ test("each of the plate's three views is cropped to the thing it is about on a p
   assert.match(css, /@media \(min-width: 1040px\) \{ \.hero-visual \.pane img \{ height: 420px; object-position: 23% 14%; \} \}/, "and it is unchanged on a desk");
 });
 
-test("the four plans are one snap row on a phone, and nothing off the row widens the page", () => {
+/**
+ * Measured at 360 on the site of 2026-10-31: a plan card is 978px tall — a screen and a quarter — and the four stood in one
+ * sideways snap row, so a reader swiped at four different heights to compare two figures. The four names and their figures
+ * are one 2 × 2 chooser now, with all four prices on one screen, and only the chosen plan's card is shown. The comparison
+ * below still lists every line of all four, and from 720 the four cards are a grid as they were.
+ */
+test("on a phone the four plans are read one at a time, chosen by name and figure, and nothing widens the page", () => {
   const pricing = page(pages, "pricing/index.html").html;
-  assert.match(pricing, /<p class="eyebrow">Plans<\/p>\n      <h2 class="title plans-title">The licence plans\.<\/h2>\n      <p class="small muted plans-hint">Four plans\. Swipe or scroll sideways; the comparison below lists every line\.<\/p>/, "the section keeps its heading and the hint that the row swipes");
+  assert.match(pricing, /<p class="eyebrow">Plans<\/p>\n      <h2 class="title plans-title">The licence plans\.<\/h2>\n      <p class="small muted plans-hint">Four plans\. Choose one to read it; the comparison below lists every line\.<\/p>/, "the section keeps its heading and says what the chooser does");
   const css = fs.readFileSync(path.join(SITE, "assets", "site.css"), "utf8");
-  assert.match(css, /@media \(max-width: 719px\) \{\n  \.plans-hint \{ display: block; margin: 0 0 12px; \}\n  \.plans \{ position: relative; grid-template-columns: none; grid-auto-flow: column;[^}]*overflow-x: auto;/);
-  // Without a positioned box, the screen-reader spans inside the cards that sit off the row
-  // resolve against the page and make it wider than the phone: measured 872px at 360 before.
-  assert.match(css, /\.plans \{ position: relative;/);
-  assert.match(css, /\.plan \{ scroll-snap-align: start; \}/);
+  assert.match(css, /@media \(max-width: 719px\) \{\n  \.plans-hint \{ display: block; margin: 0 0 12px; \}\n  \.plan-choice \{ display: grid; grid-template-columns: repeat\(2, minmax\(0, 1fr\)\);/, "the four names and figures are a 2 x 2 chooser");
+  assert.match(css, /\.plans \{ grid-template-columns: minmax\(0, 1fr\); gap: 0; \}/, "the cards are a column, not a row to swipe");
+  assert.match(css, /\.plans > \.plan \{ display: none; margin-bottom: 0; \}/, "one card at a time");
+  assert.match(css, /\.plans > \.plan:first-of-type \{ display: grid; \}/, "Community is the card a reader meets");
+  for (const id of ["team", "business", "enterprise"]) assert.ok(css.includes(`#choose-${id}:checked) #plan-${id}`), `${id}: its chip shows its card`);
+  assert.match(css, /body:has\(\.choice-input:not\(#choose-community\):checked\) #plan-community \{ display: none; \}/, "and chooses it away from the first");
+  assert.ok(!/\.plans \{ position: relative;/.test(css), "no sideways row is left to contain");
+  // Every chip and every card name comes from the plan table, and the figure follows the billing switch.
+  const choice = /<fieldset class="plan-choice">([\s\S]*?)<\/fieldset>/.exec(pricing)?.[1] ?? "";
+  assert.equal((choice.match(/class="choice-input"/g) ?? []).length, 4, "four plans to choose from");
+  assert.match(css, /\n  body:has\(#billing-monthly:checked\) \.choice-annual \{ display: none; \}/, "the chip's figure is the period the switch names");
+  assert.match(css, /\n\.plan-choice \{ display: none; \}/, "the chooser is not shown where four cards fit");
 });
 
 test("the two wide comparisons are one plan or model at a time on a phone, from the same generated data", () => {

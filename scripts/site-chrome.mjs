@@ -55,6 +55,13 @@ const NAV = [
   { label: "Security", id: "security" },
 ];
 
+/**
+ * The phone's menu holds the four sections and the two places a bar of four has no room for: Contact (the way to a person,
+ * which was only in the footer and in a plan button's mailto) and Sign in. The bar's navigation keeps its four: at 768 the
+ * four links take 301px of a 706px bar with the actions beside them, and a fifth would be within 20px of them.
+ */
+const MENU = [...NAV, { label: "Contact", id: "contact" }];
+
 const FOOTER = [
   {
     title: "Product",
@@ -116,7 +123,7 @@ function link(page, target, extra = "") {
 
 export function header(page) {
   const nav = NAV.map((t) => `      ${link(page, t)}`).join("\n");
-  const menu = NAV.map((t) => `            ${link(page, t)}`).join("\n");
+  const menu = MENU.map((t) => `            ${link(page, t)}`).join("\n");
   const demo = page.id === "" && page.file !== "404.html" ? "#try" : `${page.root}#try`;
   return `<a class="skip" href="#main">Skip to the content</a>
 <header class="site-header">

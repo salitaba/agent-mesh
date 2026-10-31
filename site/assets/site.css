@@ -272,6 +272,8 @@ main:has(.hero) .section-head .eyebrow::before { counter-increment: sec; content
    ruled line, so the first screen answers "what is it" and "what does it cost". Written from the plan table
    (scripts/export-pricing.mjs), never typed here. */
 .hero-price { max-width: 40rem; margin-top: 20px; padding-top: 12px; border-top: 1px solid var(--line); color: var(--ink2); font-size: .875rem; line-height: 1.62; }
+/* The four figures are what a visitor came for: bold, tabular, and the same figures the pricing page's head states. */
+.hero-price b, .head-price b { color: var(--ink); font-weight: 650; font-variant-numeric: tabular-nums; }
 .hero-price a { color: var(--link); font-weight: 600; white-space: nowrap; }
 .actions { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 20px; }
 .proof { --s: 20px; --y: 12px; margin-top: 32px; }
@@ -358,7 +360,7 @@ main:has(.hero) .section-head .eyebrow::before { counter-increment: sec; content
 }
 @media (min-width: 1040px) { .hero-visual .pane img { height: 420px; object-position: 23% 14%; } }
 .showcase .frame { border-radius: var(--k-r-xl); box-shadow: var(--k-hl), var(--k-shadow-5); }
-.tab-input, .billing-input { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+.tab-input, .billing-input, .choice-input { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
 .pane { display: none; margin: 0; }
 .tab-input:nth-of-type(1):checked ~ .frame .pane:nth-of-type(1),
 .tab-input:nth-of-type(2):checked ~ .frame .pane:nth-of-type(2),
@@ -483,6 +485,8 @@ main:has(.hero) .section-head .eyebrow::before { counter-increment: sec; content
   .row-index ol { display: flex; flex-wrap: wrap; gap: 4px; list-style: none; }
   .row-index a { display: inline-flex; align-items: center; justify-content: center; min-width: 44px; min-height: 44px; padding: 0 8px; border: 1px solid var(--line); border-radius: var(--k-r-sm); background: var(--panel); color: var(--ink2); font-size: .75rem; font-weight: 600; text-decoration: none; font-variant-numeric: tabular-nums; }
   .row-index a:hover { border-color: var(--k-line-control); color: var(--link); }
+  /* The view the row is showing: a tint, a border and a line under the number, so it is not colour alone. */
+  .row-index a[aria-current="true"] { border-color: color-mix(in srgb, var(--accent) 40%, transparent); background: var(--soft); color: var(--link); text-decoration: underline; text-underline-offset: .2em; }
 }
 .tiles { gap: 20px; }
 @media (min-width: 720px) { .tiles { grid-template-columns: var(--c2); gap: 24px; } }
@@ -789,14 +793,35 @@ body:has(#billing-monthly:checked) .head-price-monthly { display: inline; }
 .plans { gap: 0 16px; }
 @media (min-width: 640px) { .plans { grid-template-columns: var(--c2); } }
 @media (min-width: 1040px) { .plans { grid-template-columns: var(--c4); } }
-/* On a phone the four rate cards are one snap row, so a reader meets the plans in a screen rather
-   than four; the table under them still holds every line side by side. */
+/* On a phone a plan is read one at a time. A card here is 978px tall at 360 — its tagline, both prices, three limits,
+   four features, support and, on two plans, the roadmap — so four of them in a sideways row asked a reader to swipe at
+   four heights to compare two figures. The four names and their figures are one 2 × 2 chooser now: all four prices on one
+   screen, one press each, and the card below is the plan chosen. The comparison further down still lists every line of
+   all four. From 720 four cards fit side by side and the chooser is not shown. */
 .plans-title { margin-bottom: 10px; }
 .plans-hint { display: none; }
+.plan-choice { display: none; }
 @media (max-width: 719px) {
   .plans-hint { display: block; margin: 0 0 12px; }
-  .plans { position: relative; grid-template-columns: none; grid-auto-flow: column; grid-auto-columns: min(86vw, 340px); gap: 0 12px; margin-inline: calc(-1 * var(--gutter)); padding: 0 var(--gutter) 12px; overflow-x: auto; scroll-snap-type: x proximity; scroll-padding-inline: var(--gutter); }
-  .plan { scroll-snap-align: start; }
+  .plan-choice { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin: 0 0 16px; }
+  .plan-choice label { display: flex; flex-direction: column; justify-content: center; gap: 1px; min-height: 58px; padding: 8px 12px; border: 1px solid var(--line2); border-radius: var(--k-r-md); background: var(--panel); box-shadow: var(--lift); cursor: pointer; }
+  .choice-name { color: var(--muted); font-size: .75rem; font-weight: 600; letter-spacing: var(--k-track-caps); text-transform: uppercase; }
+  .choice-amount { color: var(--ink); font-size: 1.125rem; font-weight: 650; line-height: 1.3; font-variant-numeric: tabular-nums; }
+  /* The chosen plan is a dot and a rule as well as a tint: never colour alone, and the dot survives High Contrast. */
+  .choice-input:checked + label { border-color: var(--accent); background: var(--soft); box-shadow: inset 0 0 0 1px var(--accent); }
+  .choice-input:checked + label .choice-name { color: var(--link); }
+  .choice-input:checked + label .choice-name::before { content: ""; display: inline-block; width: 6px; height: 6px; margin-right: 6px; border-radius: 50%; background: currentColor; vertical-align: middle; }
+  .choice-input:focus-visible + label { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .choice-monthly { display: none; }
+  body:has(#billing-monthly:checked) .choice-annual { display: none; }
+  body:has(#billing-monthly:checked) .choice-monthly { display: inline; }
+  .plans { grid-template-columns: minmax(0, 1fr); gap: 0; }
+  .plans > .plan { display: none; margin-bottom: 0; }
+  .plans > .plan:first-of-type { display: grid; }
+  body:has(.choice-input:not(#choose-community):checked) #plan-community { display: none; }
+  body:has(#choose-team:checked) #plan-team,
+  body:has(#choose-business:checked) #plan-business,
+  body:has(#choose-enterprise:checked) #plan-enterprise { display: grid; }
 }
 .plan { display: grid; grid-row: span 6; grid-template-rows: subgrid; margin-bottom: 16px; padding: 24px; }
 .plan-head h3 { font-size: 1.375rem; }
@@ -1031,6 +1056,11 @@ body:has(#billing-monthly:checked) .head-price-monthly { display: inline; }
   .address-row:target { outline: 2px solid Highlight; outline-offset: -2px; }
   /* The dot is the second cue that a chip is the section being read; keep it in High Contrast. */
   .toc a[aria-current="true"]::before { forced-color-adjust: none; background: Highlight; }
+  /* The chosen plan's dot is a background too, and its tint goes: the rule around the label is the mark that stays. */
+  .choice-input:checked + label { outline: 2px solid Highlight; outline-offset: -2px; }
+  .choice-input:checked + label .choice-name::before { forced-color-adjust: none; background: Highlight; }
+  /* The view the row is showing: its tint and colour go, so its line and its rule stay. */
+  .row-index a[aria-current="true"] { outline: 2px solid Highlight; outline-offset: -2px; }
   /* The row's edge shadow is a background; a forced-colour mode cannot fade the system's ink, so the edge is a 2px line
      instead (a 28px gradient of CanvasText was a black band over the last chip). */
   .toc-bar.is-back::before, .toc-bar.is-more::after { forced-color-adjust: none; width: 2px; background: CanvasText; }
