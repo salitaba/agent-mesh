@@ -56,10 +56,20 @@
 .ov-hero .stat-door { position: absolute; inset: 0; z-index: 1; padding: 0; border: 0; background: none; color: var(--muted); cursor: pointer; border-radius: inherit;
   transition: background var(--k-dur-1); }
 .ov-hero .stat-door .icon { position: absolute; top: var(--s4); right: var(--s5); transition: color var(--k-dur-1), transform var(--k-dur-1); }
-.ov-hero .stat-door:is(:hover, :focus-visible) { background: var(--wash); }
-.ov-hero .stat-door:is(:hover, :focus-visible) .icon { color: var(--accent-2); transform: translateX(2px); }
+/* The whole cell says it is a door, including the number it draws over: the value is raised above the door where a pointer can
+   drag (below), so :hover on the door alone would leave the figure's biggest word unlit. */
+.ov-hero .stat-cell:is(:hover, :focus-within) .stat-door { background: var(--wash); }
+.ov-hero .stat-cell:is(:hover, :focus-within) .stat-door .icon { color: var(--accent-2); transform: translateX(2px); }
 .ov-hero .stat-door:active { background: var(--wash-2); }
 .ov-hero .stat-door:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+/* The number is data, not a handle. Where a pointer can drag, the value sits above the door so it can be selected and copied —
+   the I-beam says the line is text, and the rest of the cell still takes the press. A finger keeps the whole cell: a thumb
+   cannot select, and a 28 px hole in a 148 px target is a press that does nothing (measured at 1440: the door covered
+   "49.3k of 2.0M" and it could not be selected; at 360 the cell is one target). */
+.ov-hero .stat-cell .stat-v { position: relative; z-index: 2; cursor: text; user-select: text; -webkit-user-select: text; }
+@media (pointer: coarse) {
+  .ov-hero .stat-cell .stat-v { position: static; z-index: auto; cursor: inherit; user-select: auto; -webkit-user-select: auto; }
+}
 .stat-vis { display: flex; align-items: center; min-height: 28px; }
 .stat-vis > .prog { flex: 1 1 auto; }
 .ov-seg { display: flex; gap: 3px; flex: 1 1 auto; }
@@ -241,6 +251,17 @@ details.ov-note { display: block; }
 @media (max-width: 620px) {
   .ov-hero-top, .ov-now, .ov-note { padding-left: var(--s4); padding-right: var(--s4); }
   .ov-hero-top { gap: var(--s3); }
+  /* The mark and the headline are the hero's first row; the goal and the actions take the hero's whole width under them.
+     The goal was a 197 px text column inside a 242 px lead (302 of content − the mark's 48 − its 12 gap, then the "Goal"
+     label and its 8), so a fifty-character goal took three lines and 67.5 px; across the width it takes two and 45, and the
+     first evidence row comes up 26.5 px (22.5 of them the goal, 4 the row gap). `display: contents` lets the lead's two
+     children join the hero's own grid. */
+  .ov-hero-top { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: start; row-gap: var(--s2); }
+  .ov-hero-lead { display: contents; }
+  .ov-hero-lead > .ov-headline { grid-column: 2; grid-row: 1; }
+  .ov-hero-lead > .pill { grid-column: 2; }
+  .ov-hero-lead > .ov-goal { grid-column: 1 / -1; }
+  .ov-acts { grid-column: 1 / -1; }
   /* At 390 the page's signpost and the mission's state were both 24, so "Overview" competed with "Parked.". The record says the
      hero is the news and the page name is a signpost: a short state keeps the display step, and only a sentence-long one steps
      down (the rule above already picks .long by length). Measured 24 → 30 on "Parked."; the hero grew 7 px. */
@@ -299,6 +320,11 @@ details.ov-note { display: block; }
   .tl-row > :last-child { grid-column: 2; justify-self: start; }
   /* A disclosure and an evidence chip are pressed with a thumb. They name their page: the shared sheet loads after this one. */
   .ov .ov-note > summary, .ov .ov-ad > summary { align-items: center; min-height: 44px; padding-top: 0; }
+  /* A folded note is one 44 px row, like the evidence rows under it: the padding is the row's, not the block's, and the body
+     takes its own when it opens. Measured at 360: the delivered note was 86 px of the first screen restating the headline;
+     as a named door it is 44, and the first evidence row is whole above the fold. */
+  .ov .ov-note.disc { padding-block: 0; }
+  .ov .ov-note.disc > .ov-note-body { padding-block: var(--s2) var(--s3-5); }
   .ov .ov-ad > summary::before { margin-top: 0; }
   .ov .ov-ev .chip { min-height: 44px; padding: 0 var(--s3); }
   /* A folded section is one row: its name, one figure, Show. The figure may not wrap the row into two lines, so it truncates. */
@@ -352,7 +378,7 @@ details.ov-note { display: block; }
   /* A closed row says it is a door with a background it cannot keep here: the band becomes an outline instead. */
   .ov .card.closed:is(:hover, :focus-within) { background: none; outline: 2px solid Highlight; outline-offset: -2px; }
   /* A figure's door is a background and a chevron; the system's colours keep the outline and the chevron's ink. */
-  .ov-hero .stat-door:is(:hover, :focus-visible) { background: none; outline: 2px solid Highlight; outline-offset: -2px; }
+  .ov-hero .stat-cell:is(:hover, :focus-within) .stat-door { background: none; outline: 2px solid Highlight; outline-offset: -2px; }
 }
 
 /* The Overview's own index, under the attention list and above the long tail. A row of quiet doors, not a toolbar. It is drawn

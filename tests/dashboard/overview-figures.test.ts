@@ -30,7 +30,7 @@ test("each figure is a door, and the door is the whole cell", () => {
   }
   assert.match(css, /\.ov-hero \.stat-cell \{ position: relative; \}/, "the cell is the box the control covers");
   assert.match(css, /\.ov-hero \.stat-door \{ position: absolute; inset: 0; z-index: 1;/, "the control is the cell, not a handle at its edge");
-  assert.match(css, /\.ov-hero \.stat-door:is\(:hover, :focus-visible\) \{ background: var\(--wash\); \}/, "the whole figure says it is a door before the press");
+  assert.match(css, /\.ov-hero \.stat-cell:is\(:hover, :focus-within\) \.stat-door \{ background: var\(--wash\); \}/, "the whole figure says it is a door before the press, including the number it draws over");
 });
 
 test("a figure's label carries its own number and where the press leads", () => {
@@ -48,5 +48,5 @@ test("the checks open the section here, and the other three leave for the page t
 
 test("forced colours keep the door as an outline, because the wash goes", () => {
   const forced = css.slice(css.indexOf("@media (forced-colors: active)"));
-  assert.match(forced, /\.ov-hero \.stat-door:is\(:hover, :focus-visible\) \{ background: none; outline: 2px solid Highlight; outline-offset: -2px; \}/, "the system's colours drop a background; the outline stays");
+  assert.match(forced, /\.ov-hero \.stat-cell:is\(:hover, :focus-within\) \.stat-door \{ background: none; outline: 2px solid Highlight; outline-offset: -2px; \}/, "the system's colours drop a background; the outline stays");
 });

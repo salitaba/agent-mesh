@@ -33,6 +33,13 @@ const EVENT_TAIL = 150;
 /** The phone's break, the same value styles.css and the other views use: below it the evidence sections fold to one row each. */
 const PHONE = "(max-width: 620px)";
 
+/**
+ * Where the navigation is a drawer and the five daily places sit at the thumb (`shell.tsx`'s NARROW, the same value the dock is
+ * drawn at). There the hero draws one action and keeps the rest behind "…": the dock and the figures already carry what the
+ * quiet result links said. At 360 the row was three rows and 148 px of the first screen (2026-10-31, DESIGN.md).
+ */
+const DOCK = "(max-width: 800px)";
+
 /** Where each fix on the attention list lives. */
 const FIX_VIEW: Record<FixTarget, View> = { inbox: "escalations", tools: "gates", designer: "designer", hostsettings: "hostsettings" };
 
@@ -84,6 +91,7 @@ export default function Overview(): React.JSX.Element {
   // Those four rows are also the phone's index, so the page draws no separate one there; the state lives here so the rows and
   // anything else that opens a section agree with each other.
   const phone = useMedia(PHONE);
+  const dock = useMedia(DOCK);
   const [openSections, setOpenSections] = useState<ReadonlySet<string>>(() => new Set<string>());
   const [pendingJump, setPendingJump] = useState<string | null>(null);
   const toggleSection = (id: string): void => setOpenSections((cur) => {
@@ -366,6 +374,8 @@ export default function Overview(): React.JSX.Element {
         live={live}
         next={state.next}
         secondary={state.secondary}
+        compact={dock}
+        noteFold={phone}
         go={openFigure}
         run={run}
       />
