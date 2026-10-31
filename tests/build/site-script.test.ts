@@ -50,6 +50,7 @@ interface Pure {
   withoutArrival(names: string): string;
   copyName(label: string, shown: string): string;
   tocEdges(left: number, client: number, total: number): { back: boolean; more: boolean };
+  nearestStart(starts: number[], left: number): number;
 }
 
 /** The script's pure parts, as it exports them when it is loaded as a module (in a browser nothing is exported). */
@@ -316,6 +317,26 @@ test("the row says at which edge it has more, from its own widths, and the bar d
   // The shadow is a background: a forced-colour mode gets a 2px line instead, and a printed row gets none.
   assert.match(CSS, /@media \(forced-colors: active\) \{[\s\S]*?\.toc-bar\.is-back::before, \.toc-bar\.is-more::after \{ forced-color-adjust: none; width: 2px; background: CanvasText; \}/, "the edge is a line of the system's ink in High Contrast");
   assert.match(CSS, /@media print \{[\s\S]*?\.toc-bar::before, \.toc-bar::after \{ display: none; \}/, "a printed page has no row to scroll and no edge");
+});
+
+/**
+ * A phone's six views are one snap row, and the 01–06 index above it said where a view is but not where the row was: a
+ * reader who had swiped to the fourth view still saw "01" as the only chip. The chip of the card nearest the row's left
+ * edge is marked, with the bar's own aria-current, and by a line as well as a tint.
+ */
+test("the six-view index marks the view the row is showing, by a line as well as a tint", () => {
+  const { nearestStart } = pure();
+  const at = [0, 322, 644, 966, 1288, 1610];
+  assert.equal(nearestStart(at, 0), 0, "at the start, the first view");
+  assert.equal(nearestStart(at, 300), 1, "half a swipe in, the second is nearer than the first");
+  assert.equal(nearestStart(at, 966), 3, "the fourth view, snapped");
+  assert.equal(nearestStart(at, 1600), 5, "the end of the row");
+  assert.equal(nearestStart(at, -2), 0, "the bounce of a rubber band is not another view");
+  assert.equal(nearestStart([], 0), -1, "no cards, no view");
+  assert.match(page(pages, "index.html").html, /<nav class="row-index" aria-label="Jump to a view">/);
+  assert.match(CSS, /\n  \.row-index a\[aria-current="true"\] \{[^}]*text-decoration: underline;/, "the mark is a line, not only a tint");
+  assert.match(CSS, /@media \(forced-colors: active\) \{[\s\S]*?\.row-index a\[aria-current="true"\] \{ outline: 2px solid Highlight;/, "and a forced-colour mode keeps its rule");
+  assert.match(SCRIPT, /nearestStart\(viewCards/, "the row's own scroll places the mark");
 });
 
 test("a jump that passes whole sections at once (Back to top under reduced motion) clears the mark and brings the row back to its first chips", () => {

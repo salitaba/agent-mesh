@@ -64,10 +64,21 @@ var IMAGE_NAME = "ghcr.io/salitaba/curule";
   var tocEdges = function (left, client, total) {
     return { back: left > 1, more: total - client > 1 && left + client < total - 1 };
   };
+  // The entry nearest where a row is scrolled to: the view a phone is looking at in the six-view row, which snaps one card
+  // at a time. Ties go to the earlier entry; an empty row has none.
+  var nearestStart = function (starts, left) {
+    var at = -1;
+    var best = Infinity;
+    for (var i = 0; i < starts.length; i++) {
+      var d = Math.abs(starts[i] - left);
+      if (d < best - 0.5) { best = d; at = i; }
+    }
+    return at;
+  };
 
   // The pure parts, for the tests, when the file is loaded as a module; in a browser nothing is exported.
   if (typeof module === "object" && module !== null && typeof module.exports === "object") {
-    module.exports = { readingAt: readingAt, docMatches: docMatches, scrolledOff: scrolledOff, staggerOf: staggerOf, startsHidden: startsHidden, withClass: withClass, withoutArrival: withoutArrival, copyName: copyName, tocEdges: tocEdges };
+    module.exports = { readingAt: readingAt, docMatches: docMatches, scrolledOff: scrolledOff, staggerOf: staggerOf, startsHidden: startsHidden, withClass: withClass, withoutArrival: withoutArrival, copyName: copyName, tocEdges: tocEdges, nearestStart: nearestStart };
   }
   if (typeof document === "undefined") return;
 
@@ -359,6 +370,37 @@ var IMAGE_NAME = "ghcr.io/salitaba/curule";
     watch();
     tocBar.className += " is-live";
     edgesNow();
+  }
+
+  // The six views of the console are one snap row on a phone, and the 01–06 index above it was a destination that never
+  // said where the row was: a reader who swiped to the fourth view saw "01" as the only chip. The chip of the card nearest
+  // the row's left edge is marked now, with the same aria-current the On this page bar uses, and by a line as well as a
+  // tint. The index is not shown from 720, where the six are a grid and every one is on screen.
+  var tilesRow = document.querySelector(".tiles");
+  var viewIndex = document.querySelector(".row-index");
+  if (tilesRow && viewIndex && typeof tilesRow.scrollLeft === "number" && typeof window.requestAnimationFrame === "function") {
+    var viewChips = within(viewIndex, "a");
+    var viewCards = viewChips.map(function (a) { return document.getElementById(String(a.getAttribute("href") || "").slice(1)); });
+    var currentView = -1;
+    var markView = function (i) {
+      if (i === currentView) return;
+      currentView = i;
+      viewChips.forEach(function (a, j) {
+        if (j === i) a.setAttribute("aria-current", "true");
+        else a.removeAttribute("aria-current");
+      });
+    };
+    var placeView = function () {
+      var row = tilesRow.getBoundingClientRect();
+      markView(nearestStart(viewCards.map(function (card) { return card && typeof card.getBoundingClientRect === "function" ? card.getBoundingClientRect().left - row.left : 0; }), 0));
+    };
+    var placing = false;
+    tilesRow.addEventListener("scroll", function () {
+      if (placing) return;
+      placing = true;
+      window.requestAnimationFrame(function () { placing = false; placeView(); });
+    }, { passive: true });
+    placeView();
   }
 
   // Back to top: once the reader is about two screens down a page and turns back (scrolls up), or has come to the end of the content,

@@ -40,6 +40,30 @@ function priceBlocks(p) {
   ].join("\n      ");
 }
 
+/**
+ * The plan chooser a phone reads before the cards. At 360 a card is 978px tall (its tagline, both prices, its three
+ * limits, four features, support and, on two plans, the roadmap), and four of those in one sideways row asked a reader to
+ * swipe at four different heights to compare two figures. The four names and their figures stand in one 2 × 2 block
+ * instead — all four prices on one screen — and the card below is the one chosen. Above 720 four cards fit side by side
+ * and the chooser is not shown.
+ */
+function renderPlanChoice(out) {
+  const items = out.plans.map((p, i) => {
+    const amount =
+      p.pricing === "free"
+        ? "Free"
+        : p.pricing === "contact"
+          ? "Let&rsquo;s talk"
+          : `<span class="choice-annual">${usd(p.priceMonthlyAnnualUsd)}</span><span class="choice-monthly">${usd(p.priceMonthlyUsd)}</span>`;
+    return `    <input class="choice-input" type="radio" name="plan" id="choose-${esc(p.id)}"${i === 0 ? " checked" : ""}>
+    <label for="choose-${esc(p.id)}"><span class="choice-name">${esc(p.name)}</span><span class="choice-amount">${amount}</span></label>`;
+  });
+  return `<fieldset class="plan-choice">
+  <legend class="sr">The plan to read</legend>
+${items.join("\n")}
+</fieldset>`;
+}
+
 /** The Annual/Monthly choice (plain radio buttons, switched by CSS) and the four plan cards. */
 export function renderPlanCards(out) {
   const cards = out.plans.map((p) => {
@@ -62,7 +86,6 @@ export function renderPlanCards(out) {
 ${p.includes.map((i) => `        <li>${esc(i)}</li>`).join("\n")}
       </ul>
       <div class="plan-meta">
-        <p class="plan-scope">One host, one plan: a licence installs on a single host, and the three figures above are that host&rsquo;s.</p>
         <p class="plan-support">Support: ${esc(p.support)}</p>${p.roadmap.length ? `\n        <p class="plan-planned">Planned, not included: ${p.roadmap.map(esc).join("; ")}</p>` : ""}
       </div>
       <p class="plan-cta">${cta}</p>
@@ -77,6 +100,7 @@ ${p.includes.map((i) => `        <li>${esc(i)}</li>`).join("\n")}
   <label for="billing-annual">Annual${saving ? ` <small>${saving}</small>` : ""}</label>
   <label for="billing-monthly">Monthly</label>
 </div>
+${renderPlanChoice(out)}
 <div class="plans">
 ${cards.join("\n")}
 </div>
@@ -191,13 +215,16 @@ ${cards.join("\n")}
 /** The four plans in a line, for the home page: a price and what it allows, and nothing else. */
 export function renderPlanTeaser(out) {
   const items = out.plans.map((p) => {
-    const amount = p.pricing === "free" ? "Free" : p.pricing === "contact" ? "Let&rsquo;s talk" : usd(p.priceMonthlyUsd);
+    // The annual figure is the one the pricing page opens on, and the one the home page's hero line states: the two
+    // pages quote the same four numbers. The monthly figure stands beside it, labelled, so nothing is hidden from a
+    // reader who pays month to month and the two cannot disagree.
+    const amount = p.pricing === "free" ? "Free" : p.pricing === "contact" ? "Let&rsquo;s talk" : usd(p.priceMonthlyAnnualUsd);
     const per =
       p.pricing === "free"
         ? "no licence key, no expiry"
         : p.pricing === "contact"
           ? "quoted for your terms"
-          : `per month, or ${usd(p.priceMonthlyAnnualUsd)} billed annually`;
+          : `per month, billed annually; ${usd(p.priceMonthlyUsd)} billed monthly`;
     const u = p.limits;
     const part = (n, one, many) => (n === null ? `unlimited ${many}` : `${n} ${n === 1 ? one : many}`);
     const limits =
@@ -216,28 +243,30 @@ export function renderPlanTeaser(out) {
  * page's head, and it names the period the billing switch below chooses: both sentences are in the markup and the
  * stylesheet shows the one the checked radio names, so it is right with no script and cannot disagree with the cards.
  */
+/** The one sentence of figures, in the period it names: the home page's first screen and the pricing page's head use it. */
+function priceLine(out, annual, lead = "The licence plans, ") {
+  const says = out.plans.map((p) => {
+    if (p.pricing === "free") return `${esc(p.name)} is free`;
+    if (p.pricing === "contact") return `${esc(p.name)} is quoted`;
+    return `${esc(p.name)} is <b>${usd(annual ? p.priceMonthlyAnnualUsd : p.priceMonthlyUsd)}</b> a month`;
+  });
+  const label = `${lead}billed ${annual ? "annually" : "monthly"}: `;
+  return `${label.charAt(0).toUpperCase()}${label.slice(1)}${says.join("; ")}.`;
+}
+
 export function renderHeadPrice(out) {
-  const line = (annual) => {
-    const says = out.plans.map((p) => {
-      if (p.pricing === "free") return `${esc(p.name)} is free`;
-      if (p.pricing === "contact") return `${esc(p.name)} is quoted`;
-      return `${esc(p.name)} is ${usd(annual ? p.priceMonthlyAnnualUsd : p.priceMonthlyUsd)} a month`;
-    });
-    return `The licence plans, billed ${annual ? "annually" : "monthly"}: ${says.join("; ")}.`;
-  };
-  return `<p class="head-price"><span class="head-price-annual">${line(true)}</span><span class="head-price-monthly">${line(false)}</span></p>`;
+  return `<p class="head-price"><span class="head-price-annual">${priceLine(out, true)}</span><span class="head-price-monthly">${priceLine(out, false)}</span></p>`;
 }
 
 /**
  * The price on the first screen: one ruled line of figures under the hero's actions, before the picture, so a visitor who
  * came to check what a licence costs reads it without scrolling. Written from the plan table like the teaser, so it cannot
  * drift from `packages/licensing/src/plans.ts`. Measured at 360 before it: the first amount was at y=1,882.7.
+ *
+ * It is the pricing page's head line, word for word, in the period that page opens on (annual): the first figure a
+ * visitor reads on the home page and the first on the page that sells it used to be $149 and $124 for the same plan.
+ * The figures are bold and tabular, so the four amounts are a column and not a sentence to parse.
  */
 export function renderHeroPrice(out) {
-  const says = out.plans.map((p) => {
-    if (p.pricing === "free") return `${esc(p.name)} is free`;
-    if (p.pricing === "contact") return `${esc(p.name)} is quoted`;
-    return `${esc(p.name)} is ${usd(p.priceMonthlyUsd)} a month`;
-  });
-  return `<p class="hero-price">${says.join("; ")}. <a href="pricing/">Compare the plans</a></p>`;
+  return `<p class="hero-price">${priceLine(out, true, "")} <a href="pricing/">Compare the plans</a></p>`;
 }
