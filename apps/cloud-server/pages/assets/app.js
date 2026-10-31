@@ -168,7 +168,7 @@
 
   // ---- where a customer is, and what the account says to them there ----
 
-  const STEP_LABELS = { plan: "Plan", workspace: "Workspace", key: "Model key", open: "Open" };
+  const STEP_LABELS = { plan: "Choose a plan", workspace: "Make a workspace", key: "Give it your model key", open: "Describe your team" };
 
   /**
    * Whether the workspaces run on the customer's own model key: the plan says so, or a workspace of it carries the state of a key. A
@@ -185,14 +185,16 @@
   /**
    * The steps of getting started in the order they can be done, and the one a person is at: the first not done. A key can only be given to
    * a workspace that has started, so on a plan that sells hosting only the key comes after the workspace. Open is never done (a person
-   * opens a workspace again and again), so with everything else done the step is Open, and stays there.
+   * opens a workspace again and again), so with everything else done the step is Open, and stays there. Each step carries its number in
+   * the journey the front page and the sign-up page draw: creating the account is 01 and is behind anyone on this page, so the first step
+   * here is 02, and a plan that sells hosting only has one step more, so its last is 05.
    */
   function stepsOf(view, byok) {
     const started = view.workspaces.filter(canKey);
     const done = { plan: holdsPlan(view.subscription), workspace: started.length > 0, key: started.some((w) => Boolean(w.models) && w.models.key !== null), open: false };
     const ids = byok ? ["plan", "workspace", "key", "open"] : ["plan", "workspace", "open"];
     const current = ids.find((id) => !done[id]);
-    return { current, steps: ids.map((id) => ({ id, label: STEP_LABELS[id], state: id === current ? "now" : done[id] ? "done" : "next" })) };
+    return { current, steps: ids.map((id, i) => ({ id, n: String(i + 2).padStart(2, "0"), label: STEP_LABELS[id], state: id === current ? "now" : done[id] ? "done" : "next" })) };
   }
 
   /**
@@ -247,7 +249,7 @@
           return { tone: "warn", title: "The plans could not be loaded", text: "No plan or price is shown just now, and nothing was changed.", action: { kind: "retry", label: "Try again" } };
         }
         const pays = "Choose one below and pay on the next page.";
-        const what = "A plan is a flat monthly price for your account, and it says how many workspaces you may run at once. Each workspace runs on a plan of its own.";
+        const what = "A plan is a flat monthly price for your account, and it says how many workspaces you may run at once.";
         return { tone: "", title: "Choose a plan", text: stage.byok ? `${what} ${pays} You bring your own model key and pay your model provider yourself.` : `${what} ${pays}`, action };
       }
       case "late": {
@@ -641,10 +643,14 @@
     });
   }
 
+  /** Whether the reader's pointer is a finger: a keyboard that opens by itself covers the page it was opened for. */
+  function finger() {
+    return !(typeof window.matchMedia === "function" && window.matchMedia("(hover: hover) and (pointer: fine)").matches);
+  }
+
   /** Someone at a keyboard starts typing at once. A phone is left alone: a keyboard that opens by itself covers the page it was opened for. */
   function focusFirst(input) {
-    const fine = typeof window.matchMedia === "function" && window.matchMedia("(hover: hover) and (pointer: fine)").matches;
-    if (fine) input.focus();
+    if (!finger()) input.focus();
   }
 
   /**
@@ -987,7 +993,9 @@
         invalid(email, answer, "Enter your email address.");
         return null;
       });
-      focusFirst(email);
+      // The way out is the page's one action now: a phone gets the cursor there (no keyboard opens over the page it was opened for),
+      // and a keyboard goes to the field it must fill to ask again.
+      (finger() ? $("resend") : email).focus();
     };
     if (!token) {
       failed("This link is incomplete. Open the link in the email again.");
@@ -1698,12 +1706,12 @@
 
     // -- the card at the top: where the account is, and the one thing it is waiting for --
 
-    function stepItem(step, index) {
+    function stepItem(step) {
       const said = { done: " (done)", now: " (you are here)", next: " (still to do)" }[step.state];
       return el(
         "li",
         { class: step.state, "aria-current": step.state === "now" ? "step" : false },
-        el("span", { class: "num", "aria-hidden": "true" }, step.state === "done" ? "\u2713" : String(index + 1)),
+        el("span", { class: "num", "aria-hidden": "true" }, step.state === "done" ? "\u2713" : step.n),
         step.label,
         el("span", { class: "sr" }, said),
       );

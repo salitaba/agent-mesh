@@ -2362,3 +2362,150 @@ empty. Heights are `document.documentElement.scrollHeight`; positions are `getBo
   own runs at 320, 360, 768 and 1440 are clean.
 - **The stage card's duplicate, the checkout stand-in and the prose-only 19px links are unchanged.** They are the earlier
   entries.
+
+## 2026-10-31: one head, and one journey
+
+Same harness: Chromium 156 (playwright-core 1.64, the headless shell) against this worktree's trial
+(`trial --port 7711`, whose plans are the trial's own fixtures), 320 / 360 / 390 / 768 / 1440 in light and dark,
+`prefers-reduced-motion: reduce`, a touch pointer below 721, forced colours at 360, the root raised to 32px at 360,
+and axe-core 4.14 over 22 views. "Before" is `main`'s own page files (`d1979b5`), served by the same trial through
+request interception in the same browser session as the after — not a figure copied from an earlier record, and
+every page waits for its own read before it is measured (a half-drawn page was what made the 2026-10-26 numbers
+shiver between runs). Fixtures: a Team account at $149.00 a month with one running workspace named Research and an
+empty usage table (`/api/usage` held to one empty answer on both sides, since the trial limits it to 60 reads an
+hour), and a fresh account with no plan. Heights are `document.documentElement.scrollHeight`; positions are
+`getBoundingClientRect` plus `scrollY`.
+
+- **Every page opens with the record's caption, and four pages had none.** The account, the page that is not
+  there and the two documents began with their title; the home page and the four way-in pages began with
+  `Curule Cloud · …` in 12px accent caps. The caption is the record's grammar — the home page's sections are
+  numbered entries and the account's sections carry `01`–`05` — but a reader arriving at `/account` or `/terms`
+  met no line saying which part of the product they were in. All four now have one: `Curule Cloud · your account`,
+  `· not found`, `· terms`, `· privacy`. Measured at 360: the account's head is **96 → 123px**, the h1 **85 → 112**,
+  the identity **119 → 146**, the card at the top **157 → 184**, `01 Workspaces` **628 → 656** and the workspace's
+  `Open / Pause / More` **706–750 → 733–777**, so the first screen still ends on those controls; the account is
+  **2,032 → 2,059** at 360 and **+27** at 320, 390, 768 and 1,440 alike. The 404 is **800 at every width before and
+  after** because its caption took the empty space above the mark's column, and terms and privacy are **+32 or +33**
+  at every width (3,786 → 3,818 and 2,823 → 2,855 at 360).
+- **The journey is four names and four numbers, in the same three places.** The front page's steps were "Sign up /
+  Pick a plan / Make a workspace / Describe your team and start", the sign-up rail's were "Create your account /
+  Choose a plan / **Open your workspace** / Describe your team", and the account's own rail said "**1 Plan /
+  2 Workspace / 3 Open**" — three vocabularies for one journey, and the account's numbers restarted at 1, so the
+  stop the sign-up page calls 02 was called 1 a page later. The four names are now the same on all three
+  ("Create your account / Choose a plan / Make a workspace / Describe your team"), and the account's steps carry
+  their place in that journey: **02 / 03 / 04**, with 01 (creating the account) behind whoever is reading. A
+  hosting-only plan has the key step as well, and its last step is 05. The account's rail was measured on the
+  plan-less fixture, where the steps are shown: **1 Plan / 2 Workspace / 3 Open** in a 22px row became
+  **02 Choose a plan / 03 Make a workspace / 04 Describe your team** in **52px**, two rows, because the names are
+  longer. The card's sentence paid for most of it: "Each workspace runs on a plan of its own." went, since the
+  create form's hint says it where it matters, and the paragraph is **154 → 128px**. The plan-less page is
+  **1,558 → 1,589** at 360, **1,683 → 1,745** at 320, **1,484 → 1,516** at 390, **1,075 → 1,076** at 768 and
+  **1,015 → 1,017** at 1,440 — at the two wide widths the trimmed sentence and the taller rail cancel.
+- **A way-in page's title is the action it asks for, and one full stop was a whole line.** Sign-up's h1 was
+  "Start with an email and a password" — a description of the form, not of the page's job — while its button,
+  its rail's first step and the front page's first step all say create/account. It is **"Create your account"**
+  now: the h1 is **60 → 30px** at 360 (two lines to one) and **91 → 60** at 320 (three to two), the card moves
+  **293 → 263**, and the page is **1,440 → 1,410** at 360, **1,612 → 1,582** at 320, **1,433 → 1,397** at 768 and
+  **948 → 909** at 1,440. Sign-in's "Back to your account." lost its stop and the same 30px at 360
+  (**1,285 → 1,255**; nothing at 320 or 390, where the line broke in the same place either way). The 404's
+  "That page is not here." lost its stop too, and nothing moved: the page is 800 at every width.
+- **A dead confirmation link puts the cursor on its way out on a phone.** The confirmation page focused its email
+  field on failure only for a fine pointer (a keyboard that opens by itself covers the page it was opened for), so
+  at 360 the cursor was on **BODY** and the next Tab began again above the whole page — while the reset page, with
+  the same dead link and the same job, put it on **"Send a new link"**. Measured at 360 with a dead token:
+  `document.activeElement` is **BUTTON "Send a new link"** at 590px of an 800px screen (**BODY** before), and
+  **INPUT#email** for a mouse, as it was. The page is 1,223 in both.
+- **One name for the resend, and one set of doors.** Sign-in's way out of an unconfirmed address said "Send the
+  confirmation link again" while the confirmation page said "Send a new link" for the same request; it is
+  "Send a new link" in both now. The documents ended on "See the plans" and the 404 on "See the plans and prices";
+  the documents say **"See the plans and prices"** too, so the two ways out are the same four doors in the same
+  words (their order is each page's own: the 404 puts the plans first because a lost visitor most likely wants
+  them). Neither change moved a pixel.
+- **The journey's own screen, and what the same words cost it.** The plan-less account is what a customer lands on
+  after confirming their address, and its rail now reads as the same four stops they have just read at sign-up
+  with the one they are on marked. Its cost is the 31px at 360 above; at 320 the rail takes a third row and the
+  page pays **62px** (1,683 → 1,745). The paid account pays only the caption's 27px.
+- **States, schemes and the floor.** 320 / 360 / 390 / 768 / 1440 in light and dark, on both fixtures: no sideways
+  page scroll (320: 320; 360: 360; 390: 390; 768: 768; 1440: 1440), nothing computes below **12px** at normal text
+  (16px at root 32), and no control is under 44 × 44 below 721. Forced colours at 360 draws the new captions as the
+  system's own. **22 axe-core runs** (both fixtures at 320, 360, 390, 768 and 1,440, sign-up, and the account in
+  dark) find **no violation**, and the console is clean but for the 404's own status code, which a browser logs on
+  any page served with 404, before and after. With scripts off the account is still 800px and the way-in pages
+  still draw their forms. At **200% text** (root 32px) the account's caption wraps to two lines: the page is
+  **4,330 → 4,414** and still 360 wide; sign-up is **2,842 → 2,781**.
+- **Two things a paragraph had to decide.** The account's caption says `your account` directly above the h1
+  "Your account", which is a repetition of the kind this record deletes — and it costs 27px on the page where the
+  first screen has been fought for. It was kept because the alternative is the one page of the surface without the
+  family's caption, and because the 27px still leaves the workspace's controls inside an 800px 360 screen; the price
+  is recorded below. The other is the forgotten-password page's sent state: it was given "Open it: it goes to a page
+  where you choose a new password." (the sentence the sign-up and confirmation cards carry), measured at **74 → 170px**
+  of note and **1,275 → 1,347**, and then taken out again, because that page's own rail already says it two lines
+  below and marks "Open the link" as the reader's step: the same words twice on one screen is the thing the record
+  keeps removing.
+- **The budget.** `app.css` is **40,955 → 40,958 bytes of 40,960**. The caption's row inside the account's flex head
+  is one rule (`.account-head .eyebrow { flex: 1 0 100%; margin: 0 0 4px }`), and it was paid for by three
+  declarations that set what was already true: `.glance { margin-top: 0 }`, the subnav's `margin-top: 0` and the
+  stage's `border: 0`. Two bytes remain, and this pass is the fourth in a row to say the next one removes before it
+  adds.
+- **Tests.** `dist/tests/cloud/pages*.test.js` — **160 pass, 0 fail**; the whole suite — **6,421 tests, 6,419
+  pass, 0 fail** (2 skipped); typecheck, build and lint clean (lint reports the repository's 211 warnings, 0 errors,
+  as `main` does). The new test is the grammar itself: every page's h1 has the record's caption immediately above
+  it, in `p.eyebrow`, starting "Curule Cloud · ". `pages-stage.test.ts` holds the pure steps to the four labels and
+  to the numbers **02–04** (**02–05** on a hosting-only plan). The rest were updated where this pass deliberately
+  changed what they pin: sign-up's h1, the 404's title and caption, the front page's four step names, the sign-up
+  rail's third step, the plan-less rail's numbers and names, the stage card's shorter sentence, sign-in's resend
+  label, the documents' last door, and the cursor at a dead link. Each was the smallest change that kept the test's
+  intent.
+
+| measured at 360, light | before | after |
+| --- | --- | --- |
+| The account's head / its h1 / the identity | 96px / y = 85 / y = 119 | **123 / 112 / 146** |
+| The card at the top / `01 Workspaces` | 157 / 628 | **184 / 656** |
+| The workspace's `Open / Pause / More` | 706–750 | **733–777** (inside an 800px screen) |
+| The account, 320 / 360 / 390 / 768 / 1440 | 2,223 / 2,032 / 1,987 / 2,032 / 1,995 | **2,250 / 2,059 / 2,014 / 2,060 / 2,022** |
+| The plan-less account, same widths | 1,683 / 1,558 / 1,484 / 1,075 / 1,015 | **1,745 / 1,589 / 1,516 / 1,076 / 1,017** |
+| The plan-less rail | 22px: 1 Plan / 2 Workspace / 3 Open | **52px: 02 Choose a plan / 03 Make a workspace / 04 Describe your team** |
+| Sign-up's h1 / the page | 60px (two lines) / 1,440 | **30px (one) / 1,410** |
+| … at 320 / 768 / 1440 | 91 / 1,433 / 948 | **60 / 1,397 / 909** |
+| Sign-in's h1 / the page | 60px / 1,285 | **30px / 1,255** |
+| Terms / privacy, 360 | 3,786 / 2,823 | **3,818 / 2,855** |
+| The 404, every width | 800 | **800** |
+| A dead confirmation link's cursor, a phone | **BODY** | **"Send a new link"** (590 of 800) |
+| … with a mouse | the email field | the email field |
+| axe-core, 22 views | — | **0** |
+| `app.css` | 40,955 bytes | **40,958** |
+
+### What this pass leaves
+
+- **The account's caption costs 27px, and at 320 it pushes the record's controls below the screen.** At 320 the
+  workspace's `Open / Pause / More` are **776–820** where they were **749–793**: 20px past an 800px screen, because
+  the contents line already takes two rows there. 360 — the owner's phone — is unaffected (777 of 800). The
+  alternative was the account being the one page without a caption.
+- **At 200% text the caption is two lines.** The account is **+84px** at root 32 (4,330 → 4,414) and nothing
+  overflows; the h1 and the identity keep their own lines. It is the page's third tallest thing after the first
+  screen's card and facts.
+- **The plan-less rail's second row is the price of the journey's words.** "Plan / Workspace / Open" fitted one
+  22px row; the four-stop vocabulary does not fit 328px with two-digit numbers. At 320 the rail takes a third row
+  (**the page is +62px**). Shortening the account's labels back to one word each would buy those rows back and lose
+  the thing this pass is for.
+- **The paid account's first screen says what the record 500px below says.** "Research is running — Open it to
+  describe your team and start a mission — Open" is at 184–385 and the same workspace's name, `Running` and
+  `Open` are at 694–777. Removing the card's duplicate would shorten the phone by about 200px and would put the
+  page's one action below the fold in the states where the record does not offer it (starting, needs a key); it is
+  the trade the 2026-10-29 record named, and this pass judged it worse than the repetition.
+- **The sign-up rail is still a screen below the form.** Sign-up is **1,410px** at 360 and the rail begins at 808;
+  a stranger reads four stops after the form rather than around it. Folding it would take away the promise the
+  2026-10-22 pass put on every width.
+- **The checkout stand-in, the prose-only 19px links, the address strip's caption at 320, the sticky bar over a
+  target at a hand-chosen scroll and a real usage table behind a model key are the earlier entries**, unchanged and
+  still true.
+
+### Next pass
+
+- The account's first screen: the card and the record are one workspace said twice. A pass that changes that part of
+  `drawStage` could give the record the card's job when the workspace is ready, and keep the card only for the states
+  where there is nothing in the list to act on.
+- 320 with the caption: 20px back would put the record's controls on the screen again. The contents line's two
+  rows are the other 46px.
+- The way-in pages at 200% text have not been measured since 2026-10-23 except sign-up; the account's head is now
+  the tallest thing there.
