@@ -97,18 +97,18 @@ test("the status line of a card stays where it is and says what is under way and
   assert.ok(v.$("workspaces").querySelector(".ws-note") === line, "it is the same line: one that is drawn new is not always read out");
 });
 
-test("a request that is out holds the buttons of the card and of the card at the top without drawing them again, so the cursor stays where it was", async () => {
+test("a request that is out holds the buttons of the record without drawing them again, so the cursor stays where it was", async () => {
   const w = world((x) => { paid(x); x.workspaces = [ws("running")]; });
   w.answers.set("POST /api/workspaces/ws_1/open", { json: { url: ENTER } });
   const v = await visit("account", { routes: w.routes });
-  const stageOpen = v.$("stage-open");
-  stageOpen.focus();
-  v.click(stageOpen);
-  assert.ok(v.$("stage-open") === stageOpen && v.doc.activeElement === stageOpen, "the button in the card at the top is the same button, with the cursor");
-  assert.equal(stageOpen.held, true);
-  assert.ok(v.buttons("workspaces").every((b) => b.held), "and the card's own buttons are held with it");
+  const open = v.$("open-ws_1");
+  open.focus();
+  v.click(open);
+  assert.ok(v.$("open-ws_1") === open && v.doc.activeElement === open, "the record's button is the same button, with the cursor");
+  assert.equal(open.held, true);
+  assert.ok(v.buttons("workspaces").every((b) => b.held), "and the record's other buttons are held with it");
   await v.idle();
-  assert.equal(v.$("stage-open").held, false, "and are free again afterwards");
+  assert.equal(v.$("open-ws_1").held, false, "and are free again afterwards");
   assert.deepEqual(v.navigations, [`assign ${ENTER}`]);
 });
 
@@ -224,15 +224,15 @@ test("on a plan with several workspaces the one that asks for its key does not h
   });
   const v = await visit("account", { routes: w.routes });
   const second = () => v.$("workspaces").querySelectorAll("li")[1]!;
-  assert.equal(v.text("stage-title"), "Alpha is running", "the card at the top is about the one that is ready");
+  assert.equal(v.shows(v.$("stage")), false, "a workspace that can be opened is its own record, and the card is not drawn");
   assert.equal(v.button(second(), "Open").className, "btn", "Beta is up, and has nothing to think with: Save key is its main button");
   assert.equal(v.button(second(), "Save key").className, "btn btn-primary");
   v.type("key-model-ws_b", "claude-sonnet-4-5");
   v.type("key-secret-ws_b", SECRET);
   await v.send(v.$("key-form-ws_b"));
-  assert.equal(v.text("stage-title"), "Your workspaces are running", "now two can be opened, and the card does not choose");
+  assert.equal(v.shows(v.$("stage")), false, "now two can be opened, and there is no card to choose between them");
   assert.equal(v.button(second(), "Open").className, "btn btn-primary");
-  assert.equal(v.button(v.$("workspaces").querySelectorAll("li")[0]!, "Open").className, "btn btn-primary", "and so is Alpha's: the card at the top no longer offers it");
+  assert.equal(v.button(v.$("workspaces").querySelectorAll("li")[0]!, "Open").className, "btn btn-primary", "and so is Alpha's");
 });
 
 // ---- opening a workspace as soon as it is ready ----
@@ -256,7 +256,7 @@ test("a person who asks for it is taken to the workspace as soon as it is ready,
   const not = make();
   const n = await visit("account", { routes: not.routes });
   not.workspaces = [ws("running")];
-  await n.until("the workspace to be seen running", () => n.text("stage-title") === "Research is running");
+  await n.until("the workspace to be seen running", () => /^Research Running /.test(n.text("workspaces")));
   await n.idle();
   assert.deepEqual(n.navigations, [], "a person who did not ask is left where they are");
   assert.equal(n.to("POST", "/api/workspaces/ws_1/open").length, 0);
@@ -267,7 +267,7 @@ test("a person who asks for it is taken to the workspace as soon as it is ready,
   c.check(c.$("auto-ws_1"));
   c.check(c.$("auto-ws_1"), false);
   changed.workspaces = [ws("running")];
-  await c.until("the workspace to be seen running", () => c.text("stage-title") === "Research is running");
+  await c.until("the workspace to be seen running", () => /^Research Running /.test(c.text("workspaces")));
   await c.idle();
   assert.deepEqual(c.navigations, [], "a person who asked and thought better of it is left where they are");
 });
@@ -327,13 +327,13 @@ test("a workspace that stopped while it was waited for is not waited for any mor
   const v = await visit("account", { routes: w.routes });
   v.check(v.$("auto-ws_1"));
   w.workspaces = [ws("suspended", { statusReason: "paused by its owner" })];
-  await v.until("the workspace to be seen stopped", () => v.text("stage-title") === "Research is paused");
+  await v.until("the workspace to be seen stopped", () => /^Research Stopped /.test(v.text("workspaces")));
   assert.equal(v.doc.getElementById("auto-ws_1"), null, "a workspace that is stopped is not on its way to being ready");
-  v.click(v.button("stage-actions", "Resume"));
+  v.click(v.button("workspaces", "Resume"));
   await v.idle();
   assert.equal(v.$("auto-ws_1").checked, false, "and what was asked for before it stopped is not asked for again");
   w.workspaces = [ws("running")];
-  await v.until("the workspace to be seen running", () => v.text("stage-title") === "Research is running");
+  await v.until("the workspace to be seen running", () => /^Research Running /.test(v.text("workspaces")));
   await v.idle();
   assert.deepEqual(v.navigations, [], "it was started by hand this time, and the person is left where they are");
 });
@@ -371,30 +371,30 @@ test("a person at a keyboard keeps their place: Pause is followed by Resume, Res
   const v = await visit("account", { routes: w.routes });
   v.click(v.button("workspaces", "Pause"));
   await v.idle();
-  assert.equal(v.doc.activeElement, v.$("resume-ws_1"), "Pause was pressed and is gone: the cursor is on what took its place, in the same card");
-  v.click(v.button("stage-actions", "Resume"));
+  assert.equal(v.doc.activeElement, v.$("resume-ws_1"), "Pause was pressed and is gone: the cursor is on what took its place, in the same record");
+  v.click(v.button("workspaces", "Resume"));
   await v.idle();
-  assert.equal(v.text("stage-title"), "Research is running");
-  assert.equal(v.doc.activeElement, v.$("stage-title"), "Resume in the card at the top was pressed and is gone: the cursor is on what the card says now");
+  assert.match(v.text("workspaces"), /^Research Running /);
+  assert.equal(v.doc.activeElement, v.$("open-ws_1"), "Resume was pressed and is gone: the cursor is on the record's Open, which took its place");
   v.click(v.$("more-ws_1"));
   v.click(v.button("workspaces", "Delete this workspace"));
   v.type("confirm-ws_1", "Research");
   v.click(v.button("workspaces", "Delete workspace"));
   await v.idle();
   assert.equal(v.text("stage-title"), "Make your first workspace");
-  assert.equal(v.doc.activeElement, v.$("stage-title"), "the card it was in is gone, and so is what it said: the cursor goes to the card that says what is next");
+  assert.equal(v.doc.activeElement, v.$("stage-title"), "the record it was in is gone, and so is what it said: the cursor goes to the card that says what is next");
 });
 
 test("a button that is held does nothing when it is pressed again, and the request is made once", async () => {
   const w = world((x) => { paid(x); x.workspaces = [ws("running")]; });
   w.answers.set("POST /api/workspaces/ws_1/open", { json: { url: ENTER } });
   const v = await visit("account", { routes: w.routes });
-  const open = v.$("stage-open");
+  const open = v.$("open-ws_1");
   v.click(open);
   v.click(open);
   v.click(v.$("open-ws_1"));
   await v.idle();
-  assert.equal(v.to("POST", "/api/workspaces/ws_1/open").length, 1, "pressing what is held, in the card or the workspace, asks for nothing more");
+  assert.equal(v.to("POST", "/api/workspaces/ws_1/open").length, 1, "pressing what is held, in the record, asks for nothing more");
 });
 
 test("a workspace that comes to the account while a key is being typed in another card is added after it, and the cursor stays where it was", async () => {
