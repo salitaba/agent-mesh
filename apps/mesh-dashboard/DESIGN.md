@@ -343,11 +343,12 @@ served from the same server in the same session; both halves are the same delive
   goes back under the door (`elementFromPoint` at 360 returns the 167 × 151 door): a thumb cannot select, and a hole in the
   target would be a press that does nothing.
 - **Nothing else moves, and the floors hold.** No document or `#view` sideways scroll at any width in either scheme; axe-core
-  **0** violations in 8 reads (320/360/390/620/768/1,440 light and 360/1,440 dark); no control under 44 × 44 at 320/360/390/620
-  beyond the 1 × 1 skip link (the desk's 36 px sidebar rows are pointer density, §5); the smallest text stays 11 (the avatar
-  initials); one console error in both halves (the one-mesh `/api/projects` 404). Keyboard at 360: **11 Tabs** from the body to
-  `What shipped: Show` (skip, navigation, the bar's `…`, `Open the product`, the hero's `…`, four figures, the note's door, the
-  row) — three fewer than when the quiet links were on the row.
+  **0** violations in 8 reads (320/360/390/620/768/1,440 light and 360/1,440 dark); no control under 44 × 44 on the page at
+  320/360/390/620 beyond the 1 × 1 skip link (at 768 the closed drawer keeps its 36 px rows and 32 px close off-canvas; a
+  desk's 36 px sidebar rows are pointer density, §5); the smallest text stays 11 (the avatar initials); one console error in
+  both halves (the one-mesh `/api/projects` 404). Keyboard at 360: **11 Tabs** from the body to `What shipped: Show` (skip,
+  navigation, the bar's `…`, `Open the product`, the hero's `…`, four figures, the note's door, the row) — three fewer than
+  when the quiet links were on the row.
 
 Suite: typecheck and build clean; `node --test "dist/tests/**/*.test.js"` **6,443 tests, 6,441 pass, 0 fail, 2 skipped**;
 `dist/tests/dashboard` + `dist/tests/build` **1,436 pass, 0 fail**, with the new `overview-receipt.test.ts` (10 tests: `heroActions`' four cases, the note fold, the goal's grid and the value's layer) and two selectors updated in `overview-figures.test.ts`; eslint 0
