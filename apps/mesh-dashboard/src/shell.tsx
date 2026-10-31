@@ -67,6 +67,18 @@ const NAV: Array<{ section: string; items: NavItem[] }> = [
 ];
 const NAV_ITEMS: NavItem[] = NAV.flatMap((g) => g.items);
 
+/**
+ * The five places the work lives, drawn as a row at the bottom of the frame wherever the navigation is a drawer (800 px and below):
+ * the brief, the product, what it made, what it says, and what it wants. They are the owner's own path — "open the console" to
+ * "I am using my product" — and on a phone the top-left menu is the far corner of a one-handed screen. Everything else stays one
+ * press further in, behind the menu, which is where a reader goes for the pages of a single question.
+ *
+ * The row is the same five at every width it is drawn at, so muscle memory survives a rotation and there is no second, shorter list
+ * to learn. It is not drawn beside a sidebar (the five are already there) and not on the Designer, whose own save bar owns the
+ * bottom of the screen.
+ */
+const DOCK_VIEWS: readonly View[] = ["overview", "product", "artifacts", "events", "escalations"];
+
 // Order matters twice over: it is the digit each view answers to, and the digit is shown beside the view in the sidebar.
 // Derived from NAV, so a sidebar numbered 1, 5, 2, 3, 4 cannot happen.
 const KEY_VIEWS: View[] = NAV_ITEMS.map((n) => n.view);
@@ -265,6 +277,12 @@ export function Shell({ viewNode }: { viewNode: React.ReactNode }): React.JSX.El
   // the page behind it goes inert. Before this it was 288px of navigation floating over a page that still tabbed (8 controls
   // behind it at 360), with no scrim, no close button, no aria-modal, and a tap outside did nothing.
   const navModal = narrow && menuOpen;
+  /**
+   * The row at the thumb exists only where the navigation is a drawer, and only where there is something to navigate to: not while the
+   * registry has not said what this server is (every page behind it is a placeholder), not on a host's own pages, and not in the
+   * Designer (its save bar is the bottom of that screen).
+   */
+  const showDock = narrow && !hostLevel && !isHostView(view) && registry === "known" && view !== "designer";
   const [focusMode, setFocusMode] = useState(false);
   // Derived: the frame that paints the next view must not show a collapsed
   // sidebar. The effect below still clears the flag so returning to Designer
@@ -681,7 +699,7 @@ export function Shell({ viewNode }: { viewNode: React.ReactNode }): React.JSX.El
     : state.phase === "loading" ? (status ? "Loading the mission…" : "Connecting…") : "";
 
   return (
-    <div id="app" className={`${focusOn ? "focus-mode" : ""}${hasProjects ? " with-tabs" : ""}`}>
+    <div id="app" className={`${focusOn ? "focus-mode" : ""}${hasProjects ? " with-tabs" : ""}${showDock ? " dock" : ""}`}>
       {/* WCAG 2.4.1. Roughly 20 chrome tab stops -- the project strip, the nav
           buttons, the sidebar footer, the topbar -- sit ahead of the content on
           every single view, with no way past them.
@@ -835,6 +853,28 @@ export function Shell({ viewNode }: { viewNode: React.ReactNode }): React.JSX.El
           ) : registryPending ? <ViewLoading /> : noProjects && view !== "hostsettings" ? <HostEmptyState /> : holdView ? <ProjectStarting name={projectName} /> : viewNode}
         </main>
       </FocusCtx.Provider>
+
+      {/* The thumb's row. It is the same five places at 320 and at 768, each a whole tab (icon, name, count) rather than a glyph to
+          learn, and it is inert while the menu is a layer over the page. The menu still holds every page: this row is the route the
+          owner takes daily, not a second navigation. */}
+      {showDock ? (
+        <nav id="dock" aria-label="Where the work lives" inert={navModal || undefined}>
+          {DOCK_VIEWS.map((v) => {
+            const n = NAV_ITEMS.find((item) => item.view === v)!;
+            const here = view === v;
+            const waiting = v === "escalations" ? inbox : 0;
+            const name = waiting > 0 ? `${n.label}: ${waiting} waiting on you` : n.label;
+            return (
+              <button key={v} type="button" className={`dock-tab${here ? " active" : ""}`} aria-current={here ? "page" : undefined}
+                aria-label={name} title={n.title} data-view={v} onClick={() => setView(v)}>
+                <Icon name={n.icon} size={20} />
+                <span className="dock-label" aria-hidden="true">{n.label}</span>
+                {waiting > 0 ? <em className="dock-badge" aria-hidden="true">{waiting > 99 ? "99+" : waiting}</em> : null}
+              </button>
+            );
+          })}
+        </nav>
+      ) : null}
 
       {panel !== null && (
         <>

@@ -87,7 +87,10 @@ export default function Inbox(): React.JSX.Element {
 
   return (
     <div className="ib">
-      <PageHeader title="Needs you" status={<span className={`mission-chip ${summary.tone}`}>{summary.label}</span>} lede={summary.line} />
+      {/* The page is named by the tab you came for: the sidebar's "Tool gates" opened a page headed "Needs you", so a reader who
+          pressed one name landed on another and had to find the tab to believe they were in the right place. Both routes are this
+          one page, and the heading now says which of its two sections is in front. */}
+      <PageHeader title={tab === "tools" ? "Tool gates" : "Needs you"} status={<span className={`mission-chip ${summary.tone}`}>{summary.label}</span>} lede={summary.line} />
       {phone ? null : <NotifyRow />}
       <Tabs
         idPrefix="inbox" label="What is waiting on you" value={tab}

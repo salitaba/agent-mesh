@@ -93,6 +93,16 @@ export default function Overview(): React.JSX.Element {
     return next;
   });
   const jumpTo = (id: string): void => setPendingJump(id);
+  // A figure is a door to what explains it. Goal checks are on this page, so that press opens the section (a phone's sections are
+  // closed until asked) and lands on it; the other three leave for the page that owns the number.
+  const openFigure = (to: "goal" | "steps" | "cost" | "agents"): void => {
+    if (to === "goal") {
+      if (phone && !openSections.has("ov-goal")) toggleSection("ov-goal");
+      jumpTo("ov-goal");
+      return;
+    }
+    setView(to);
+  };
   const foldOf = (id: string, summary: React.ReactNode): Fold | undefined =>
     phone ? { open: openSections.has(id), onToggle: () => toggleSection(id), summary } : undefined;
   // The wide index lands on a section that is already open: the effect runs after the commit, so the scroll is computed against
@@ -356,6 +366,7 @@ export default function Overview(): React.JSX.Element {
         live={live}
         next={state.next}
         secondary={state.secondary}
+        go={openFigure}
         run={run}
       />
       <AttentionList items={attention} onFix={fix} />
