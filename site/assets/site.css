@@ -338,11 +338,24 @@ main:has(.hero) .section-head .eyebrow::before { counter-increment: sec; content
 .frame figcaption code { font-size: 1em; }
 /* The plate is a 1:1 crop of the capture, not the whole window shrunk: at 360 the window was 326 × 204 (0.23 of
    its 1,440 art), so its 13px words were about 3px, and at 1,440 it was 1,118 wide (0.78). The crop begins past
-   the sidebar, at the goal, so the first thing read is the mission's own answer; the frame's Full size link
-   still opens the whole capture. The percentages are where the crop starts in the art (x about 220, y about 60). */
+   the sidebar, so the first thing read is the product; the frame's Full size link still opens the whole capture.
+   The percentages are where the crop starts in the art (x about 220, y about 60), and they hold at 720 and up,
+   where the 440px and 420px windows are tall enough to reach the content of every view. */
 .hero-visual .pane img { object-fit: none; }
 @media (min-width: 720px) and (max-width: 1039px) { .hero-visual .pane img { height: 440px; object-position: 30% 14%; } }
-@media (max-width: 719px) { .hero-visual .pane img { height: 260px; object-position: 20% 9%; } }
+/* A phone's window is 260px of a 900px art, so one aim for the three panes only ever held the Overview: at 360 the
+   Events crop ended on the filter row (0 of the log's 8 rows, none of its red lines) and the Designer crop ended on its
+   Add seat toolbar (0 of the 7 seats). Each view is aimed at the thing it is about — the mission's answer at the goal,
+   the log's first rows, the canvas's seats — in the capture's own pixels, so the window is the same at 320, 360, 390
+   and 719. The Events window starts at the page's content column (231) and on the log's first bucket (300); the
+   Designer window starts above the canvas's first row of seats (340) and its right edge falls on the seat beside
+   explorer at 360 (219 + 326 = 545), so no seat is cut there. The art's box, the caption and every page height are
+   unchanged: the window moves, not the frame. */
+@media (max-width: 719px) {
+  .hero-visual .pane img { height: 260px; object-position: -223px -58px; }
+  .hero-visual .pane:nth-of-type(2) img { object-position: -231px -300px; }
+  .hero-visual .pane:nth-of-type(3) img { object-position: -219px -340px; }
+}
 @media (min-width: 1040px) { .hero-visual .pane img { height: 420px; object-position: 23% 14%; } }
 .showcase .frame { border-radius: var(--k-r-xl); box-shadow: var(--k-hl), var(--k-shadow-5); }
 .tab-input, .billing-input { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }

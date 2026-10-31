@@ -760,6 +760,38 @@ test("a caption is text: the graph's way to the full size is a line of it, and t
   assert.match(css, /\n\.frame:has\(\.shot-open\) \.shot-open::before,\n\.tile \.shot-open::before \{ content: ""; position: absolute; inset: 0; \}/, "the figure, not the caption's line, is the press");
 });
 
+/**
+ * The plate is a window on three 1,440 × 900 captures, and a phone's window is 326 × 260 at 360: 260 pixels of the art's
+ * 900. One aim served all three panes, at the goal (20% 9%, so the window began at y ≈ 58), which is right for the
+ * Overview and wrong for the two views whose content is not at the top of their page: measured on the captures, the
+ * Events log's first bucket is at y = 306 and its first row at 345, and the Designer's canvas starts at 304 with its
+ * first row of seats at 410. At 360 the Events window ended at 317.6 — on the filter row: 0 of the 8 rows and none of
+ * the red lines — and the Designer window was the page head and the Add seat toolbar: 0 of the 7 seats. Each view is
+ * aimed at its own thing now, in the capture's own pixels so the window is the same at 320, 360, 390 and 719 (the old
+ * percentages drifted 222.8 → 156.1 at the left at 719). The Events window (231, 300) holds the bucket, the red
+ * "pm could not be woken" row and two more; the Designer window (219, 340) holds the canvas's left column and its
+ * wires, and its right edge falls on the next seat at 360 so no seat is cut. The art's box (326 × 260), its caption
+ * (107px) and the page (13,116 at 360, 14,041 at 320) are the same before and after.
+ */
+test("each of the plate's three views is cropped to the thing it is about on a phone", () => {
+  const css = fs.readFileSync(path.join(SITE, "assets", "site.css"), "utf8");
+  const home = page(pages, "index.html").html;
+  assert.equal((home.match(/<figure class="pane">/g) ?? []).length, 3, "three views, in the order of their tabs");
+  const block = /@media \(max-width: 719px\) \{\n  \.hero-visual \.pane img \{ height: 260px; object-position: (-?\d+)px (-?\d+)px; \}\n  \.hero-visual \.pane:nth-of-type\(2\) img \{ object-position: (-?\d+)px (-?\d+)px; \}\n  \.hero-visual \.pane:nth-of-type\(3\) img \{ object-position: (-?\d+)px (-?\d+)px; \}\n\}/.exec(css);
+  assert.ok(block, "the phone states the three crops, one for each view");
+  const aim = block.slice(1).map((v) => -Number(v));
+  assert.deepEqual(aim, [223, 58, 231, 300, 219, 340], "the overview at the goal, the events at the log's rows, the designer at the seats, in the capture's own pixels");
+  // The Overview is where it was (a 9% top of 58px); the two views whose page head pushed their content down are
+  // aimed below it, past the head band, and the events one starts at the content column the whole console shares.
+  assert.ok(aim[3] > aim[1] + 200, "the events window starts past the view's page head, not on it");
+  assert.ok(aim[5] > aim[3], "the designer window starts lower still, above its first row of seats");
+  assert.equal(aim[2], 231, "the log's window begins at the console's content column");
+  assert.ok(aim[4] + 326 <= 545, "at 360 the designer window ends on the seat beside explorer, so no seat is cut by it");
+  assert.match(css, /\n\.hero-visual \.pane img \{ object-fit: none; \}/, "the window is a crop of the art at its own size");
+  assert.match(css, /@media \(min-width: 720px\) and \(max-width: 1039px\) \{ \.hero-visual \.pane img \{ height: 440px; object-position: 30% 14%; \} \}/, "from 720 the window is tall enough to hold every view's content, so one aim serves all three");
+  assert.match(css, /@media \(min-width: 1040px\) \{ \.hero-visual \.pane img \{ height: 420px; object-position: 23% 14%; \} \}/, "and it is unchanged on a desk");
+});
+
 test("the four plans are one snap row on a phone, and nothing off the row widens the page", () => {
   const pricing = page(pages, "pricing/index.html").html;
   assert.match(pricing, /<p class="eyebrow">Plans<\/p>\n      <h2 class="title plans-title">The licence plans\.<\/h2>\n      <p class="small muted plans-hint">Four plans\. Swipe or scroll sideways; the comparison below lists every line\.<\/p>/, "the section keeps its heading and the hint that the row swipes");
