@@ -586,15 +586,17 @@ test("the drawings of an idea are decorative: hidden from a screen reader, with 
 test("the home page puts the price, then the proof and the demo, and the argument after them, under a numbered contents strip", () => {
   const home = page(pages, "index.html").html;
   const at = (needle: string): number => home.indexOf(needle);
-  const order = ['<section class="hero" id="top">', '<nav class="index"', '<section class="section" id="pricing">', '<section class="section" id="ways">', '<section class="section band" id="product">', '<section class="section" id="try">', '<section class="section band" id="why">', '<section class="section" id="how">', '<section class="section tint" id="security">', '<section class="section band" id="faq">'].map(at);
+  const order = ['<section class="hero" id="top">', '<nav class="toc-bar"', '<section class="section" id="pricing">', '<section class="section" id="ways">', '<section class="section band" id="product">', '<section class="section" id="try">', '<section class="section band" id="why">', '<section class="section" id="how">', '<section class="section tint" id="security">', '<section class="section band" id="faq">'].map(at);
   assert.ok(order.every((n) => n >= 0), "every part is there");
   // The order is the argument: what it is and what it costs, who runs it, the console and the demo that prove it, and then the
   // two sections that say why it is built this way and how a mission goes. A phone meets the proof and the demo before the prose.
   assert.deepEqual(order, [...order].sort((a, b) => a - b), "the statement, the contents, the price and the ways in, then the console and the demo, then the argument");
-  // The contents strip names every section below it, in order, numbered like the ledger's entries.
-  const nav = /<nav class="index"[^>]*>([\s\S]*?)<\/nav>/.exec(home)![0];
-  assert.match(nav, /aria-label="Contents"/);
-  const entries = [...nav.matchAll(/href="#([\w-]+)"><span>(\d\d)<\/span>([^<]+)<\/a>/g)].map((m) => [m[1]!, m[2]!, m[3]!]);
+  // The contents strip is the On this page bar the other long pages have, and it names every section below it, in order, numbered
+  // like the ledger's entries. It used to be a nav.index of four rows of two chips (194px at 360) that scrolled away above the
+  // price; the bar is 61px and stays under the header.
+  const nav = /<nav class="toc-bar"[^>]*>([\s\S]*?)<\/nav>/.exec(home)![0];
+  assert.match(nav, /aria-label="On this page"/);
+  const entries = [...nav.matchAll(/href="#([\w-]+)"><span class="n">(\d\d)<\/span> ([^<]+)<\/a>/g)].map((m) => [m[1]!, m[2]!, m[3]!]);
   assert.deepEqual(entries, [
     ["pricing", "01", "Plans and prices"],
     ["ways", "02", "Who runs it"],
@@ -606,11 +608,14 @@ test("the home page puts the price, then the proof and the demo, and the argumen
     ["faq", "08", "Questions"],
   ], "eight entries, in the order the page reads");
   for (const [id] of entries) assert.match(home, new RegExp(`<section[^>]*\\sid="${id}"`), `#${id} is there`);
-  // Every entry is a thumb's height, and the strip sits on the page's ruled ground.
+  // Every entry is a thumb's height, the bar keeps the page's ground with a rule under it, and its numbers keep the ledger's
+  // 12px figure (they do not grow with the reader's root, and they are not a second size of type).
   const css = fs.readFileSync(path.join(SITE, "assets", "site.css"), "utf8");
-  assert.match(css, /\n\.index \{ border-block: 1px solid var\(--line\); background: var\(--panel\); \}/);
-  assert.match(css, /\n\.index a \{[^}]*min-height: 48px;/);
-  assert.match(css, /\n\.index \+ \.section \{ padding-top: clamp\(32px, 4vw, 48px\); \}/, "the price does not open with a whole section's gap under the strip");
+  assert.match(css, /\n\.toc-bar \{ position: relative; border-bottom: 1px solid var\(--line\); background: var\(--bg\); \}/, "the bar's own ground and rule");
+  assert.match(css, /\n\.toc a \{[^}]*min-height: 44px;/, "a chip is a 44px target");
+  assert.match(css, /\n\.toc \.n \{[^}]*min-width: 2ch; margin-right: 8px;[^}]*font-size: \.75rem;[^}]*font-variant-numeric: tabular-nums;/, "the entry's number is the ledger's 12px tabular figure");
+  assert.match(css, /\n\.page-head \+ \.section, \.toc-bar \+ \.section, \.toc-bar \+ \[hidden\] \+ \.section \{ padding-top: clamp\(32px, 4vw, 48px\); \}/, "the price does not open with a whole section's gap under the strip");
+  assert.ok(!/\.index\b/.test(css), "the strip it replaces is gone, not kept beside the bar");
 });
 
 test("on a phone the four plans are one rate card read in rows, with how buying starts before the buttons", () => {
@@ -981,9 +986,11 @@ test("at a reader's 200% text a phone's page keeps its width and the Enterprise 
   const css = fs.readFileSync(path.join(SITE, "assets", "site.css"), "utf8");
   const home = page(pages, "index.html").html;
   const pricing = page(pages, "pricing/index.html").html;
-  // The index's label may break anywhere, which is what makes the flex item narrower than its longest word,
-  // and the entry wraps: the number above its label when the two cannot share a line.
-  assert.match(css, /\n\.index a \{ display: flex; flex-wrap: wrap; align-items: center; gap: 0 10px; min-height: 48px; padding: 0 4px; color: var\(--ink2\); font-size: \.9375rem; font-weight: 500; text-decoration: none; overflow-wrap: anywhere; \}/, "the contents index's entry wraps and its label can shrink");
+  // The index is the On this page bar now (2026-11-01): one row that scrolls sideways, whose numbers keep their 12px when the
+  // root grows and whose chips keep their 44px cell. The entry's own wrap rules went with the four-row strip they were written
+  // for; the row's scrollWidth grows instead of the page's (0px over at a 24px and at a 32px root).
+  assert.match(css, /\n\.toc \.n \{[^}]*font-size: \.75rem;/, "the contents entry's number keeps its 12px when the reader's root grows");
+  assert.match(css, /\n\.toc \{[^}]*overflow-x: auto;/, "and the row scrolls rather than pushing the page sideways");
   // The six-view index takes a second row instead of pushing the page sideways.
   assert.match(css, /\n  \.row-index ol \{ display: flex; flex-wrap: wrap; gap: 4px; list-style: none; \}/, "the six-view index wraps at a large text size");
   // The closing band's grid children may be narrower than their content, as .cols > * already are.

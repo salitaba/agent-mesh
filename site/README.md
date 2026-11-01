@@ -12,7 +12,7 @@ python3 -m http.server --directory site 8080      # then open http://127.0.0.1:8
 
 | File | Address | What it holds |
 |---|---|---|
-| `index.html` | `/` | The tagline, what Curule is and a picture of it beside the first actions (a product frame: overview, events, designer), the plans in a line (four rows of one rate card on a phone), the two ways in (we run it, or you do), then the proof: a tour of the console in six views and the commands that run the demo today, then why it is not a group chat, how a mission goes, security in brief, and the questions |
+| `index.html` | `/` | The tagline, what Curule is and a picture of it beside the first actions (a product frame: overview, events, designer), a numbered *On this page* bar (the eight sections, each keeping its ledger number), the plans in a line (four rows of one rate card on a phone), the two ways in (we run it, or you do), then the proof: a tour of the console in six views and the commands that run the demo today, then why it is not a group chat, how a mission goes, security in brief, and the questions |
 | `pricing/index.html` | `/pricing/` | The four licence figures in a ruled line at the head, in the billing period the switch below chooses (so the price is on the first screen), then the two ways to pay (while Curule Cloud is open), the plans with the Annual/Monthly choice — one plan at a time on a phone, chosen by name and figure — the comparison table, what a plan pays for, a calculator, how licences work, and questions |
 | `docs/index.html` | `/docs/` | "Start here": a card for each thing a visitor comes to do (run the demo, deploy it, describe a team and its rules, use Curule Cloud), each naming the one document to open first; then a map of the documents in the repository: what each is for, and whether it is reference, a guide, short, or a log, with a filter over them. An On this page row under the heading names the three sections, as on the other long pages |
 | `security/index.html` | `/security/` | An At a glance box (what it protects, what leaves your environment, what it does not do: one line each, from the page's own sentences, each linking to its section, with a mark that says what kind of answer it is), then the three in full, a hardening checklist, assurance, and how to report a problem |
@@ -43,10 +43,12 @@ the plan cards and tables are in the markup, and the contact addresses are text.
 copy buttons, and the links to the documents and the source (which live on GitHub, so they cannot be written into the pages: see
 the next section).
 
-The long pages (pricing, documentation, security, legal) have an *On this page* bar under their heading: a row of chips, one for
-each section — the security page's summary box, the pricing page's two ways in and the documentation page's map included, and a
-section the Curule Cloud switch hides takes its chip with it, so the bar never marks a section the reader is not in or offers a
-link to something that is not there.
+The long pages (the home page, pricing, documentation, security, legal) have an *On this page* bar under their heading: a row of
+chips, one for each section — the security page's summary box, the pricing page's two ways in and the documentation page's map
+included, and a section the Curule Cloud switch hides takes its chip with it, so the bar never marks a section the reader is not
+in or offers a link to something that is not there. The home page's bar is the contents index it opens with, under the hero: its
+eight chips keep the ledger numbers the sections' eyebrows use ("01 Plans and prices" … "08 Questions"), and it is the only
+navigation a phone's header does not keep, since the header's four links are hidden below 600.
 Without a script it is a row of plain links. With one, the bar stays under the header while the page is read, and the chip of the
 section being read is marked (`aria-current`, and a filled chip with a dot). It is one row at every width, scrolled sideways when
 the chips do not fit, so it is as tall where it rests as where it stays and nothing moves when it starts to stay. Where the
