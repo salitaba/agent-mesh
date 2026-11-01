@@ -124,6 +124,51 @@ test("workspace coherence: a workspace that does not exist yet is fine", async (
 });
 
 /**
+ * What happened to my-mesh-3 on 2026-10-25: a seat's shell wrote an absolute
+ * path into the workspace root (`git diff … > /data/projects/my-mesh-3/
+ * workspace/analytics-guards.patch`). Only the file tools are confined by
+ * `writeRoots`; a shell is not. The next boot then refused the layout, and the
+ * console that could have fixed it is behind that same boot, so the project
+ * could not be opened at all — not even to reset, which already archives these
+ * strays.
+ *
+ * The boot now does what reset does: move the stray aside and continue. The
+ * assertion is that the project opens AND the file still exists, because a
+ * repair that deletes someone's work is not a repair.
+ */
+test("workspace coherence: a stray in the root is archived and the project still opens", { skip: gitSkip }, async () => {
+  const dir = tempDir();
+  try {
+    const configPath = writeDefaultMeshYaml(dir, "stray-boot", "stub");
+    const root = path.join(dir, "workspace");
+    fs.mkdirSync(root, { recursive: true });
+    const stray = path.join(root, "analytics-guards.patch");
+    fs.writeFileSync(stray, "diff --git a/x b/x\n+guarded\n", "utf8");
+
+    const m = await bootstrapMesh({ configPath, mode: "parked" });
+    try {
+      assert.equal(fs.existsSync(stray), false, "the stray must not be left where the check refuses it");
+      // Preserved under the mesh's archive root, not deleted: the operator can still read it.
+      const archiveRoot = path.join(dir, ".mesh-backups", "stray-boot");
+      const found = fs.readdirSync(archiveRoot).flatMap((entry) => {
+        const file = path.join(archiveRoot, entry, "analytics-guards.patch");
+        return fs.existsSync(file) ? [file] : [];
+      });
+      assert.equal(found.length, 1, `the stray must be archived under ${archiveRoot}`);
+      assert.match(fs.readFileSync(found[0], "utf8"), /\+guarded/, "the archived copy must keep its content");
+      // And the mesh booted into a workable product checkout rather than an empty refusal.
+      assert.equal(m.useGit, true);
+      assert.ok(fs.existsSync(path.join(m.productPath, ".git")), "the product checkout exists after the repair");
+      await assert.doesNotReject(() => assertWorkspaceCoherent(root, true, path.join(root, ".mesh-state")));
+    } finally {
+      await m.close();
+    }
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+/**
  * The whole failure, reproduced from the top: a brand-new project, nothing
  * hand-edited, no mode flip and no reset. `curule init` scaffolds one seat — an
  * architect holding `architecture.write` and not `repository.write` — and

@@ -456,6 +456,32 @@ export async function bootstrapMesh(options: BootstrapOptions): Promise<MeshInst
   // full of product files: git moves the checkout into main/ without moving
   // anything already there, and the stderr warning this replaced was not enough
   // to stop a mission spending its budget on uncitable commits.
+  //
+  // Strays are moved aside rather than refused: a shell tool can write an
+  // absolute path into this root (the file tools' `writeRoots` do not reach a
+  // shell), and refusing the boot left the project unopenable — the console that
+  // would fix it is behind the boot that refuses. Reset already archives these
+  // entries, so the boot does the same before the check, which still refuses the
+  // one case no automatic move makes safe: a workspace root that owns a repo.
+  if (!options.inMemory && useGit) {
+    let repaired: ReturnType<typeof archiveWorkspaceStrays> = null;
+    try {
+      repaired = archiveWorkspaceStrays(config.workspacePath, config.stateDir, {
+        archiveRoot: meshArchiveRoot(config.dir, config.meshId),
+      });
+    } catch (err) {
+      // An unreadable or read-only workspace must still reach the check below,
+      // whose refusal names what is in the way; a stray we cannot move is not a
+      // reason to boot on top of it.
+      console.warn(`warn: could not move stray workspace entries aside: ${(err as Error).message}`);
+    }
+    if (repaired) {
+      console.warn(
+        `warn: ${config.workspacePath} held files no repository tracks (${repaired.moved.join(", ")}); ` +
+          `moved them to ${repaired.archivedTo}. In git mode the product belongs in ${path.join(config.workspacePath, "main")}.`,
+      );
+    }
+  }
   if (!options.inMemory) await assertWorkspaceCoherent(config.workspacePath, useGit, config.stateDir);
   const workspace = useGit ? new GitWorkspace(config.workspacePath) : undefined;
   if (workspace && !options.inMemory) await workspace.ensureRepo();
@@ -4016,6 +4042,72 @@ const WORKTREES_DIRNAME = "worktrees";
 const GIT_MODE_ROOT_ENTRIES = new Set(["main", WORKTREES_DIRNAME, ".mesh-state", ".mesh", ".git"]);
 
 /**
+ * The top-level names a git-mode workspace root may contain. The state dir is
+ * configurable and only defaults to inside the workspace, so it is added by
+ * whatever name it was given; a path outside the workspace adds nothing.
+ */
+function gitModeAllowedNames(workspacePath: string, stateDir?: string): Set<string> {
+  const allowed = new Set(GIT_MODE_ROOT_ENTRIES);
+  if (stateDir) {
+    const rel = path.relative(workspacePath, stateDir);
+    if (rel && !rel.startsWith("..") && !path.isAbsolute(rel)) allowed.add(rel.split(path.sep)[0]);
+  }
+  return allowed;
+}
+
+/**
+ * Top-level entries of a git-mode workspace root that no repository tracks.
+ * Empty when the directory does not exist yet (a first boot) or cannot be read.
+ */
+export function strayWorkspaceEntries(workspacePath: string, stateDir?: string): string[] {
+  const allowed = gitModeAllowedNames(workspacePath, stateDir);
+  try {
+    return fs.readdirSync(workspacePath).filter((e) => !allowed.has(e));
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Move a stray file out of a git-mode workspace root instead of losing the
+ * project to it.
+ *
+ * A seat's shell tool runs as the same user that owns the workspace, so an
+ * absolute path in a command (`git diff > /…/workspace/foo.patch`, observed
+ * live on 2026-10-25) lands in the root no matter what `writeRoots` says: only
+ * the file tools are confined, not a shell. The layout check then refused the
+ * next boot, and because the console that would let a person fix it is inside
+ * that very boot, the project could not be opened at all — not even to reset,
+ * which already archives exactly these strays.
+ *
+ * So the boot repairs the layout the way reset does, before the check runs:
+ * every entry the check would call stray is moved under the mesh's archive
+ * root and the boot continues. Nothing tracked is touched (these files are
+ * untracked by definition here), and the archive is named in the warning, so a
+ * person who wants the file back can still find it. The root-is-a-repository
+ * case is deliberately NOT repaired: adopting a repo that owns the root is how
+ * a mission ends up committing into a branch the product was never in, and no
+ * automatic move makes that safe.
+ */
+export function archiveWorkspaceStrays(
+  workspacePath: string,
+  stateDir: string | undefined,
+  opts: { archiveRoot?: string; stamp?: string } = {},
+): { archivedTo: string; moved: string[] } | null {
+  const strays = strayWorkspaceEntries(workspacePath, stateDir);
+  if (strays.length === 0) return null;
+  // Keep what the check accepts in place: a relocated state dir may be any
+  // top-level name, and archiving it would archive the live event log.
+  const allowed = [...gitModeAllowedNames(workspacePath, stateDir)];
+  const archivedTo = archiveDir(workspacePath, {
+    archiveRoot: opts.archiveRoot,
+    stamp: opts.stamp,
+    exclude: allowed.map((e) => path.join(workspacePath, e)),
+  });
+  return archivedTo ? { archivedTo, moved: strays } : null;
+}
+
+/**
  * Refuse to boot a git-mode mesh whose workspace root holds product files.
  *
  * In git mode the product lives in `main/` and the root is scaffolding. Two
@@ -4030,11 +4122,12 @@ const GIT_MODE_ROOT_ENTRIES = new Set(["main", WORKTREES_DIRNAME, ".mesh-state",
  *    survives a reset that only archives `main/`, and is invisible to every
  *    reviewer reading the product checkout.
  *
- * This throws rather than warning because the warning it replaces was already
- * there and was not enough: it went to stderr while agents spent a mission's
- * budget producing commits that could never cite a revision. A mesh that
- * cannot land its product is not degraded, it is broken, and the cheapest
- * moment to say so is before the first turn.
+ * The boot moves stray entries aside before calling this
+ * ({@link archiveWorkspaceStrays}), so what reaches here is either the
+ * root-is-a-repository case or a stray the move could not take. This check is
+ * still the last word and not a warning: the warning it replaced went to stderr
+ * while agents spent a mission's budget producing commits that could never cite
+ * a revision, and a mesh that cannot land its product is broken, not degraded.
  */
 export async function assertWorkspaceCoherent(workspacePath: string, useGit: boolean, stateDir?: string): Promise<void> {
   if (!useGit) return;
@@ -4046,18 +4139,7 @@ export async function assertWorkspaceCoherent(workspacePath: string, useGit: boo
         `Commits would land in a repo the product is not in.`,
     );
   }
-  const allowed = new Set(GIT_MODE_ROOT_ENTRIES);
-  // The state dir is configurable and only defaults to inside the workspace.
-  if (stateDir) {
-    const rel = path.relative(workspacePath, stateDir);
-    if (rel && !rel.startsWith("..") && !path.isAbsolute(rel)) allowed.add(rel.split(path.sep)[0]);
-  }
-  let strays: string[] = [];
-  try {
-    strays = fs.readdirSync(workspacePath).filter((e) => !allowed.has(e));
-  } catch {
-    return;
-  }
+  const strays = strayWorkspaceEntries(workspacePath, stateDir);
   if (strays.length > 0) {
     const shown = strays.slice(0, 10).join(", ");
     problems.push(
