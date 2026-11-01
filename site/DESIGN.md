@@ -2354,3 +2354,101 @@ The next pass's first job is the page's length: 12,714px at 360 is 15.9 screens,
 3,866.23, 853.09px tall) and the four demo steps (`#try`, 4,719.33, 1,666.73) are 2,519.83px of it, with the nine argument
 sections after them. After that, the documentation row's third chip and the pricing page's cards' repeated roadmap, both
 left as they were.
+
+## 2026-11-01, sixth pass: the index that stays, and the price 133px sooner
+
+Measured with the same probe (Chrome 156 over CDP; reduced motion; light unless said; touch at 320/360/390, a mouse at 768 and
+1,440; dark at all five; print at 794; forced colours at 360; no script at 360; a 24px and a 32px root at 320 and 360). The before
+column is the site at the branch's own start (`bede609`), served on a second port and measured in the same run; no number is copied
+from an earlier pass. The absolute heights are this container's, where the untouched page reads **12,284** at 360 where the fifth
+pass's entry quotes 12,714 — both halves are one browser in one run, so the differences stand, and every claim below is about a
+difference.
+
+### What changed
+
+- **The home page's contents index is the On this page bar the other four long pages have.** The index was four rows of two chips
+  (**194px** at 360, 98 at 768 and 1,440) between the hero and the price, and it scrolled away: reading the security section
+  (its top at 8,771.9, with a frame at 8,700) the index's own top was **7,165px** above the frame, and a phone's header hides its
+  four section links below 600, so it offered four other pages, Contact and `#product` — seven of the page's eight sections could
+  not be reached at all without scrolling. It is
+  a `nav.toc-bar` with a `ul.toc` now, the same markup as `pricing/`, `docs/`, `security/` and `legal/`: **61px**, one row, and the
+  script's own machinery — pinned at 69 under the header (`is-live`), the section being read marked (`aria-current`, a tint, a
+  border and a 6px dot), the row scrolled to keep that chip and 24px of its neighbour in view, the edge shadowed where there is
+  more (`is-more` at 320/360/390/768; none at 1,440, where the eight chips are 1,440 in 1,440), and the chip brought wholly into
+  the row when the keyboard reaches it. Nothing in `assets/site.js` is new: the bar is the component, not a second one.
+- **A chip keeps its ledger number.** "01 Plans and prices" … "08 Questions", each number in the 12px tabular figure the sections'
+  eyebrows already use (`.toc .n`, 12px, `--muted`, `min-width: 2ch`), so the strip's numbering and the bar's chips are one set of
+  eight. The label is 14px, the bar's, where the strip's rows were 15px; a chip is 44px tall where a row was 48.
+- **The strip's own rules are gone, not kept beside the bar.** `.index`, `.index ol`, `.index a`, `.index span`, the 720px
+  four-column rule and `.index + .section` are deleted; `.toc-bar + .section` already gives the price its 32px under the bar.
+  `html:has(.toc-bar)` now gives the home page `scroll-padding-top: 150px`, so a followed section lands below the header **and**
+  the bar (it landed at 88), and the bar's own `--toc-h` (61 = a 44px chip, 8 above and below, its line) is the shared one.
+- **The page is 133px shorter at a phone's widths, and the price comes up with it.** At 360: the price section 1,729.3 → **1,596.3**,
+  its head 1,761.3 → **1,628.3**, the first plan row 2,040.9 → **1,907.9**, its figure 2,054.9 → **1,921.9**, the two buttons
+  2,821 → **2,688**, and everything below by the same 133 (the console 3,818.3 → 3,685.3, the demo 4,647.3 → 4,514.3, the reasons
+  6,246.3 → 6,113.3, security 8,771.9 → 8,638.9, the questions 10,201.8 → 10,068.8, the footer 11,490.4 → 11,357.4).
+- **The tests hold the bar's shape and the reason.** `site-script.test.ts` now counts the home page among the pages with a bar, and
+  its shape assertion accepts the hero (the document pages open on a `page-head`); the chip reader accepts the ledger number and
+  still demands one plain link per section, in the page's order. `site.test.ts`'s contents test reads the bar (its ground and rule,
+  a 44px chip, the number's 12px tabular figure, `#pricing`'s 32px under it, and that no `.index` rule survives) and the large-text
+  test pins the number's fixed 12px with the row's own sideways scroll in place of the strip's wrap rules. The reduced-motion test
+  now says what it means: nothing below the first screen is watched, and the only observer left is the bar's, over eight sections
+  it never hides. No promise was weakened: five tests' assertions changed with the shape they measured (the bar's shape, one
+  chip per section, the reduced-motion observer, the contents strip, and the large-text rules).
+
+### Measurements after this pass
+
+| The home page, height at 320 / 360 / 390 / 768 / 1,440 | Before | After |
+|---|---|---|
+| | 13,058 / 12,284 / 11,892 / 12,113 / 11,107 | **12,925 / 12,151 / 11,759 / 12,076 / 11,070** |
+
+The six other pages are unchanged at every width; only their stylesheet fingerprint moved (64f1f90d78).
+
+| The index at 360 / 768 / 1,440 | Before | After |
+|---|---|---|
+| The block | 194 / 98 / 98, four rows of two chips (four columns from 720), in the flow | **61 / 61 / 61, one row, pinned at 69** |
+| A chip | 164 × 48 / 177 × 48 / 280 × 48 | **92–170 × 44, the row 1,143 / 1,172 / 1,440 wide** |
+| The row's own scroll | 328/328, 707/707, 1,120/1,120 (a grid: none) | **1,143 in 360, 1,172 in 768, 1,440 in 1,440 (no shadow at 1,440)** |
+| The names on screen at rest | all eight | **two (a swipe; the row follows the reading position)** |
+
+| At 360, light | Before | After |
+|---|---|---|
+| A followed section lands at | 88 | **150** (all eight, cold and from the top) |
+| At scroll 8,700: what names the section | nothing (the index 7,165px above) | **the bar at 69–130, "07 Security" marked, row at scrollLeft 655** |
+| The bar's worst text pair, light / dark | — | **6.23:1 / 8.09:1** (marked chip; plain 11.31 and 11.53; the 12px numbers 6.58 and 7.64) |
+
+- **No page scrolls sideways** at 320, 360, 390, 768 or 1,440 in light or in dark (10 page/width/theme pairs on the home page; the
+  other six pages changed only their fingerprint), the probe reports **0** console errors, and **0 axe-core WCAG 2.0–2.2 A and AA
+  violations** in three runs (360 light, 360 dark, 1,440 light). The smallest computed text is still **12px** on every page.
+- **The targets** are the bar's 44px chips (92 × 44 to 170 × 44 at 360); the only controls under 44 × 44 are the same inline links
+  in sentences, the Graph caption's 67 × 20 "Full size" inside its sentence, and the 1 × 1 radios.
+- **Without a script** the bar is in the flow with no mark and one scrolling row: the page is **12,261 → 12,128** at 360, 0px over.
+  **Print** at 794 is **11,813 → 11,828** (+15: the pills wrap over two rows, no sticky, no shadow, no edge). **Forced colours** at
+  360 is **12,284 → 12,151**, 0px over, and the marked chip keeps `rgb(0, 0, 159)` and an outline. At a **24px root** the page is
+  **19,009 → 18,789** at 360 and **20,962 → 20,690** at 320 (0px over); at **32px** it is **28,829 → 28,401** at 360 (0px over). The
+  bar is 61 at a 24px root and **64** at a 32px root, so at 200% text a followed section lands 3px under it — the shared
+  component's behaviour on the four document pages, inherited here rather than introduced.
+- **The menu still covers the bar** when it is open at depth (the header's z 40 over the bar's 30), and the bar's own scroll
+  containment keeps a swipe at the row's end from turning the page.
+
+### What this pass deliberately left
+
+- **The strip's at-a-glance map is what the bar costs.** At rest the reader sees two of the eight names in a 328px row where the
+  strip showed all eight in 194px; the rest are a swipe, and the row follows the reading position so the section being read is
+  always in view. The alternative — a bar that shows only the current section until it is opened — is a second state and a second
+  component, and the four document pages already answer this question the way this pass does.
+- **61px of a phone's screen stays pinned under a 69px header** while reading (16% of 800). That is the price the pricing, docs,
+  security and legal pages already pay for the same bar, and the reason the page has not had it before is that its index was a
+  block of four rows, which cannot stay: a pinned 194px is a quarter of the screen.
+- **The page is still 12,151px at 360 — 15.2 screens.** The length is the argument: 1,464 words in a 328px measure, plus 856px of
+  the ten bands' padding, 1,322px of section heads with 256px of gaps under them, and a 792px footer. This pass took the 133px the
+  index was spending above the price; the cuts that would take a thousand or more are a disclosure around the four reasons or the
+  demo's four steps, or moving them to another page, and both delete or hide sentences this record has refused twice for this page.
+- **The captured pictures were not retaken**, and `site/ux/` was not edited. This pass's frames — the security section at 360 with
+  and without the bar, and the bar above the price — were handed over with the report.
+- `npm run site:check` still exits 1 on the owner's `TODO(owner)` for the terms at `site/legal/index.html:134`, as before.
+
+The next pass's first job is the page's length, and the honest shape of it is editorial rather than structural: 12,151 at 360 is
+15.2 screens of claims the record will not delete, so the only lever left is which of them the page states and which it leaves to
+`pricing/`, `security/` and the documents. After that, the documentation row's third chip and the pricing page's cards' repeated
+roadmap, both still as they were.
