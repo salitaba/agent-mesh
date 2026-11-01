@@ -444,15 +444,24 @@ main:has(.hero) .section-head .eyebrow::before { counter-increment: sec; content
 .way dt { display: flex; align-items: center; gap: 8px; color: var(--muted); }
 .way dt .mark { width: 16px; height: 16px; }
 .way dd { margin: 6px 0 0; font-size: .9375rem; }
+/* The home page's way in answers in one paragraph, not the pricing page's two labelled answers:
+   there the reader compares the two ways against the plans above, and here they are choosing one.
+   The labels were the site's only definition list, and their two 16px marks said "person" and
+   "card" four times. The two bodies are within a few characters of each other, so the stacked
+   cards come out level at 360; at 390 the licence body takes one line more. */
+.way-body { margin: 20px 28px 28px; font-size: .9375rem; }
 .way > .way-action { margin: auto 28px 28px; }
-/* With one of the two hidden the other takes the width; its answers sit side by side. */
-@media (min-width: 760px) { .ways:has(> .way[hidden]) { grid-template-columns: minmax(0, 1fr); } .ways:has(> .way[hidden]) dl { grid-template-columns: var(--c2); gap: 32px; } }
+/* With one of the two hidden the other takes the width: the pricing page's two labelled answers sit
+   side by side, and the home page's one paragraph runs in two columns of a readable measure rather
+   than one 1,120px line. */
+@media (min-width: 760px) { .ways:has(> .way[hidden]) { grid-template-columns: minmax(0, 1fr); } .ways:has(> .way[hidden]) dl { grid-template-columns: var(--c2); gap: 32px; } .ways:has(> .way[hidden]) .way-body { columns: 2; column-gap: 32px; } }
 /* Stacked on a phone, the two ways are still cards (each holds one action), but they take less of
    the page: the plans are what a visitor came for, and they start higher. The action is full width,
    where a thumb already is. */
 @media (max-width: 759px) {
   .way-head { padding: 10px 20px; }
   .way dl { gap: 14px; margin: 16px 20px 20px; }
+  .way-body { margin: 16px 20px 20px; }
   .way > .way-action { margin: auto 20px 20px; }
   .way > .way-action .btn { width: 100%; }
 }

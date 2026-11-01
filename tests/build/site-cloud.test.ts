@@ -163,7 +163,7 @@ test("the hero has one clear action in each state, Get started while Curule Clou
   assert.deepEqual(switched.map((n) => n.className || n.tag), ["actions", "small muted mt-s", "actions", "small muted mt-s"], "the statement, the subhead, the proof and the picture do not depend on whether Curule Cloud is open");
 });
 
-test("the home page's way in is two cards while Curule Cloud is open and one while it is not, each saying who it is for, what is paid and the one thing to press", () => {
+test("the home page's way in is two cards while Curule Cloud is open and one while it is not, each saying what it is, what is paid and the one thing to press", () => {
   const states = [
     ["open", APP, ["Two ways in", "Who runs it?"], ["We run it for you", "You run it"], [[["Get started", `${APP}/signup`]], [["Try the demo", "#try"]]]],
     ["closed", "", ["Start here", "You run it, and it is free to start."], ["You run it"], [[["Try the demo", "#try"]]]],
@@ -175,7 +175,11 @@ test("the home page's way in is two cards while Curule Cloud is open and one whi
     const cards = ways.querySelectorAll(".way").filter((c) => shown(c));
     assert.deepEqual(cards.map((c) => c.querySelector("h3")!.textContent), titles, `${state}: the cards`);
     cards.forEach((card, i) => {
-      assert.deepEqual(card.querySelectorAll("dt").map((t) => t.textContent), ["Who it is for", "What you pay"], `${state}: ${titles[i]} says who it is for and what is paid`);
+      // The home page's card answers in one paragraph, not the pricing page's two labelled answers: there the
+      // reader compares the ways against the plans above, and here they are choosing one. The card's title says
+      // who it is for, so a "Who it is for" row would ask the question the head has answered.
+      assert.equal(card.querySelectorAll("dt").length, 0, `${state}: ${titles[i]} carries no comparison label`);
+      assert.equal(card.querySelectorAll("p.way-body").length, 1, `${state}: ${titles[i]} says what it is and what is paid in one paragraph`);
       assert.deepEqual(card.querySelectorAll(".way-action a").map((a) => [a.textContent, a.href]), actions[i], `${state}: ${titles[i]}: the one thing to press`);
     });
     if (state === "closed") assert.ok(!/Curule Cloud/.test(visibleTextOf(ways)), "closed, the way in says nothing of what is not there");
@@ -184,7 +188,7 @@ test("the home page's way in is two cards while Curule Cloud is open and one whi
   assert.match(open[0]!.textContent, /No server to run: sign up, pick a plan, open a workspace in a browser\. Same console and agents, on our servers\./, "the account service's own words for what it is");
   assert.match(open[0]!.textContent, /Flat monthly hosting, priced on the sign-up page\. Your own model key, billed by your provider: we do not resell model usage\./);
   assert.match(open[1]!.textContent, /Nothing phones home: no telemetry, no update check, no licence server\./);
-  assert.match(open[1]!.textContent, /Nothing for the Community plan: one open project, up to ten agents, no licence key\. A paid licence lifts the limits\./);
+  assert.match(open[1]!.textContent, /The Community plan is free; a paid licence lifts the limits\./, "and what it costs, without quoting the rate card's limits again");
 });
 
 test("when it is open, the pricing page's estimate says it is for a licence, so a visitor to Curule Cloud does not read it as the price of a workspace", () => {
