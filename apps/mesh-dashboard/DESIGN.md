@@ -223,28 +223,36 @@ Breakpoints: **1280 1100 900 800 760 620 560**. 800 is the sidebar drawer (JS
   (2026-10-31).
 - **The narrowest phone's hero is the page's width.** Below 341 the hero takes
   the page's own 12 px gutter and its four figures step one rung down the ramp
-  (24 → 20), so the one action and its menu share one 44 px row and
-  "51.0k of 2.0M" keeps its unit on one line; the goal's label runs into its
+  (24 → 20; the step is the figures' strip since 2026-11-01, below), so the one
+  action and its menu share one 44 px row; the goal's label runs into its
   sentence's first line rather than a column beside it, so the goal is two
   lines, and a closed evidence row's head takes the phone head's 8 px gap so
   its name and figure read on one line. At 320 the first evidence row's 44 px
   head is whole above the dock (700.1–744.1 in 747), where it began 55.6 px
   under it. Pinned by `tests/dashboard/overview-receipt.test.ts` (2026-11-01).
+- **A figure steps by the strip it sits in, not by the viewport.** The four
+  figures are 24 px while the strip is 361 px or wider and 20 px below that, one
+  `@container` on the strip (2026-11-01). The step is not about the line — the
+  demo's figure is 113.31 px at 24 in a 123 px cell, so nothing wrapped — it is
+  about the receipt: from 341 to 387 the verdict takes two lines and the receipt
+  574.72, and 20 px figures make it 565.53, so the first evidence row's 44 px
+  head is whole above the 747 dock at every width from 320 to 387
+  (700.13–744.13 at 360; it was 6.3 px under). Measured at 360: the strip
+  300.94 → 291.75, the page 952 → 943. 320, 340 and 388 up do not move. Pinned
+  by `tests/dashboard/overview-receipt.test.ts` (2026-11-01).
 
 ## Open problems (carried forward)
 
-- The Overview is now **952 px** at 360 px with a delivered mission (1,124 on this pass's base build, 4,132 before the 2026-10-22 folding and
-  shipped-card work, 8,582 before that): the four evidence sections are one ruled row each until opened, and since 2026-10-28 those rows are
-  also the phone's index. The open question is the default, not the length: What shipped is closed like the other three, and a mission that
-  has just delivered may deserve its six file rows open; measured, the closed row is 53 px and the open panel 847, so the whole difference is
-  one press or two screens.
-- A phone's first screen holds the receipt and the first evidence row's head at 320 and 360 now: at 360 the hero is **574.7 px** and the
-  row begins at **704.3** (44 of its 53 px above the 747 dock, its head 6.3 px under it); at 320 the hero is **565.5**, the row begins at
-  **695.1**, and its 44 px head (**700.1–744.1**) is whole above the dock, 2.9 px clear (it began at 802.6, 55.6 px under it, before the
-  2026-11-01 pass). The 320 receipt is 9.2 px shorter than the 360 one because its four figures are 20 px, one rung down the ramp: that is
-  the price of "51.0k of 2.0M" on one line in a 123 px cell. The figure's break is the file's 340, so at 341–348 (the 16 px gutter is back
-  and the cell has 127.5–131 px) the unit still wraps and the row's head sits 14 px above the dock, as it did before the pass; 349+ fits.
-  Closing that sliver needs the figure to answer its own cell, not the viewport.
+- The Overview is now **943 px** at 360 px with a delivered mission (952 on this pass's base build, 1,124 before the 2026-10-31 receipt, 4,132
+  before the 2026-10-22 folding and shipped-card work, 8,582 before that): the four evidence sections are one ruled row each until opened, and
+  since 2026-10-28 those rows are also the phone's index. The open question is the default, not the length: What shipped is closed like the
+  other three, and a mission that has just delivered may deserve its six file rows open; measured, the closed row is 53 px and the open panel
+  847, so the whole difference is one press or two screens.
+- A phone's first screen holds the receipt and the first evidence row's head whole at every width from 320 to 387: the receipt is **565.53 px**
+  and the row begins at **695.13**, its 44 px head (**700.13–744.13**) 2.9 px clear of the 747 dock. From 388 the verdict fits one line, the
+  receipt is **552.33** and the row begins at **681.92**; at 398 the Tokens sub fits one line too and the receipt is **534.14**. The 22.39 px the
+  verdict's two lines cost up to 387 are the next height: the sentence needs 269.33 px and its column has 242 at 360 beside the mark's 48, and
+  9.19 of those 22.39 are already paid by the figures' step (2026-11-01).
 - Events and the approvals inbox still close without `NextLinks`, and that is now a decision rather than a pending question: Events ends on
   its window status (the newest 300 of 491 events) and the inbox on its empty state's Back to the Overview; a row of doors would repeat
   the navigation each page already has (`Pause`/`Filters`, `Decisions`/`Tool gates`) rather than continue it.
@@ -289,9 +297,9 @@ Breakpoints: **1280 1100 900 800 760 620 560**. 800 is the sidebar drawer (JS
 
 ## What the next pass should take
 
-1. The 341–348 sliver the 2026-11-01 pass left: the figure steps at 340, so eight widths above it (where the 16 px gutter is back)
-   still wrap the Tokens unit and put the first evidence row's head 14 px above the dock. The cell's own width is the fact that
-   decides; whether that is a container query or a second break is the decision (2026-11-01).
+1. The verdict's second sentence: **269.33 px** of words in a 242 px column at 360, two lines and 22.39 px until 388 (the figures now
+   pay 9.19 of it). Decide whether it takes the receipt's whole width and gives up the headline's axis, whether the mark's 48 px column
+   narrows, or whether 22.39 px is simply what a phone's receipt costs (2026-11-01).
 2. Whether the thumb's row earns its 36 px of every page: it is the owner's daily five, but a page opened once (Graph, the
    Playground) pays too. Watch real use before shortening the list or hiding the row on scroll.
 3. Whether the Designer's bottom stays its own: the save bar and the dock cannot both own that edge, and the workbench is
@@ -315,6 +323,51 @@ Breakpoints: **1280 1100 900 800 760 620 560**. 800 is the sidebar drawer (JS
 13. Check the frame's safe-area claims on a notched device in both orientations; the insets are in the CSS but the stand-in browser reports them as zero.
 
 ## Pass log
+
+### 2026-11-01 — a phone's receipt is one height, and the figures step by the strip they are in
+
+Surface: `views/overview.css` (one container query on the figures' strip; the 340 block's type rule removed) and one new test plus one
+changed rule in `tests/dashboard/overview-receipt.test.ts`. Measured on the scripted demo at **Delivered** (9 files: 3 delivered, 6
+awaiting review; 7 checks; 481 events; 49.3k of 2.0M tokens; 17 messages; 7 seats; ran 12s) in the production build, Chromium at every
+2 px from 316 to 420 and at 320/344/360/390/560/620/768/900/1,100/1,440 in light, at 360 in dark and in forced colours, a touch pointer
+at 768 and below, reduced motion, axe-core 4.14 at 360. Before is the same worktree at `bede609` (main), built and served from the same
+server in the same session; both halves are the same delivered mission, and both 360 × 800 frames are `#/p/demo-stub/overview` at
+`#view.scrollTop` 0. The 320, 390, 620, 768 and 1,440 frames are byte-identical PNGs between the halves.
+
+- **The sliver the last pass left was measured against a number that is not on the page.** The 341–348 eight widths were said to wrap
+  the Tokens unit because the cell has 127.5–131 px (this build reads 125.5–129) for a figure that "needs 129.4". The value is a 24 px
+  number and a 14 px unit, and the line measures **113.31** ("49.3k" 60.26 + " of 2.0M" 53.05); 129.4 is the whole string set at 24
+  (149.59 measured here). Every phone cell holds 123 px of content at 320 through 150 at 390, so the line keeps 9.69–36.69 px to spare
+  and none of the 316–420 widths measured wraps it at 24; the 340 block's step down to 20 px was never a wrap it prevented.
+- **What the step does buy is 9.19 px, and only the two narrowest widths were given it.** From 341 to 387 the verdict's second sentence
+  takes two lines, the receipt is **574.72** and the first evidence row's 44 px head begins 37.7 px above the dock and ends **6.3 px
+  under it** (709.31–753.31 in 747). At 320 the same receipt is **565.53** with its head whole (700.13–744.13) because its figures are
+  20; crossing 341 handed the height back to the figures and took it from the first screen, so a phone one pixel wider was worse.
+- **One container query makes the receipt one height from 320 to 387.** The figures step to 20 px while the **strip is 361 px or
+  narrower** — a 180.5 px cell, 148.5 of content, the strip at 387 — and keep 24 from 388, where the verdict is one line and the receipt
+  is 552.33. Measured at 360: the hero **574.72 → 565.53**, the strip **300.94 → 291.75** (two rows, 4.59 each), the first row
+  **704.31 → 695.13**, its head **709.31–753.31 → 700.13–744.13** (whole, 2.9 px clear), the page **952 → 943**. 341, 344, 348, 349 and
+  386 read the same; 320, 340, 388, 390 (930), 398 (912) and 620 (867) do not move.
+- **The strip is the fact, so one number holds in three layouts.** 361 px of strip is a 2-up phone strip, a 620 tablet's 2-up (594: 24
+  kept), a 900 desk's 2-up (610: 24) and a 1,440 desk's 4-up row (1,150: 24); a viewport break would have needed a different number for
+  each. The 340 block keeps the 12 px gutter, the label as a prefix and the row head's 8 px gap, and no longer decides the figure's type.
+- **Nothing else moves, and the floors hold.** No document or `#view` sideways scroll at any width in either scheme; axe-core **0**
+  violations at 360 light (25 rules passed, both halves) and 360 dark; no control under 44 × 44 in `#view`; the smallest text stays 11
+  (the avatar initials); **11 Tabs** from the body to `What shipped: Show`, the same 11 in both halves; one console error in both (the
+  one-mesh `/api/projects` 404); forced colours at 360 read the same geometry (943, head 700–744); the no-script sentence and print at
+  794 are untouched (a desk's strip keeps 24).
+
+Suite: typecheck and build clean; `dist/tests/dashboard` **1,216 pass, 0 fail**, with one new test and one changed (the 340 block's type
+rule dropped from it; both new assertions mutation-checked — the container query deleted, then `container-type` deleted, each failed
+its assertion and was restored); `dist/tests/build` **224 pass, 0 fail**; eslint 0 errors (the stylesheet is not in eslint's config).
+
+**Left.** From 388 the receipt is 552.33 because the verdict's sentence finally fits its column; from 320 to 387 the two lines cost
+22.39 px and the figures give back 9.19 of it. The sentence needs 269.33 px and the lead has 242 at 360 beside the mark's 48, so taking
+the receipt's whole width would give the other 13.2 — at the price of starting the sentence at the receipt's edge instead of under
+"Delivered.", the axis the 2026-10-31 pass chose; that is a reading decision, not a measurement one. The 361 px boundary is still a
+coincidence of where the sentence wraps, so a verdict a word shorter would step the figures one width early (harmless: 9.19 px shorter
+than it needs). And 388–397 keeps the figures at 24 while the Tokens sub still wraps, so that 18.19 px of strip is the next thing a
+phone pays there.
 
 ### 2026-11-01 — the 320 first screen is the same receipt, and its figures keep their units
 
