@@ -136,15 +136,15 @@ test("a number is data where a pointer can drag, and part of the door under a th
 /**
  * At 320 the receipt was 673 px and the first evidence row began 55.6 px below the dock, because three things were a few pixels
  * short of a line: the one action's 212.38 px label had 210 px beside the 44 px menu (the menu took a second row), the Tokens
- * figure had 115 px for "51.0k of 2.0M" that needs 129.4 (its unit wrapped and the second row grew 28.6), and the hanging
- * "Goal" column left 213 px of a sentence that needs 225 for two lines. The narrowest phone takes the page's 12 px gutter, one
- * rung off the figure ramp, and the label as a prefix. The browser that measured it is not in this suite; the shape is pinned here.
+ * figure had 115 px of content, and the hanging "Goal" column left 213 px of a sentence that needs 225 for two lines. The
+ * narrowest phone takes the page's 12 px gutter and the label as a prefix. The browser that measured it is not in this suite; the
+ * shape is pinned here.
  */
 test("the narrowest phone gives the hero the page's gutter, and the goal's label is a prefix on its sentence", () => {
   const narrow = mediaBlock(css, /max-width:\s*340px/);
-  assert.match(narrow, /\.ov-hero-top, \.ov-now, \.ov-note \{ padding-left: var\(--s3\); padding-right: var\(--s3\); \}/, "the hero's blocks take the page's 12 px gutter, which is what the action row and the Tokens figure needed");
+  assert.match(narrow, /\.ov-hero-top, \.ov-now, \.ov-note \{ padding-left: var\(--s3\); padding-right: var\(--s3\); \}/, "the hero's blocks take the page's 12 px gutter, which is what the action row needed");
   assert.match(narrow, /\.ov-hero \.stat-cell:first-child, \.ov-hero \.stat-cell:nth-child\(odd\), \.ov-hero \.stat-cell:last-child \{ padding-left: var\(--s3\); padding-right: var\(--s3\); \}/, "the figures' cells are named as heavily as the 620 rule they answer");
-  assert.match(narrow, /\.ov-hero \.stat-v \{ font-size: 20px; line-height: 1\.15; \}/, "the four figures step one rung down, so each number keeps its unit beside it on one line");
+  assert.doesNotMatch(narrow, /\.ov-hero \.stat-v \{ font-size/, "no viewport break decides the figure's step any more: the strip's own width does (the next test)");
   assert.match(narrow, /\.ov-goal \{ display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; line-clamp: 3; overflow: hidden; \}/, "the label runs into the sentence, and the sentence's own box keeps the three-line clamp");
   assert.match(narrow, /\.ov-goal > \.caps \{ display: inline; margin-right: var\(--s1\); \}/, "the label is a prefix, not a column");
   assert.match(hero, /<span className="caps">Goal<\/span>\{" "\}<span className="ov-goal-line">/, "and the label carries a real space, because inline it lost the grid gap that read as one");
@@ -153,6 +153,20 @@ test("the narrowest phone gives the hero the page's gutter, and the goal's label
   assert.match(phone, /\.ov-goal-line \{ -webkit-line-clamp: 3; line-clamp: 3; \}/, "every wider phone keeps its own clamp on the sentence's column");
   assert.match(phone, /\.ov-hero-lead > \.ov-goal \{ grid-column: 1 \/ -1; \}/, "and keeps the goal's two-column grid, which the prefix replaces at 320");
   assert.match(css, /\.ov-goal \{ margin: 0; max-width: 80ch; display: grid; grid-template-columns: auto minmax\(0, 1fr\)/, "the hanging label is still the base shape");
+});
+
+/**
+ * The figures take the 20 px step the 320 receipt had, and the fact that decides it is the strip's width, not the viewport's: at
+ * 24 px the demo's figure is 113.31 px wide and every phone cell holds it, so the step was never a wrap it prevented — it is
+ * 9.19 px of the receipt's height, which is what the first screen needs while the verdict's second sentence takes two lines (up to
+ * 387). At 361 px of strip (a 180.5 px cell, 148.5 of content: 387) the step is taken; at 362 (388) the verdict is one line, the
+ * receipt 552.33, and 24 is kept. One number for three layouts: the 2-up strip of a phone, the 2-up of a 620 tablet and the 4-up
+ * row of a desk, where the strip is never that narrow. Measured at 360: 574.72 → 565.53, the head 709.31–753.31 → 700.13–744.13.
+ */
+test("the figures answer the strip they are given, and the step is one rule rather than the viewport's", () => {
+  assert.match(css, /\.ov-hero \.stat-strip \{[^}]*container-type: inline-size; container-name: figures;/, "the strip is the container the figures answer");
+  assert.match(css, /@container figures \(max-width: 361px\) \{\s*\.ov-hero \.stat-v \{ font-size: 20px; line-height: 1\.15; \}\s*\}/, "under 361 px of strip the four figures take the 320 receipt's step");
+  assert.equal((css.match(/\.ov-hero \.stat-v \{ font-size: 20px/g) ?? []).length, 1, "one rule decides the step, so no width can be given half of it");
 });
 
 /**

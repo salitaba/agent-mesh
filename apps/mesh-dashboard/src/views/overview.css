@@ -48,6 +48,20 @@
 .stat-cell:first-child { padding-left: var(--s6); border-left: 0; }
 .stat-cell:last-child { padding-right: var(--s6); }
 .stat-cell .stat { height: 100%; gap: var(--s1); }
+/* The figures answer the strip they are given, not the viewport, and what they answer is the receipt's height rather than the
+   line's fit: at 24 px the demo's figure is 113.31 px wide ("49.3k" 60.26 + " of 2.0M" 53.05 at the unit's 14), so no phone cell
+   comes near wrapping it (123 px of content at 320 through 150 at 390) and the 340 block's step down to 20 was never a wrap it
+   prevented. What the step buys is height: the figures' two rows are 147.56 and 152.38 px, and while the verdict's second sentence
+   takes two lines (up to 387) the receipt is 574.72 px and the first evidence row's 44 px head starts 37.7 px above the dock, its
+   bottom 6.3 px under it. A strip 361 px wide or narrower — every width up to 387; a 180.5 px cell, 148.5 of content — takes the
+   20 px step the 320 receipt already took: measured at 360 the hero is 565.53 (was 574.72) and the head 700.13–744.13 in the 747 px
+   dock, whole and 2.9 px clear, its row beginning 51.9 px above it. From 388 the verdict is one line and the receipt 552.33, so the
+   figures keep 24; the strip is the fact and not the phone, so the same rule holds at 320, at the 2-up strip of a 620 tablet and in
+   the 4-up row of a desk, where the strip is never this narrow. */
+.ov-hero .stat-strip { container-type: inline-size; container-name: figures; }
+@container figures (max-width: 361px) {
+  .ov-hero .stat-v { font-size: 20px; line-height: 1.15; }
+}
 /* A figure is a door. The four figures are the page's index: each one opens what explains it (checks: the goal's own section here;
    ran for: Steps; tokens: Cost; agents: Agents). The control covers the cell the way a closed section's does, so the press is the
    whole figure and not a handle at its edge; the chevron is the only thing drawn, and the label names both the number and where the
@@ -355,22 +369,18 @@ details.ov-note { display: block; }
   .ov .card.closed:is(:hover, :focus-within) { background: var(--panel-2); }
 }
 
-/* ---------- the narrowest phone: the hero's gutter is the page's, and the figures keep their units ----------
+/* ---------- the narrowest phone: the hero's gutter is the page's ----------
    At 320 the receipt was 673 px and the first evidence row began 55.6 px below the dock: three places where a few pixels short of a
    line each cost one. The hero's 16 px gutter left the one action's 212.38 px label 210 px beside the 44 px menu, so the menu took a
-   second 44 px row (the row 96 px); the same gutter left the Tokens figure 115 px of content for "51.0k of 2.0M", which needs 129.4,
-   so the unit wrapped and the second figure row grew 28.6 px; and the hanging "Goal" column left 213 px of a sentence that needs
-   225 for two lines. With the page's own 12 px gutter the row is 44 px and the figure 123 px of content, the figures step one rung
-   down the ramp (24 → 20) so every number keeps its unit beside it (the same line is 116.8 at 20), and the label runs into the
-   sentence's first line so the goal is two lines. Measured at 320: the hero 673 → 565.5, the page 1,051 → 943, and the first
-   evidence row's 44 px head is 700.1–744.1 in a 747 px dock, whole and 2.9 px clear (the row began at 802.6, 55.6 px under it).
-   `tests/dashboard/overview-receipt.test.ts` reads these rules. */
+   second 44 px row (the row 96 px); the gutter also left the Tokens figure 115 px of content, and the hanging "Goal" column left
+   213 px of a sentence that needs 225 for two lines. With the page's own 12 px gutter the row is 44 px, the figure cell is 123 px of
+   content, and the label runs into the sentence's first line so the goal is two lines. Measured at 320: the hero 673 → 565.5, the
+   page 1,051 → 943, and the first evidence row's 44 px head is 700.1–744.1 in a 747 px dock, whole and 2.9 px clear (the row began
+   at 802.6, 55.6 px under it). The figures' step down to 20 px that this pass introduced lives in the container query above now: it
+   buys 9.19 px of receipt, not a wrap (the line is 113.31 px at 24). `tests/dashboard/overview-receipt.test.ts` reads these rules. */
 @media (max-width: 340px) {
   .ov-hero-top, .ov-now, .ov-note { padding-left: var(--s3); padding-right: var(--s3); }
   .ov-hero .stat-cell, .ov-hero .stat-cell:first-child, .ov-hero .stat-cell:nth-child(odd), .ov-hero .stat-cell:last-child { padding-left: var(--s3); padding-right: var(--s3); }
-  /* The four figures step down one rung: at 20 px "51.0k of 2.0M" is 116.8 px in the cell's 123, where 24 px needed 129.4 and broke
-     the unit onto a line of its own (the second row 176.16 against the first row's 147.56). */
-  .ov-hero .stat-v { font-size: 20px; line-height: 1.15; }
   /* The label is a prefix on the sentence's first line, not a column beside it, and the clamp moves to the sentence's own box so a
      long goal still stops at three lines (measured at 320: a 261-character goal is 67.5 px with its ellipsis, not 203). The 4 px
      margin and the space the markup carries are the grid's 8 px gap, inline. */
