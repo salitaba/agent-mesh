@@ -243,19 +243,13 @@ main:has(.hero) .section-head .eyebrow::before { counter-increment: sec; content
 .arrow-link:hover::after { transform: translateX(3px); }
 .btn-row { display: flex; flex-wrap: wrap; gap: 12px; }
 
-/* The home page's index: the ledger's contents, numbered, under the hero. Two columns on a
-   phone, four from 720; every entry is 48px tall. A label is a flex item of the entry, so its
-   automatic minimum is its longest word: at a reader's 32px text "Questions" is 149.8px in the
-   111px beside the number, and the entry ran past the wrap (the page 19px wider than a 360 phone;
-   at 150% the number floated in the middle of a 3-line label). The entry wraps — the number above
-   its label when the two cannot share a line — and the label may break anywhere, which is what
-   lets the item shrink; at 16px the number and its label share one line and nothing moves. */
-.index { border-block: 1px solid var(--line); background: var(--panel); }
-.index ol { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); margin: 0; padding: 0; list-style: none; }
-.index a { display: flex; flex-wrap: wrap; align-items: center; gap: 0 10px; min-height: 48px; padding: 0 4px; color: var(--ink2); font-size: .9375rem; font-weight: 500; text-decoration: none; overflow-wrap: anywhere; }
-.index a:hover { color: var(--link); }
-.index span { flex: none; min-width: 2ch; color: var(--muted); font-size: .75rem; font-weight: 600; letter-spacing: .04em; font-variant-numeric: tabular-nums; }
-@media (min-width: 720px) { .index ol { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+/* The home page's index is the On this page bar the document pages have, not a strip of its own. It was the ledger's
+   contents in two columns on a phone (four from 720): four rows of two 48px entries, 194px, above the price, and it
+   scrolled away, so a reader twelve thousand pixels down had nothing on screen that named their section and no way
+   back to one. The bar is a 61px row of 44px chips that stays under the header, marks the section being read and
+   scrolls sideways to it; a chip keeps its ledger number. The strip's own wrap rules went with it — at a reader's
+   32px text its label's 149.8px longest word ran past the wrap — because the row scrolls instead: at 16px the eight
+   chips are 1,143px in 360 and the page is 0px over at 320 and 360. */
 
 /* hero: the statement, the product, the claims under it; one column on a phone, in written order */
 .hero { position: relative; isolation: isolate; padding: clamp(24px, 4vw, 48px) 0 clamp(40px, 6vw, 80px); }
@@ -429,7 +423,6 @@ main:has(.hero) .section-head .eyebrow::before { counter-increment: sec; content
    The head is one block: the mark, the way's name and the answer, where the name's band and the title
    were two stacked blocks 116px deep. */
 .hero + .section { padding-top: clamp(8px, 2vw, 32px); }
-.index + .section { padding-top: clamp(32px, 4vw, 48px); }
 .page-head + .section, .toc-bar + .section, .toc-bar + [hidden] + .section { padding-top: clamp(32px, 4vw, 48px); }
 .ways { gap: 16px; }
 @media (min-width: 760px) { .ways { grid-template-columns: var(--c2); gap: 24px; } }
@@ -736,6 +729,7 @@ body:has(#billing-monthly:checked) .head-price-monthly { display: inline; }
 /* The section being read: a dot before its name (not colour alone), paid for in padding so the row does not shift. */
 .toc a[aria-current="true"] { position: relative; padding: 0 10px 0 22px; border-color: color-mix(in srgb, var(--accent) 40%, transparent); background: var(--soft); color: var(--link); }
 .toc a[aria-current="true"]::before { content: ""; position: absolute; left: 10px; top: 50%; width: 6px; height: 6px; margin-top: -3px; border-radius: 50%; background: currentColor; }
+.toc .n { flex: none; min-width: 2ch; margin-right: 8px; color: var(--muted); font-size: .75rem; font-weight: 600; letter-spacing: .04em; font-variant-numeric: tabular-nums; }
 /* At a glance: each answer on a tile whose shape says its kind (shield, arrow out, barred circle), linked to its section. */
 .glance { margin-top: clamp(32px, 4vw, 48px); padding: 24px; }
 .glance-list { gap: 20px; }

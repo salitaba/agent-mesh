@@ -181,13 +181,14 @@ function click(r: Reading, i: number): void {
 
 test("the long pages carry an On this page bar right under their heading, and each chip names a section of the page, in order", () => {
   const withBar = pages.filter((p) => p.markup.includes('class="toc-bar"'));
-  assert.deepEqual(withBar.map((p) => p.rel), ["docs/index.html", "legal/index.html", "pricing/index.html", "security/index.html"]);
+  assert.deepEqual(withBar.map((p) => p.rel), ["index.html", "docs/index.html", "legal/index.html", "pricing/index.html", "security/index.html"]);
   for (const p of withBar) {
-    // The bar follows the page's heading inside <main>, so that it can stay under the header through the whole of the page (a
-    // sticky element never leaves the box it is in), and it is one navigation landmark with a name.
-    assert.match(p.markup, /<main id="main" tabindex="-1">\s*<section class="page-head has-toc">[\s\S]*?<\/section>\s*<nav class="toc-bar" aria-label="On this page">\s*<ul class="toc">/, p.rel);
+    // The bar follows the page's opening block inside <main>, so that it can stay under the header through the whole of the page
+    // (a sticky element never leaves the box it is in), and it is one navigation landmark with a name. The document pages open on a
+    // page-head; the home page opens on its hero, and its bar is the index that used to stand there as four rows of chips.
+    assert.match(p.markup, /<main id="main" tabindex="-1">\s*<section class="(?:page-head has-toc|hero)"[\s\S]*?<\/section>\s*<nav class="toc-bar" aria-label="On this page">\s*<ul class="toc">/, p.rel);
     const nav = /<nav class="toc-bar"[\s\S]*?<\/nav>/.exec(p.markup)![0];
-    const chips = [...nav.matchAll(/<li([^>]*)><a href="#([\w-]+)">[^<]+<\/a><\/li>/g)].map((m) => ({ attrs: m[1]!, id: m[2]! }));
+    const chips = [...nav.matchAll(/<li([^>]*)><a href="#([\w-]+)">(?:<span class="n">\d\d<\/span> )?[^<]+<\/a><\/li>/g)].map((m) => ({ attrs: m[1]!, id: m[2]! }));
     assert.equal(chips.length, (nav.match(/<a /g) ?? []).length, `${p.rel}: every chip is a plain link to a place on the page`);
     assert.ok(chips.length >= 3, `${p.rel}: a bar of ${chips.length} sections`);
     const where = chips.map(({ attrs, id }) => {
@@ -213,7 +214,7 @@ test("the bar has one chip for each section of its page, so no section is read w
       .filter((m) => /\sid="[\w-]+"/.test(m[1]!) && /<h2\b/.test(m[2]!))
       .map((m) => /\sid="([\w-]+)"/.exec(m[1]!)![1]!);
     const nav = /<nav class="toc-bar"[\s\S]*?<\/nav>/.exec(p.markup)![0];
-    const ids = [...nav.matchAll(/<li[^>]*><a href="#([\w-]+)">[^<]+<\/a><\/li>/g)].map((m) => m[1]!);
+    const ids = [...nav.matchAll(/<li[^>]*><a href="#([\w-]+)">(?:<span class="n">\d\d<\/span> )?[^<]+<\/a><\/li>/g)].map((m) => m[1]!);
     assert.deepEqual(ids, sections, `${p.rel}: a chip beside every section, in the page's order`);
   }
 });
@@ -1092,8 +1093,11 @@ test("a piece arrives once, when the reader gets to it, and the script then take
 });
 
 test("a visitor who has asked for less motion, and a browser that cannot watch, are shown the whole page at once", () => {
-  assert.deepEqual(arriving({ reduce: true }).hidden(), [], "nothing is hidden");
-  assert.equal(arriving({ reduce: true }).observer(), undefined, "and nothing is watched");
+  const still = arriving({ reduce: true });
+  assert.deepEqual(still.hidden(), [], "nothing is hidden");
+  // The home page carries the On this page bar now: the script watches its eight sections whatever the motion preference, because
+  // that observer only marks the section being read and never hides a piece. What no page does is watch a piece to arrive.
+  assert.deepEqual(still.observer()!.observed.map((n) => n.getAttribute("id")), ["pricing", "ways", "product", "try", "why", "how", "security", "faq"], "and what is watched is the bar's sections, not a piece that arrives");
   const bare = arriving({ observer: false });
   assert.deepEqual(bare.hidden(), []);
   const everyPage = pages.map((p) => {
