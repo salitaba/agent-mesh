@@ -536,6 +536,7 @@ body[data-page="home"] main { background: var(--k-glow) top / 100% 520px no-repe
 }
 
 /* ---- account */
+.account-head h1 { font-size: min(clamp(1.75rem, 1.3rem + 1.6vw, 2.25rem), 12vw); }
 .account-head {
   display: flex;
   flex-wrap: wrap;
@@ -545,9 +546,9 @@ body[data-page="home"] main { background: var(--k-glow) top / 100% 520px no-repe
   padding: clamp(24px, 4vw, 40px) 0 16px;
   border-bottom: 1px solid var(--k-line-strong);
 }
-#who { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 6px; margin: 0; font-size: .8125rem; }
+#who { margin: 0; font-size: .8125rem; }
 .account-head .eyebrow { flex: 1 0 100%; margin: 0 0 4px; }
-#who .who-a { color: var(--k-ink-2); font-family: var(--k-mono); overflow-wrap: anywhere; }
+#who .who-a { color: var(--k-ink-2); font-family: var(--k-mono); word-break: break-all; }
 #who:empty { display: none; }
 #create-note:not(:empty) { margin-top: 12px; }
 #create-slot #create { margin-top: 16px; }
@@ -602,7 +603,6 @@ body[data-page="home"] main { background: var(--k-glow) top / 100% 520px no-repe
   display: flex;
   flex-wrap: wrap;
   gap: 0 4px;
-  padding: 0;
   border-bottom: 1px solid var(--k-line-strong);
 }
 .subnav a {
@@ -676,7 +676,7 @@ body[data-page="home"] main { background: var(--k-glow) top / 100% 520px no-repe
 .confirm .btn-danger[disabled] { background: var(--k-bad); }
 .inline-form { display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-end; max-width: 30rem; }
 .inline-form .field { flex: 1 1 10rem; margin: 0; }
-.plans { display: grid; gap: 16px; }
+.plans { display: grid; grid-template-columns: minmax(0,1fr); gap: 16px; }
 @media (min-width: 720px) {
   .plans { grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); }
 }
@@ -835,8 +835,8 @@ tfoot > tr > * { background: var(--k-surface-2); font-weight: 650; }
   .topup > summary { display: flex; align-items: center; justify-content: space-between; gap: 16px; min-height: 44px; margin-bottom: 8px; color: var(--k-accent-ink); font-weight: 600; cursor: pointer; list-style: none; }
   #topup-fail { margin-top: 20px; }
   #topup-add { display: none; }
-  .subnav { gap: 0 2px; margin-top: 0; padding: 0; }
-  .subnav a { min-height: 44px; padding: 0 6px; }
+  .subnav { gap: 0 2px; margin-top: 0; }
+  .subnav a { padding: 0 6px; }
   .stage > .btn-row { flex: 1 0 100%; }
   .stage > .btn-row > .btn { flex: 1 1 100%; }
   .steps { column-gap: 12px; }
