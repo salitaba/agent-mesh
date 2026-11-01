@@ -2239,3 +2239,118 @@ page's, and the pricing page's Cloud card is now 408px, the licence card's heigh
 setting it. After that, the page's length: 12,436 at 360 is 15.5 screens, and the console (`#product`, 3,868) and the nine
 argument sections are where the words are.
 
+## 2026-11-01, fifth pass: the two ways in answer once, in one paragraph each
+
+Measured with the same probe (Chrome 156 over CDP; reduced motion; light unless said; touch at 320/360/390; a mouse at 768
+and 1,440; dark at all five; print at 794; forced colours at 360; no script at 360 and 768; both Curule Cloud states). The
+before column is the site at `8bf566c`, exported with `git archive` and served on a second port, measured in the same run;
+no number is copied from an earlier pass. The absolute heights are this container's, where `system-ui` resolves to Noto Sans
+and the home page is 12,891px at 360 before this pass where the record has 12,436; both halves are the same browser in the
+same run, so the differences stand.
+
+### What changed
+
+- **The home page's two ways in answer in one paragraph each, not four labelled answers.** The card was a `<dl>` of two
+  `dt`/`dd` pairs — a "Who it is for" row with a 16px person mark, a "What you pay" row with a 16px card mark, and the two
+  sentences under them. That is the shape for comparing two ways line by line, and it is the pricing page's job, where the
+  cards sit beside the four plans; on the home page the reader is choosing one. The title already answers "who it is for"
+  ("We run it for you", "You run it"), and the two marks said the same two things four times. Each card is now a `h3`, one
+  `p.way-body`, and its one action: the head **73.38px** (unchanged), the body **168px at 360** (7 lines), the action 44.
+  The four label rows (4 × 25.19) and the two answers' 14px gaps are gone, so the cloud card is **407.75 → 343.38** and
+  the licence card **455.75 → 343.38**; the two cards are level at 360, and the section **1,026.05 → 849.30**.
+- **The licence card stops quoting the rate card's limits.** "Nothing for the Community plan: one open project, up to ten
+  agents, no licence key" was the rate card that ends 834px above it (2,731.37 against the sentence's 3,565.23 at 360),
+  the same facts in words where the teaser states them in figures ("1 project open, 10 agents per mesh", "no licence key,
+  no expiry"); it is **"The Community plan is free; a paid licence lifts the limits."** — the claim without the figures,
+  which the four rows above state. It is the two lines (48px) of the card's saving. The four answers' words are
+  **91 → 81**, the section's **134 → 114**, and the card's own **58/59 → 53/44**.
+- **The section says the same things, in the order a chooser asks them.** Each body runs what the way is, then what it
+  costs: *No server to run: sign up, pick a plan, open a workspace in a browser. Same console and agents, on our servers.
+  Flat monthly hosting, priced on the sign-up page. Your own model key, billed by your provider: we do not resell model
+  usage.* and *Your own infrastructure and model credentials, one container per team. Nothing phones home: no telemetry, no
+  update check, no licence server. The Community plan is free; a paid licence lifts the limits. Source: Business Source
+  License 1.1.* Every other claim is the card's own and is unchanged.
+- **A lone way in reads in two columns, not one 1,120px line.** With Curule Cloud closed there is one card at the section's
+  full width, and its old two answers sat side by side there. Its one paragraph now takes `columns: 2` with the same 32px
+  gap at 760 and up (**measured `column-count: 2` at 768 and 1,440**), so the closed state keeps the shape it had: the
+  card is **288.56 → 239.38** at 1,440 and **312.56 → 287.38** at 768.
+- **The tests hold the two shapes and the reason.** `site-cloud.test.ts` now checks that each home card carries no `dt` and
+  one `p.way-body` (the pricing page's four labels are checked by `site-copy.test.ts`, which now reads the two pages
+  separately), and it pins the new licence sentence. `site.test.ts` has a new test for the paragraph's margins at both
+  widths, the two-column rule, and the two pages' shapes. Breaking any of them fails.
+
+### Measurements after this pass
+
+| Page, height at 320 / 360 / 390 / 768 / 1,440 | Before | After |
+|---|---|---|
+| Home | 13,749 / 12,891 / 12,450 / 12,312 / 11,418 | **13,548 / 12,714 / 12,273 / 12,194 / 11,300** |
+
+The six other pages are unchanged at every width: pricing 14,424 / 13,427 / 12,878 / 10,165 / 9,270; documentation 8,929 /
+8,358 / 8,083 / 5,308 / 4,448; security 12,479 / 11,552 / 10,809 / 7,884 / 7,590; contact 4,707 / 4,381 / 4,215 / 3,413 /
+2,857; legal 5,565 / 5,037 / 4,743 / 3,419 / 3,313; 404 2,266 / 2,089 / 2,045 / 1,437 / 1,516. Only their stylesheet
+fingerprint moved.
+
+| The home page at 320 / 360 / 390 / 768 / 1,440 | Before | After |
+|---|---|---|
+| `#ways` | 1,153.23 / 1,026.05 / 1,002.05 / 646.28 / 651.48 | **952.48 / 849.30 / 825.30 / 527.91 / 533.11** |
+| Its two cards | 486.94 and 503.75 / 407.75 and 455.75 / 407.75 and 431.75 / 477.75 and 477.75 / 405.75 and 405.75 | **398.56 and 391.38 / 343.38 and 343.38 / 319.38 and 343.38 / 359.38 and 359.38 / 287.38 and 287.38** |
+| The section's words | 134 | **114** |
+
+| The home page at 360, light | Before | After |
+|---|---|---|
+| The section | 3,016.94–4,042.98 | **3,016.94–3,866.24** |
+| A card's head / body / action | 73.38 / 72 + 96 (3 + 4 lines) / 44 | **73.38 / 168 (7 lines) / 44** |
+| The second card's head / body | 73.38 / 96 + 120 (4 + 5 lines) | **73.38 / 168 (7 lines)** |
+| The four labels | 4 × 25.19px, four 16px marks | **none** |
+| `#product` / `#try` / the footer | 4,042.98 / 4,896.08 / 12,052.80 | **3,866.23 / 4,719.33 / 11,876.05** |
+
+- The section loses **176.75px at 360 and 390, 200.75 at 320, and 118.37 at 768 and 1,440**; the page loses the same, and
+  nothing above it moves: the contents row (1,583.28) and `#pricing` (1,777.28) are the same at 360, and the footer is
+  176.75px higher only because the section is shorter.
+- **The two cards are level at 360, 768 and 1,440** (343.38 each, 359.38, 287.38) because the two bodies are within a few
+  characters of each other (236 and 239). At 390 the licence body takes one line more (**319.38 against 343.38**), and at
+  320 the cloud card's title wraps to two lines (**398.56 against 391.38**: 31.18px of head, not body).
+- **The closed state** (Curule Cloud off): the one card is **455.75 → 343.38** at 360, **312.56 → 287.38** at 768 and
+  **288.56 → 239.38** at 1,440; the section is **633.66 → 521.28** at 360 and **534.30 → 485.11** at 1,440, and the page
+  **12,294 → 12,182** and **11,262 → 11,212**.
+- No page scrolls sideways at 320, 360, 390, 768 or 1,440 in light or dark (**0** on all 70 page/width/theme pairs), the
+  probe reports **0** console errors, and **0 axe-core WCAG 2.0/2.1/2.2 A and AA violations** on the home page and on
+  pricing at 360 light, 360 dark and 1,440 dark. The smallest computed text is **12px** on every page and the census below
+  12px is empty at every width in both schemes.
+- Without a script the home page is **12,869 → 12,692** at 360 and **12,311 → 12,193** at 768, 0px over, and the cards are
+  the same two paragraphs with no labels (4 `dt` before, 0 now). With `forcedColors: active` at 360 it is **12,891 →
+  12,714**, 0px over. Print at 794 is **12,045 → 11,927** and the section **650.14 → 531.77**, 0px over.
+- At a 24px user default the home page is **0px over** at 320, 360 and 720: the section is **1,667 → 1,427.81** at 360 and
+  the cards **726.98 and 752.19 → 643.39 and 596.59**, the 46.8px difference being the cloud title's second line at 36px,
+  not its body. At a 720px viewport (the 200% stand-in) the page is **12,490 → 12,313**, 0px over.
+- The target census is unchanged: the two ways hold one 286 × 44 button each at 360, and the only targets under 44 × 44
+  are the same inline links in sentences ("Compare the plans", "the security page") and the 1 × 1 tab radios.
+- `ux-render` at 360 × 844 reports the **same 19** rows before and after (the closed phone menu's links, the six tiles
+  that sit off their snap row, and the 1px hairlines under the 3:1 boundary floor); the `.ways` box it measures is
+  **879.5 → 702.75**.
+
+### What this pass deliberately left
+
+- **The pricing page's two ways keep their four labelled answers.** There the cards are a comparison beside the four
+  plans, and the labels ("Who it is for", "What you pay") let a reader read the two cards line by line; the same component
+  therefore has two shapes, and the stylesheet says which page gets which. Its cards measure 407.75 and 431.75 at 360
+  today — the licence card is one line taller than the Cloud card, so that row is still set by the licence card (the
+  queue's "408px" is the Cloud card's height), and its five lines are the sentence the plans' limits are pinned in.
+- **The two cards' opening sentences are the pricing page's.** "No server to run: sign up, pick a plan, open a workspace in
+  a browser." and "Your own infrastructure and model credentials" state what each way is, and two pages that state one
+  fact in two phrasings drift; what the home page's card no longer carries is the comparison's detail (the limits, the
+  workspace-per-plan sentence, the pointer to the plans).
+- **The licence card still closes with "Source: Business Source License 1.1."** The last pass kept the label rather than
+  the full sentence and it now ends a paragraph instead of a `dd`; the licence's name is intact, and the footer and the
+  FAQ print the sentence.
+- **The section still has no lede.** Its two cards are its answer, and a sentence above them ("the same runtime, on our
+  servers or yours") would be a fifth sentence for a fact both cards already state.
+- **The page is still 12,714px at 360 — 15.9 screens.** This pass took 177px of a component; the console (`#product`,
+  3,866.23), the demo (`#try`, 4,719.33) and the nine argument sections are where the words are.
+- **The captures were not retaken**, and `site/ux/` was not edited. This pass's frames — the home page's `#ways` at 360
+  and 1,440, the section's head under the bar and its second card — were handed over with the report.
+
+The next pass's first job is the page's length: 12,714px at 360 is 15.9 screens, and the six console views (`#product`,
+3,866.23, 853.09px tall) and the four demo steps (`#try`, 4,719.33, 1,666.73) are 2,519.83px of it, with the nine argument
+sections after them. After that, the documentation row's third chip and the pricing page's cards' repeated roadmap, both
+left as they were.

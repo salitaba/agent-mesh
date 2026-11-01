@@ -467,6 +467,18 @@ test("a card's title has the tile's room above it, a plan's figures share a line
   assert.deepEqual(notes.map((p) => p.rel), ["contact/index.html"], "the contact page ends with a note in a section of its own");
 });
 
+test("a way in's answer is one paragraph where the reader is choosing and two labelled answers where they are comparing, and a lone way takes the width in two columns", () => {
+  const css = fs.readFileSync(path.join(SITE, "assets", "site.css"), "utf8");
+  // The home page's card answers in one paragraph (site-copy.test.ts holds the markup): the labels are the
+  // comparison's, and the pricing page's two ways keep them beside the plans.
+  assert.match(css, /\n\.way-body \{ margin: 20px 28px 28px; font-size: \.9375rem; \}/, "a way's paragraph takes the answers' margins and the 15px they were set in");
+  assert.match(css, /@media \(max-width: 759px\) \{\n  \.way-head \{ padding: 10px 20px; \}\n  \.way dl \{ gap: 14px; margin: 16px 20px 20px; \}\n  \.way-body \{ margin: 16px 20px 20px; \}/, "and the phone's tighter margins");
+  assert.match(css, /\.ways:has\(> \.way\[hidden\]\) \.way-body \{ columns: 2; column-gap: 32px; \}/, "with one way hidden, its paragraph runs in two columns of a readable measure, not one 1,120px line");
+  const section = (html: string): string => /<section class="section" id="ways"[\s\S]*?\n<\/section>/.exec(html)![0];
+  assert.equal((section(page(pages, "index.html").markup).match(/<dl>|<dt>/g) ?? []).length, 0, "the home page's way in has no definition list: its title says who it is for");
+  assert.equal((section(page(pages, "pricing/index.html").markup).match(/<dt>/g) ?? []).length, 4, "the pricing page's two ways keep their four labelled answers");
+});
+
 test("a card or a row that a link points at is marked once the link is followed, by a second line or a bar and not by colour alone", () => {
   const css = fs.readFileSync(path.join(SITE, "assets", "site.css"), "utf8");
   const kinds = ["doc-card", "plan"];

@@ -198,13 +198,18 @@ test("the two ways in say what is paid in words, and write no figure of their ow
     assert.equal((ways.match(/<article class="way"/g) ?? []).length, 2, `${rel}: two ways`);
     assert.equal((ways.match(/<p class="way-action">/g) ?? []).length, 2, `${rel}: and one thing to press in each`);
     for (const card of ways.matchAll(/<article class="way"[\s\S]*?<\/article>/g)) {
-      assert.equal((card[0].match(/<dt>/g) ?? []).length, 2, `${rel}: who it is for, and what is paid`);
       assert.equal((card[0].match(/<a /g) ?? []).length, 1, `${rel}: one action`);
+      // The home page's card is the choice, so it answers in one paragraph; the pricing page's card is the
+      // comparison beside the plans, so it keeps the two labelled answers. Both quote no limit of their own:
+      // the four plans' limits are the rate card's, which ends 834px above the sentence that would repeat them.
+      if (rel === "index.html") assert.deepEqual([card[0].match(/<dt>/g)?.length ?? 0, card[0].match(/<p class="way-body">/g)?.length ?? 0], [0, 1], "index.html: one paragraph, no comparison label");
+      else assert.equal((card[0].match(/<dt>/g) ?? []).length, 2, "pricing/index.html: who it is for, and what is paid");
     }
   }
   // The Community plan the cards name is the plan table's, as the other places that describe it are (the test above reads these too).
   const { maxProjects, maxSeatsPerMesh } = PLANS.community.limits;
-  for (const rel of ["index.html", "pricing/index.html"]) assert.match(page(pages, rel).prose, new RegExp(`Nothing for the Community plan: ${WORDS[maxProjects!]} open project, up to ${WORDS[maxSeatsPerMesh!]} agents`), rel);
+  assert.match(page(pages, "pricing/index.html").prose, new RegExp(`Nothing for the Community plan: ${WORDS[maxProjects!]} open project, up to ${WORDS[maxSeatsPerMesh!]} agents`), "pricing/index.html: the card beside the rate card quotes its limits");
+  assert.match(page(pages, "index.html").prose, /The Community plan is free; a paid licence lifts the limits\./, "index.html: the way in names the plan and quotes no limit of its own");
 });
 
 test("the home page's hero explains itself: a short subhead, at most three proof points the page argues, and the picture of the product right under the actions", () => {
