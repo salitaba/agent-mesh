@@ -2706,3 +2706,88 @@ running workspace has no model key. Heights are `document.documentElement.scroll
 - The contents line at 200% text: five labels in 24px type take three rows at 320 and 390 and two at 360, and the
   46px is the rest of the first screen at 320.
 - Run the way-in pages at 200% text again: their titles are still uncapped, and sign-up's h1 is 56px on a 360 phone.
+
+## 2026-11-01: the missing key is the record's own
+
+Same harness: Chromium 156 through `playwright-core` over CDP, axe-core 4.14, 320 / 360 / 390 / 768 / 1440 in
+light, 360 in dark, the root raised to 32px at 360, `prefers-reduced-motion: reduce`, a touch pointer below 721.
+"Before" is `main`'s own pages served by a trial on 7510 and this pass's pages by a trial on 7530, both signed in
+to the same fixture: a Team account with one running workspace named Research. Both trials sell model usage, so
+the hosting-only missing-key state is held by one `/api/me` answer that carries `models: { source: "own", key: null }`
+on that workspace, in both halves, through request interception in the same browser session as the measurement;
+every other answer is the trial's own. Heights are `document.documentElement.scrollHeight`; positions are
+`getBoundingClientRect` plus `scrollY`.
+
+- **The card that asked for the key and the record that held its form are one record.** At 360 the card was
+  **252px** at y = 185.2 and its `Add your model key` button only moved the cursor to a form in the record: the
+  form began at y = 1,003 and its `Save key` was at **1,367.6**, **1,014px below the button** and 568px below an
+  800px screen. The card is not drawn now; the record begins at **307.7** and carries the sentence, with the key's
+  form as its first part: the key line at **478.1**, the form at **690.4** and `Save key` at **1,054.8**, **312.8px
+  higher**, with `Open` the lesser button and `Save key` the primary one. The page is **2,854 → 2,653** at 360.
+- **The state is the same decision at every width.** The record takes the card's place and the form moves up with
+  it: 320 **3,057 → 2,856** (Save 1,457.9 → **1,145.2**), 390 **2,832 → 2,630** (1,345.5 → **1,032.4**), 768
+  **2,782 → 2,641** (1,132.8 → **879.9**) and 1,440 **2,705 → 2,587** (1,093.9 → **879.3**). Dark at 360 is the
+  same 2,653 as light. At 200% text the page is **5,690 → 5,376** and Save 2,546.7 → **2,023.1**, still 360 wide.
+  The record itself grows 25–77px because it now says the card's longer sentence instead of its one short line;
+  the page still loses the whole card.
+- **Every word of the card is in the record.** Its title and its sentence are the record's first line (`Add your
+  model key. Its team has no model yet. Give it the key of your model provider. Curule does not resell model usage,
+  so your provider bills you directly.`); the name and `Running` are the record's own head, so "Research is
+  running, but" is not said twice. The steps rail is hidden for this state as it already was for a workspace that
+  can be opened or resumed, and `Save key` is the same form's button, unchanged. The form is open because there is
+  no key; it is the same three fields, hints and small print.
+- **Widths, schemes and the floor.** 320 / 360 / 390 / 768 / 1440 in light, 360 in dark, 360 at root 32px: no
+  sideways page scroll (320: 320; 360: 360; 390: 390; 768: 768; 1440: 1440), nothing computes below **12px**, and
+  no new control is under 44 × 44 (the 41 × 44 `Plan` contents link at 390 is the record's existing exception; at
+  768 and 1,440 the 32/36/40px controls are the pointer's). **10 axe-core runs** (both halves at 320, 360, 390, 768
+  and 1,440) find **no violation**, and no page logs a console error. The plain account with a key is unchanged to
+  the pixel at every width — **2,038 / 1,861 / 1,861 / 2,028 / 1,990** — because the order changes only when a
+  key is missing. With scripts off the page is the same as before: the record's form is the script's, as it was.
+- **The budget.** `app.css` is untouched at **40,952 bytes of 40,960**. The record has one order when its key is
+  missing and the one it had when it is kept, both made of the same boxes in `app.js`; nothing was added to the
+  stylesheet.
+- **Tests.** `dist/tests/cloud/pages*.test.js` — **183 pass, 0 fail**; `dist/tests/build/*.test.js` — **224 pass,
+  0 fail**; typecheck and build clean, lint clean. The page tests now hold the missing-key state to the record:
+  the card is not drawn, the record carries the card's sentence, `Save key` is primary and `Open` is not, and the
+  key form is the record's own and open. The pure stage tests still hold the state's name and step; only the place
+  the page says them moved.
+
+| measured at 360, light | before | after |
+| --- | --- | --- |
+| The card at the top | 252px at y = 185.2 | **not drawn** |
+| The record | 559.7px, 1,024px tall | **307.7**, 1,075.2 |
+| The key line / the form | 790.9 / 1,003 | **478.1 / 690.4** |
+| `Save key` | y = 1,367.6, 1,014px below the card's button | **y = 1,054.8**, primary |
+| The account page | 2,854px | **2,653** |
+| … at 320 / 390 | 3,057 / 2,832 | **2,856 / 2,630** |
+| … at 768 / 1,440 | 2,782 / 2,705 | **2,641 / 2,587** |
+| … at 200% text, 360 | 5,690px, Save 2,546.7 | **5,376**, Save **2,023.1** |
+| The plain account, every width | 2,038 / 1,861 / 1,861 / 2,028 / 1,990 | **the same** |
+| axe-core, 10 runs | 0 | **0** |
+| `app.css` | 40,952 bytes | **40,952** |
+
+### What this pass leaves
+
+- **`Save key` is still 255px below an 800px screen at 360.** The form is **493.5px** of three labelled fields, their
+  hints and the small print; the first screen now reaches the Provider select (721–765) and the Model label, where
+  before it reached neither the form nor the record's key line. Bringing the button itself into the first screen
+  means a shorter form (two fields to a row, or the hints behind a disclosure), not another card.
+- **The card's focus shortcut is gone.** Its button put the cursor on the model field from the top of the page; the
+  form is now the record's own, so there is no second control to press. A person still types into the same field,
+  one thumb-scroll lower than the card was.
+- **The record's actions follow the form.** `Open`, `Pause` and `More` are below the key form because the form is
+  what the state is about; a person who wanted to open a workspace with no model passes it first. `Open` is the
+  lesser button, as it was while the card carried the key.
+- **The paragraph above the form is the state's, not a duplicate.** The head says `Research Running`; the sentence
+  begins with the action and the reason, so the record does not repeat the name and state the way the card did.
+- **The checkout stand-in, the contents line at 200% text, the way-in titles and the prose-only 19px links are
+  unchanged.** They are the earlier entries.
+
+### Next pass
+
+- The contents line at 200% text: five labels in 24px type take **130px (three rows) at 320** and 87 (two) at 360
+  and 390; the extra 46px at 320 is the rest of the first screen.
+- Run the way-in pages at 200% text again: their titles are still uncapped, and sign-up's h1 is 56px on a 360 phone.
+- The key form's own height at 360: 493.5px with every hint drawn. Two fields to a row, or the hints behind the
+  field they belong to, is the next drawing, and it is what would put `Save key` inside an 800px screen.
+
