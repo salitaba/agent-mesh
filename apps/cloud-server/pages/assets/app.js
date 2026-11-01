@@ -198,11 +198,12 @@
   }
 
   /**
-   * The stages whose work is the workspace list's own: a workspace that can be opened, and one that can be resumed, are records
-   * with the sentence and the button the card would have said. The card is not drawn for them, so the first screen says one thing
-   * about the account instead of the same workspace twice. Every other stage keeps the card: it is the only place its action is.
+   * The stages whose work is the workspace list's own: a workspace that can be opened, one that can be resumed, and one that is
+   * running without the model key its plan asks for, are records with the sentence and the button the card would have said. The card
+   * is not drawn for them, so the first screen says one thing about the account instead of the same workspace twice. Every other stage
+   * keeps the card: it is the only place its action is.
    */
-  const ON_RECORD = new Set(["ready", "stopped"]);
+  const ON_RECORD = new Set(["ready", "needs-key", "stopped"]);
 
   /**
    * Where the account is, from what the service says of it. `view` is `{ subscription, workspaces, plans, plansKnown, topups, policy }`:
@@ -390,12 +391,17 @@
   }
 
   /**
-   * What a record says when it is the page's statement: for a ready workspace the card is not drawn, so its sentence moves to
-   * the one record it was about. With several to open there is no one to open, and no sentence is repeated on every row.
+   * What a record says when it is the page's statement: for a ready workspace, and for one whose plan asks for a key it has not been
+   * given, the card is not drawn, so its sentence moves to the one record it was about. With several to open there is no one to open,
+   * and no sentence is repeated on every row.
    */
   function recordSays(w, view) {
     const stage = stageOf(view);
-    if (stage.id !== "ready" || stage.workspace !== w) return "";
+    if ((stage.id !== "ready" && stage.id !== "needs-key") || stage.workspace !== w) return "";
+    if (stage.id === "needs-key") {
+      // The card's first clause is the head's own (the name and Running), so the record does not say them twice.
+      return "Add your model key. Its team has no model yet. Give it the key of your model provider. Curule does not resell model usage, so your provider bills you directly.";
+    }
     const openable = view.workspaces.filter((x) => x.status === "running" && !lacksKey(x));
     return openable.length === 1 ? nextStepOf(stage, view).text : "";
   }
@@ -1493,29 +1499,33 @@
     /**
      * One card to a workspace, made once and kept. Each part of it is drawn again only when what it says has changed, so that a key being
      * typed, or the name typed to confirm a deletion, is not lost when the page looks at the account again, and a button that was pressed
-     * is still the one that has the cursor while its request is out.
+     * is still the one that has the cursor while its request is out. A workspace that needs its key puts the key's form first, under the
+     * sentence that asks for it, so the page's one action is the record's own Save key; the order changes only when the key does.
      */
     const cards = new Map();
-    const CARD_PARTS = [
-      ["head", "div", "row-head"],
-      ["says", "p", "ws-says"],
-      ["auto", "div", "ws-auto"],
-      ["actions", "div", "ws-actions"],
-      ["plan", "div", "ws-plan"],
-      ["key", "div", "ws-key"],
-      ["confirm", "div", "ws-confirm"],
-    ];
+    const CARD_PARTS = {
+      head: ["div", "row-head"],
+      says: ["p", "ws-says"],
+      auto: ["div", "ws-auto"],
+      actions: ["div", "ws-actions"],
+      plan: ["div", "ws-plan"],
+      key: ["div", "ws-key"],
+      confirm: ["div", "ws-confirm"],
+    };
+    const CARD_ORDER = { keyless: ["head", "says", "key", "auto", "actions", "plan", "confirm"], kept: ["head", "says", "auto", "actions", "plan", "key", "confirm"] };
 
-    function cardFor(id) {
+    function cardFor(id, keyFirst) {
       let card = cards.get(id);
-      if (card) return card;
+      if (card && (keyFirst === undefined || card.keyFirst === keyFirst)) return card;
+      if (card) cards.delete(id);
       const boxes = {};
-      for (const [name, tag, cls] of CARD_PARTS) boxes[name] = el(tag, { class: cls });
+      const order = keyFirst ? CARD_ORDER.keyless : CARD_ORDER.kept;
+      for (const name of order) boxes[name] = el(CARD_PARTS[name][0], { class: CARD_PARTS[name][1] });
       // What is under way, or came of the last thing asked: one line that stays, so that a change in it is read out.
       // While it says nothing it is kept out of sight, not out of the page (`sr`): a line that is not in the page is not read out when it fills.
       const note = el("p", { class: "ws-note sr", role: "status", "aria-live": "polite" });
       const address = el("p", { class: "muted small ws-address" });
-      card = { li: el("li", { class: "row ws" }, Object.values(boxes), note, address), boxes, note, address, shapes: {}, noteShape: "", addressShape: "" };
+      card = { li: el("li", { class: "row ws" }, order.map((name) => boxes[name]), note, address), boxes, note, address, keyFirst, shapes: {}, noteShape: "", addressShape: "" };
       cards.set(id, card);
       return card;
     }
@@ -1616,9 +1626,9 @@
 
     function drawCard(w, view) {
       const id = w.workspaceId;
-      const card = cardFor(id);
+      const card = cardFor(id, lacksKey(w));
       const [label, kind] = STATES[w.status] || [w.status, ""];
-      const says = workspaceSays(w, view) || recordSays(w, view);
+      const says = recordSays(w, view) || workspaceSays(w, view);
       // Ready is not running only: on a plan that sells hosting only a workspace with no key is up, and has nothing to open for.
       const waiting = isStarting(w) || (w.status === "running" && lacksKey(w));
       const showAuto = isStarting(w) || (waiting && state.autoOpen.has(id));

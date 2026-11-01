@@ -179,7 +179,6 @@ test("the account opens with one statement: the card, or the record that has tak
     ["no plan", () => world()],
     ["a plan and no workspace", () => world(paid)],
     ["a late payment", () => world((x) => { x.subscription = LATE; x.workspaces = [workspace()]; })],
-    ["a key that is missing", () => hosting()],
   ];
   for (const [what, make] of cases) {
     const v = await visit("account", { routes: make().routes });
@@ -192,10 +191,12 @@ test("the account opens with one statement: the card, or the record that has tak
     const first = mainFocusable(v)[0]!;
     assert.ok(v.$("stage").contains(first), `${what}: the first thing a keyboard reaches is in the card, and is ${first.tag} ${first.id || first.textContent}`);
   }
-  // A workspace that can be opened, or resumed, is its own record: the card would say the same thing a card-length above it.
+  // A workspace that can be opened, or resumed, or that is running without the key its plan asks for, is its own record: the card
+  // would say the same thing a card-length above it.
   const records: Array<[string, () => ReturnType<typeof world>, string]> = [
     ["a workspace to open", () => world((x) => { paid(x); x.workspaces = [workspace()]; }), "Open"],
     ["a workspace that is stopped", () => world((x) => { paid(x); x.workspaces = [workspace({ status: "suspended", statusReason: "paused by its owner" })]; }), "Resume"],
+    ["a key that is missing", () => hosting(), "Save key"],
   ];
   for (const [what, make, action] of records) {
     const v = await visit("account", { routes: make().routes });
@@ -245,7 +246,12 @@ test("each stage is said on the page: its title and sentence, the steps while a 
   assert.equal(none.doc.querySelectorAll("a").filter((a) => a.textContent === "Contact the operator").length, 0, "with no address given none is made up");
 
   s = await stage(hosting());
-  assert.deepEqual([s.title, s.actions, s.steps], ["Add your model key", ["Add your model key"], "✓ Choose a plan (done) ✓ Make a workspace (done) 04 Give it your model key (you are here) 05 Describe your team (still to do)"]);
+  assert.deepEqual([s.title, s.actions], ["", []], "a workspace that needs its key is a record too: the card would say the same thing");
+  assert.equal(s.v.shows(s.v.$("stage")), false);
+  assert.match(s.v.text("workspaces"), /^Research Running Add your model key\. Its team has no model yet\. Give it the key of your model provider\. Curule does not resell model usage, so your provider bills you directly\./, "the record carries the card's sentence");
+  assert.equal(s.v.button("workspaces", "Save key").className, "btn btn-primary", "and the record's Save key is the page's main action");
+  assert.equal(s.v.button("workspaces", "Open").className, "btn", "Open is the lesser of the two while there is no key");
+  assert.equal(s.v.shows(s.v.$("stage-steps")), false, "a person whose workspace needs a key is not shown the steps of getting started");
 
   s = await stage(world());
   assert.equal(s.steps, "02 Choose a plan (you are here) 03 Make a workspace (still to do) 04 Describe your team (still to do)");
@@ -281,11 +287,11 @@ test("what the account offers is done where it is said: the record for a workspa
   assert.match(p.text("workspaces"), /^Research Running Open it to describe your team and start a mission\./, "and the record says what is now true");
 
   const keyless = await visit("account", { routes: hosting().routes });
-  keyless.click(keyless.button("stage-actions", "Add your model key"));
-  assert.equal(keyless.doc.activeElement, keyless.$("key-model-ws_1"), "the cursor goes to the field the key needs first: the model");
-  keyless.type("key-model-ws_1", "claude-sonnet-4-5");
-  keyless.click(keyless.button("stage-actions", "Add your model key"));
-  assert.equal(keyless.doc.activeElement, keyless.$("key-secret-ws_1"), "and, once it is named, to the key");
+  assert.equal(keyless.shows(keyless.$("stage")), false, "a workspace that needs its key is a record too: the card is not drawn");
+  assert.match(keyless.text("workspaces"), /^Research Running Add your model key\. Its team has no model yet\./, "the record carries the card's sentence");
+  assert.equal(keyless.shows(keyless.$("key-form-ws_1")), true, "and the key's form is the record's own, open");
+  assert.equal(keyless.button("workspaces", "Save key").className, "btn btn-primary", "the record's Save key is the page's main action");
+  assert.equal(keyless.button("workspaces", "Open").className, "btn", "Open is the lesser of the two while there is no key");
 
   const late = world((x) => { x.subscription = LATE; x.workspaces = [workspace()]; });
   late.answers.set("POST /api/portal", failure(409, "no_portal", "There is no billing portal for payments made by invoice or transfer. Contact the operator to change or cancel a plan."));
