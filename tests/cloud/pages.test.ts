@@ -322,6 +322,19 @@ test("every page opens the same way: the record's caption names the part of Curu
   }
 });
 
+test("the account's head keeps its title on one line at a raised root, and its identity is one sentence", () => {
+  // The head is the first screen's largest block at 200% text: a two-line title and an address squeezed into the caption's
+  // remainder put the record's Open below an 800px phone. Both rules are about the line, not a width the page happens to have.
+  const rules = cssRules(read(path.join(ASSETS, "app.css")));
+  const title = rules.filter((r) => r.selectors.includes(".account-head h1") && declared(r, "font-size") !== undefined).at(-1)!;
+  assert.match(declared(title, "font-size")!, /^min\(clamp\([^)]*\), 12vw\)$/, "the title is display type, capped by the line it is on, so a raised root does not take a second line");
+  const who = rules.find((r) => r.selectors.includes("#who"))!;
+  assert.equal(declared(who, "display"), undefined, "the identity is one sentence that wraps, not a flex row that squeezes the address into the caption's remainder");
+  assert.equal(declared(rules.find((r) => r.selectors.includes("#who .who-a"))!, "word-break"), "break-all", "the address fills each line it is on");
+  const plans = rules.find((r) => r.selectors.includes(".plans") && declared(r, "grid-template-columns") !== undefined)!;
+  assert.match(declared(plans, "grid-template-columns")!, /minmax\(0,\s*1fr\)/, "a plan's card can be narrower than its price at a raised root, rather than widening the page");
+});
+
 test("the words are the product's: a stranger is never given the internal name for a running team, the password advice is grammar, and the page for a forgotten password is named after the link that brings people there", () => {
   for (const name of FILES) assert.doesNotMatch(read(path.join(PAGES_DIR, `${name}.html`)), /\bmesh\b/i, `${name} says "mesh"`);
   assert.doesNotMatch(read(SCRIPT), /\bmesh\b/i, "the script says mesh");
@@ -442,7 +455,7 @@ test("what a finger has to hit is as tall as a button on a phone: the buttons, t
   assert.equal(value(".ws .ws-auto .check", "min-height"), "44px", "and so is the offer to open a workspace when it is ready");
   assert.equal(value(".toc-phone a", "min-height", "max-width: 999px"), "44px", "a contents link on a phone, where the side contents are not drawn");
   assert.equal(value(".toc-phone summary", "min-height", "max-width: 999px"), "44px", "and the control that opens it");
-  assert.equal(value(".subnav a", "min-height", "max-width: 720px"), "44px", "a section of the account, on a phone");
+  assert.equal(value(".subnav a", "min-height", "max-width: 720px") ?? value(".subnav a", "min-height"), "44px", "a section of the account, on a phone: the line's own rule is 44 at every width, so the phone does not repeat it");
   assert.equal(value(".subnav a", "min-width", "max-width: 389px"), "44px", "and the narrower pad on the smallest phones leaves each name a finger's width");
   assert.equal(value(".subnav a", "font-size", "max-width: 389px"), ".75rem", "while the contents line drops to the caption's 12px, which is what lets its five names share one row");
   assert.equal(value(".subnav", "flex-wrap"), "wrap", "the account's sections wrap rather than hide the last one past the edge");
