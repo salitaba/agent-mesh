@@ -2604,3 +2604,105 @@ same on both sides and `/api/usage` is the empty answer the trial gives. Heights
 - Give the missing-key state its record: the card's `Add your model key` and the record's form are the same job,
   and the record could carry the sentence and a primary `Save key` at its top.
 - Run forced colours on the new record and glance, and a real usage table behind a model key.
+
+## 2026-11-01: the head at 200% text, and the plan that fits its page
+
+Same harness: Chromium 156 (playwright-core 1.64) against this worktree's trial (`trial --port 7650`, whose plans
+are the trial's own fixtures) and its hosting-only trial (`trial --port 7670`), 320 / 360 / 390 / 620 / 768 / 1440 in
+light, 360 in dark and in forced colours, `prefers-reduced-motion: reduce`, a touch pointer below 721, and the root
+raised to **32px** at every width. "Before" is `main`'s own `app.css` (`8bf566c`), captured before the first edit and
+measured again in the same session as the after; `/api/plans` and `/api/usage` are held to one answer in both halves,
+because the trial limits the usage read to 60 an hour and a panel drawn from another answer is another page. The
+fixtures are a Team account at $149.00 a month with one running workspace named Research, the same service's fresh
+account with no plan (what a customer lands on after confirming their address), and a hosting-only account whose
+running workspace has no model key. Heights are `document.documentElement.scrollHeight`; positions are
+`getBoundingClientRect` plus `scrollY`.
+
+- **The title is display type, so it takes the line it is on.** At a 32px root the account's h1 computed to **56px**
+  and "Your account" took **two lines (120.9px)**, a third of the head. The rule now caps it by the line
+  (`min(clamp(1.75rem, 1.3rem + 1.6vw, 2.25rem), 12vw)`): **43.2px at 360**, 46.8 at 390 and 38.4 at 320, one line
+  each (46.7 / 50.5 / 41.5px). It never bites at normal text — 12vw is 45px at 360 against the 28px the ramp gives —
+  so no page at 16px changed by a pixel.
+- **The identity is one sentence, not a row of two.** `#who` was a flex row of the caption and the address with a 6px
+  gap: the caption kept the first line (159px), the address could not fit beside it and took three lines below
+  (106 / 305 / 25px) — **four lines (166.4px)** for "Signed in as" and 27 characters, two of them alone on the last.
+  It is a paragraph of inline text now, with the address filling each line (`word-break: break-all`): the caption and
+  161px of the address on the first line, the rest on the second — **166.4 → 83.2px** at 360, **124.8 → 83.2** at 390,
+  **166.4 → 124.8** at 320. The caption and the address are still two spans with a space between them, so the
+  accessibility tree still reads "Signed in as" and the address, as it did.
+- **The record's controls are on the first screen at 200%.** The head is **417.1 → 259.6px** at 360 (375.5 → 263.5
+  at 390, 417.1 → 296 at 320), the contents line 558.1 → 400.6, `01 Workspaces` 685.1 → 527.6 and the record
+  746.1 → 588.6. Its `Open` is at **y = 908.3 → 750.8**: the whole 48px button (750.8–798.8) is inside an 800px
+  screen, where before not even its top edge was. At 390 it is 881.7 → **769.7** (the top 30px on the screen), and at
+  320 951.3 → **830.2**, still 30px below. The page is **4,086 → 3,928** at 360, **3,888 → 3,776** at 390 and
+  **4,293 → 4,172** at 320.
+- **A plan-less account no longer scrolls sideways at 200%.** The two plan cards were **361px wide (377 with the
+  page's gutter) on a 360 page**: the list is a grid whose single track is auto, and a price at 72px made the track
+  wider than the page. The track is `minmax(0,1fr)` now: the cards are **328px**, the page is **360/360** (was
+  360/377) and the page is **2,722 → 2,685** — the head's 157.5 given back, the cards' own wrapping taking 120. At
+  16px the cards are 328 either way.
+- **Nothing at normal text moved.** At 320 / 360 / 390 / 620 / 768 / 1440 the head is **144 / 123.2 / 123.2 / 102.8 /
+  110.7 / 123.1px** and the page **2,167 / 1,904 / 1,859 / 1,729 / 1,974 / 1,989**, with the record's `Open` at
+  **472.7 / 408.9 / 408.9 / 362.9 / 390.8 / 403.2** — the base's own figures. The one 2px: the identity's paragraph
+  is 305px wide instead of 307, so at 1440 its left edge is 955 instead of 953; its right edge, and everything above
+  and below it, is where it was.
+- **At 620, 768 and 1440 the raised root does not move.** The cap never bites there and the identity already had its
+  lines: the head is **235.8 / 200.2 / 173.2px** before and after, and the pages 2,742 / 3,068 / 2,793. The
+  hosting-only account's head follows the same numbers (375.5 → **259.6**, page 4,718 → **4,602**).
+- **Checks.** 320 / 360 / 390 / 620 / 768 / 1440 at 16 and 32px: no sideways page scroll (320: 320; 360: 360; 390:
+  390; 620: 620; 768: 768; 1440: 1440), nothing computes below **12px** at normal text and the smallest is 16px at
+  the raised root. **17 axe-core runs** (the capture's 7 views, and 10 at 32px across the widths, dark, forced
+  colours and the plan-less and missing-key accounts) find **no violation**, and no page logs a console error. Dark
+  and forced colours at 360 and 32px are the same **3,928px** and draw the head's rules as the system's.
+- **The budget.** `app.css` is **40,943 → 40,952 bytes of 40,960** (8 left). The title's cap (89 bytes) and the plan
+  track (37) were paid for by the identity's four flex declarations (69), the phone's repeated 44px on `.subnav a`
+  (18) and two `padding: 0` that set what a `<nav>` already is (22).
+- **Tests.** `dist/tests/cloud/*.test.js` — **878 pass, 0 fail**; `dist/tests/build/*.test.js` — **223 pass, 0
+  fail**; typecheck clean, build clean, lint at its 211 pre-existing warnings and 0 errors. `pages.test.ts` pins the
+  title's `min(clamp(…), 12vw)`, the identity's paragraph and `break-all`, and the plan track's `minmax(0,1fr)`; its
+  phone-target assertion reads the effective height of `.subnav a`, which is now the line's own rule at every width
+  rather than a phone's copy.
+
+| measured at 360, light | before | after |
+| --- | --- | --- |
+| The head at 200% text | 417.1px | **259.6** |
+| … the title | 56px, two lines (120.9) | **43.2px, one line (46.7)** |
+| … the identity | 26px, four lines (166.4) | **two lines (83.2)** |
+| … the contents line / `01 Workspaces` | 558.1 / 685.1 | **400.6 / 527.6** |
+| … the record / its `Open` | 746.1 / 908.3 | **588.6 / 750.8** |
+| … the page | 4,086px | **3,928** |
+| The head at 390 / 320, 200% | 375.5 / 417.1 | **263.5 / 296** |
+| … the record's `Open` | 881.7 / 951.3 | **769.7 / 830.2** |
+| … the page | 3,888 / 4,293 | **3,776 / 4,172** |
+| The head at 620 / 768 / 1440, 200% | 235.8 / 200.2 / 173.2 | **the same** |
+| The plan-less account at 200% | 377px wide on 360, page 2,722 | **360, 2,685** |
+| The account at 16px, 320 … 1440 | 2,167 / 1,904 / 1,859 / 1,729 / 1,974 / 1,989 | **the same** |
+| The record's `Open` at 16px, 360 | 408.9 | **408.9** |
+| axe-core, 17 views | — | **0** |
+| `app.css` | 40,943 bytes | **40,952** |
+
+### What this pass leaves
+
+- **320 at 200% still puts the record's `Open` 30px below the screen.** The head there is 296px (a 38.4px title and
+  a three-line identity) and the contents line 130px (three rows): 830.2 against 800. Closing it is the contents
+  line's 46px, which the 2026-10-31 record already named.
+- **390 at 200% has only the top 30px of the button on the screen.** Its contents line takes three rows (130px) where
+  360's takes two (87), because the labels are 13px above 389 and 12px at or below it: the 389 breakpoint is why a
+  wider phone does worse here.
+- **The title is 43.2px at 360 and 200%, not 56.** Display type is capped by its line; a reader who raises the root
+  gets a title 54% larger than the 28px one, not double. The body, the identity and the caption still double.
+- **The plan-less account pays 120px for its cards fitting.** At 200% the two cards wrap their prices and facts
+  inside 328px; the page is 2,685 against 2,722, the head's 157.5 less the 120.
+- **A long address still takes three lines at 320 and 200%.** The caption and the address share the first line only
+  while the address's remainder fits in two.
+- **The checkout stand-in, the dead reset link, the prose-only 19px links, the stage card's duplicate and the
+  missing-key record are unchanged.** They are the earlier entries; the missing-key record is the next pass's first
+  job.
+
+### Next pass
+
+- Give the missing-key state its record: the card's `Add your model key` and the record's form are the same job, and
+  the record could carry the sentence and a primary `Save key` at its top.
+- The contents line at 200% text: five labels in 24px type take three rows at 320 and 390 and two at 360, and the
+  46px is the rest of the first screen at 320.
+- Run the way-in pages at 200% text again: their titles are still uncapped, and sign-up's h1 is 56px on a 360 phone.
