@@ -221,6 +221,15 @@ Breakpoints: **1280 1100 900 800 760 620 560**. 800 is the sidebar drawer (JS
   answers neither `/api/projects` (the shell must ask it once to learn what it
   is) nor `/api/host/config`; the second was a 404 on every visit to Cost
   (2026-10-31).
+- **The narrowest phone's hero is the page's width.** Below 341 the hero takes
+  the page's own 12 px gutter and its four figures step one rung down the ramp
+  (24 → 20), so the one action and its menu share one 44 px row and
+  "51.0k of 2.0M" keeps its unit on one line; the goal's label runs into its
+  sentence's first line rather than a column beside it, so the goal is two
+  lines, and a closed evidence row's head takes the phone head's 8 px gap so
+  its name and figure read on one line. At 320 the first evidence row's 44 px
+  head is whole above the dock (700.1–744.1 in 747), where it began 55.6 px
+  under it. Pinned by `tests/dashboard/overview-receipt.test.ts` (2026-11-01).
 
 ## Open problems (carried forward)
 
@@ -229,10 +238,13 @@ Breakpoints: **1280 1100 900 800 760 620 560**. 800 is the sidebar drawer (JS
   also the phone's index. The open question is the default, not the length: What shipped is closed like the other three, and a mission that
   has just delivered may deserve its six file rows open; measured, the closed row is 53 px and the open panel 847, so the whole difference is
   one press or two screens.
-- A phone's first screen now holds the receipt and the first evidence row: at 360 the hero is **574.7 px**, the row begins at **704** on
-  screen and 44 of its 53 px are above the dock at 748 (it was 128 px below it). At **320** it does not: the goal's third line (67.5 px in
-  262) puts the row at 726.8, 21 px above the dock with its words under it. The narrowest phone is the next 40 px, and they are the
-  goal's: the hanging label leaves 224 px of text where the sentence needs about 230.
+- A phone's first screen holds the receipt and the first evidence row's head at 320 and 360 now: at 360 the hero is **574.7 px** and the
+  row begins at **704.3** (44 of its 53 px above the 747 dock, its head 6.3 px under it); at 320 the hero is **565.5**, the row begins at
+  **695.1**, and its 44 px head (**700.1–744.1**) is whole above the dock, 2.9 px clear (it began at 802.6, 55.6 px under it, before the
+  2026-11-01 pass). The 320 receipt is 9.2 px shorter than the 360 one because its four figures are 20 px, one rung down the ramp: that is
+  the price of "51.0k of 2.0M" on one line in a 123 px cell. The figure's break is the file's 340, so at 341–348 (the 16 px gutter is back
+  and the cell has 127.5–131 px) the unit still wraps and the row's head sits 14 px above the dock, as it did before the pass; 349+ fits.
+  Closing that sliver needs the figure to answer its own cell, not the viewport.
 - Events and the approvals inbox still close without `NextLinks`, and that is now a decision rather than a pending question: Events ends on
   its window status (the newest 300 of 491 events) and the inbox on its empty state's Back to the Overview; a row of doors would repeat
   the navigation each page already has (`Pause`/`Filters`, `Decisions`/`Tool gates`) rather than continue it.
@@ -277,8 +289,9 @@ Breakpoints: **1280 1100 900 800 760 620 560**. 800 is the sidebar drawer (JS
 
 ## What the next pass should take
 
-1. The 320 first screen: the goal's third line holds the first evidence row 21 px above the dock, its words under it. At 360 the
-   receipt ends at 574.7 with the row whole above the dock (2026-10-31).
+1. The 341–348 sliver the 2026-11-01 pass left: the figure steps at 340, so eight widths above it (where the 16 px gutter is back)
+   still wrap the Tokens unit and put the first evidence row's head 14 px above the dock. The cell's own width is the fact that
+   decides; whether that is a container query or a second break is the decision (2026-11-01).
 2. Whether the thumb's row earns its 36 px of every page: it is the owner's daily five, but a page opened once (Graph, the
    Playground) pays too. Watch real use before shortening the list or hiding the row on scroll.
 3. Whether the Designer's bottom stays its own: the save bar and the dock cannot both own that edge, and the workbench is
@@ -302,6 +315,57 @@ Breakpoints: **1280 1100 900 800 760 620 560**. 800 is the sidebar drawer (JS
 13. Check the frame's safe-area claims on a notched device in both orientations; the insets are in the CSS but the stand-in browser reports them as zero.
 
 ## Pass log
+
+### 2026-11-01 — the 320 first screen is the same receipt, and its figures keep their units
+
+Surface: `views/overview.css` (the 340 block) and two new tests in `tests/dashboard/overview-receipt.test.ts`. Measured on the
+scripted demo at **Delivered** (9 files: 3 delivered, 6 awaiting review; 7 checks; 491 events; 51.0k of 2.0M tokens; 17 messages;
+7 seats; ran 3.7s) in the production build, Chromium at 320/360/390/620/768/1440 in light and at 320 in dark, a touch pointer at
+800 and below, reduced motion, axe-core 4.14 at 320 and 360. Before is the same worktree at `8bf566c`, built and served from the
+same server in the same session; both halves are the same delivered mission, and the 320/360 × 800 frames are
+`#/p/demo-stub/overview` at `#view.scrollTop` 0, and at 200 for the second frame. The 360/390/620/768/1,440 frames are
+byte-identical between the halves.
+
+- **The 320 screen was three line-costs short, not one.** The queued item put the row at 726.8 on a build where the one action
+  shared its row and the Tokens figure kept its unit. On this base both had wrapped: the primary's **212.38 px** label had 210 px
+  beside the 44 px menu, so the menu took a second 44 px row (**96**), and "51.0k of 2.0M" needed **129.4** in the cell's 115, so
+  the second figure row grew **28.6**. The first evidence row began at **802.59**, 55.6 px under the 747 px dock, not 21 above it.
+- **The narrowest phone takes the page's 12 px gutter.** 16 → 12 on the hero's three padded blocks and its figure cells: the one
+  action and its menu share a 44 px row (primary **218**, menu 44 at y = 281.4), the Tokens cell has **123** px of content, and the
+  hero's text lines up with the page's own edge. The hero **673 → 598.5** before the type step.
+- **The four figures step one rung down the ramp.** 24 → 20 at 340 and below: "51.0k of 2.0M" is **116.8** px at 20 in the cell's
+  123, where 24 needed 129.4 and broke "of 2.0M" onto a line of its own. The strip **324.72 → 291.75**, the second row **176.16 →
+  147.78**, and the hero → **565.5**.
+- **The goal's label is a prefix, not a column.** The hanging label left **213.16** px of a sentence that needs 225 for two lines;
+  inline it gets **270** and takes two (**67.5 → 45**). The two spans carry a real space now — inline they were read and drawn as
+  "GoalBuild", where the grid's 8 px gap had done that work — and the 4 px margin plus that space are the same 8. The clamp moves to
+  the sentence's own box, so a long goal still stops at three lines (a 261-character goal measures 67.5 with its ellipsis, not 203).
+- **The first evidence row's 44 px head is whole above the dock.** The row **802.59 → 695.13**, its head **700.13–744.13** in a
+  747 px dock (2.9 px clear; the 360 head is 709.31–753.31, 6.3 px under it), and the page is **1,051 → 943**. The row's own 53 px
+  end at 748.13, 1.1 px into the dock, where the 360 row ends 10.3 px into it.
+- **The row's own head reads on one line.** At 320 it needed 6 px it did not have — 108 + 94 + 60.4 + 24 = 286 in 280 — so
+  "What shipped" wrapped to "What / shipped" and its figure read "3 of 9 delive…". The head takes the phone head's 8 px gap and the
+  Show control 4 px of side padding (**48.4 × 44**, over the floor): all four rows are one line with their whole figures
+  ("3 of 9 delivered" 100 in 100, "7 of 7 evidenced" 117 in 117), and the rows stay 53.
+- **Nothing else moves, and the floors hold.** 360/390 (**574.72 / 704.31 / 952**), 620 (**489.64 / 619.23 / 867**), 768
+  (**536.44 / 3,132**) and 1,440 (**324.77 / 1,934**) are identical to the pixel and their PNGs are byte-identical. No document or
+  `#view` sideways scroll at any width; axe-core **0** violations at 320 and 360 light; **11 Tabs** from the body to
+  `What shipped: Show` at both (skip, navigation, the bar's `…`, `Open the product`, the hero's `…`, four figures, the note's door,
+  the row); no control under 44 × 44 in the page (the 1 × 1 skip link aside); the smallest text stays 11 (the avatar initials); one console error in both halves
+  (the one-mesh `/api/projects` 404). Dark at 320 reads the same geometry; the change touches no colour.
+
+Suite: typecheck and build clean; `dist/tests/dashboard` **1,215 pass, 0 fail**, with two new tests in `overview-receipt.test.ts`
+(each mutation-checked: the caps' margin, then the 20 px figure, then the head's gap, each failed its assertion and was restored);
+`npm run test:only` **6,445 tests, 6,443 pass, 0 fail, 2 skipped**; eslint 0 errors (211 pre-existing warnings).
+
+**Left.** The figure's break is the file's 340, so 341–348 — where the 16 px gutter is back and the cell has 127.5–131 px — still
+wrap the Tokens unit and their row's head sits 14 px above the dock, exactly as before this pass; 349+ fits, and closing that sliver
+needs the figure to answer its own cell (a container query) rather than the viewport. The 320 hero is 9.2 px shorter than the 360 one
+because its figures are 20: the price of "51.0k of 2.0M" on one line at 123. The label is a prefix at 333–340 too, where the hanging
+column would have fitted, and the figures are 20 there, where the 12 px gutter alone would have kept 24: one break for the narrowest
+phone is the choice, and it costs the second line's indent and 4 px of figure in that 8 px range. The hero's skeleton was not re-read
+at 320 (a cold boot shows "Checking the host…" until `/status` lands; the change is padding, type and a line box, not the skeleton's
+shape).
 
 ### 2026-10-31 — the Overview opens as a delivery receipt, and its figures give their numbers back
 

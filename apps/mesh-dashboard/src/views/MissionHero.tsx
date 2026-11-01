@@ -266,7 +266,9 @@ export function MissionHero(p: HeroProps): React.JSX.Element {
             {rest ? <> <span>{rest}</span></> : null}
           </p>
           {p.stale ? <Pill tone="bad" dot={false}>Last known state</Pill> : null}
-          {p.goalText ? <p className="ov-goal" title={p.goalText}><span className="caps">Goal</span><span className="ov-goal-line">{p.goalText}</span></p> : null}
+          {/* The space is the label's word: inline at 320 the two spans were read and drawn as "GoalBuild", where the grid's own 8 px
+              gap had separated them. A whitespace text node between grid items draws nothing, so 341 and up do not move. */}
+          {p.goalText ? <p className="ov-goal" title={p.goalText}><span className="caps">Goal</span>{" "}<span className="ov-goal-line">{p.goalText}</span></p> : null}
         </div>
         <div className="ov-acts">
           {rowNext.map((n) => <NextButton key={n.action} step={n} run={p.run} />)}
