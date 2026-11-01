@@ -355,6 +355,36 @@ details.ov-note { display: block; }
   .ov .card.closed:is(:hover, :focus-within) { background: var(--panel-2); }
 }
 
+/* ---------- the narrowest phone: the hero's gutter is the page's, and the figures keep their units ----------
+   At 320 the receipt was 673 px and the first evidence row began 55.6 px below the dock: three places where a few pixels short of a
+   line each cost one. The hero's 16 px gutter left the one action's 212.38 px label 210 px beside the 44 px menu, so the menu took a
+   second 44 px row (the row 96 px); the same gutter left the Tokens figure 115 px of content for "51.0k of 2.0M", which needs 129.4,
+   so the unit wrapped and the second figure row grew 28.6 px; and the hanging "Goal" column left 213 px of a sentence that needs
+   225 for two lines. With the page's own 12 px gutter the row is 44 px and the figure 123 px of content, the figures step one rung
+   down the ramp (24 → 20) so every number keeps its unit beside it (the same line is 116.8 at 20), and the label runs into the
+   sentence's first line so the goal is two lines. Measured at 320: the hero 673 → 565.5, the page 1,051 → 943, and the first
+   evidence row's 44 px head is 700.1–744.1 in a 747 px dock, whole and 2.9 px clear (the row began at 802.6, 55.6 px under it).
+   `tests/dashboard/overview-receipt.test.ts` reads these rules. */
+@media (max-width: 340px) {
+  .ov-hero-top, .ov-now, .ov-note { padding-left: var(--s3); padding-right: var(--s3); }
+  .ov-hero .stat-cell, .ov-hero .stat-cell:first-child, .ov-hero .stat-cell:nth-child(odd), .ov-hero .stat-cell:last-child { padding-left: var(--s3); padding-right: var(--s3); }
+  /* The four figures step down one rung: at 20 px "51.0k of 2.0M" is 116.8 px in the cell's 123, where 24 px needed 129.4 and broke
+     the unit onto a line of its own (the second row 176.16 against the first row's 147.56). */
+  .ov-hero .stat-v { font-size: 20px; line-height: 1.15; }
+  /* The label is a prefix on the sentence's first line, not a column beside it, and the clamp moves to the sentence's own box so a
+     long goal still stops at three lines (measured at 320: a 261-character goal is 67.5 px with its ellipsis, not 203). The 4 px
+     margin and the space the markup carries are the grid's 8 px gap, inline. */
+  .ov-goal { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; line-clamp: 3; overflow: hidden; }
+  .ov-goal > .caps { display: inline; margin-right: var(--s1); }
+  .ov-goal-line { display: inline; -webkit-line-clamp: unset; line-clamp: unset; overflow: visible; }
+  /* The closed row's head is the first thing this screen now reaches, and at 320 it needed 6 px it did not have: 108 + 94 + 60.4 +
+     24 = 286 in 280, so the name wrapped to "What / shipped" and the figure truncated to "3 of 9 delive…". The head takes the page
+     head's own 8 px gap and the Show control 4 px of side padding (48.4 × 44, still over the floor), so all four rows read one line
+     with their whole figures ("3 of 9 delivered" 100 in 100, "7 of 7 evidenced" 117 in 117). */
+  .ov .card.closed .card-head { column-gap: var(--s2); }
+  .ov .card.closed .card-acts > button { padding-inline: var(--s1); }
+}
+
 /* The narrowest phone cannot hold a state pill beside the file's type: at 320 the type's column measured 32 px, one word a line, a
    140 px row. Below 340 the state takes the line under it, the shape the Files page's own rows use. Above it three columns are the
    shorter row; at 360 the same file is 122 px. */
