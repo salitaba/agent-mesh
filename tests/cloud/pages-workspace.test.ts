@@ -208,7 +208,7 @@ test("the key a workspace needs is asked for in the workspace's own card, and a 
   assert.equal(failed.text(failed.$("workspaces").querySelector(".ws-key")!), "", "one that could not start has no key to speak of");
   const ready = await visit("account", { routes: hosting({ source: "own", key: null }).routes });
   assert.equal(ready.doc.getElementById("auto-ws_1"), null, "a workspace that is up and has no key does not offer to be opened when it is ready, unless that was asked for while it started");
-  assert.equal(ready.text(ready.$("workspaces").querySelectorAll("li")[0]!.querySelector(".ws-says")!), "Its team has no model yet. Give it your model key to put it to work.");
+  assert.equal(ready.text(ready.$("workspaces").querySelectorAll("li")[0]!.querySelector(".ws-says")!), "Add your model key. Its team has no model yet. Give it the key of your model provider. Curule does not resell model usage, so your provider bills you directly.");
   assert.equal(ready.button("workspaces", "Open").className, "btn", "and Open is not the main button of a card that asks for a key: Save key is");
   assert.equal(ready.button("workspaces", "Save key").className, "btn btn-primary");
 });
@@ -282,7 +282,7 @@ test("on a plan that sells hosting only a workspace is ready when it has its key
   const v = await visit("account", { routes: w.routes });
   v.check(v.$("auto-ws_1"));
   w.workspaces = [workspace({ plan: "hosting", models: own(null) })];
-  await v.until("the workspace to be seen running with no key", () => v.text("stage-title") === "Add your model key");
+  await v.until("the workspace to be seen running with no key", () => /^Research Running Add your model key\./.test(v.text("workspaces")));
   await v.idle();
   assert.deepEqual(v.navigations, [], "a workspace with no key is up, and not ready: it is not opened");
   assert.equal(v.$("auto-ws_1").checked, true, "the offer is still there, and still asked for");
@@ -305,7 +305,7 @@ test("a tab that is behind another is not taken anywhere until it is in front", 
   const v = await visit("account", { routes: w.routes });
   v.check(v.$("auto-ws_1"));
   w.workspaces = [workspace({ plan: "hosting", models: own(null) })];
-  await v.until("the workspace to be seen running with no key", () => v.text("stage-title") === "Add your model key");
+  await v.until("the workspace to be seen running with no key", () => /^Research Running Add your model key\./.test(v.text("workspaces")));
   v.type("key-model-ws_1", "claude-sonnet-4-5");
   v.type("key-secret-ws_1", SECRET);
   v.setVisibility("hidden");
