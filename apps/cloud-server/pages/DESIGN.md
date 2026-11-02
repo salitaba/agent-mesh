@@ -2791,3 +2791,102 @@ every other answer is the trial's own. Heights are `document.documentElement.scr
 - The key form's own height at 360: 493.5px with every hint drawn. Two fields to a row, or the hints behind the
   field they belong to, is the next drawing, and it is what would put `Save key` inside an 800px screen.
 
+## 2026-11-02: the contents line takes its row, and the way in takes the title cap
+
+Same harness: Chromium 156 through `playwright-core` 1.64 over CDP, axe-core 4.14, 320 / 360 / 390 / 768 / 1440
+in light, 360 in dark and in forced colours, the root raised to **32px** at 320, 360 and 390,
+`prefers-reduced-motion: reduce`, a touch pointer below 500. "Before" is the base commit's own pages served by a
+trial on `trial --port 7860`; this pass's pages are served by a trial on `--port 7880`, both signed in to the same
+fixture made by the same script: a Team plan at $149.00 a month with one running workspace named Research, an empty
+usage table, and the same 23-character address. Every height is `document.documentElement.scrollHeight`; every
+position is `getBoundingClientRect` plus `scrollY`.
+
+- **At 200% text the account's contents line takes the row the phone has.** The five labels are sized by the line
+  they are on now, as the account's title has been since 2026-11-01: `min(.8125rem, 3.8vw)` above 389 and
+  `max(12px, min(.75rem, 3.8vw))` on the narrower phones. At a 32px root they compute **12.16 / 13.68 / 14.82px**
+  at 320 / 360 / 390 instead of 24 / 24 / 26, and the line is **130px (three rows) → 87 (two)** at 320 and
+  **87 (two) → 44 (one)** at 360 and 390. Nothing is hidden, renamed or dropped: the same five links, in the same
+  order, each still 44px tall. The row the phone gets is the row it gets at normal text — two at 320, one at 360 and
+  390 — and below 390 the cap is floored at the record's 12px so the smallest phone keeps the type it had.
+- **The first screen gains the 43px, and at 320 the record's `Open` is wholly on it.** The contents line holds its
+  place at y = 397.4 / 402.6 / 412.5, and everything under it moves up: `01 Workspaces` **567.4 → 524.4** at 320,
+  **529.6 → 486.6** at 360 and **539.5 → 496.5** at 390, and the record's `Open` (48px) **790.6 → 747.6**,
+  **718.8 → 675.8** and **728.7 → 685.7**. At 320 the button was 790.6–838.6, 38.6px below an 800px screen; it is
+  **747.6–795.6**, all of it inside. The page is **4,011 → 3,968**, **3,723 → 3,680** and **3,584 → 3,541**.
+- **The way-in titles take the account's cap.** `.auth-main h1` now takes the cap in the one rule the account, the way
+  in and the 404 share — `min(clamp(1.75rem, 1.3rem + 1.6vw, 2.25rem), 12vw)` — and the account's duplicate rule is
+  gone.
+  At a 32px root the five h1s compute **38.4 / 43.2 / 46.8px** at 320 / 360 / 390 instead of **56**, and sign-up's
+  three lines at 320 become two (181.4 → **82.9**) while sign-in's three at 360 become two (181.4 → **93.3**).
+  The cap never bites at normal text — 12vw is 38.4 at 320 against the 28px the ramp gives — so every way-in page is
+  the same height it was at 16px, to the pixel.
+- **The card follows the title, and the action keeps its place in it.** At 320 sign-up's card begins at
+  **497.6 → 399.1** and **Create account** at **1,188.1 → 1,089.7**; at 360 the card is **411.5 → 383.9** and the
+  action **1,060.5 → 1,032.8**. The pages shorten by the title alone: sign-up **2,944 → 2,846**, **2,625 → 2,597**
+  and **2,443 → 2,423**; sign-in **2,583 → 2,484**, **2,391 → 2,302** and **2,170 → 2,150**; forgot
+  **2,123 → 2,024**, **1,941 → 1,913**, **1,749 → 1,729**; reset **2,153 → 2,055**, **1,936 → 1,848**,
+  **1,827 → 1,808**; verify **2,402 → 2,304**, **2,137 → 2,049**, **1,955 → 1,935**.
+- **The 404's title is the same rule, so it is capped too.** It was not the pass's subject, but it shares the display
+  step and the account's rule: at 200% text its h1 is **56 → 43.2px** at 360 (120.9 → **93.3**, two lines), and the
+  page **906 → 878**; at 320 **931 → 893** and 390 **906 → 886**. At normal text it is the 800px page it was.
+- **Widths, schemes and the floor.** 320 / 360 / 390 / 768 / 1440 in light and 360 in dark: no sideways page scroll
+  (320: 320; 360: 360; 390: 390; 768: 768; 1440: 1440), before and after. Nothing computes below **12px** at normal
+  text; at the raised root the way-in pages' smallest is **16** and the account's is the capped contents line,
+  **12.16** at 320. No control under 44 × 44 at 320/360/390 beyond the 41 × 44 `Plan` contents link the record
+  already names at 390. Forced colours at 360 and 200% is the same 3,680px page with no overflow. **Nine axe-core runs**
+  (the account at 320, 360 and 768, at 320, 360 and 390 at 200% text, in dark and forced colours, and sign-up and
+  sign-in at 200%) find **no violation**, and no page logs a console error.
+- **The budget.** `app.css` is **40,952 → 40,914 bytes of 40,960** (a net **−38**). The account's duplicate title
+  rule (87 bytes) went into the shared rule (+10), and the contents line's two caps cost 39. Forty-six bytes remain.
+- **Tests.** `dist/tests/cloud/*.test.js` — **878 pass, 0 fail**; the page tests alone (`pages*.test.js`) —
+  **183 pass, 0 fail**; `dist/tests/build/*.test.js` — **224 pass, 0 fail**; typecheck and build clean. `pages.test.ts` now holds the shared title cap to both `.account-head h1` and
+  `.auth-main h1`, and the contents line to `min(.8125rem, 3.8vw)` and its floored narrow-phone form. Both assertions
+  were mutation-checked: restoring the base stylesheet makes exactly those two tests fail.
+
+| measured at 360, light | before | after |
+| --- | --- | --- |
+| The account's contents line at 200% text | 87px, two rows, 24px type | **44px, one row, 13.68px** |
+| … at 320 / 390 | 130 (three rows) / 87 (two) | **87 (two) / 44 (one)** |
+| … its type at 320 / 360 / 390 | 24 / 24 / 26px | **12.16 / 13.68 / 14.82** |
+| `01 Workspaces` at 200%, 320 / 360 / 390 | 567.4 / 529.6 / 539.5 | **524.4 / 486.6 / 496.5** |
+| The record's `Open` at 200%, 320 | 790.6–838.6, 38.6 below the screen | **747.6–795.6**, inside it |
+| … at 360 / 390 | 718.8 / 728.7 | **675.8 / 685.7** |
+| The account at 200%, 320 / 360 / 390 | 4,011 / 3,723 / 3,584 | **3,968 / 3,680 / 3,541** |
+| The account at 16px, 320 … 1440 | 2,017 / 1,861 / 1,861 / 2,028 / 2,042 | **the same** |
+| Sign-up's h1 at 200%, 320 | 56px, 181.4 (three lines) | **38.4px, 82.9 (two)** |
+| … at 360 / 390 | 56 / 120.9 and 56 / 120.9 | **43.2 / 93.3** and **46.8 / 101.1** |
+| Sign-in's h1 at 200%, 360 | 56px, 181.4 (three lines) | **43.2px, 93.3 (two)** |
+| Sign-up's card / action at 200%, 320 | 497.6 / 1,188.1 | **399.1 / 1,089.7** |
+| … at 360 | 411.5 / 1,060.5 | **383.9 / 1,032.8** |
+| Sign-up at 200%, 320 / 360 / 390 | 2,944 / 2,625 / 2,443 | **2,846 / 2,597 / 2,423** |
+| Sign-up at 16px, 320 / 360 / 390 | 1,484 / 1,410 / 1,410 | **the same** |
+| The 404's h1 at 200%, 360 | 56px, 120.9 | **43.2, 93.3** |
+| axe-core, 9 views | — | **0** |
+| `app.css` | 40,952 bytes | **40,914** |
+
+### What this pass leaves
+
+- **A 320 phone keeps two rows.** At 12.16px the five names and their four 2px gaps need **289.3 + 8 = 297.3px** of
+  the 288 the page has (the `Plan` label's 44px floor is part of that); one row would need the gaps gone and 1.3px
+  more, and both were judged worse than the row the phone already gives at normal text.
+- **The contents line grows with the width, not with the reader's root.** At 200% text it is 12.16–14.82px: the
+  reader who raises the root gets the normal-text row instead of doubled labels. It is the trade the title cap
+  already makes for display type, applied to the one line whose job is to be an index; the labels keep their 44px
+  targets, their order, and their names.
+- **The way-in action is still below an 800px screen at 200% text.** Sign-up's `Create account` ends at 1,133.7 at
+  320 and 1,076.8 at 360; the title gave back 98.4 and 27.7 of it. What remains is the form's own height, whose
+  fields double with the root.
+- **At 360 sign-up's h1 is still two lines.** "Create your account" is 18 characters and 43.2px is 154% of the
+  normal 28; one line needs about 36px, which is the cap a 320 phone gets.
+- **The 404's title was capped although the pass did not name it**, because it shares the account's rule.
+- **The checkout stand-in, the prose-only 19px links and the key form's height are unchanged.** They are the earlier
+  entries.
+
+### Next pass
+
+- The 320 contents line: the four 2px gaps and 1.3px more stand between two rows and one at 200% text, and dropping
+  the gap changes the line at normal text too. Measure both before choosing.
+- The way-in titles at 360 and up: a shorter h1 ("Create an account" is 17 characters) or a measure that fits the
+  h1 would make one line at the cap, and would move the card and the action another 46.7px (one line at 43.2px).
+- The way-in forms at 200% text: the title cap gives back 19.9–98.4px of the 199–334px the action still ends below
+  an 800px screen at 390, 360 and 320.
