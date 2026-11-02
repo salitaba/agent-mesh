@@ -228,31 +228,34 @@ Breakpoints: **1280 1100 900 800 760 620 560**. 800 is the sidebar drawer (JS
   sentence's first line rather than a column beside it, so the goal is two
   lines, and a closed evidence row's head takes the phone head's 8 px gap so
   its name and figure read on one line. At 320 the first evidence row's 44 px
-  head is whole above the dock (700.1–744.1 in 747), where it began 55.6 px
-  under it. Pinned by `tests/dashboard/overview-receipt.test.ts` (2026-11-01).
+  head is whole above the dock (677.7–721.7 in 747, 25.3 px clear since
+  2026-11-02), where it began 55.6 px under it. Pinned by
+  `tests/dashboard/overview-receipt.test.ts` (2026-11-01).
 - **A figure steps by the strip it sits in, not by the viewport.** The four
   figures are 24 px while the strip is 361 px or wider and 20 px below that, one
   `@container` on the strip (2026-11-01). The step is not about the line — the
   demo's figure is 113.31 px at 24 in a 123 px cell, so nothing wrapped — it is
-  about the receipt: from 341 to 387 the verdict takes two lines and the receipt
-  574.72, and 20 px figures make it 565.53, so the first evidence row's 44 px
-  head is whole above the 747 dock at every width from 320 to 387
-  (700.13–744.13 at 360; it was 6.3 px under). Measured at 360: the strip
-  300.94 → 291.75, the page 952 → 943. 320, 340 and 388 up do not move. Pinned
-  by `tests/dashboard/overview-receipt.test.ts` (2026-11-01).
+  about the receipt. Since 2026-11-02 it is no longer what lifts the first
+  evidence row's head above the dock (the verdict's one line does that, at 543.14
+  as at 552.33): it is 9.19 px of the first screen — at 360 the first row ends
+  21.27 px above the 747 dock and the second row's head begins 4.27 px above it,
+  where 24 px figures would put that head wholly under it. Its 361 px boundary is
+  a density rule now, not the place the sentence wraps. Pinned by
+  `tests/dashboard/overview-receipt.test.ts`.
 
 ## Open problems (carried forward)
 
-- The Overview is now **943 px** at 360 px with a delivered mission (952 on this pass's base build, 1,124 before the 2026-10-31 receipt, 4,132
-  before the 2026-10-22 folding and shipped-card work, 8,582 before that): the four evidence sections are one ruled row each until opened, and
-  since 2026-10-28 those rows are also the phone's index. The open question is the default, not the length: What shipped is closed like the
-  other three, and a mission that has just delivered may deserve its six file rows open; measured, the closed row is 53 px and the open panel
-  847, so the whole difference is one press or two screens.
-- A phone's first screen holds the receipt and the first evidence row's head whole at every width from 320 to 387: the receipt is **565.53 px**
-  and the row begins at **695.13**, its 44 px head (**700.13–744.13**) 2.9 px clear of the 747 dock. From 388 the verdict fits one line, the
-  receipt is **552.33** and the row begins at **681.92**; at 398 the Tokens sub fits one line too and the receipt is **534.14**. The 22.39 px the
-  verdict's two lines cost up to 387 are the next height: the sentence needs 269.33 px and its column has 242 at 360 beside the mark's 48, and
-  9.19 of those 22.39 are already paid by the figures' step (2026-11-01).
+- The Overview is now **921 px** at 360 px with a delivered mission (943 on this pass's base build, 952 before it, 1,124 before the 2026-10-31
+  receipt, 4,132 before the 2026-10-22 folding and shipped-card work, 8,582 before that): the four evidence sections are one ruled row each
+  until opened, and since 2026-10-28 those rows are also the phone's index. The open question is the default, not the length: What shipped is
+  closed like the other three, and a mission that has just delivered may deserve its six file rows open; measured, the closed row is 53 px and
+  the open panel 847, so the whole difference is one press or two screens.
+- A phone's first screen holds the receipt and the first evidence row **whole** at every width from 320 to 387 now: the receipt is **543.14 px**
+  and the row begins at **672.73**, its 44 px head (**677.73–721.73**) 25.3 px clear of the 747 dock and the row's own end (**725.73**) 21.3 px
+  above it, where the head used to clear by 2.9 and the row ended 1.1 px under. From 388 the receipt is **552.33** (the figures keep 24) and the
+  row begins at **681.92**; at 398 the Tokens sub fits one line too and the receipt is **534.14**. What is left on that screen is the second
+  evidence row: its head begins at **742.73**, 4.3 px above the dock, and the 20 px figure step is what holds those 9.19 px — the note's 44 px
+  door and the receipt's 20 px block padding are the next 44 and 40 (2026-11-02).
 - Events and the approvals inbox still close without `NextLinks`, and that is now a decision rather than a pending question: Events ends on
   its window status (the newest 300 of 491 events) and the inbox on its empty state's Back to the Overview; a row of doors would repeat
   the navigation each page already has (`Pause`/`Filters`, `Decisions`/`Tool gates`) rather than continue it.
@@ -297,9 +300,10 @@ Breakpoints: **1280 1100 900 800 760 620 560**. 800 is the sidebar drawer (JS
 
 ## What the next pass should take
 
-1. The verdict's second sentence: **269.33 px** of words in a 242 px column at 360, two lines and 22.39 px until 388 (the figures now
-   pay 9.19 of it). Decide whether it takes the receipt's whole width and gives up the headline's axis, whether the mark's 48 px column
-   narrows, or whether 22.39 px is simply what a phone's receipt costs (2026-11-01).
+1. The delivered note's 44 px door ("Why this is done") now sits between the receipt and the first evidence row, and the headline's
+   second sentence above it says the same thing in one line: its body is the gate's exact sentence. Decide whether the door earns
+   its row on a phone — folding it into the headline would put the second evidence row's whole 44 px head above the dock at 360
+   (it begins at 742.73, 4.3 px clear) and give the page 44 px (2026-11-02).
 2. Whether the thumb's row earns its 36 px of every page: it is the owner's daily five, but a page opened once (Graph, the
    Playground) pays too. Watch real use before shortening the list or hiding the row on scroll.
 3. Whether the Designer's bottom stays its own: the save bar and the dock cannot both own that edge, and the workbench is
@@ -323,6 +327,62 @@ Breakpoints: **1280 1100 900 800 760 620 560**. 800 is the sidebar drawer (JS
 13. Check the frame's safe-area claims on a notched device in both orientations; the insets are in the CSS but the stand-in browser reports them as zero.
 
 ## Pass log
+
+### 2026-11-02 — a phone's verdict sentence is the receipt's width, so the first evidence row is whole above the dock
+
+Surface: `views/overview.css` (the 620 block: the headline's block and the mark's tile) and one new test plus one changed rule in
+`tests/dashboard/overview-receipt.test.ts`. Measured on the scripted demo at **Delivered** (9 files: 3 delivered, 6 awaiting review;
+7 checks; 519 events; 51.0k of 2.0M tokens; 17 messages; 7 seats; ran 9.4s) in the production build, Chromium over CDP at
+320/341/360/387/388/390/398/620/768/1,440 in light, at 360 in dark and in forced colours, a touch pointer at 360 and below, reduced
+motion, axe-core 4.14 at 360 in both schemes. Both halves are the **same delivered mission**: its event log was restored and served by
+a `--resume` console for each build, so every figure reads the same in both, and the 768 and 1,440 PNGs are byte-identical.
+
+| at 360 | before | after |
+|---|---|---|
+| the verdict's sentence | a 242 px box, two lines (171.13 + 94.22) | a 302 px box, one line (269.33) |
+| the receipt (the hero) | 565.53 | 543.14 |
+| its top block | 226.78 | 204.39 |
+| the first evidence row | 695.13, ending 748.13 | 672.73, ending 725.73 |
+| its 44 px head | 700.13–744.13 | 677.73–721.73 |
+| clear of the 747 dock | 2.87, the row's own end 1.13 under it | 25.27, the row's end 21.27 above it |
+| the mark | 48 × 48, a 24 px glyph | 40 × 40, a 20 px glyph |
+| the page | 943 | 921 |
+
+- **No box on a phone could hold that sentence beside the mark.** It is **269.33 px** at 16, and the lead beside the mark has 242 at
+  360 (302 of content − the mark and its 12 px gap), 223 at 341 and 210 at 320: two lines and 22.39 px of the first screen from 320 to
+  387, one line only from 388, where the column finally meets 270. The one box that holds it is the receipt's own width — 302 at 360,
+  270 at 320 — so the headline's block spans it: its word keeps the mark's column by a 52 px inset and its second sentence stretches
+  across the block, one line at every width from 320 (270 against 269.33, two thirds of a pixel) to 620 (562).
+- **The mark steps 48 → 40 because the sentence now starts at the receipt's edge.** The sentence's line box begins 37 px into the
+  block and its cap at 180.79, where the tile's foot was 178.59: a 48 px tile stands 11 px into that line, and a 40 px one clears it by
+  **2.2 px**. 40 is the kit's base tile (`.tile`, a 20 px glyph), so the drawing takes a size the kit already has rather than one
+  written here. A lead long enough to step down to 20 px — a crash's reason can pass 44 characters and carry a second sentence,
+  as `crashHint` does — takes the tile's height, so its sentence still starts under the mark.
+- **The axis is what the line costs.** The sentence starts at the receipt's edge, under the tile, not under "Delivered."; the goal and
+  the action row already start there, so the receipt's left edge is one axis now and only the verdict's word hangs at 81. Measured in
+  the same browser, the whole width with the mark's row kept above the sentence (the sentence in a row of its own) returns **3.39 px**,
+  not 22.39: a full-width line has to clear the tile, and giving it its own row spends the mark's 48 px and an 8 px gap.
+- **Nothing else moves.** 388 (**552.33**), 390 (552.33), 398 (534.14) and 620 (489.64) keep every height to the pixel — there the
+  sentence already had its line, so only the mark's size and the sentence's left edge differ; the page is 930 / 930 / 912 / 867 in both
+  halves. 768 (527.84, its mark still 48) and 1,440 (324.77) do not move at all. Dark at 360 reads the same geometry as light, and
+  forced colours reads 543.14 with the head at 677.73–721.73.
+- **The floors hold.** No document or `#view` sideways scroll at any width in either scheme; axe-core **0** violations at 360 light and
+  360 dark (19 rules passed in each read, the same in both halves); no control under 44 × 44 in `#view` from 320 to 620, the same 13
+  pointer-density rows at 768 and 16 at 1,440 in both halves (the drawer's closed rows and the desk's ghost links); the smallest text
+  stays 11 (the avatar initials); **11 Tabs** from the body to `What shipped: Show`, the same list in both halves; one console error in
+  both (the one-mesh `/api/projects` 404).
+
+Suite: typecheck and build clean; `dist/tests/dashboard` **1,217 pass, 0 fail**, with one new test and one changed rule (three of the
+new test's assertions mutation-checked: the tile put back to 48 px, the headline put back into the mark's column, the long lead's box
+removed — each failed its assertion and was restored); `dist/tests/build` **224 pass, 0 fail**; `npm run test:only` **6,450 tests,
+6,448 pass, 0 fail, 2 skipped**.
+
+**Left.** The first screen now ends on the whole first evidence row (21.27 px of air above the dock) and 4.3 px of the second row's
+head; 24 px figures would make the receipt 552.33 and put that head wholly under the dock, which is all the 20 px step still buys. The
+sentence is one line by two thirds of a pixel at 320 — a longer verdict wraps there, which is what more words should do, and a verdict
+a word shorter changes nothing. The mark is 40 on every phone layout, 620 included, where nothing else moved; whether a receipt wants a
+48 px mark and a two-line sentence instead is a reading question this pass answered by measurement, not by taste. The sentence's ink
+clears the tile by 2.2 px, which is the tightest pair on the receipt now.
 
 ### 2026-11-01 — a phone's receipt is one height, and the figures step by the strip they are in
 
