@@ -102,13 +102,30 @@ test("every price in the prose is a price in the plan table or a cost of the mea
   for (const plan of Object.values(PLANS)) assert.ok(home.copy.includes(plan.name), `the home page's plan line names ${plan.name}`);
 });
 
-test("what is planned is stated as planned, wherever a page mentions it, and is never sold as included", () => {
+test("the roadmap is stated once, under the cards, and is never sold as included", () => {
   const pricing = page(pages, "pricing/index.html");
-  assert.match(pricing.copy, /Planned, not included: single sign-on/);
-  // Anything the plan table lists as roadmap must be introduced as planned wherever the page renders it.
-  for (const plan of Object.values(PLANS)) {
-    if (plan.roadmap.length > 0) assert.ok(pricing.copy.includes(`Planned, not included: ${plan.roadmap.join("; ")}`), `${plan.name}: its roadmap, as planned`);
-    for (const item of plan.roadmap) for (const p of pages) assert.ok(!p.copy.toLowerCase().includes(`includes ${item.toLowerCase()}`), `${p.rel}: ${item}`);
+  const cardsStart = pricing.html.indexOf("<!-- generated:plan-cards:start");
+  const cardsEnd = pricing.html.indexOf("<!-- generated:plan-cards:end -->");
+  assert.ok(cardsStart >= 0 && cardsEnd > cardsStart, "the generated card block");
+  const cards = pricing.html.slice(cardsStart, cardsEnd);
+  assert.ok(!cards.includes("plan-planned") && !textOf(cards).includes("Planned, not included"), "no plan card carries the roadmap");
+  // The one statement is the notice under the cards, before the note about the model's bill.
+  const noticeStart = pricing.html.indexOf('<p class="notice', cardsEnd);
+  const priceNoteIndex = pricing.html.indexOf("Plan prices are for the runtime", cardsEnd);
+  assert.ok(noticeStart > cardsEnd && noticeStart < priceNoteIndex, "the roadmap is under the cards and before the price note");
+  const notice = /<p class="notice[^"]*">([\s\S]*?)<\/p>/.exec(pricing.html.slice(noticeStart))![1]!;
+  const said = textOf(notice);
+  assert.match(said, /^Planned, not included:/, "it says what it is");
+  // Every item of the plan table's roadmap is in that one paragraph, and nowhere else the page reads.
+  const norm = (s: string): string => s.toLowerCase().replace(/\([^)]*\)/g, " ").replace(/[^a-z0-9]+/g, " ").trim();
+  const copy = norm(pricing.copy);
+  const roadmap = [...new Set(Object.values(PLANS).flatMap((p) => p.roadmap))];
+  assert.ok(roadmap.length > 0, "the plan table lists a roadmap");
+  for (const item of roadmap) {
+    assert.ok(norm(said).includes(norm(item)), `${item}: named in the one notice`);
+    const count = copy.split(norm(item)).length - 1;
+    assert.equal(count, 1, `${item}: said once on the pricing page, and it is ${count}`);
+    for (const p of pages) assert.ok(!p.copy.toLowerCase().includes(`includes ${item.toLowerCase()}`), `${p.rel}: ${item}`);
   }
   // And a mention of single sign-on anywhere sits next to a word that says it is not there yet.
   const planned = /planned|roadmap|not included|\bno\b|not yet|does not|never|without|until|not /i;

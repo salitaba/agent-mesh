@@ -829,11 +829,11 @@ body:has(#billing-monthly:checked) .head-price-monthly { display: inline; }
 .plans { gap: 0 16px; }
 @media (min-width: 640px) { .plans { grid-template-columns: var(--c2); } }
 @media (min-width: 1040px) { .plans { grid-template-columns: var(--c4); } }
-/* On a phone a plan is read one at a time. A card here is 978px tall at 360 — its tagline, both prices, three limits,
-   four features, support and, on two plans, the roadmap — so four of them in a sideways row asked a reader to swipe at
-   four heights to compare two figures. The four names and their figures are one 2 × 2 chooser now: all four prices on one
-   screen, one press each, and the card below is the plan chosen. The comparison further down still lists every line of
-   all four. From 720 four cards fit side by side and the chooser is not shown. */
+/* On a phone a plan is read one at a time. A card here is 705px tall at 360 — its tagline, both prices, three limits,
+   four features and support — so four of them in a sideways row asked a reader to swipe at four heights to compare two
+   figures. The four names and their figures are one 2 × 2 chooser now: all four prices on one screen, one press each,
+   and the card below is the plan chosen. The comparison further down still lists every line of all four. From 720 four
+   cards fit side by side and the chooser is not shown; the roadmap is the section's notice. */
 .plans-title { margin-bottom: 10px; }
 .plans-hint { display: none; }
 .plan-choice { display: none; }
@@ -873,8 +873,8 @@ body:has(#billing-monthly:checked) .head-price-monthly { display: inline; }
 .plan-includes { margin: 20px 0 0; }
 .plan-meta { margin: 8px 0 0; font-size: .875rem; }
 .plan-meta p { margin: 0 0 8px; }
+.plan-meta p:last-child { margin-bottom: 0; }
 .plan-support { color: var(--muted); }
-.plan-planned { color: var(--k-warn); }
 .plan-cta { align-self: end; margin: 16px 0 0; }
 .plan-cta .btn { width: 100%; }
 .unit { white-space: nowrap; }

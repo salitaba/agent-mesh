@@ -41,11 +41,11 @@ function priceBlocks(p) {
 }
 
 /**
- * The plan chooser a phone reads before the cards. At 360 a card is 978px tall (its tagline, both prices, its three
- * limits, four features, support and, on two plans, the roadmap), and four of those in one sideways row asked a reader to
- * swipe at four different heights to compare two figures. The four names and their figures stand in one 2 × 2 block
- * instead — all four prices on one screen — and the card below is the one chosen. Above 720 four cards fit side by side
- * and the chooser is not shown.
+ * The plan chooser a phone reads before the cards. At 360 a card is 705px tall (its tagline, both prices, its three
+ * limits, four features and support), and four of those in one sideways row asked a reader to swipe at four different
+ * heights to compare two figures. The four names and their figures stand in one 2 × 2 block instead — all four prices
+ * on one screen — and the card below is the one chosen. Above 720 four cards fit side by side and the chooser is not
+ * shown.
  */
 function renderPlanChoice(out) {
   const items = out.plans.map((p, i) => {
@@ -64,7 +64,14 @@ ${items.join("\n")}
 </fieldset>`;
 }
 
-/** The Annual/Monthly choice (plain radio buttons, switched by CSS) and the four plan cards. */
+/**
+ * The Annual/Monthly choice (plain radio buttons, switched by CSS) and the four plan cards.
+ *
+ * A card says only what is unique to it: its tagline, its figures, its limits, its includes, its support and its
+ * action. The roadmap is not one of those: the same three items were printed on Business and Enterprise (and
+ * Enterprise includes everything Business does), so the card repeated a fact the section states once, in the notice
+ * under the cards. The plan table still carries each plan's `roadmap`; this renderer is not where it is read.
+ */
 export function renderPlanCards(out) {
   const cards = out.plans.map((p) => {
     const free = p.pricing === "free";
@@ -86,7 +93,7 @@ export function renderPlanCards(out) {
 ${p.includes.map((i) => `        <li>${esc(i)}</li>`).join("\n")}
       </ul>
       <div class="plan-meta">
-        <p class="plan-support">Support: ${esc(p.support)}</p>${p.roadmap.length ? `\n        <p class="plan-planned">Planned, not included: ${p.roadmap.map(esc).join("; ")}</p>` : ""}
+        <p class="plan-support">Support: ${esc(p.support)}</p>
       </div>
       <p class="plan-cta">${cta}</p>
     </article>`;

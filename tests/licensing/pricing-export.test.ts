@@ -66,8 +66,8 @@ test("the plan cards, the table and the home page's plans show every price and e
     assert.ok(t.includes(plan.name) && t.includes(plan.tagline), `${plan.name}: name and tagline`);
     assert.ok(t.includes(plan.support), `${plan.name}: support`);
     for (const line of plan.includes) assert.ok(t.includes(line), `${plan.name}: "${line}"`);
-    if (plan.roadmap.length > 0) assert.ok(t.includes(`Planned, not included: ${plan.roadmap.join("; ")}`), `${plan.name}: its roadmap is introduced as planned`);
-    else assert.ok(!t.includes("Planned, not included"), `${plan.name}: nothing planned is shown that the table does not list`);
+    // The card says only what is unique to it; the section's roadmap is said once, in the notice under the cards.
+    assert.ok(!t.includes("Planned, not included"), `${plan.name}: the card leaves the roadmap to the section's one notice`);
     if (plan.pricing === "listed") {
       const [annual, monthly] = [`$${plan.priceMonthlyAnnualUsd} per month, billed annually ($${plan.priceMonthlyAnnualUsd! * 12} a year)`, `$${plan.priceMonthlyUsd} per month, billed monthly`].map((s) => s.replace(/\$(\d{4,})/g, (_, n: string) => `$${Number(n).toLocaleString("en-US")}`));
       assert.ok(t.includes(annual!) && t.includes(monthly!), `${plan.name}: both prices, so the page reads without the toggle`);
@@ -76,6 +76,14 @@ test("the plan cards, the table and the home page's plans show every price and e
     const limits = [plan.limits.maxProjects, plan.limits.maxSeatsPerMesh, plan.limits.maxConcurrentTurns].map((n) => (n === null ? "unlimited" : String(n)));
     const shown = [...card!.matchAll(/<dd>([\s\S]*?)<\/dd>/g)].map((m) => text(m[1]!.replace(/<span aria-hidden="true">[^<]*<\/span>/g, "")).trim().toLowerCase());
     assert.deepEqual(shown, limits, `${plan.name}: the limits`);
+  }
+  // The roadmap is the section's, said once under the cards: every item the plan table lists is in that one notice,
+  // and no card repeats it.
+  const notice = /<p class="notice[^"]*">[\s\S]*?Planned, not included:[\s\S]*?<\/p>/.exec(pricing)?.[0];
+  assert.ok(notice, "the plans section states the roadmap once");
+  assert.equal((pricing.match(/class="plan-planned"/g) ?? []).length, 0, "no card carries a roadmap line");
+  for (const item of new Set(PLAN_IDS.flatMap((id) => PLANS[id].roadmap))) {
+    assert.ok(text(notice!).toLowerCase().includes(item.replace(/\s*\([^)]*\)/, "").toLowerCase()), `${item}: in the one notice`);
   }
   const t = text(table);
   for (const id of PLAN_IDS) assert.ok(t.includes(PLANS[id].name) && t.includes(PLANS[id].support), `${id} in the table`);
