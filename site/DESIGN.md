@@ -2452,3 +2452,86 @@ The next pass's first job is the page's length, and the honest shape of it is ed
 15.2 screens of claims the record will not delete, so the only lever left is which of them the page states and which it leaves to
 `pricing/`, `security/` and the documents. After that, the documentation row's third chip and the pricing page's cards' repeated
 roadmap, both still as they were.
+
+## 2026-11-02: the roadmap is said once, under the plans
+
+Measured with the same probe (Chrome 156 over CDP; reduced motion; light unless said; touch at 320/360/390, a mouse at 768 and
+1,440; dark at 320 and 360; print at 794; forced colours at 320 and 360; no script at 320, 360 and 1,440). The before column is
+the site at `70ae013`, exported with `git archive` and served on a second port and measured in the same run; no number is copied
+from an earlier pass. The
+absolute heights are this container's, where the untouched home page is 12,151 at 360 as the last entry records; both halves are one
+browser in one run, so the differences stand.
+
+### What changed
+
+- **The roadmap is said once, in the notice under the plans.** At 1,440 the page printed "Planned, not included" **three** times: on
+  the Business card, on the Enterprise card — which includes everything Business does — and in the section's notice under them. A
+  reader who chose Business at 360 met it twice 320.2px apart, the card's line at **1,644.1** and the notice at **1,964.3**. The card
+  renderer no longer prints a plan's `roadmap`; the section's notice is the one statement, in the place a reader choosing a plan
+  reads it. The plan table and the JSON keep each plan's `roadmap`: the data was never the duplicate, the card was.
+- **The one statement is the fuller one, and it names OIDC.** The notice keeps its explanation ("Today there is one shared operator
+  credential: put the instance behind your VPN or an authenticating proxy.") and takes the card's "(OIDC)", which the old notice had
+  dropped: *Planned, not included: single sign-on (OIDC), per-operator identity and roles, and audit-log export with operator
+  identity are on the roadmap.* Every claim the two cards made is in it, and the security page's own sentence is unchanged.
+- **The notice stands directly under the cards.** It was after the model-usage note; it is now immediately under the plan cards and
+  before "Plan prices are for the runtime…". With Business chosen at 360 it is **1,964.3 → 1,745.1**, **49px** under the card's
+  action (was 185), and at 1,440 **1,890.8 → 1,716.4**.
+- **A card ends on its action.** Removing the line left the meta block's last paragraph with a dangling 8px bottom margin;
+  `.plan-meta p:last-child` now has none. So Community and Team lose 8px too (**690.6 → 682.6** and **612.3 → 604.3** at 360), and
+  the `.plan-planned` rule is gone with the paragraph.
+
+### Measurements after this pass
+
+| Pricing, height at 320 / 360 / 390 / 768 / 1,440 | Before | After |
+|---|---|---|
+| The page | 13,925 / 12,976 / 12,467 / 10,047 / 9,095 | **13,917 / 12,992 / 12,459 / 9,956 / 8,990** |
+
+| The plan cards | 360, before → after | 1,440, before → after |
+|---|---|---|
+| Community | 690.6 → **682.6** | 921.5 → **815.9** |
+| Team | 612.3 → **604.3** | 921.5 → **815.9** |
+| Business | 788.3 → **705.1** | 921.5 → **815.9** |
+| Enterprise | 741.8 → **658.6** | 921.5 → **815.9** |
+| The four-card row | — | 937.5 → **831.9** |
+| The page with Business chosen | 13,073 → **13,014** | — |
+| "Planned, not included" on the page | 2 (card + notice) → **1** | 3 → **1** |
+| The card's own line | 67.2 at 360, 89.6 at 1,440 | **none** |
+
+- The page is **105px shorter at 1,440** (9,095 → 8,990), 91 at 768, and 8 at 320 and 390. At 360 it is **16px taller**
+  (12,976 → 12,992): the one statement now carries "(OIDC)", which makes it a line longer there (**198 → 222**), and the card a
+  phone sees by default — Community — never had the repeated line, so it only loses its 8px margin while the notice gains 24. A
+  reader who chooses Business is **59px** better off (**13,073 → 13,014**), and Enterprise the same (**13,027 → 12,968**).
+- The page's words at 1,440 are **1,909 → 1,880** and its characters **10,933 → 10,700**; with Business chosen at 360,
+  **1,773 → 1,759**. Nothing the notice said was dropped, and the detail it had shortened — the protocol, "OIDC" — is named
+  again; what is gone is the repetition.
+- No page scrolls sideways: the pricing page is **0px over** at 320, 360, 390, 768 and 1,440 in light, at 320 and 360 in dark,
+  at 320 with forced colours and at 320 without a script, and at 794 in print. The six other pages changed only their stylesheet
+  fingerprint, and the two rules this pass touched (`.plan-meta`, `.plan-planned`) are used on the pricing page only. Print at 794
+  is **9,888 → 9,797**, no script at 360 **11,836 → 11,852** and at 1,440 **8,635 → 8,530**, and `forcedColors: active` at 360
+  **12,976 → 12,992**: every one **0px over**. The smallest computed text is **12px** in all of them. The target census is identical
+  before and after at every width (**13 / 12 / 14 / 25 / 41** controls under 44 × 44 at 320/360/390/768/1,440: the 1 × 1 radios, the
+  24 × 24 checkbox whose label is 44, and the mouse's 36–40px rows at 1,440). axe-core WCAG 2.0–2.2 A and AA reports **0**
+  violations on the pricing page at 320 light, 360 light, 360 dark, 768 light and 1,440 light and on the home page at 360, the same
+  six runs before and after; the color-contrast *incomplete* census (28/28/28/78/72/46 nodes) is unchanged too.
+- The chooser is where it was (**869–1,000** at 360), the visible card is still the chosen one, and the comparison table and the
+  phone's plan stack are unchanged: the same seven rows with the same values. `tests/build/site-copy.test.ts` now fails unless no
+  card says "Planned, not included", every item of the plan table's roadmap appears once on the page, and the notice sits between
+  the cards and the price note; `tests/licensing/pricing-export.test.ts` holds the exporter's cards to the same. The build suites
+  (`node --test "dist/tests/build/*.test.js"`) are **224** tests, all passing; `pricing:check` and `site-chrome --check` pass.
+
+### What this pass deliberately leaves
+
+- **The one notice speaks for all four plans, though only Business and Enterprise list the items.** It is the section's sentence,
+  and a comparison row with four identical cells would be noise in a table that says what each plan gets.
+- **At 360 the default page is 16px taller.** That is "(OIDC)" once, on the line the old notice already had, against the two card
+  lines it replaces; the width where a reader meets the repeated cards, Business or Enterprise chosen, is 59px shorter.
+- **The notice is still a warning panel.** It is a caveat about what is absent, not an explanation of a mechanism; the ruled-entry
+  rule is for the latter.
+- **The model-usage note now follows the roadmap**, so the plans section ends on the price caveat rather than a warning. Both are
+  caveats; the roadmap is the one about the cards.
+- The console captures were not retaken, `site/ux/` was not edited, and `npm run site:check` still exits 1 on the owner's
+  `TODO(owner)` at `site/legal/index.html:134`.
+
+The next pass's first job is still the page's length: at 360 the pricing page is 12,992 (13,014 with Business chosen), and the home
+page is 12,151 over 15.2 screens. After it, the documentation row's third chip, which the last entry also queued.
+
