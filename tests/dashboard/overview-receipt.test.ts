@@ -116,10 +116,32 @@ test("the folded note is one 44 px row, not a block with its own padding", () =>
 test("the goal takes the hero's width on a phone, and the mark and headline keep the first row", () => {
   const phone = css.slice(css.indexOf("@media (max-width: 620px)"));
   assert.match(phone, /\.ov-hero-top \{ display: grid; grid-template-columns: auto minmax\(0, 1fr\); align-items: start; row-gap: var\(--s2\); \}/, "the hero's own grid, not the desk's flex row");
-  assert.match(phone, /\.ov-hero-lead \{ display: contents; \}/, "the lead's two children join it");
-  assert.match(phone, /\.ov-hero-lead > \.ov-headline \{ grid-column: 2; grid-row: 1; \}/, "the headline stays beside the mark");
+  assert.match(phone, /\.ov-hero-lead \{ display: contents; \}/, "the lead's children join it");
+  assert.match(phone, /\.ov-hero-lead > \.ov-headline \{ grid-column: 1 \/ -1; grid-row: 1; \}/, "the verdict's block is the receipt's width, and shares the mark's row");
   assert.match(phone, /\.ov-hero-lead > \.ov-goal \{ grid-column: 1 \/ -1; \}/, "the goal spans the hero");
   assert.match(phone, /\.ov-acts \{ grid-column: 1 \/ -1; \}/, "and so do the actions");
+  // The receipt's order is the page's grammar, and this pass moved nothing: the verdict, then the goal, then the action row.
+  assert.ok(hero.indexOf("ov-headline") < hero.indexOf("ov-goal") && hero.indexOf("ov-goal") < hero.indexOf("ov-acts"), "verdict, goal, actions, in that order");
+});
+
+/**
+ * The verdict's second sentence is the receipt's line, not the lead's column. It needs 269.33 px at 16 px, and the lead beside the
+ * mark has 242 at 360 (302 of content − the mark and its 12 px gap), so it took two lines from 320 to 387 and the receipt carried
+ * 22.39 px more than the same receipt at 388, where the sentence finally fitted. The headline's block spans the receipt instead —
+ * its word keeps the mark's column by a 52 px inset, and the sentence stretches across the block (302 at 360, 270 at 320, where the
+ * demo's 269.33 is one line) — and the mark steps 48 → 40, the kit's base tile, because a 48 px tile stands 11 px into that first
+ * line, which now starts at the receipt's edge. Measured at 360: the hero 565.53 → 543.14, the first evidence row 695.13 →
+ * 672.73, its 44 px head 677.73–721.73 in the 747 px dock (25.3 px clear, the row's end 21.3 above it); 388, 390, 398, 620, 768 and
+ * 1,440 do not move. The browser that measured it is not in this suite; the shape is pinned here.
+ */
+test("the verdict's second sentence takes the receipt's width, so it is one line from 320 up", () => {
+  const phone = mediaBlock(css, /max-width:\s*620px/);
+  assert.match(phone, /\.ov \.ov-hero-top > \.tile \{ grid-column: 1; grid-row: 1; width: 40px; height: 40px; border-radius: var\(--k-r-md\); \}/, "the mark is the kit's base tile, and it keeps the first row's first column");
+  assert.match(phone, /\.ov \.ov-hero-top > \.tile > \.icon \{ width: 20px; height: 20px; \}/, "with the base tile's 20 px glyph, so its weight matches its box");
+  assert.match(phone, /\.ov-hero-lead > \.ov-headline > b \{ margin-left: calc\(40px \+ var\(--s3\)\); \}/, "the headline's word keeps the mark's column by its own inset");
+  assert.match(phone, /\.ov-hero-lead > \.ov-headline > b\.long \{ min-height: 40px; \}/, "a long lead is as tall as the mark, so its sentence still starts under the tile");
+  assert.match(hero, /\{rest \? <> <span>\{rest\}<\/span><\/> : null\}/, "the sentence is still the headline's own second sentence, in the same place");
+  assert.match(hero, /<span className="caps">Goal<\/span>/, "and the goal still follows it, unchanged");
 });
 
 test("a number is data where a pointer can drag, and part of the door under a thumb", () => {
