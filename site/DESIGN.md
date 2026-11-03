@@ -41,6 +41,11 @@ editing CSS or JS.
    plan, menu open, no script, reduced motion, forced colours, print.
 7. **Words are claims.** Every number is generated or measured; `tests/build/site-copy.test.ts` is
    the gate. Do not add a price, percentage or "open source" to prose.
+8. **A control's edge is a boundary, not a decorative rule.** The outlined button, the Copy button, the
+   menu button and the chosen segment of a switch take `--k-line-control` (≥3:1 on their ground, light
+   and dark) **at rest**, not only on `:hover`. `--line` and `--line2` are for cards, frames, rules and
+   tags. A chip whose words are the control (the On this page bar, the plan chooser) may keep the lighter
+   rule: the row it sits in says where the target starts, and the words say what it does.
 
 ## Type and space
 
@@ -2646,3 +2651,78 @@ browser in one run, so the differences stand.
   `packages/licensing/src/plans.ts`, so it is not hand-editable here; the plural is the exporter's to fix.
 - **Curule Cloud's prices are still in the app**, the legal page's `TODO(owner)` still publishes (`site:check` exits 1), the captures
   were not retaken, and `site/ux/` was not edited. This pass's frames are handed over with the report.
+
+## 2026-11-04: a control and its state show their own edge, and a sheet keeps no switcher
+
+Measured with the same probe (Chrome in the pass container over CDP; reduced motion; light unless said; touch at 360; a
+mouse at 794 for print; dark at 360). The before column is the site at `fe37b2a`, exported with `git archive` and served on
+a second port and measured in the same run; no number is copied from an earlier pass. The probe's failure list is quoted
+whole, because most of it is not this pass's (see what is left).
+
+### What changed
+
+- **A control's own edge is a boundary, and it is the same edge at rest.** The outlined button, the Copy button and the
+  menu button took the decorative line: `#d3cdc2` at 1.58:1 on the button's white, 1.37:1 on the code band's `#f1eee8`
+  and 1.52:1 on the header's `#fbfaf8`; in dark `#45423b` at 1.74:1, 1.94:1 and 1.87:1. The stylesheet turned it into the
+  control line only on `:hover` (`#837d72`, 3.92:1), so at a desk the control's edge appeared under the pointer, and on a
+  phone — where nothing hovers — it never did. `.btn:not(.btn-primary)`, `.copy` and `.menu summary` take
+  `var(--k-line-control)` at rest now: 4.08:1 on white, 3.53:1 on the code band, 3.92:1 on paper, and 3.75:1 / 4.19:1 /
+  4.04:1 in dark. That is the line the fields and the calculator's total already use. It is the seven outlined buttons
+  (the home page's "Try the demo" and "How licences work", pricing's "Start free" and the way-in actions, the docs page's
+  "Read the security page"), the three Copy buttons on the contact page and the three in the demo's steps, and the menu
+  button in all seven headers. The inverse band's outlined buttons keep their own 30% on-deep rule (`.cta .btn` outranks
+  this one), and a printed button is still black.
+- **The chosen segment of a switch shows which one it is.** The thumb under the Annual/Monthly choice — and under the
+  home page's Overview/Events/Designer tabs — was a white pill on `#f1eee8` (1.13:1) edged in `#d3cdc2` (1.37:1); in dark
+  a `#1b1a18` pill on `#0e0d0c` (1.19:1) edged in `#45423b` (1.74:1). The period every figure on the pricing page is in,
+  and the view the plate shows, were carried by the words alone. The thumb's ring is the control line now: **3.53:1** on
+  the trough in light, **4.19:1** in dark. The fill and the layout are unchanged, so nothing moves.
+- **A printed page keeps no switcher.** `@media print` hides `.tabs`, but the plate's own `.hero-visual .tabs` (0,2,0)
+  set `display: grid` and outranked it, so the printed home page carried a dead Overview/Events/Designer row —
+  **730.47 × 42 at 794**, with 16px of paper under it — above the one view a sheet can show. The print block now hides
+  `.hero-visual .tabs` by name: the switcher is **none**, the frame moves from y 668.52 to **610.52**, and the sheet is
+  **11,942 → 11,884** (−58). The radios still choose the Overview pane, so the sheet still prints a capture.
+
+### Measurements after this pass
+
+| At 360, light | Before | After |
+|---|---|---|
+| The outlined button's edge on white | 1.58:1 | **4.08:1** |
+| The Copy button's edge on the code band | 1.37:1 | **3.53:1** |
+| The menu button's edge on paper | 1.52:1 | **3.92:1** |
+| The chosen segment's ring on the trough | 1.37:1 | **3.53:1** |
+| The same, dark | 1.74 / 1.94 / 1.87 / 1.74:1 | **3.75 / 4.19 / 4.04 / 4.19:1** |
+| The home page / the pricing page | 12,581 / 13,419 | **12,581 / 13,419** (colour only) |
+| The probe's failures, home light / home dark / docs / pricing | 19 / 18 / 14 / 15 | **17 / 17 / 13 / 14** |
+
+- The four rows that went are the two buttons' and the menu button's pairs on the pages that name them (the shared
+  `summary[role=button]` row on the docs and pricing pages loses its summary and keeps the On this page chips and the
+  plan chooser, which are decisions below). No page changes height at 360; no page scrolls sideways at 360 or 320; the
+  smallest computed text is still 12px.
+- The print state at 794: **11,942 → 11,884**, 0px over, the switcher gone and everything else unmoved.
+- The site's suites pass: `site` + `site-copy` **67**, `site-chrome` + `site-script` + `site-cloud` + `brand-assets`
+  **76**, `site-pricing` **6**. `site-chrome --check` is clean; `npm run site:check` still exits 1 on the owner's
+  `TODO(owner)` for the terms at `site/legal/index.html:134`, as it did before this pass.
+
+### What this pass deliberately left
+
+- **The chips of a row keep the decorative rule.** The On this page chips are 1.52:1 in light and 1.87:1 in dark, and the
+  plan chooser's four labels 1.52:1; their words are the control and the row says where the pill starts, so the boundary
+  is not the only thing that identifies them. The trough's inset ring (1.14:1) and the cards, frames and hairlines
+  (1.14–1.45:1) are decoration, not controls. A pass that darkened all of them would restyle every page for a rule that
+  does not require it.
+- **The probe still reports six links past 416.7px at 360 and five images clipped, and neither is real.** The six are the
+  phone menu's links, measured while `<details>` is closed: opened, the panel is 16–344 and every link 23–337 (verified
+  with `elementFromPoint`/`getBoundingClientRect` in the same browser). The five images are the console tiles inside the
+  six-card snap row (a scroller) or a frame that crops its own picture. The docs page's "Start here" link is 173.8 ×
+  25.59 by box, but its pseudo-element covers the card: `elementFromPoint` returns the anchor at the title, the body,
+  the path and the card's blank corner (verified), so its target is 328 × 336 and it was not changed.
+- **The security page's bar still cuts 21px of "Reporting a problem" at 1,440**, and the pricing row is still 908px at
+  360: the scrolling bar with its edge shadow is the shared pattern, and a row of seven cannot be a 3-up with whole
+  names at 320.
+- **The docs filter's count is still a pause behind Clear** ("0 of 16 documents" for about half a second while all 16
+  are back, then "All 16 documents"): it is the deliberate pause the README describes for typing, and the number corrects
+  itself.
+- **Curule Cloud's prices are still in the app**, the captures were not retaken, and `site/ux/` was not edited. This
+  pass's frames — the plate's tabs and the billing switch at 360, the printed plate at 794 — were handed to the /ux page
+  with the report.
