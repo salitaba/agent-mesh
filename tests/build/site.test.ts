@@ -618,6 +618,34 @@ test("the home page puts the price, then the proof and the demo, and the argumen
   assert.ok(!/\.index\b/.test(css), "the strip it replaces is gone, not kept beside the bar");
 });
 
+/**
+ * The bar's row is as wide as its page and scrolls sideways where the chips do not fit. Two things were wrong at its edges.
+ * A page with three sections (the documentation page's Start here / The documents / Something missing) could not show them:
+ * at 360 the chips were 114.6 + 154.9 + 185 + two 8px gaps + the row's 32px of padding = 502px in 360, the third began at
+ * 301 and only 59px of its 185 were on screen; at 320, 19. And a row whose chips did fit could still scroll: the row's end
+ * padding was the centred column inset (160px at 1,440), which a scroll container counts as content, so at 1,440 the home
+ * page's 1,215px of chips in a 160px inset read 1,535px of scroll, the script shadowed an edge with nothing behind it, and a
+ * drag moved the row 95px into blank. The three names now share the row below 540; the row's right padding is the gutter; and
+ * a row that fits says nothing. The measured numbers are in site/DESIGN.md (2026-11-03).
+ */
+test("a bar of three sections fits a phone's row, and a row with room no longer scrolls into its own padding", () => {
+  const docs = page(pages, "docs/index.html").html;
+  const pricing = page(pages, "pricing/index.html").html;
+  const css = fs.readFileSync(path.join(SITE, "assets", "site.css"), "utf8");
+  assert.equal((/<nav class="toc-bar"[\s\S]*?<\/nav>/.exec(docs)![0].match(/<a href="#/g) ?? []).length, 3, "the documentation page's bar is the three-section row");
+  assert.match(docs, /<section class="section" id="documents">/, "and #documents is the section the rule is scoped by");
+  assert.ok(!/id="documents"/.test(pricing), "a page without that section is untouched by the sharing rule");
+  // Three chips share the 540px-and-below row; the names wrap inside the 44px chip instead of being cut by it, at 14px (the
+  // bar's size) and 12px at 320 (the floor: "documents" is 87px at 14 and 74.6 at 12).
+  assert.match(css, /@media \(max-width: 540px\) \{\n  html:has\(#documents\) \.toc li \{ flex: 1 1 0; min-width: 0; \}\n  html:has\(#documents\) \.toc a \{ display: flex; justify-content: center; min-width: 0; padding: 0 6px; white-space: normal; text-align: center; line-height: 1\.15; font-size: 14px; \}\n  html:has\(#documents\) \.toc a\[aria-current="true"\] \{ padding: 0 6px; text-decoration: underline; text-decoration-thickness: 1\.5px; text-underline-offset: \.22em; \}\n  html:has\(#documents\) \.toc a\[aria-current="true"\]::before \{ display: none; \}\n\}/, "three chips share the row and every name is whole");
+  assert.match(css, /@media \(max-width: 340px\) \{ html:has\(#documents\) \.toc a \{ font-size: 12px; \} \}/, "at 320 the labels take the 12px floor");
+  // The mark is the current-page line, not the dot: the dot's 22px of padding would leave 70.7px for "documents" at 320.
+  assert.match(css, /text-decoration: underline; text-decoration-thickness: 1\.5px; text-underline-offset: \.22em;/, "the section being read is marked with the line the header gives the current page");
+  // The right padding is the gutter (what a chip needs when the row is read to its end), not the column inset: the inset is
+  // counted as scrollable overflow and made a row that fit claim 95px more at 1,440. The left stays the page's column.
+  assert.match(css, /\n\.toc \{ display: flex; gap: 8px; padding: 8px var\(--gutter\) 8px max\(var\(--gutter\), \(100% - var\(--max\)\) \/ 2\); overflow-x: auto; scrollbar-width: none; \}/, "a row's end padding is the gutter, so a row that fits has no scroll range");
+});
+
 test("on a phone the four plans are one rate card read in rows, with how buying starts before the buttons", () => {
   const home = page(pages, "index.html").html;
   const section = /<section class="section" id="pricing">([\s\S]*?)<\/section>/.exec(home)![1]!;

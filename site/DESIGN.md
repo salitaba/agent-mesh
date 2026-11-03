@@ -2535,3 +2535,114 @@ browser in one run, so the differences stand.
 The next pass's first job is still the page's length: at 360 the pricing page is 12,992 (13,014 with Business chosen), and the home
 page is 12,151 over 15.2 screens. After it, the documentation row's third chip, which the last entry also queued.
 
+
+## 2026-11-03: the documentation bar's three names, and the edge a row does not have
+
+Measured with the same probe (Chrome over CDP in the pass container, where `system-ui` resolves to Noto Sans; reduced motion;
+light unless said; touch at 320/360/390, a mouse at 768/1,280/1,440/1,600; dark at 360; print at 794; forced colours at 360;
+a 24px and a 32px root at 320/360/720; no script at 360). The before column is the site at `e123059`, exported with
+`git archive` and served on a second port and measured in the same run; no number is copied from an earlier pass. The absolute
+heights are this container's (the record's home page at 360 is 12,151 where this container reads 12,581); both halves are one
+browser in one run, so the differences stand.
+
+### What changed
+
+- **The documentation page's three sections fit its bar on a phone.** The bar is a row of chips that scrolls sideways where they
+  do not fit, and the docs page has exactly three: Start here, The documents, Something missing. At 360 the chips were 114.56 +
+  154.88 + 184.95 + two 8px gaps + the row's 32px of padding = 502px in 360, so the third began at 301 and **59 of its 185px**
+  were on screen — the words "Some…" under the edge shadow; at 320 it was **19px**. Below 540 the three chips share the row (**104px each at 360, 90.7 at
+  320, 114 at 390, 160.3 at 540**), each name wraps inside its 44px chip ("The documents" and "Something missing" on two lines,
+  "Start here" one at 360), and the bar is still **61px**. The row is now exactly its viewport at 320/360/390/540
+  (scrollWidth = clientWidth; no `is-more`, no shadow, no swipe); from 541 the natural row is unchanged. The labels are 14px and,
+  at 340 and below, 12px — the floor: "documents" is 87px at 14 and 74.6 at 12, against 92px of chip at 360 and 78.7 at 320.
+  The natural row needs 514px (502 + the 21.6px gutters at that width); 540 leaves 26px of slack for a wider system font (this
+  container's font is about 4% narrower than the record's).
+- **The section being read is marked with the site's current-page line, not the dot.** The dot costs 22px of padding, which would
+  leave 70.7px for "documents" at 320; this row marks the current section with the **1.5px line, offset .22em**, that the header
+  and footer give the current page, with the tint and the border it already had. In `forcedColors: active` at 360 the line is still
+  `underline` and the marked chip is 104 × 44; the dot is hidden on this row only, and the other bars keep theirs.
+- **A row with room no longer scrolls into its own padding.** The row's right padding was the centred column inset — 160px at
+  1,440 — and a scroll container counts its end padding as scrollable overflow. The home page's eight chips are 1,215px, so at
+  1,440 the row read **1,535px** of scroll (95px of padding, no chip cut), the script set `is-more` and drew the edge shadow with
+  nothing behind it, and a drag moved the row 95px into blank. The right padding is now the gutter (32px at 1,440, 16 at 360);
+  the left stays the column, which is what lines the first chip up with the page. The row is **1,440px at 1,440**, has no
+  `is-more` and cannot scroll. The same correction on the security page at 1,600: its seven chips end at 1,541, so before the row
+  claimed 181px of scroll and shadowed an edge with nothing cut; now it is 1,600px and says nothing. Where a chip really is cut the
+  range is now only what is cut: at 1,440 the security row is **1,493** (was 1,621; 21px of "Reporting a problem" is cut, and the
+  row ends with the 32px gutter, not 160px of blank); at 1,280 the home row is **1,327** (was 1,375; 15px cut).
+
+### Measurements after this pass
+
+| The documentation bar | 320 | 360 | 390 | 540 |
+|---|---|---|---|---|
+| The row, before | 502 in 320 | 502 in 360 | 502 in 390 | 502 in 540 (fits) |
+| The third chip, before | 19 of 185 visible | 59 of 185 | 90 of 185 | 185 |
+| The row, after | **320 (fits)** | **360 (fits)** | **390 (fits)** | **540 (fits)** |
+| A chip, after | **90.7 × 44** | **104 × 44** | **114 × 44** | **160.3 × 44** |
+| The third chip, after | **90.7 whole** | **104 whole** | **114 whole** | **160.3 whole** |
+| The labels | 12px, 2 lines | 14px, 2 lines | 14px, 2 lines | 14px, 2 (third) |
+| The bar / the page | 61 / 8,929 | 61 / 8,358 | 61 / 8,083 | 61 / 7,206 |
+
+- The docs page's height is unchanged at every width: **8,929 / 8,358 / 8,083 / 7,206 / 5,308 / 4,403 / 4,448 / 4,460** at
+  320/360/390/540/768/1,280/1,440/1,600, before and after, because the bar is 61px in both and the two-line labels fit its 44px chip.
+  At 541 and 768 the row is the natural **114.6 / 154.9 / 185** in 541 and 768, unchanged; at 1,280/1,440/1,600 it is 185px wide at
+  its last chip and ends at 550.4 / 630.4 / 710.4, unchanged.
+
+| The bar at a desk | 1,280 | 1,440 | 1,600 |
+|---|---|---|---|
+| Home, scrollWidth before → after | 1,375 → **1,327** | 1,535 → **1,440** | 1,695 → **1,600** |
+| Home, `is-more` before → after | on → **on** (15px cut) | on → **off** | on → **off** |
+| Home, scroll range before → after | 95 → **47** | 95 → **0** | 95 → **0** |
+| Home, the last chip's right edge | 1,295.1 | 1,375.1 | 1,455.1 |
+| Security, scrollWidth before → after | 1,461 → **1,413** | 1,621 → **1,493** | 1,781 → **1,600** |
+| Security, `is-more` before → after | on → **on** (101px cut) | on → **on** (21px cut) | on → **off** |
+| Home / security page height | 11,081 / 7,590 | 11,263 / 7,590 | 11,314 / 7,590 |
+
+- At 768 the rows are unchanged (the padding was already the gutter): home 1,277, security 1,363, docs 768; at 540/360/320 the same
+  (home 1,258/1,247/1,247; security 1,345/1,333/1,333). **No page changes height** at any width; only the row's scroll range does.
+- The docs page's three chips are **44px tall** at every width and the bar **61px**. The only targets under 44 × 44 on the page are
+  unchanged (the three "start" cards' arrow links, whose card is the target, and the inline links in sentences).
+- The docs page's worst text pair is **5.61:1** in light (the skip button); the bar's own are **6.23:1** for the marked chip
+  (`#2150bd` on `#eaf0fc`) and **6.58:1** for a plain one (`#5d5a55` on `#fbfaf8`); dark is unchanged from the last pass (6.57).
+- **A reader's larger text:** at a 24px root the docs chips are **91 × 44** at 320 and **104 × 44** at 360, the bar 61, and the page
+  **13,844 / 12,650**, 0px over. At a 32px root they are 91/104 × 44, the bar 61, the page **20,692 / 18,463**, 0px over; at 720 the
+  row is natural (880 in 720, bar 63.8, the bar's recorded 32px behaviour, unchanged). The labels keep their layout size (14, 12 at
+  320) as the header's controls do, so the three names stay whole; the alternative — 28px labels in a 90px chip — cannot fit.
+- **The other states:** without a script the page is **8,269** at 360, the row 360, 0px over, the three chips 104 × 44 and no mark;
+  in dark it is 8,358, 0px over; print at 794 is **4,690**, the row natural (115/155/185) and 0px over; with `forcedColors: active`
+  at 360 the marked chip's line is `underline` and the page is 0px over.
+- The probe's failure list is identical before and after on the docs page at 360 (**14**) and on the home page at 1,440 (**37**):
+  the closed phone menu's links, the three card links the probe reads as 25.59px targets, the 1px hairlines under its 3:1 boundary
+  floor, and the mouse's 36–40px rows. Nothing was added to it.
+- `tests/build/site.test.ts` adds **"a bar of three sections fits a phone's row, and a row with room no longer scrolls into its own
+  padding"**: the sharing rule, the wrap and the 14/12px labels, the current-page line and the hidden dot, the `.toc` padding
+  (right = the gutter), and that the rule is scoped to the page with `#documents` (the pricing page, which has none of it, is
+  checked too). The site's own suites — the `site*` files with docs-links, product-name, brand-assets, set-domain and no-mojibake —
+  are **160** tests, all passing; `site-chrome --check` and `pricing:check` pass.
+
+### What this pass deliberately left
+
+- **The docs bar's labels do not grow with the reader's root.** They are 14px (12 at 320) at every text size, like the header's
+  controls, so the three names stay whole in a 90.7px chip; a 28px label is 87px for "documents" alone and the row would either
+  cut or scroll as it did before. The floor is respected (no text under 12px) and the bar is 61px at 24 and 32px roots.
+- **The band 514–540 is shared even though the natural row would fit it.** The threshold is 540 with 26px of slack for a wider system
+  font; below it the row is the 3-up at every width the record measures, and the 1px flip at 541 from two-line equal chips to
+  one-line natural chips is the breakpoint's edge, not a state a reader sees while scrolling.
+- **The other bars still scroll where their seven or eight names do not fit:** at 360 the pricing row is 908px and the security row
+  1,333; at 1,440 the security row still cuts 21px of "Reporting a problem". The edge shadow and the script's chip reveal are their
+  cue, and a row of seven cannot be a 3-up with whole names at 320.
+- **The legal page's three-chip row is untouched.** Its words are whole at 360 (472px fits) and at 320 only 8px of the "Terms"
+  pill's edge is cut, not a word; the rule is for the page whose *name* was cut (`#documents`). If the legal row ever loses its
+  words, the same rule can take `#licence` as well.
+- **The documentation map's cards still stretch to their row's height at 768/1,440**, so a card with one document has up to 315px of
+  empty panel below it (the "Deploying Curule" card at 1,440 is 598px with its words ending at 307). A masonry would change the
+  card order; a stacked table is a change to what the map is. It was measured and left.
+- **The home page's printed plate still carries its three view tabs.** `@media print` hides `.tabs`, but `.hero-visual .tabs`
+  (0,2,0) sets `display: grid` and beats it, so the printed home page shows a dead Overview/Events/Designer switcher above the
+  whole capture (42px + 16px of paper). It is a specificity bug in the print state, found in this pass and not the bar's; the fix
+  is one selector (`.hero-visual .tabs` in the print block), and it is recorded here for the next pass rather than folded in.
+- **The pricing page's Community card says "1 projects open"** in its three figure cells (`<dt>projects open</dt><dd>1</dd>`, at every
+  width), while the home page's rate card says "1 project open". The block is generated by `scripts/pricing-html.mjs` from
+  `packages/licensing/src/plans.ts`, so it is not hand-editable here; the plural is the exporter's to fix.
+- **Curule Cloud's prices are still in the app**, the legal page's `TODO(owner)` still publishes (`site:check` exits 1), the captures
+  were not retaken, and `site/ux/` was not edited. This pass's frames are handed over with the report.
