@@ -2,11 +2,11 @@
  * The Overview's first screen is a delivery receipt: the verdict, the goal, one action and the four figures, with the first
  * evidence row at the fold.
  *
- * Measured at 360 on the delivered demo (before this pass): the hero was 746 px of the 683 px a phone has above its thumb dock,
+ * Measured at 360 on the delivered demo (before these passes): the hero was 746 px of the 683 px a phone has above its thumb dock,
  * the actions took three rows and 148 px (Open the product, Reopen with feedback, then Files, Cost and Replay), the delivered
  * note was 86 px restating the headline, and the first evidence row was at 812 px in the page — 129 px below what a thumb can see.
  * The three quiet links opened pages the dock and the figures already name. So: one action in the row and the rest behind "…",
- * the note folded into a named door, and the goal across the hero's width.
+ * the note moved to the checks it explains, and the goal across the hero's width.
  *
  * The shape is pinned here; the browser that measured it is not in this suite.
  */
@@ -15,7 +15,7 @@ import assert from "node:assert/strict";
 import * as fs from "fs";
 import * as path from "path";
 
-import { heroActions } from "../../apps/mesh-dashboard/src/overview-model";
+import { heroActions, noteBelongs } from "../../apps/mesh-dashboard/src/overview-model";
 import { describeMission, factsFromStatus } from "../../apps/mesh-dashboard/src/mission";
 
 const SRC = path.resolve(__dirname, "..", "..", "..", "apps", "mesh-dashboard", "src");
@@ -23,6 +23,7 @@ const read = (rel: string): string => fs.readFileSync(path.join(SRC, rel), "utf8
 
 const hero = read("views/MissionHero.tsx");
 const overview = read("views/Overview.tsx");
+const goals = read("views/GoalChecks.tsx");
 const css = read("views/overview.css");
 
 /** The bodies of every media block whose condition matches (a file may open the same break twice), by balanced braces. */
@@ -97,20 +98,29 @@ test("the hero asks the model which actions go where, and the dock's own break d
   assert.match(hero, /const items: MenuItem\[\] = menu\.map\(/, "and the menu is the model's menu");
 });
 
-test("a phone folds the delivered note into a named door, and the exact words are still there", () => {
-  assert.match(hero, /const NOTE_FOLD: Partial<Record<MissionState\["phase"\], string>> = \{ done: "Why this is done" \};/, "the door says what it holds");
-  assert.match(hero, /<summary>\{foldLabel \?\? note\.summary\}<\/summary>/, "the summary is the name when folded");
-  assert.match(hero, /\{foldLabel \? <p>\{note\.summary\}<\/p> : null\}/, "and the verdict's own sentence is the body's first line, not dropped");
-  assert.match(hero, /<Note note=\{p\.note\} foldLabel=\{p\.noteFold \? NOTE_FOLD\[state\.phase\] : undefined\} \/>/, "only a phone folds it, and only where the note has a body");
-  assert.match(overview, /noteFold=\{phone\}/, "the phone is the fold's own break");
-  // The map has one entry, so every other phase keeps its own sentence: only `done` says what the headline already said.
-  assert.doesNotMatch(hero, /NOTE_FOLD\[state\.phase\] \?\?/, "no fallback name");
+/**
+ * The finished note was a 45 px door ("Why this is done") between the receipt and the evidence, and its body was the gate's own
+ * sentence — the claim the headline above it already makes. It moved to the head of Goal checks, where the checks it names are
+ * listed: at 360 the hero is 543.14 → 498.14, the first evidence row 672.73 → 627.73, and the second row's 44 px head
+ * (697.73–741.73) is whole above the 747 px dock, where it began 4.3 px above it. A desk gains the 57 px note row that sat under
+ * its figures (324.77 → 267.77 at 1,440). The browser that measured it is not in this suite; the shape is pinned here.
+ */
+test("a delivered mission's note is read with its checks, not as a door under its own headline", () => {
+  assert.equal(noteBelongs("done"), "checks", "the finished note goes where the checks it names are listed");
+  assert.equal(noteBelongs("needs-you"), "hero", "a stopped mission still explains itself under its headline");
+  assert.match(overview, /const noteAt = noteBelongs\(state\.phase\);/, "the view asks the model where the note is read");
+  assert.match(overview, /note=\{noteAt === "hero" \? note : null\}/, "the hero is not given the finished note");
+  assert.match(overview, /why=\{noteAt === "checks" \? note : null\}/, "Goal checks is");
+  assert.match(goals, /<p>\{why\.summary\}<\/p>/, "the section shows the gate's exact sentence");
+  assert.match(goals, /why\.detail\.map/, "and the line behind it, not only the sentence");
+  assert.doesNotMatch(hero, /NOTE_FOLD|noteFold|Why this is done/, "no door names a sentence the page already said");
 });
 
-test("the folded note is one 44 px row, not a block with its own padding", () => {
-  assert.match(css, /\.ov \.ov-note\.disc \{ padding-block: 0; \}/, "the row owns the height");
-  assert.match(css, /\.ov \.ov-note\.disc > \.ov-note-body \{ padding-block: var\(--s2\) var\(--s3-5\); \}/, "and the body pads itself when it opens");
-  assert.match(css, /\.ov \.ov-note > summary, \.ov \.ov-ad > summary \{ align-items: center; min-height: 44px;/, "the door keeps the thumb's floor");
+test("the finished note is a quiet paragraph at the head of the checks, not a row in the receipt", () => {
+  assert.match(css, /\.ov-why \{ display: grid; gap: var\(--s1-5\); margin: var\(--s3\) 0 var\(--s1\); max-width: 90ch; \}/, "the note is a paragraph block");
+  assert.match(css, /\.ov-why p \{ margin: 0; font-size: 14px; color: var\(--text-dim\); \}/, "quieter than the headline it explains");
+  // Every phase that is not finished still keeps its note in the hero, and that door is still a thumb's height.
+  assert.match(css, /\.ov \.ov-note > summary, \.ov \.ov-ad > summary \{ align-items: center; min-height: 44px;/, "the hero's own note keeps the thumb's floor");
 });
 
 test("the goal takes the hero's width on a phone, and the mark and headline keep the first row", () => {

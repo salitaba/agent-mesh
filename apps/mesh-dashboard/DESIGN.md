@@ -206,11 +206,14 @@ Breakpoints: **1280 1100 900 800 760 620 560**. 800 is the sidebar drawer (JS
   three rows and 148 px, and the three quiet ones opened Files and Cost, which the
   dock and the figures already name. A desk keeps the row of five. Pinned by
   `heroActions` in `overview-model.ts` (2026-10-31).
-- **The delivered note folds where it restates the headline.** Its summary is the
-  gate's sentence, and the headline directly above says the same claim: on a phone
-  it is a 44 px door ("Why this is done") and the exact words are the body's first
-  line. Only `done` folds; every other phase's note says something the headline
-  does not (2026-10-31).
+- **A delivered mission's why is read with its checks.** Its note is the gate's
+  sentence, and the headline directly above already says the claim, so it is read
+  at the head of Goal checks — under the progress it explains — not as a 45 px
+  door in the receipt. At 360 the receipt is 543.14 → 498.14 and the second
+  evidence row (692.73–745.73) is whole above the 747 px dock, where its head
+  began 4.3 px above it; at 1,440 the 57 px note row leaves the first screen
+  (hero 324.77 → 267.77). Every other phase keeps its note under its headline
+  (2026-11-03).
 - **A page is named by the name you pressed.** One component behind two routes
   ("Needs you" and "Tool gates") titles itself by the tab in front, never by a
   fixed word (2026-10-31).
@@ -250,12 +253,11 @@ Breakpoints: **1280 1100 900 800 760 620 560**. 800 is the sidebar drawer (JS
   until opened, and since 2026-10-28 those rows are also the phone's index. The open question is the default, not the length: What shipped is
   closed like the other three, and a mission that has just delivered may deserve its six file rows open; measured, the closed row is 53 px and
   the open panel 847, so the whole difference is one press or two screens.
-- A phone's first screen holds the receipt and the first evidence row **whole** at every width from 320 to 387 now: the receipt is **543.14 px**
-  and the row begins at **672.73**, its 44 px head (**677.73–721.73**) 25.3 px clear of the 747 dock and the row's own end (**725.73**) 21.3 px
-  above it, where the head used to clear by 2.9 and the row ended 1.1 px under. From 388 the receipt is **552.33** (the figures keep 24) and the
-  row begins at **681.92**; at 398 the Tokens sub fits one line too and the receipt is **534.14**. What is left on that screen is the second
-  evidence row: its head begins at **742.73**, 4.3 px above the dock, and the 20 px figure step is what holds those 9.19 px — the note's 44 px
-  door and the receipt's 20 px block padding are the next 44 and 40 (2026-11-02).
+- A phone's first screen holds the receipt, the first evidence row and — at 360 — the second row **whole** now: the receipt is **498.14 px**
+  and What shipped begins at **627.73**, its 44 px head (**632.73–676.73**) 70.3 px clear of the 747 dock; Latest work is
+  **692.73–745.73**, its head **697.73–741.73**, the row's end 1.27 px above the dock. At 390 the second head is **706.92–750.92**
+  (3.9 px under) and at 320 **720.13–764.13** (17.1 under): both widths pay the receipt's height there (507.33 at 390, 520.53 at 320),
+  and the next 40 px is the receipt's two 20 px block paddings. The 20 px figure step still holds 9.19 px from 320 to 387 (2026-11-03).
 - Events and the approvals inbox still close without `NextLinks`, and that is now a decision rather than a pending question: Events ends on
   its window status (the newest 300 of 491 events) and the inbox on its empty state's Back to the Overview; a row of doors would repeat
   the navigation each page already has (`Pause`/`Filters`, `Decisions`/`Tool gates`) rather than continue it.
@@ -300,33 +302,101 @@ Breakpoints: **1280 1100 900 800 760 620 560**. 800 is the sidebar drawer (JS
 
 ## What the next pass should take
 
-1. The delivered note's 44 px door ("Why this is done") now sits between the receipt and the first evidence row, and the headline's
-   second sentence above it says the same thing in one line: its body is the gate's exact sentence. Decide whether the door earns
-   its row on a phone — folding it into the headline would put the second evidence row's whole 44 px head above the dock at 360
-   (it begins at 742.73, 4.3 px clear) and give the page 44 px (2026-11-02).
-2. Whether the thumb's row earns its 36 px of every page: it is the owner's daily five, but a page opened once (Graph, the
+1. Whether the thumb's row earns its 36 px of every page: it is the owner's daily five, but a page opened once (Graph, the
    Playground) pays too. Watch real use before shortening the list or hiding the row on scroll.
-3. Whether the Designer's bottom stays its own: the save bar and the dock cannot both own that edge, and the workbench is
+2. Whether the Designer's bottom stays its own: the save bar and the dock cannot both own that edge, and the workbench is
    the one screen that is not a brief.
-4. The events page's "Live" chip says what the stream is doing while the mission is delivered; decide whether one word can
+3. The events page's "Live" chip says what the stream is doing while the mission is delivered; decide whether one word can
    say both, or whether the chip should read the mission's state here as it does in the bar.
-5. Whether the hero's `…` and the frame's `…` should both offer `Reopen with feedback` on a phone, and whether a pointer's
+4. Whether the hero's `…` and the frame's `…` should both offer `Reopen with feedback` on a phone, and whether a pointer's
    press on a figure's number doing nothing is the right price for being able to select it (2026-10-31).
-6. The Designer's 320 header is two rows now (168.59 px with its lede; 89.6 on the first-run guide, which has no lede). The save bar's
+5. The Designer's 320 header is two rows now (168.59 px with its lede; 89.6 on the first-run guide, which has no lede). The save bar's
    blocked state is the next block there: its 44 px inline action inflates the line from 17.4 to 36, and that 18.6 px is the last thing
    the bar could give back — it needs either a glyph button (a name lost) or a target overlap (a target collision).
-7. Decide whether the Steps filter fold belongs above 620: at 621–768 the chips take two rows and the switch a third (166 px),
+6. Decide whether the Steps filter fold belongs above 620: at 621–768 the chips take two rows and the switch a third (166 px),
    though the page's own reading is one button there. The tablet's `NextLinks` now take the 44 px floor on a coarse pointer, so the
    chips are the last of that family.
-8. Decide whether What shipped opens by default on a fresh delivery, and whether the phone's fold remembers a section (the page
-   resets to all closed on every visit).
-9. Measure the project strip at 621–800 with enough projects, in the hosted console where a registry exists; `curule console` cannot show it.
-10. Remember the YAML preview's wrap choice, or move the toggle into the pane's own head; either is a small addition to a layer that now fits.
-11. Check the Events and inbox end-caps against real live content before adding any row (the decision above).
-12. Read the console with a real thumb on a real phone: the measurements here are Chromium at 360 px with touch emulation only in CSS, not a hardware device.
-13. Check the frame's safe-area claims on a notched device in both orientations; the insets are in the CSS but the stand-in browser reports them as zero.
+7. Decide whether What shipped opens by default on a fresh delivery, and whether the phone's fold remembers a section (the page
+   resets to all closed on every visit). It is now the second thing on the phone's first screen (627.73, 70.3 px above the dock).
+8. Measure the project strip at 621–800 with enough projects, in the hosted console where a registry exists; `curule console` cannot show it.
+9. Remember the YAML preview's wrap choice, or move the toggle into the pane's own head; either is a small addition to a layer that now fits.
+10. Check the Events and inbox end-caps against real live content before adding any row (the decision above).
+11. Read the console with a real thumb on a real phone: the measurements here are Chromium at 360 px with touch emulation only in CSS, not a hardware device.
+12. Check the frame's safe-area claims on a notched device in both orientations; the insets are in the CSS but the stand-in browser reports them as zero.
 
 ## Pass log
+
+### 2026-11-03 — a delivered receipt says its claim once, so a second piece of evidence is above the dock
+
+Surface: `views/overview-model.ts` (one function, `noteBelongs`), `views/Overview.tsx` (the note routed by it), `views/MissionHero.tsx`
+(the delivered note's door and the `NOTE_FOLD` / `noteFold` fold removed), `views/GoalChecks.tsx` (the note's new home), `views/overview.css`
+(`.ov-why`), `tests/dashboard/overview-receipt.test.ts` (two tests rewritten) and `tests/dashboard/overview-model.test.ts` (one added).
+Measured on the scripted demo at **Delivered** on the production build: one delivered log (508 events, 49.3k of 2.0M tokens, 7 checks,
+9 files, 17 messages, 7 seats, ran 6.5s) restored and served by a `--resume` console for **each** build, so both halves read the same
+figures; Chromium over CDP at 320/360/390/620/768/900/1,440, light at every width and dark at 360 and 1,440, a touch pointer at 390
+and below, reduced motion, axe-core 4.14 in the page at 360 and 1,440 in both schemes.
+
+**The problem.** The delivered hero said its claim twice: the headline's second sentence ("Every mandatory check is evidenced.")
+and, one block below the figures, a 45 px door named **"Why this is done"** whose body was the gate's own sentence ("Every
+mandatory acceptance criterion was evidenced, with no open escalations and no work still claimed"). The question and its answer
+cost the phone 45 px of the first screen, and the second evidence row's 44 px head began **4.3 px above** the thumb dock. The
+checks that sentence names are the Goal checks section — the place an operator opens to ask why. It was the first item of the
+previous pass's "What the next pass should take", and the answer is the checks, not the receipt.
+
+**What changed.**
+
+- **The finished note is read at the head of Goal checks.** `noteBelongs(phase)` sends `done`'s note to the checks section and every
+  other phase's note to its hero: a stopped, held or half-finished mission still explains itself under its own headline. Goal checks
+  draws the gate's sentence and the line behind it ("The project is parked. A finished mission does not need it running.") under the
+  progress it explains, at 14 px in `--text-dim` and 90ch wide.
+- **The receipt loses the door, not the claim.** The hero still says "Delivered. Every mandatory check is evidenced."; the exact gate
+  wording and the parked line are with the checks. `NOTE_FOLD` and the `noteFold` prop existed only for `done`, so they are gone: no
+  door in the console is named after a sentence the page above it already said.
+- **The empty state and the note's other homes are untouched.** Needs you, failed, paused, parked, stalled and ceiling keep their note
+  in the hero; the parked Overview still shows its "Nothing has been done yet…" door.
+
+**Measured.**
+
+| | Before | After |
+|---|---|---|
+| The receipt (hero), 320 | 565.53 px | 520.53 |
+| The receipt, 360 / 390 / 620 | 543.14 / 552.33 / 489.64 | 498.14 / 507.33 / 444.64 |
+| The receipt, 768 / 900 / 1,440 | 521.84 / 565.84 / 324.77 | 460.84 / 504.84 / 267.77 |
+| What shipped row, 360 | 672.73–725.73 | 627.73–680.73 |
+| Its 44 px head, 360 | 677.73–721.73 (25.27 px clear of the 747 px dock) | 632.73–676.73 (70.27 clear) |
+| Latest work row, 360 | 737.73–790.73 (head 742.73–786.73, 4.3 px above the dock) | 692.73–745.73 (head 697.73–741.73, 1.27 px clear) |
+| Latest work head, 390 | 751.92–795.92 (48.92 under the dock) | 706.92–750.92 (3.92 under) |
+| Latest work head, 320 | 765.13–809.13 (62.13 under) | 720.13–764.13 (17.13 under) |
+| What shipped row, 320 / 390 | 695.13 / 681.92 | 650.13 / 636.92 |
+| The Overview (`#view` scrollHeight), 320 / 360 / 390 / 620 | 943 / 921 / 930 / 867 | 898 / 876 / 885 / 836 |
+| The Overview, 768 / 900 / 1,440 | 2,939 / 2,965 / 1,934 | 2,959 / 2,985 / 1,913 |
+| The note in the receipt | 45 px at 360, 57 at 1,440, 61 at 768 / 900 | 0 |
+| Tab stops in `#view` at 320 / 360 / 390 | 39 / 39 / 39 | 38 / 38 / 38 (the door's summary was one) |
+| Axe, 13 views × 360 and 1,440 × both themes | 0 violations | 0 |
+| Horizontal page scroll, the same 52 frames | 0 | 0 |
+| Controls under 44 × 44 in `#view`, 360 / 320 | 0 / 0 | 0 / 0 |
+| Console errors | one, the one-mesh `/api/projects` 404 | the same one |
+
+The page grows 20 px at 768 and 900 and shrinks 21 at 1,440: there the Goal checks panel is open, so the note moves from the receipt
+into the right-hand column and the row of the grid takes its height. The first screen is 61 px (768/900) and 57 px (1,440) shorter
+before the evidence begins — that is what the change buys; total length on an open desk page is not.
+
+**Floors.** No document or `#view` sideways scroll at any width in either scheme; axe-core 0 violations at 360 and 1,440 in both
+schemes (52 runs over the 13 views, the same 4 one-mesh 404s as the base); the smallest text stays 11 (the avatar initials); the
+receipt's figures keep their 20 px step under a 361 px strip; dark at 360 and 1,440 reads the same geometry. The finished note is
+text in both schemes and in Windows High Contrast, so it needs no `forced-colors` rule.
+
+Suite: `npm run typecheck` and `npm run build` clean; `dist/tests/dashboard` **1,218 pass, 0 fail** with one new test and two
+rewritten; `dist/tests/build` (console-palette and dist-coherence) **8 pass, 0 fail**; eslint 0 errors on the changed files;
+`qa:console` at 360 and 1,440 in both themes: 52 screenshots, 52 axe runs, 0 violations, 0 page scroll, only the one-mesh
+`/api/projects` 404. The two new rules were mutation-checked — `noteBelongs` returned `"hero"` for every phase (both tests failed,
+then passed restored) — and the view's routing is pinned by the receipt test, not by the function alone.
+
+**Left.** At 390 and 320 the second evidence row's head is still partly under the dock (3.9 and 17.1 px): both widths pay the
+receipt's height there (507.33 / 520.53), and the next 40 px is the receipt's two 20 px block paddings, not the note. The delivered
+note is now one press away on a phone (Goal checks is a closed row) rather than visible under the headline; the hero's own second
+sentence still states the claim, and the parked line waits with the checks. What shipped's default remains open on the desk and
+closed on a phone (the previous pass's open question), and the hero's `…` still shares `Reopen with feedback` with the frame's `…`.
 
 ### 2026-11-02 — a phone's verdict sentence is the receipt's width, so the first evidence row is whole above the dock
 

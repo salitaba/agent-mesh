@@ -14,7 +14,7 @@ import { useMedia } from "../useMedia";
 import { escalationText, holdsOf, owedLine } from "../escalation-card";
 import { orderDecisions, toolRequestsBySeat, type LoadState } from "../inbox-model";
 import type { HeroAction, MissionAction } from "../mission";
-import { buildAttention, bufferIsBehind, bySeq, capacityWaits, checkSegments, checksSummary, heroLook, heroNote, missionRead, splitHeadline, staleRunning, standingBlocks, unlistedRunning, type FixTarget } from "../overview-model";
+import { buildAttention, bufferIsBehind, bySeq, capacityWaits, checkSegments, checksSummary, heroLook, heroNote, missionRead, noteBelongs, splitHeadline, staleRunning, standingBlocks, unlistedRunning, type FixTarget } from "../overview-model";
 import { rightNowInput } from "../rightnow";
 import { HOST_SPEND_CEILING_REASON, liveMissionVerdict, terminalMissionVerdict, verdictText } from "../../../../packages/protocol/src/catalog";
 import { AttentionList } from "./AttentionList";
@@ -340,6 +340,9 @@ export default function Overview(): React.JSX.Element {
     lastBoot: status.lastBoot,
     spend,
   });
+  // A delivered mission's note is the gate's own sentence, and the headline above it says the same thing: it is read at the
+  // head of Goal checks, with the checks it names, instead of as a door between the receipt and the evidence (noteBelongs).
+  const noteAt = noteBelongs(state.phase);
   // The figures are the last the console read when the server stopped answering and when the project's own process stopped: both are "last known".
   const stale = serverDown || facts.projectDown !== null;
   // What waits for the person, beyond the headline: what the attention list asks them to look at, and notices (which hold nothing, and are still for them).
@@ -360,7 +363,7 @@ export default function Overview(): React.JSX.Element {
         state={state}
         headline={state.headline}
         goalText={String(goal.description || "").replace(/\s*\n+\s*/g, " ").trim()}
-        note={note}
+        note={noteAt === "hero" ? note : null}
         checks={checks}
         marks={checkSegments(goal.acceptanceCriteria)}
         seats={seats}
@@ -375,7 +378,6 @@ export default function Overview(): React.JSX.Element {
         next={state.next}
         secondary={state.secondary}
         compact={dock}
-        noteFold={phone}
         go={openFigure}
         run={run}
       />
@@ -403,7 +405,7 @@ export default function Overview(): React.JSX.Element {
             </div>
           ) : <TimelineSkeleton label="Loading recent work." />}
         </Panel>
-        <GoalChecks goal={goal} arts={arts} openArt={openArt} fold={foldOf("ov-goal", checks.total ? `${checks.done} of ${checks.total} evidenced` : "no checks")} />
+        <GoalChecks goal={goal} arts={arts} openArt={openArt} why={noteAt === "checks" ? note : null} fold={foldOf("ov-goal", checks.total ? `${checks.done} of ${checks.total} evidenced` : "no checks")} />
         <Panel
           id="ov-events" className="ov-events" title="Just happened"
           fold={foldOf("ov-events", eventsFold)}

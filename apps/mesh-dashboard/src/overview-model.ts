@@ -463,6 +463,20 @@ export function heroNote(i: HeroNoteInput): HeroNote | null {
   }
 }
 
+/**
+ * Where a mission's note is read.
+ *
+ * The hero's note explains the state under the figures, and every phase that can be stopped, held or caught halfway needs it
+ * there. A delivered mission's note is different: it is the gate's own sentence ("Every mandatory acceptance criterion was
+ * evidenced, with no open escalations and no work still claimed"), which says what the headline directly above it says. On a
+ * phone that note was a 45 px door ("Why this is done", 614.73–659.73 at 360), and the checks it names are the section below:
+ * with the door gone the second evidence row's 44 px head (697.73–741.73) is whole above the 747 px dock, where it began 4.3 px
+ * above it. So the finished note belongs at the head of Goal checks, and every other phase keeps it in the hero.
+ */
+export function noteBelongs(phase: MissionPhase): "hero" | "checks" {
+  return phase === "done" ? "checks" : "hero";
+}
+
 /* ------------------------------------------------------------------------- */
 /* How the hero looks                                                         */
 /* ------------------------------------------------------------------------- */

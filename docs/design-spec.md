@@ -439,6 +439,33 @@ Known debt, so it is not rediscovered:
 The changes to the console that were measured against rendered screens, newest first. A pass is only in this list with the run
 that produced it, the before and the after, and what it deliberately did not change.
 
+> The console's passes after 2026-10-29 are recorded in full in
+> [`apps/mesh-dashboard/DESIGN.md`](../apps/mesh-dashboard/DESIGN.md#pass-log); the newest is summarised here.
+
+### 2026-11-03 — a delivered receipt says its claim once, so a second piece of evidence is above the dock
+
+The delivered Overview's hero carried the gate's own sentence ("Every mandatory acceptance criterion was evidenced, with no open
+escalations and no work still claimed") in a 45 px door under the figures, one block after a headline that already said the
+claim. It is read at the head of **Goal checks** now, under the progress it explains, and the receipt ends on its four figures.
+One delivered log (508 events, 49.3k of 2.0M tokens, 7 checks, 9 files, ran 6.5s) was served to both builds with `--resume`, so
+the two halves read the same figures; Chromium at 320/360/390/620/768/900/1,440, light and (360, 1,440) dark, touch, reduced
+motion, axe-core.
+
+| | Before | After |
+|---|---|---|
+| The receipt, 320 / 360 / 390 / 620 | 565.53 / 543.14 / 552.33 / 489.64 px | 520.53 / 498.14 / 507.33 / 444.64 |
+| The receipt, 768 / 900 / 1,440 | 521.84 / 565.84 / 324.77 | 460.84 / 504.84 / 267.77 |
+| What shipped row, 360 | 672.73–725.73 | 627.73–680.73 (head 632.73–676.73, 70.27 px clear of the 747 dock) |
+| Latest work row, 360 | 737.73–790.73 (head 742.73–786.73, 4.3 px above the dock) | 692.73–745.73 (head 697.73–741.73, 1.27 px clear) |
+| The Overview, 320 / 360 / 390 / 620 / 1,440 | 943 / 921 / 930 / 867 / 1,934 | 898 / 876 / 885 / 836 / 1,913 |
+| Tab stops in `#view`, 360 | 39 | 38 |
+| Axe / sideways page scroll / console errors | 0 / 0 / the one-mesh 404 | 0 / 0 / the same one |
+
+`noteBelongs` (`overview-model.ts`) is pinned by `tests/dashboard/overview-model.test.ts`; the view's routing and the note's new
+home by `tests/dashboard/overview-receipt.test.ts`. Both were mutation-checked. At 390 and 320 the second evidence row's head is
+still 3.9 and 17.1 px under the dock, and the next 40 px there is the receipt's two 20 px block paddings; a delivered note is one
+press away on a phone (Goal checks is a closed row), and every other phase keeps its note in the hero.
+
 ### 2026-10-29 — the Cost ledger names its columns everywhere, and every bar is the share beside it
 
 Run against `examples/demo-stub/mesh.yaml` at **Delivered** (the scripted demo, no model calls) on the production build from the
