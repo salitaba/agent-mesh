@@ -721,7 +721,11 @@ body:has(#billing-monthly:checked) .head-price-monthly { display: inline; }
 .toc-bar::before, .toc-bar::after { content: ""; position: absolute; top: 0; bottom: 1px; z-index: 1; width: 28px; pointer-events: none; }
 .toc-bar.is-back::before { left: 0; background: linear-gradient(to right, var(--edge), transparent); }
 .toc-bar.is-more::after { right: 0; background: linear-gradient(to left, var(--edge), transparent); }
-.toc { display: flex; gap: 8px; padding: 8px max(var(--gutter), (100% - var(--max)) / 2); overflow-x: auto; scrollbar-width: none; }
+/* The inset on the left lines the first chip up with the page's column; on the right it is the gutter, not the column, because
+   a scroll container counts its end padding as scrollable overflow: at 1,440 the home page's eight chips (1,215px) ended 95px
+   short of the inset, so the row scrolled 95px into its own padding and the script shadowed an edge with nothing behind it.
+   The right padding is what a row needs to breathe when it is read to its end; the left one is the page's grid. */
+.toc { display: flex; gap: 8px; padding: 8px var(--gutter) 8px max(var(--gutter), (100% - var(--max)) / 2); overflow-x: auto; scrollbar-width: none; }
 .toc::-webkit-scrollbar { display: none; }
 .toc li { flex: none; }
 .toc a { min-height: 44px; padding: 0 16px; border-radius: var(--k-r-pill); color: var(--ink2); font-size: .875rem; white-space: nowrap; text-decoration: none; }
@@ -730,6 +734,23 @@ body:has(#billing-monthly:checked) .head-price-monthly { display: inline; }
 .toc a[aria-current="true"] { position: relative; padding: 0 10px 0 22px; border-color: color-mix(in srgb, var(--accent) 40%, transparent); background: var(--soft); color: var(--link); }
 .toc a[aria-current="true"]::before { content: ""; position: absolute; left: 10px; top: 50%; width: 6px; height: 6px; margin-top: -3px; border-radius: 50%; background: currentColor; }
 .toc .n { flex: none; min-width: 2ch; margin-right: 8px; color: var(--muted); font-size: .75rem; font-weight: 600; letter-spacing: .04em; font-variant-numeric: tabular-nums; }
+/* The documentation page's bar has exactly three sections, and their names do not fit one phone line: at 360 the row was 502px
+   in 360, the third chip ended at 486 and only 59px of "Something missing" was on screen (19 at 320). A third of that row can
+   hold a name, so below 540 the three chips share it — 104px each at 360, 90 at 320 — and each name wraps inside its 44px chip:
+   "The documents" and "Something missing" take two lines, "Start here" one, and the bar is still 61px. The label's 14px is the
+   bar's own size and, at 320, 12px, the floor: "documents" is 87px at 14 and 74.6 at 12, against 92px of chip at 360 and 78.7
+   at 320. The mark is the site's other mark for the place you are — the line the header and footer give the current page
+   (1.5px, offset .22em) — rather than the dot, because the dot's 22px of padding would leave 70.7px for that word at 320.
+   The natural row needs 514px (502 + the 21.6px gutters at that width); 540 leaves 26px of slack for a wider system font
+   (this container's font is about 4% narrower than the record's). From 541 the three chips fit as they are and the row is
+   untouched. */
+@media (max-width: 540px) {
+  html:has(#documents) .toc li { flex: 1 1 0; min-width: 0; }
+  html:has(#documents) .toc a { display: flex; justify-content: center; min-width: 0; padding: 0 6px; white-space: normal; text-align: center; line-height: 1.15; font-size: 14px; }
+  html:has(#documents) .toc a[aria-current="true"] { padding: 0 6px; text-decoration: underline; text-decoration-thickness: 1.5px; text-underline-offset: .22em; }
+  html:has(#documents) .toc a[aria-current="true"]::before { display: none; }
+}
+@media (max-width: 340px) { html:has(#documents) .toc a { font-size: 12px; } }
 /* At a glance: each answer on a tile whose shape says its kind (shield, arrow out, barred circle), linked to its section. */
 .glance { margin-top: clamp(32px, 4vw, 48px); padding: 24px; }
 .glance-list { gap: 20px; }
