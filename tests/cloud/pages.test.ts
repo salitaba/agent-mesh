@@ -336,6 +336,17 @@ test("the account's head and the way in keep their title on one line at a raised
   assert.match(declared(plans, "grid-template-columns")!, /minmax\(0,\s*1fr\)/, "a plan's card can be narrower than its price at a raised root, rather than widening the page");
 });
 
+test("the account's figures keep their shape at a raised root: a step's ring is its numeral's size, and a plan's price is capped by its line", () => {
+  // At a 32px root the step's 24px numeral was wrapped inside a 22px ring (a 16.7 × 66.4 text box, two lines) and a plan's $149.00 was
+  // 307.8px on a 320 phone, 28.8px past the page. Both are figures drawn in a box that did not follow the figure.
+  const rules = cssRules(read(path.join(ASSETS, "app.css")));
+  const ring = rules.filter((r) => r.selectors.includes(".steps .num") && declared(r, "width") !== undefined).at(-1)!;
+  assert.equal(declared(ring, "width"), "1.8333em", "the ring is the numeral's own size: 22px at a 12px caption and 44 at 24, so the digits do not wrap");
+  assert.equal(declared(ring, "height"), "1.8333em", "and square, so the whole number is in it");
+  const price = rules.find((r) => r.selectors.includes(".plan .price") && declared(r, "font-size") !== undefined)!;
+  assert.equal(declared(price, "font-size"), "min(2.25rem, 16vw)", "the price is display type capped by the line, as the account's title is, so a raised root cannot take it off a 320 phone");
+});
+
 test("the words are the product's: a stranger is never given the internal name for a running team, the password advice is grammar, and the page for a forgotten password is named after the link that brings people there", () => {
   for (const name of FILES) assert.doesNotMatch(read(path.join(PAGES_DIR, `${name}.html`)), /\bmesh\b/i, `${name} says "mesh"`);
   assert.doesNotMatch(read(SCRIPT), /\bmesh\b/i, "the script says mesh");

@@ -2890,3 +2890,117 @@ position is `getBoundingClientRect` plus `scrollY`.
   h1 would make one line at the cap, and would move the card and the action another 46.7px (one line at 43.2px).
 - The way-in forms at 200% text: the title cap gives back 19.9–98.4px of the 199–334px the action still ends below
   an 800px screen at 390, 360 and 320.
+
+## What this pass changed (2026-11-03)
+
+Same harness: Chromium 156 through `playwright-core` over CDP against this worktree's trial
+(`trial --port 7502`, whose plans are the trial's own fixtures), 320 / 360 / 390 / 768 / 1440 at
+16px and with the root raised to **32px**, light and dark, forced colours at 360,
+`prefers-reduced-motion: reduce`, and a touch pointer below 721. "Before" is the base commit's
+own `app.css` (`e123059`), served by the same trial and measured again in the same session as the
+after; no figure is copied from an earlier record. Fixtures: a fresh account with no plan (made
+through `/signup` and confirmed by the mail link, the state a customer lands on), the same account
+with a Team plan and one running workspace named Research (paid on the trial's payment page), and
+the same paid account with `/api/me` held to an empty workspace list, to eight copies of it, and
+to a 503. The way-in pages are the public ones; reset and verify hold a dead token. Heights are
+`document.documentElement.scrollHeight`; positions are `getBoundingClientRect` plus `scrollY`.
+
+- **A step's number is drawn in a ring its own size.** At a 32px root the 24px numeral was set in a
+  fixed **22 × 22** ring, so `02` wrapped to two lines: the numeral's text box was **16.7 × 66.4**,
+  the digits crossed the circle, and the three steps read as broken figures. The ring is
+  **1.8333em** square now — exactly 22px at the 12px caption and **44px** at 24 — and the numeral is
+  one **33.4 × 28** line. At 360/200 the rail is **140.8 → 187.2px** (the ring's 46.4), the stage
+  title moves **581.4 → 627.8**, its sentence **697.4 → 743.8**, and the first plan's heading
+  **957.4 → 1003.8**; the two plan cards' prices pay back **63.4** (each card **736.5 → 704.8** at
+  360) while the steps cost 46.4, so the page is **2,685 → 2,668**, 17px shorter. At 320/200
+  the rail is **224 → 226.4** (its labels already took three rows), the stage title moves
+  **659.4 → 661.8**, and the page **2,893 → 2,804**. At 16px nothing moves: the ring is 22 × 22, the rail 52, the page
+  **1,589** at 360 and **1,017** at 1,440.
+- **A plan's price is display type, capped by the line it is on.** At 32px root the price was 72px:
+  `$149.00` measured **307.8px**. On a 320 phone it ran **28.8px past the page** (the document's
+  scroll width was **353** on a 320 viewport) and the last digit could not be read without a
+  sideways scroll; at 360 it crossed the card's right border by **4.8** (text right 348.8 against
+  344). It is **`min(2.25rem, 16vw)`**: **51.2px at 320** and **57.6 at 360**, so the amount is
+  **218.8** and **246.2** wide, inside the **238 / 319** content, and the page is **320/320** and
+  **360/360**. The card is **809.6 → 763.9** at 320 and **736.5 → 704.8** at 360; the page
+  **2,893 → 2,804** and **2,685 → 2,668**. At 16px, 16vw is 51.2 at 320 and 57.6 at 360, above
+  the 36 the ramp gives, so no page changes. At 390/200 the cap is **62.4** (the amount 266.7 in
+  308); at 768/200 and 1,440/200 it does not bite (72), and no page scrolls sideways at either. The
+  paid account's own plan list (`Change plan`, 320/200) draws the same card at **51.2px**, its amount
+  **219** in **238**, page **320/320**.
+- **States and the family.** The paid account is **1,904 / 2,147 / 1,859 / 1,989** at 360 / 320 /
+  390 / 1,440 and dark at 360 is **1,904** — unchanged. The plan-less dark page is **1,589**;
+  failed is **800**; the empty workspace list is **1,735**, and with the root at 32 it is **3,468**
+  at 360 and **3,637** at 320 (the steps 187.2 / 226.4, the numeral 44px and one 28px line, no
+  overflow); the eight-workspace list is **3,492**. The five way-in pages draw neither a plan card
+  nor the account's `.steps` rail, so they are the same to the pixel: sign-up **1,410 / 917**, sign-in **1,255 / 900**,
+  forgot **1,161**, reset with a dead link **949**, verify with a dead link **1,199**, and sign-up
+  **2,693** at 360/200 and **3,011** at 320/200. The rule is the shared plan card's, so the home
+  page's plan cards take it too: at 320/200 its document was **353** wide and is **320**; at 16px the cap is
+  above the 36 the ramp gives, so nothing there moves. 320, 360, 390, 768 and 1,440 in light, 360 in dark:
+  no sideways page scroll (all 320/320, 360/360, 390/390, 768/768, 1,440/1,440), nothing computes
+  below **12px** at normal text, and no control is under 44 × 44 below 721. Forced colours at 360/200
+  draws the **44px** ring and the **57.6px** price in the system's black on white. With scripts off
+  the account is **800** at 360 and 320 and draws neither component, as before; sign-up is 1,552
+  with its one `noscript` sentence. Text contrast is unchanged: the page's worst pair is **5.61:1**
+  light and **7.10:1** dark (AA needs 4.5); the four 1.26–1.58:1 light and 1.28–1.87:1 dark hairline
+  boundary failures are the stylesheet's existing ones, before and after.
+- **The budget.** `app.css` is **40,914 → 40,925 bytes of 40,960** (35 left): the ring's two
+  `1.8333em` (+8), the price's `min(2.25rem, 16vw)` (+11); the comment over the field note,
+  "A refusal takes the field's gap.", lost "field's" (−8).
+- **Tests.** `tests/cloud/pages.test.ts` has a new test, "the account's figures keep their shape at a
+  raised root: a step's ring is its numeral's size, and a plan's price is capped by its line": it
+  pins the ring's `1.8333em` square and the price's `min(2.25rem, 16vw)`, and states the before
+  measurements in the comment. The page tests — **153 pass, 0 fail**; the page-related build test —
+  **5 pass, 0 fail**; typecheck clean, lint 0 errors (its 211 pre-existing warnings).
+
+| measured at a 32px root | before | after |
+| --- | --- | --- |
+| The step numeral at 360 | 22 × 22 ring, the text **16.7 × 66.4** (two lines) | **44 × 44** ring, the text **33.4 × 28** (one) |
+| The steps rail at 360 / 320 | 140.8 / 224 | **187.2 / 226.4** |
+| The stage title at 360 | y = 581.4 | **627.8** |
+| The plan price at 320 | **72px**, text **307.8**, right **348.8**; page **353** wide | **51.2px**, text **218.8**, right **259.8**; page **320** |
+| The plan price at 360 | **72px**, text **307.8**, right **348.8** (card at 344) | **57.6px**, text **246.2**, right **287.2** |
+| The plan card at 320 / 360 | 809.6 / 736.5 | **763.9 / 704.8** |
+| The account at 320 / 360 | 2,893 / 2,685 | **2,804 / 2,668** |
+| … at 390 / 768 / 1,440 (32px root) | 2,494 / 1,674 / 1,404 | **2,459 / 1,679 / 1,406** |
+| … at 16px, 360 / 1,440 | 1,589 / 1,017 | **1,589 / 1,017** |
+| `app.css` | 40,914 bytes | **40,925** |
+
+### What this pass leaves
+
+- **The steps rail pays 46px at 360/200.** The numeral is legible and the ring is its size; a 44px ring
+  on a 26px label is the proportion, but the three rows make the rail 187.2px and move the stage's
+  sentence from 697.4 to 743.8. It is still on the first 800px screen; the two cards' 63.4px pays
+  it back and more, so the page is **2,685 → 2,668**, 17px shorter than before rather than 46 longer.
+  Capping the numeral at 12px instead
+  would keep the 140.8 rail, and would draw a caption-sized number beside a reader-sized label; the
+  ring was the figure that was wrong, so it grew.
+- **At 768/200 the price is still 72px and its text is 307.8 in a 297.3 content box.** It extends
+  into the card's 24px padding, 12.5px, but not past the card's border and not off the page; the
+  16vw cap is a phone's cap, and a tablet's card has the room. The same is true at 1,440/200, where
+  the content is 482 and the text 478.
+- **A 390 phone at 200% gets a 62.4px price where 72 would just fit.** The amount at 72 is 307.8 in
+  a 308 content box, 0.2px of nothing; the viewport cap leaves 41.3px and keeps the same ratio as
+  320 and 360. A break at 389 would keep the 72 for that one width and make a 9.6px jump across the
+  line; the simpler rule was chosen, and 62.4 is still 1.73 times the 36px the ramp gives.
+- **The 16vw cap is the fixture's arithmetic.** `$149.00` at 51.2 is 218.8 of the 238 available at
+  320, with 19.2px to spare. A longer price than this trial's plans would not be handled by the cap;
+  it would cross the card's right edge on a 320 phone, and a later plan table would have to measure
+  whether the price should break or the card grow. This pass does not invent a rule for a figure the
+  service does not have.
+- **The way-in pages are unchanged.** Sign-up's action is still at 1,032.8 at 360/200; the form's
+  height, not a figure in a fixed box, is what puts it there. The 320 contents line still takes two
+  rows at 200% (87px); it is the earlier entry.
+- **The checkout stand-in, the prose-only 19px links and the key form's height are unchanged.**
+  They are the earlier entries.
+
+### Next pass
+
+- Look at the way-in forms at 200% text with the same question this pass asked of the account:
+  which box refuses to follow the figure it holds? The fields double and the action is 1,032.8 at
+  360; the title cap has already given back what it can.
+- The 320 contents line at 200%: two rows of 12.16px labels; the four 2px gaps are the arithmetic
+  between it and one row.
+- A real plan price behind another currency, to measure the `16vw` cap with a figure this trial does
+  not have.
