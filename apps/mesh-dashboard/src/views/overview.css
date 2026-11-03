@@ -114,6 +114,9 @@
 details.ov-note { display: block; }
 .ov-note-body { display: grid; gap: var(--s2); margin: var(--s2) 0 0 calc(14px + var(--s1-5)); max-width: 90ch; }
 .ov-note-body p { margin: 0; }
+/* The finished mission's note, at the head of Goal checks (`noteBelongs`): the gate's own sentence, then the line behind it. */
+.ov-why { display: grid; gap: var(--s1-5); margin: var(--s3) 0 var(--s1); max-width: 90ch; }
+.ov-why p { margin: 0; font-size: 14px; color: var(--text-dim); }
 .ov-server { margin: 0; padding: var(--s2) var(--s3); border-left: 3px solid var(--line-strong); background: var(--sunken); border-radius: 0 var(--r-sm) var(--r-sm) 0; font: 13px/1.5 var(--mono); overflow-wrap: anywhere; }
 .ov-server b { display: block; margin-bottom: var(--s0); font: var(--tx-label); color: var(--text-dim); text-transform: uppercase; letter-spacing: var(--k-track-caps); }
 .ov-skel { display: grid; align-content: start; gap: var(--s2-5); }

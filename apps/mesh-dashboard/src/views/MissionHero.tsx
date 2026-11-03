@@ -182,20 +182,12 @@ function RightNow({ input, roleOf }: { input: Omit<RightNowInput, "now">; roleOf
   );
 }
 
-/**
- * The name of the note when a phone folds it. A delivered mission's note is the gate's sentence, and the headline directly above
- * it already says the checks are evidenced: at 360 the two sentences were 86 px of the first screen saying one thing twice. The
- * door names what it holds instead, and the exact wording is the body's first line.
- */
-const NOTE_FOLD: Partial<Record<MissionState["phase"], string>> = { done: "Why this is done" };
-
-function Note({ note, foldLabel }: { note: HeroNote; foldLabel?: string }): React.JSX.Element {
+function Note({ note }: { note: HeroNote }): React.JSX.Element {
   if (!note.detail.length && !note.server) return <p className="ov-note"><Icon name="info" size={14} />{note.summary}</p>;
   return (
     <details className="ov-note disc">
-      <summary>{foldLabel ?? note.summary}</summary>
+      <summary>{note.summary}</summary>
       <div className="ov-note-body">
-        {foldLabel ? <p>{note.summary}</p> : null}
         {note.detail.map((p, i) => <p key={i}>{p}</p>)}
         {note.server ? <blockquote className="ov-server"><b>The server says</b>{note.server}</blockquote> : null}
       </div>
@@ -234,8 +226,6 @@ export interface HeroProps {
    * rest behind "...", because the dock and the figures already carry what the quiet links said. See the pass entry in DESIGN.md.
    */
   compact: boolean;
-  /** A phone folds the delivered note into a named door: its sentence restates the headline above it (see `NOTE_FOLD`). */
-  noteFold: boolean;
   /** Where a figure sends the reader: the section or page that explains the number. */
   go: (to: HeroIndex) => void;
   run: (a: HeroAction) => void;
@@ -284,7 +274,7 @@ export function MissionHero(p: HeroProps): React.JSX.Element {
       </div>
 
       <RightNow input={p.live} roleOf={(id) => roles.get(id) ?? ""} />
-      {p.note ? <Note note={p.note} foldLabel={p.noteFold ? NOTE_FOLD[state.phase] : undefined} /> : null}
+      {p.note ? <Note note={p.note} /> : null}
     </section>
   );
 }

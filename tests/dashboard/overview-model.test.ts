@@ -22,6 +22,7 @@ import {
   missionClock,
   missionRead,
   nameOfUri,
+  noteBelongs,
   seatStack,
   shortRef,
   sortFiles,
@@ -327,6 +328,12 @@ test("a delivered mission shows the sentence that makes a green headline trustwo
   assert.deepEqual(n.detail, ["The project is parked. A finished mission does not need it running."]);
   assert.deepEqual(heroNote(note({ phase: "done", parked: false, verdict }))!.detail, []);
   assert.equal(heroNote(note({ phase: "done" }))!.summary, "All mandatory checks passed.", "no phrased verdict: the plain fallback");
+});
+
+test("a delivered mission's note is read with its checks; every other phase keeps it in the hero", () => {
+  assert.equal(noteBelongs("done"), "checks", "the gate's sentence belongs with the checks it names");
+  const phases = ["loading", "offline", "down", "ceiling", "needs-you", "failed", "paused", "parked", "stalled", "quiet", "running"] as const;
+  for (const phase of phases) assert.equal(noteBelongs(phase), "hero", `${phase} is explained under its own headline`);
 });
 
 test("a delivered mission that still owes cards does not quote the sentence that says nothing is outstanding", () => {
