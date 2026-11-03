@@ -118,3 +118,51 @@ test("decisions: with nobody else able to ratify, nothing is sent", async () => 
     await m.cleanup();
   }
 });
+
+/**
+ * `decision` is free-form JSON, so a model can paste the whole DecisionRecord
+ * under it and satisfy both the type and the tool schema. That happened in the
+ * `my-mesh-3` run on 2026-11-02: architect proposed decision-M6CW8VT4 with the
+ * record as its body, the stored decision had no `decision` at all, and the next
+ * context build for EVERY seat threw on `JSON.stringify(undefined).slice(...)`.
+ * Ten seats were suspended and the mission froze until a human answered the
+ * stall escalation. Both halves are pinned here: refuse the mistake while the
+ * proposer can fix it, and never let a body-less decision take a turn down.
+ */
+test("decisions: the record envelope is refused as a body, and a body-less decision still renders", async () => {
+  const m = await makeMesh({ agents: AGENTS, mayContact: COMM, mode: "parked" });
+  try {
+    const before = m.kernel.state.decisions.size;
+    const envelope = {
+      op: "propose_decision",
+      topic: "§3 vs the wire",
+      decision: { id: "decision-rec-1", status: "PROPOSED", proposedBy: "arch", approvedBy: [], createdAt: new Date().toISOString() },
+    } as MeshOp;
+    const refused = await m.supervisor.executeOp("arch", envelope, turnFor("arch"));
+    assert.equal(refused.ok, false, "an envelope has no decision in it");
+    assert.match(refused.reason ?? "", /decision RECORD/, "and the refusal says what to send instead");
+    assert.equal(m.kernel.state.decisions.size, before, "nothing is recorded, so nothing can be rendered later");
+    const empty = await m.supervisor.executeOp("arch", { op: "propose_decision", topic: "empty", decision: {} } as MeshOp, turnFor("arch"));
+    assert.equal(empty.ok, false, "an empty object is not a decision either");
+
+    // A decision already in the log with no body (the shape this run's log holds) must not crash assembly.
+    const goalId = m.kernel.state.activeGoalId!;
+    const broken = {
+      id: "decision-broken-1",
+      goalId,
+      topic: "a proposal whose body was lost",
+      status: "PROPOSED",
+      proposedBy: "arch",
+      approvedBy: [],
+      evidence: [],
+      createdAt: new Date().toISOString(),
+    };
+    await m.kernel.emit("decision.proposed", { decision: broken } as never, { actorId: "arch", goalId });
+    await m.kernel.emit("decision.ratified", { decisionId: broken.id, approvedBy: ["arch"] }, { actorId: "arch", goalId });
+    const text = renderContextInstructions(buildAgentContext({ config: m.config, kernel: m.kernel }, "backend"));
+    assert.match(text, /## Ratified decisions/);
+    assert.match(text, /\[decision-broken-1\] a proposal whose body was lost: \(no body was recorded with it/, "the fact is reported, not thrown over");
+  } finally {
+    await m.cleanup();
+  }
+});

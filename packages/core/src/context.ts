@@ -1416,6 +1416,30 @@ export function handoverBundle(bundle: AgentContextBundle): AgentContextBundle {
   };
 }
 
+/**
+ * A decision's body, rendered without taking the mesh down.
+ *
+ * `decision` holds arbitrary JSON, written by whoever proposed it. One proposal
+ * in a live run carried the decision RECORD (id, status, proposedBy, …) in place
+ * of its body, so `decision` was undefined and `JSON.stringify(...).slice(…)`
+ * threw inside every seat's context assembly: the whole roster was suspended on
+ * `Cannot read properties of undefined (reading 'slice')` and no seat could be
+ * woken again. A fact the mesh cannot render is one to say out loud, never one
+ * to fail every turn over.
+ */
+function renderDecisionBody(body: Record<string, unknown> | undefined): string {
+  if (body === undefined || body === null) return "(no body was recorded with it — ask whoever proposed it before relying on it)";
+  let text: string | undefined;
+  try {
+    text = JSON.stringify(body);
+  } catch {
+    // Vanishingly unlikely on state that came through JSON, and still not worth a turn.
+    text = undefined;
+  }
+  if (text === undefined) return "(its body could not be rendered — read the proposal event before relying on it)";
+  return text.length > MAX_DECISION_CHARS ? text.slice(0, MAX_DECISION_CHARS) : text;
+}
+
 export function renderContextInstructions(bundle: AgentContextBundle): string {
   const lines: string[] = [];
   /**
@@ -1467,7 +1491,7 @@ export function renderContextInstructions(bundle: AgentContextBundle): string {
   if (bundle.relevantDecisions.length > 0) {
     lines.push("## Ratified decisions (L3 — shared organizational facts)");
     for (const d of bundle.relevantDecisions) {
-      lines.push(`- [${d.id}] ${d.topic}: ${JSON.stringify(d.decision).slice(0, MAX_DECISION_CHARS)}`);
+      lines.push(`- [${d.id}] ${d.topic}: ${renderDecisionBody(d.decision)}`);
     }
     partial(bundle.omitted?.decisions, "ratified decision(s)", "ask before treating a question as undecided");
     lines.push("");
@@ -1478,7 +1502,7 @@ export function renderContextInstructions(bundle: AgentContextBundle): string {
     lines.push("## Proposed decisions you can ratify (not yet shared facts)");
     for (const d of proposed) {
       const who = d.proposedBy === me ? "you" : d.proposedBy;
-      lines.push(`- [${d.id}] ${d.topic} — proposed by ${who}: ${JSON.stringify(d.decision).slice(0, MAX_DECISION_CHARS)}`);
+      lines.push(`- [${d.id}] ${d.topic} — proposed by ${who}: ${renderDecisionBody(d.decision)}`);
     }
     lines.push(
       "Ratify one with `mesh_decision_ratify` { decisionId } once it holds — that also answers the ratification ask you were sent. If it should not stand, `mesh_discharge` that ask with your reason. Until one of you does, it binds nobody.",

@@ -491,6 +491,20 @@ const MAX_TRACE_INSTRUCTIONS_CHARS = 8000;
 const MAX_CAVEAT_NOTICES = 12;
 
 /**
+ * Fields of a `DecisionRecord` — the envelope the mesh fills in, never the
+ * decision itself.
+ *
+ * A proposal's `decision` is free-form JSON, so a model that pastes the whole
+ * record under that key still satisfies the type (`Record<string, unknown>`) and
+ * the tool schema. That happened in a live run: architect sent
+ * `{ id, status, proposedBy, approvedBy, … }` with no rule, the mesh recorded a
+ * decision whose body was `undefined`, and every seat's next context assembly
+ * crashed on it. A body made only of envelope fields is refused here, while the
+ * proposer can still fix it in the same turn.
+ */
+const DECISION_RECORD_FIELDS = new Set(["id", "goalId", "topic", "status", "proposedBy", "approvedBy", "evidence", "artifactRef", "createdAt", "ratifiedAt"]);
+
+/**
  * Characters per token, for converting a built prompt into the unit every
  * budget in this system is denominated in.
  *
@@ -6581,6 +6595,25 @@ export class Supervisor {
     evidence?: ArtifactRef[],
   ): Promise<DecisionRecord & { routedTo: string[]; routing: string; askId?: string }> {
     const goalId = this.state.activeGoalId!;
+    /**
+     * A refusal here is the seat's to fix in the same turn (the op handler turns
+     * `KernelRejectedError` into its tool result), which is why this is not a
+     * projection check: the event must never be appended, not merely be ignored
+     * on replay.
+     */
+    if (decision === null || typeof decision !== "object" || Array.isArray(decision) || Object.keys(decision).length === 0) {
+      throw new KernelRejectedError(
+        "a decision needs its body: pass what the decision says under `decision` (e.g. { rule, because }) — the mesh fills in its id, status, proposer and approvers",
+        "decision.proposed",
+      );
+    }
+    const bodyKeys = Object.keys(decision);
+    if (bodyKeys.every((k) => DECISION_RECORD_FIELDS.has(k))) {
+      throw new KernelRejectedError(
+        "that is a decision RECORD, not its body: pass what the decision says under `decision` (e.g. { rule, because }); the mesh fills in id, status, proposedBy and approvedBy itself",
+        "decision.proposed",
+      );
+    }
     const d: DecisionRecord = {
       id: newDecisionId(),
       goalId,
