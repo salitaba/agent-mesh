@@ -503,11 +503,21 @@
   }
 
   /**
+   * What the account's first read that failed says: the service's own reason when it gave one, and otherwise what this page was asking
+   * for. Either way the reader is told their data is as it was. The unknown case used to say "The request was not accepted.", which names
+   * neither the account nor a way forward.
+   */
+  const READ_FAILED = "Your account could not be read just now.";
+  const readFailed = (error) => `${/^http_/.test(error.code) ? READ_FAILED : error.message} Nothing was changed.`;
+
+  /**
    * A first read of the account that fails says what happened and gives the action its sentence used to only name: the page asks again,
-   * by loading itself and its one read. The button is next to the sentence, not inside it, so the live region stays a sentence.
+   * by loading itself and its one read. The button is next to the sentence, not inside it, so the live region stays a sentence. It is the
+   * page's only action, so it is drawn as the primary one, and Settings — a form on an account that is not on the page — is not offered.
    */
   function offerRetry() {
-    $("retry-row").replaceChildren(button("Try again", { onclick: () => location.reload() }));
+    $("settings-panel").hidden = true;
+    $("retry-row").replaceChildren(button("Try again", { kind: "primary", onclick: () => location.reload() }));
     $("retry-row").hidden = false;
   }
 
@@ -536,7 +546,9 @@
     if (response.ok && data !== null && typeof data === "object") return { ok: true, status: response.status, data, error: null };
     if (response.ok) return { ok: false, status: response.status, data: null, error: { code: "unreadable", message: "The service's answer could not be read. Try again in a moment." } };
     const said = data && data.error && typeof data.error.message === "string" ? data.error : null;
-    const fallback = response.status >= 500 ? "Something went wrong on our side. Try again in a moment." : "The request was not accepted.";
+    // An answer with no reason in it (a proxy's page, a door that does not exist) is not a refusal of what was asked: it is the
+    // service failing to answer, and the next action is the same as for any other failure of ours.
+    const fallback = response.status >= 500 ? "Something went wrong on our side. Try again in a moment." : "The service could not answer that request. Try again in a moment.";
     return { ok: false, status: response.status, data, error: { code: said ? said.code : `http_${response.status}`, message: said ? said.message : fallback } };
   }
 
@@ -1162,7 +1174,7 @@
       skeleton(false);
       if (signedOut(first)) location.replace(SIGN_IN);
       else {
-        say($("notice"), "bad", `${first.error.message} Nothing was changed.`);
+        say($("notice"), "bad", readFailed(first.error));
         offerRetry();
       }
       return;
@@ -2359,6 +2371,7 @@
 
     function renderAll() {
       $("who").replaceChildren(el("span", { class: "who-l" }, "Signed in as"), " ", el("span", { class: "who-a" }, account().email));
+      $("settings-panel").hidden = false;
       const sections = sectionsOf(viewOf());
       renderNotice();
       renderStage();
@@ -2534,7 +2547,12 @@
       console.error(`This page lacks what its script needs: ${missing.join(", ")}`);
       return;
     }
-    if (page === "account") skeleton(true);
+    if (page === "account") {
+      skeleton(true);
+      // Settings is the account's own form. It is not drawn while the account is being read, or when the read failed: a password form
+      // under a page that says the account could not be read looks like the account, and a person would type into it to learn otherwise.
+      $("settings-panel").hidden = true;
+    }
     if (page === "home") planShape();
     doc.addEventListener("input", (event) => {
       const field = event.target;
@@ -2558,7 +2576,7 @@
       skeleton(false);
       if (signedOut(reply)) location.replace(SIGN_IN);
       else {
-        say($("notice"), "bad", `${reply.error.message} Nothing was changed.`);
+        say($("notice"), "bad", readFailed(reply.error));
         offerRetry();
       }
       return;

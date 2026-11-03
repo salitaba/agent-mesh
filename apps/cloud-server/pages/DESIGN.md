@@ -3004,3 +3004,67 @@ to a 503. The way-in pages are the public ones; reset and verify hold a dead tok
   between it and one row.
 - A real plan price behind another currency, to measure the `16vw` cap with a figure this trial does
   not have.
+
+## 2026-11-04: the sentence and the form a failed read leaves
+
+Same harness: Chromium 156 through `playwright-core` (the headless shell) against a stand-in service on
+`:8101` that serves this worktree's pages and answers `/api/*` with **404 and no JSON body** — what a
+proxy or a door that does not exist gives — and, for the loading half, holds `/api/session` for 4s.
+320 and 360 × 800, 1440 × 900, light and dark, `prefers-reduced-motion: reduce`, a touch pointer below
+721. "Before" is the base commit's own `app.js` (`fe37b2a`) measured in the same session as the after;
+heights are `document.documentElement.scrollHeight`, positions are `getBoundingClientRect` plus
+`scrollY`, and names are `document.activeElement`.
+
+- **The account's failed read says what failed.** With no reason in the service's answer the notice
+  read **"The request was not accepted. Nothing was changed."** — a 4xx fallback in `call()` that names
+  no subject: not the account, not the read, not anything a person could act on. It reads **"Your
+  account could not be read just now. Nothing was changed."** in the same 328 × 74 box at y = 159.4
+  at 360 (1,080 × 50 at y = 184.1 at 1440). The rule: when the service's answer carries no reason (the
+  error code is `http_<status>`), the page says what it was asking for; when it carries one, the
+  service's own sentence is kept exactly, so the 503, offline, 429 and unreadable-answer sentences —
+  and the tests that pin them — are untouched.
+- **The failed read's one action is drawn as the page's action.** **Try again** was `.btn`, the
+  secondary: `#ffffff` on a `#d3cdc2` hairline at 360, the only control under a page-wide failure. It is
+  `btn-primary`: **#ffffff on #2b5fd9**, the same 106.61 × 44 at (16, 249.4) at 360 and
+  106.61 × 40 at (180, 250.1) at 1440 — the box did not move, only its weight.
+- **A password form is not offered until the account has been read.** Settings is the one panel the
+  page never hid, so at 360 the failed page carried its summary (326 × 48 at y = 334.4), **Current
+  password** (y = 469), **New password** (y = 563) and **Change password** (173.7 × 44 at y = 689) —
+  **six controls** under a sentence saying the account could not be read. While the read is out it is
+  the same problem: with `/api/session` held 4s the skeleton is 328 × 628 at y = 159.4 and Settings sat
+  at **y = 827.4**, page **1,006**; the phone's loading page is now **916** (−90) with nothing under the
+  skeleton. The panel is hidden in `start()` (account page) and in `offerRetry()`, and shown again in
+  `renderAll()` — so the page with the account on it is unchanged, and a browser with no script keeps
+  the form, because the markup still carries no `hidden`. At 360 × 844 the failed page is **834px**
+  before and after: the form sat inside the main's min-height, so this pass changed what is on the
+  page, not how tall it is.
+- **A request the service did not answer is not called a refusal.** With `/api/login` answering 404
+  and no JSON, the sign-in page said **"The request was not accepted."** (286 × 74 at y = 258.6, page
+  **1,345**) and left the reader to guess whether they were signed in. The fallback now reads **"The
+  service could not answer that request. Try again in a moment."** (286 × 98, page **1,369**, the cursor
+  still in the password field). It costs 24px at 360 for that state and names both the cause and the
+  next action; every answer with a reason of its own is unchanged.
+- **Widths, schemes and the floor.** 320 (320), 360 (360) and 1440 (1440) in light and dark on the
+  failed account and on sign-in: no sideways page scroll, nothing computes below **12px**, no control
+  under 44 × 44 below 721, and the same boundary-contrast failures as before (the stylesheet's 1.26–1.58:1
+  hairlines). No colour, size or spacing step was added: the new button state and the hidden panel are
+  the classes and the markup that were already there.
+- **The budget.** `app.css` is untouched at **40,933 bytes of 40,960**.
+- **Tests.** `node --test dist/tests/cloud/pages-app.test.js dist/tests/cloud/pages.test.js` — **123
+  pass, 0 fail**; `pages-dashboard` **12 pass**; the two page-related build tests **11 pass**.
+
+### What this pass leaves
+
+- **The failed read still retries by loading the page.** Its first read is the page's whole setup, so
+  there is no smaller request to re-run; the button is called Try again, not Reload.
+- **The failed page is a third empty at 360.** The notice and the button end at 293 and the footer is
+  pinned at 790, so 497px of the page says nothing. Filling it would be a new element for a state that
+  is meant to be short.
+- **The 20px consent tick is still the harness's one tap-target failure on sign-up.** Its label is
+  108px and is the target (`for="agree"`); making the box itself 44px needs a rule the stylesheet's
+  27 remaining bytes cannot carry.
+- **A signed-in account was not rendered in this pass.** There is no control plane in this worktree and
+  the trial was not started; the account's own panels after a successful read are held by
+  `pages-app.test.ts` (92 tests) rather than by a screenshot.
+- **The reset and confirmation pages' failures are unchanged.** They already quote the service's reason
+  and were not part of this measurement.
