@@ -582,8 +582,8 @@ body[data-page="home"] main { background: var(--k-glow) top / 100% 520px no-repe
 .steps .num {
   display: grid;
   place-items: center;
-  width: 22px;
-  height: 22px;
+  width: 1.8333em;
+  height: 1.8333em;
   border: 1px solid var(--k-line-strong);
   border-radius: 50%;
   font-size: .75rem;
@@ -682,7 +682,7 @@ body[data-page="home"] main { background: var(--k-glow) top / 100% 520px no-repe
 .plan { display: flex; flex-direction: column; gap: 14px; padding: 24px; }
 .plan.current, .plan.picked { border-color: var(--k-accent); box-shadow: var(--k-hl), 0 0 0 1px var(--k-accent); }
 .plan h3 { display: flex; align-items: center; gap: 8px; margin: 0; }
-.plan .price { font-size: 2.25rem; font-weight: 650; letter-spacing: var(--k-track-display); line-height: 1.1; }
+.plan .price { font-size: min(2.25rem, 16vw); font-weight: 650; letter-spacing: var(--k-track-display); line-height: 1.1; }
 .plan .price small { margin-left: 4px; color: var(--k-muted); font-size: .9375rem; font-weight: 500; letter-spacing: 0; }
 .plan > p { margin: 0; color: var(--k-muted); }
 .plan ul {
