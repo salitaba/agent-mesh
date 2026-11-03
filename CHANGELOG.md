@@ -7,6 +7,41 @@ sections 1 to 26) are described there, run by run.
 
 ## Unreleased
 
+### Added: a conversation budget for the native runtime, and a ceiling on a turn
+
+Every model call re-sends the whole conversation, so a seat's context size multiplies the price of every turn. A live
+10-seat mission measured 2026-10-23..11-03 carried 400-570k tokens per seat because rotation waited for 60% of a 1M window:
+18 turns of ≥1M billable tokens — 1.4% of 1,327 turns — were 31% of its 110.3M-token spend, and one backend turn re-sent a 563k
+conversation 16 times (5.69M fresh prompt tokens for 9.8k of output). A 1M window is now a capability, not a target: the
+conversation runs against a budget (`mesh.runtime.native.context.fit_tokens`, a seat's `session.max_context_tokens`, else
+`min(60% of the window, 200k)`). At that size the runtime compacts before it rotates — superseded briefs are dropped (only
+the newest is authoritative), old tool results and old tool-call arguments are replaced by a note, the last eight messages
+stay whole, and the lighter conversation is written back to disk so a restart does not resurrect what was dropped. A turn
+now has a token ceiling (default 10× the budget): at 75% the seat is told once to land what it has, at 100% the turn ends
+cleanly with a note in the conversation, not as a failure. `max_steps` now defaults to 40, and `max_context_tokens` —
+accepted and ignored since it was added — is what the native runtime measures against.
+
+### Added: in-turn tool clearing, a playbook memory, retrieval tools, and tokens per outcome
+
+The budget above bounds a conversation between turns; a single turn that reads a dozen large files still carried all of them
+on every call. Once the prompt passes 60% of the budget the runtime now replaces all but the last three tool rounds — results
+and the call arguments that carried a written file — with handles, only when that frees at least 5,000 tokens (an edit
+invalidates the prompt cache from the first cleared message, so a clear that frees less costs more than it saves). Same
+shape as Anthropic's context editing (`trigger` / `keep` / `clear_at_least`), configured under
+`mesh.runtime.native.context` as `clear_tool_results_at`, `keep_tool_uses` and `clear_at_least_tokens`.
+
+L2 memory now has a kind. `mesh_remember` takes `kind: "procedure"` for how this team does something and leaves the default
+`fact` for state of the work; the brief renders procedures under **Your playbook** and admits them before facts and turn
+exhaust, so a tight budget cannot evict the one note a seat most needs to keep.
+
+Two just-in-time read tools join `mesh_query_events` and `mesh_artifact_read`: `mesh_artifact_list` (find an artifact's id by
+name, type, status or owner instead of guessing a URI) and `mesh_memory_search` (read your own notes, including the ones the
+brief held back). Both are read-only and bounded.
+
+`curule economy [mesh.yaml]` divides the bill by what the mission produced: billable tokens per accepted criterion, recorded
+review, merged patch, completed task and published artifact, plus cache-hit ratio, spend by seat and the turns that carried
+the bill. Offline, from the same audit file and event log `curule ledger` reads.
+
 ### Fixed: a designer draft belongs to its project
 
 Switching projects in the console is a view change, not a reload, and the designer kept its draft in one shared slot — so

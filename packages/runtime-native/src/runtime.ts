@@ -35,6 +35,19 @@ import {
 } from "../../llm/src/index";
 import { BusClient, BusError, type BusClientOptions } from "./bus";
 import { TurnLoop, type LoopEnd, type OverflowAction, type ToolOutcome, type TurnControl } from "./engine";
+import {
+  COMPACT_HEADROOM_RATIO,
+  DEFAULT_ELIDE_ABOVE_CHARS,
+  DEFAULT_KEEP_RECENT_MESSAGES,
+  DEFAULT_MAX_STEPS,
+  DEFAULT_MAX_TOOL_RESULT_CHARS,
+  compactConversation,
+  estimateConversationTokens,
+  resolveContextPolicy,
+  type CompactionResult,
+  type ContextPolicyOptions,
+  type ResolvedContextPolicy,
+} from "./context-policy";
 import { TranscriptStore } from "./transcript";
 import { NATIVE_TOOLS, ToolFailure, shellEnv, toolsOffered, type NetworkPolicy, type ShellEnvMode, type ToolContext } from "./tools/index";
 
@@ -99,7 +112,14 @@ export interface NativeRuntimeOptions {
   network?: NetworkPolicy;
   /** `mesh.runtime.context_window`: the window of a model nothing else places. */
   contextWindow?: number;
-  /** Pin the rotation threshold, in tokens. Wins over every window. */
+  /**
+   * The conversation economy: what a seat's context may weigh, what is dropped when
+   * it gets there, and the ceiling a single turn may spend.
+   *
+   * A seat's `session.max_context_tokens` wins over `fitTokens`; nothing else does.
+   */
+  context?: ContextPolicyOptions;
+  /** Pin the rotation threshold, in tokens. Wins over every window and every budget. */
   rotateAtContextTokens?: number;
   /** Idle time after which a conversation whose provider has a cache TTL is rotated, and how large it must be. */
   staleFloorTokens?: number;
@@ -109,7 +129,11 @@ export interface NativeRuntimeOptions {
   createProvider?: (config: ProviderConfig) => LlmProvider;
   bus?: Partial<Pick<BusClientOptions, "fetch" | "startupDelaysMs" | "connectDelaysMs" | "sleep" | "requestTimeoutMs">>;
   env?: Record<string, string | undefined>;
-  onNotice?: (info: { agentId: string; kind: "unknown_context_window" | "context_overflow"; message: string }) => void;
+  onNotice?: (info: {
+    agentId: string;
+    kind: "unknown_context_window" | "context_overflow" | "context_compacted" | "context_cleared" | "turn_token_ceiling";
+    message: string;
+  }) => void;
   onRotate?: (info: {
     agentId: string;
     meshSessionId: string;
@@ -122,12 +146,7 @@ export interface NativeRuntimeOptions {
   }) => void;
 }
 
-const ROTATE_RATIO = 0.6;
 const DEFAULT_STALE_FLOOR_TOKENS = 40_000;
-const DEFAULT_MAX_STEPS = 200;
-/** A conversation that overflowed keeps this many of its latest messages whole; older tool results are elided. */
-const KEEP_RECENT_MESSAGES = 8;
-const ELIDE_ABOVE_CHARS = 2_000;
 
 /** What `advise`, `endTurn` and `interrupt` reach: the turn in flight. */
 class TurnState implements TurnControl {
@@ -187,6 +206,8 @@ interface LiveSession {
   contextTokens: number;
   turns: number;
   rotations: number;
+  /** In-place compactions of this conversation (see `context-policy.ts`). */
+  compactions: number;
   lastTurnEndedAt?: number;
   staleRotationDue: boolean;
   pending?: TurnState;
@@ -238,7 +259,59 @@ export class NativeRuntime implements AgentRuntime, DesignerRuntime {
 
   private thresholdFor(live: LiveSession): number {
     if (this.options.rotateAtContextTokens !== undefined) return this.options.rotateAtContextTokens;
-    return Math.floor(this.windowFor(live.agent, live.resolved).tokens * ROTATE_RATIO);
+    return this.policyFor(live).fitTokens;
+  }
+
+  /**
+   * The economy this seat runs under.
+   *
+   * The window is the model's real one, and it is only a fallback: a 1M-token window
+   * is a capability, not a target. A seat's `max_context_tokens` is a budget and is
+   * honoured whatever the window is, which is what lets one seat keep a long
+   * conversation while the mesh default keeps every other seat cheap.
+   */
+  private policyFor(live: LiveSession): ResolvedContextPolicy {
+    return resolveContextPolicy(this.options.context, this.windowFor(live.agent, live.resolved), live.agent.sessionPolicy?.maxContextTokens);
+  }
+
+  /**
+   * Drop what the conversation no longer needs, in place. Returns the result when it
+   * brought the prompt back under budget; otherwise the caller rotates.
+   *
+   * Called at the rotation point and nowhere else, on purpose: editing a message
+   * re-writes every token after it, so a compaction is one cold read. Doing it every
+   * turn would trade a 9k brief for a 30k cache miss each turn -- the opposite of the
+   * saving. Doing it here keeps the working set for several more turns at the price
+   * of the cold read the rotation would have paid anyway.
+   */
+  private compact(live: LiveSession, policy: ResolvedContextPolicy, incomingBrief: boolean): CompactionResult | null {
+    if (live.messages.length === 0) return null;
+    const result = compactConversation(live.messages, policy, { dropAllBriefs: incomingBrief });
+    // The provider's figure counts the system prompt and the tool schemas; the
+    // estimate here must too, or a "compacted" conversation rotates on its next turn.
+    // And it must leave headroom: a compaction that lands one brief under budget is
+    // due again next turn, turning the saving into a cache miss per turn.
+    const after = estimateConversationTokens(live.messages, live.system);
+    if (result.freedChars <= 0 || after >= policy.fitTokens * COMPACT_HEADROOM_RATIO) return null;
+    const before = result.estimateBefore;
+    live.contextTokens = after;
+    live.compactions++;
+    this.store.rewrite(live.agent.id, live.transcriptId, live.messages, {
+      contextTokens: live.contextTokens,
+      turns: live.turns,
+      rotations: live.rotations,
+      compactions: live.compactions,
+      lastTurnEndedAt: Date.now(),
+    });
+    this.options.onNotice?.({
+      agentId: live.agent.id,
+      kind: "context_compacted",
+      message:
+        `conversation compacted instead of rotated: ~${before} -> ~${after} tokens ` +
+        `(${result.droppedBriefs} superseded brief(s), ${result.elidedResults} old tool result(s), ${result.elidedArgs} old tool-call argument(s) elided; ` +
+        `the last ${policy.keepRecentMessages} messages kept whole)`,
+    });
+    return result;
   }
 
   private noticeOnce(key: string, info: Parameters<NonNullable<NativeRuntimeOptions["onNotice"]>>[0]): void {
@@ -287,6 +360,7 @@ export class NativeRuntime implements AgentRuntime, DesignerRuntime {
       contextTokens: 0,
       turns: 0,
       rotations: 0,
+      compactions: 0,
       staleRotationDue: false,
       closed: false,
     };
@@ -342,6 +416,7 @@ export class NativeRuntime implements AgentRuntime, DesignerRuntime {
       live.contextTokens = loaded.meta?.contextTokens ?? 0;
       live.turns = loaded.meta?.turns ?? 0;
       live.rotations = loaded.meta?.rotations ?? 0;
+      live.compactions = loaded.meta?.compactions ?? 0;
       if (loaded.meta?.lastTurnEndedAt !== undefined) live.lastTurnEndedAt = loaded.meta.lastTurnEndedAt;
       this.statuses.set(agent.id, "IDLE");
       return this.session(live);
@@ -499,8 +574,15 @@ export class NativeRuntime implements AgentRuntime, DesignerRuntime {
         live.grantedTools.clear();
         for (const t of input.approvalGranted) live.grantedTools.add(t);
       }
-      if (!input.suppressRotation && (live.contextTokens >= this.thresholdFor(live) || this.staleDue(live))) {
-        this.rotate(live, live.contextTokens >= this.thresholdFor(live) ? "rotation" : "stale");
+      const policy = this.policyFor(live);
+      const cacheCold = this.staleDue(live);
+      const overBudget = live.contextTokens >= policy.fitTokens;
+      if (!input.suppressRotation && (overBudget || cacheCold)) {
+        // Compaction first: it keeps the working set and costs no model call. A cold
+        // cache is the one case where a fresh conversation is strictly cheaper than a
+        // lighter one, because the next call pays for the prefix either way.
+        const compacted = cacheCold ? null : this.compact(live, policy, input.instructions.trim().length > 0);
+        if (!compacted) this.rotate(live, overBudget ? "rotation" : "stale");
       }
       const window = this.windowFor(live.agent, live.resolved);
       if (!window.known) {
@@ -527,6 +609,20 @@ export class NativeRuntime implements AgentRuntime, DesignerRuntime {
         run: (call, signal) => this.runTool(live, turn, call, signal),
         control: turn,
         maxSteps: this.options.maxSteps ?? DEFAULT_MAX_STEPS,
+        maxTurnTokens: policy.maxTurnTokens,
+        warnAtRatio: policy.warnAtRatio,
+        maxToolResultChars: policy.maxToolResultChars,
+        clearToolResultsAt: policy.clearToolResultsAt,
+        keepToolUses: policy.keepToolUses,
+        clearAtLeastTokens: policy.clearAtLeastTokens,
+        rewrite: (messages) =>
+          this.store.rewrite(live.agent.id, live.transcriptId, messages, {
+            contextTokens: live.contextTokens,
+            turns: live.turns,
+            rotations: live.rotations,
+            compactions: live.compactions,
+            lastTurnEndedAt: Date.now(),
+          }),
         maxOutputTokens: settings?.maxOutputTokens,
         temperature: settings?.temperature,
         effort: settings?.effort,
@@ -552,6 +648,20 @@ export class NativeRuntime implements AgentRuntime, DesignerRuntime {
       }
       const reported = end.reportedModel;
       const failed = end.stopReason === "step_limit";
+      if (end.stopReason === "token_ceiling") {
+        this.options.onNotice?.({
+          agentId: live.agent.id,
+          kind: "turn_token_ceiling",
+          message: `turn ended at its token ceiling: ${loop.tokens().total} billable tokens (ceiling ${policy.maxTurnTokens}); the conversation and its notes are kept for the next turn`,
+        });
+      }
+      if (loop.cleared.tokens > 0) {
+        this.options.onNotice?.({
+          agentId: live.agent.id,
+          kind: "context_cleared",
+          message: `cleared ${loop.cleared.results} old tool result(s) and ${loop.cleared.args} old tool-call argument(s) mid-turn (~${loop.cleared.tokens} tokens), keeping the last ${policy.keepToolUses} rounds`,
+        });
+      }
       yield {
         kind: "turn_end",
         stopReason: failed ? "error" : "end_turn",
@@ -573,7 +683,7 @@ export class NativeRuntime implements AgentRuntime, DesignerRuntime {
       live.staleRotationDue = false;
       live.pending = undefined;
       if (!live.closed) this.statuses.set(live.agent.id, "IDLE");
-      this.store.meta(live.agent.id, live.transcriptId, { contextTokens: live.contextTokens, turns: live.turns, rotations: live.rotations, lastTurnEndedAt: live.lastTurnEndedAt });
+      this.store.meta(live.agent.id, live.transcriptId, { contextTokens: live.contextTokens, turns: live.turns, rotations: live.rotations, compactions: live.compactions, lastTurnEndedAt: live.lastTurnEndedAt });
     }
   }
 
@@ -657,6 +767,9 @@ export class NativeRuntime implements AgentRuntime, DesignerRuntime {
         },
         control: turn,
         maxSteps: 40,
+        maxTurnTokens: 2_000_000,
+        warnAtRatio: 0.75,
+        maxToolResultChars: DEFAULT_MAX_TOOL_RESULT_CHARS,
         maxOutputTokens: settings?.maxOutputTokens,
         // The designer asks for up to "max"; a provider that takes an effort at all takes three levels.
         effort: opts.effort === "xhigh" || opts.effort === "max" ? "high" : (opts.effort ?? settings?.effort),
@@ -739,11 +852,11 @@ function emit(onDelta: ((d: DesignerStreamDelta) => void) | undefined, d: Design
  * structure of the conversation is kept (every call still has its answer), so the provider still accepts it.
  * Returns how many characters were freed.
  */
-export function elideOldToolResults(messages: ChatMessage[], keepRecent = KEEP_RECENT_MESSAGES): number {
+export function elideOldToolResults(messages: ChatMessage[], keepRecent = DEFAULT_KEEP_RECENT_MESSAGES): number {
   let freed = 0;
   for (let i = 0; i < messages.length - keepRecent; i++) {
     const m = messages[i]!;
-    if (m.role === "tool" && m.content.length > ELIDE_ABOVE_CHARS) {
+    if (m.role === "tool" && m.content.length > DEFAULT_ELIDE_ABOVE_CHARS) {
       freed += m.content.length;
       m.content = `[elided to fit the context window: ${m.content.length} characters]`;
     }

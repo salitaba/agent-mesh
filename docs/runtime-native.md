@@ -154,7 +154,10 @@ call the model with the seat's tools, run the calls it makes in order, give it t
   complete (a continuity record landed) lets the batch in progress finish and spends no further call.
 - **Cut off.** A reply cut off by the output cap is asked to continue, twice at most. A call whose arguments were cut off, or are
   not a JSON object, is not run as if complete: the seat is shown what it sent and asked to send it again.
-- **Limits.** A turn may make 200 model calls (`mesh.runtime.native.max_steps`); past that it fails with what it spent.
+- **Limits.** A turn may make 40 model calls (`mesh.runtime.native.max_steps`); past that it fails with what it spent. It also has
+  a token ceiling (`mesh.runtime.native.context.max_turn_tokens`, default ten times the conversation budget): at 75% of it the
+  seat is told once, on its last tool result, to land what it has; at 100% the turn ends cleanly — not as a failure — with a note
+  in the conversation saying why, and the next turn continues from there.
 
 Usage is summed over the turn's calls into four numbers that never overlap (fresh input, output, cache reads, cache writes), and
 the turn's billable total excludes cache reads, as everywhere else in Curule.
@@ -196,12 +199,61 @@ A conversation is kept on disk, so a restarted mesh resumes it: one append-only 
 `<state dir>/native/<seat>/`, written at the end of each round of a turn, not only at the end of the turn. Loading cuts a torn
 or damaged tail off the file, answers any call left without a result, and keeps the seat's last two conversations.
 
-A conversation is rotated when what the last call was handed (the whole prompt, cache reads and writes included) reaches 60% of
-the window, or when it is large and has sat idle past its provider's cache lifetime. The supervisor is told first and may spend a
-turn asking the seat for a continuity record; the turn after it starts a new conversation from the mesh's projections.
+A conversation is measured against a **budget**: `mesh.runtime.native.context.fit_tokens`, or a seat's own
+`session.max_context_tokens`, and failing both `min(60% of the model's window, 200,000)`. A 1M-token window is a capability, not
+a target: without a budget a 1M window let every seat carry 400-570k tokens, and because every model call re-sends the whole
+conversation, 18 turns of one live mission carried 31% of its 110M-token spend.
+
+When the conversation reaches its budget the runtime **compacts before it rotates**. Compaction drops superseded briefs (only the
+newest is authoritative), and replaces old tool results and old tool-call arguments — a `Write` body, a long `publish` payload —
+with a one-line note. The last `keep_recent_messages` messages are kept whole, every call keeps its answer, and the lighter
+conversation is written back to disk so a restart does not resurrect what was dropped. If that cannot bring the conversation
+under budget with a fifth of it still free, the conversation is rotated instead — a compaction that lands just under the
+budget would be due again next turn, and every compaction is a cold read. A rotation is announced first: the supervisor may
+spend a turn asking the seat for a continuity record, and the turn after it starts a new conversation from the mesh's
+projections.
+
+Compaction is done at the rotation point and nowhere else on purpose. Editing a message re-writes every token after it, so a
+compaction is one cold read; doing it every turn would trade a 9k brief for a 30k cache miss each turn.
+
+A conversation that is large and has sat idle past its provider's cache lifetime is rotated rather than compacted: the next call
+pays for the prefix either way, and a fresh one is cheaper.
 
 A prompt the model refuses for its size is not a failed turn. The runtime elides older tool results and tries again, and if that
 is not enough it rotates on the spot and goes on from the turn's briefing.
+
+A tool result is cut at `max_tool_result_chars` (default 60,000) before it joins the conversation, with a note saying so. The bus
+tools are what this bounds: the file tools bound themselves.
+
+Within a turn, once the prompt passes `clear_tool_results_at` (default 60% of the budget), the runtime replaces all but the
+last `keep_tool_uses` rounds of tool traffic — results and the call arguments that carried a written file — with a handle the
+model can re-fetch from. It only does so when that frees at least `clear_at_least_tokens`, because the edit invalidates the
+prompt cache from the first cleared message: a clear that frees less than the cache write costs is a loss. The conversation on
+disk is rewritten to match, so a restart resumes what the model was actually shown. This is the same shape as Anthropic's
+context editing (`trigger` / `keep` / `clear_at_least`), applied by the runtime that owns the conversation rather than by the
+provider.
+
+```yaml
+mesh:
+  runtime:
+    context_window: 1000000        # the model's real window; the budget below is what it runs at
+    native:
+      max_steps: 40                # model calls one turn may make
+      context:
+        fit_tokens: 200000         # the conversation budget; 0 = 60% of the window, capped at 200k
+        keep_recent_messages: 8    # messages kept whole when compacting
+        elide_above_chars: 2000    # tool results and call arguments above this are elided
+        max_tool_result_chars: 60000
+        max_turn_tokens: 2000000   # 0 = no ceiling; the default is 10x fit_tokens
+        warn_at: 0.75              # fraction of the ceiling at which the seat is told to wrap up
+        clear_tool_results_at: 0.6 # fraction of the budget at which old tool traffic is cleared mid-turn; 0 = off
+        keep_tool_uses: 3          # tool rounds kept whole when clearing
+        clear_at_least_tokens: 5000 # a clear must free at least this much to be worth the cache write
+```
+
+A seat can name its own budget with `session.max_context_tokens`, which wins over `fit_tokens` — one seat may keep a long
+conversation while the mesh default keeps every other seat cheap. A budget at or above `context_window` is reported at load,
+because it would never rotate before the model's own limit.
 
 ## The designer
 

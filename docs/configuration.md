@@ -68,12 +68,13 @@ caps unset). "Inherit" means the key is *absent*, so an agent that explicitly wr
 > mission does. Use `budgets.mission.wall_clock_minutes` / `.max_events`, which
 > are enforced, and set a per-seat cap with `tokens`.
 
-> **`max_context_tokens` is accepted and resolved, but nothing enforces it yet.**
-> No runtime currently truncates or compacts a session on it, at either level —
-> setting it changes what the config reports, not how agents run. The other five
-> keys are enforced. Note that `delegation.allow` and `max_depth` only take effect
-> alongside `max_workers: ≥ 1`; the supervisor denies `spawn_worker` when the
-> worker cap is 0.
+> **`max_context_tokens` is now the seat's context budget on the native runtime.**
+> It is measured against the whole prompt (cache reads and writes included) and is
+> the size at which the conversation is compacted or rotated — see
+> [runtime-native.md](runtime-native.md#sessions). The Claude adapter still ignores
+> it and rotates on `context_window` alone. The other five keys are enforced. Note
+> that `delegation.allow` and `max_depth` only take effect alongside
+> `max_workers: ≥ 1`; the supervisor denies `spawn_worker` when the worker cap is 0.
 
 ### context_window
 
@@ -96,8 +97,10 @@ assistant frames. When no frame reports usage, it estimates the size from the
 turn's summed reads and logs "context unmeasurable" once per seat session
 (NOTES-live-run-20260925-2040.md §1).
 
-`session.max_context_tokens` is parsed but read by no runtime; it does not
-control rotation. Use `context_window`.
+`session.max_context_tokens` is the native runtime's conversation budget: the size at
+which it compacts a conversation (dropping superseded briefs and old tool traffic) or
+rotates it. It wins over `mesh.runtime.native.context.fit_tokens`. The Claude adapter
+does not read it; there, `context_window` is the only lever.
 
 ### stale_after_ms
 

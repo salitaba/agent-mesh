@@ -29,6 +29,8 @@ export interface TranscriptMeta {
   contextTokens: number;
   turns: number;
   rotations: number;
+  /** How many times this conversation was compacted in place (see `context-policy.ts`). */
+  compactions?: number;
   /** When the last turn ended, as epoch ms. */
   lastTurnEndedAt?: number;
 }
@@ -76,6 +78,41 @@ export class TranscriptStore {
     const file = this.file(agentId, transcriptId);
     if (!file) return;
     fs.appendFileSync(file, `${JSON.stringify({ type: "meta", ...meta })}\n`, "utf8");
+  }
+
+  /**
+   * Replace a conversation with a lighter version of itself.
+   *
+   * A compaction edits messages already on disk, and append-only files cannot forget.
+   * Left alone, a restart would resurrect every superseded brief and every elided
+   * tool result, and the seat would pay for them again on its first turn. Written to
+   * a sibling and renamed so a kill mid-write leaves the old transcript whole: the
+   * file is either the conversation before the compaction or the one after it.
+   */
+  rewrite(agentId: string, transcriptId: string, messages: ChatMessage[], meta: TranscriptMeta): void {
+    const file = this.file(agentId, transcriptId);
+    if (!file) return;
+    const header = this.headerOf(file) ?? { v: 1, agentId, transcriptId, model: "unknown", createdAt: new Date().toISOString() };
+    const temp = `${file}.rewrite`;
+    const lines = [
+      JSON.stringify({ type: "header", ...header }),
+      ...messages.map((m) => JSON.stringify({ type: "message", ...m })),
+      JSON.stringify({ type: "meta", ...meta }),
+    ];
+    fs.writeFileSync(temp, `${lines.join("\n")}\n`, "utf8");
+    fs.renameSync(temp, file);
+  }
+
+  private headerOf(file: string): Record<string, unknown> | undefined {
+    try {
+      const first = fs.readFileSync(file, "utf8").split("\n", 1)[0] ?? "";
+      const row = JSON.parse(first) as Record<string, unknown>;
+      if (row.type !== "header") return undefined;
+      const { type: _type, ...rest } = row;
+      return rest;
+    } catch {
+      return undefined;
+    }
   }
 
   load(agentId: string, transcriptId: string): LoadedTranscript | undefined {

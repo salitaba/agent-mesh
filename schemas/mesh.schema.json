@@ -283,6 +283,57 @@
                   "type": "integer",
                   "minimum": 1,
                   "maximum": 10000
+                },
+                "context": {
+                  "type": "object",
+                  "properties": {
+                    "fit_tokens": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 10000000
+                    },
+                    "keep_recent_messages": {
+                      "type": "integer",
+                      "minimum": 2,
+                      "maximum": 200
+                    },
+                    "elide_above_chars": {
+                      "type": "integer",
+                      "minimum": 200,
+                      "maximum": 10000000
+                    },
+                    "max_tool_result_chars": {
+                      "type": "integer",
+                      "minimum": 1000,
+                      "maximum": 10000000
+                    },
+                    "max_turn_tokens": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 1000000000
+                    },
+                    "warn_at": {
+                      "type": "number",
+                      "exclusiveMinimum": 0,
+                      "exclusiveMaximum": 1
+                    },
+                    "clear_tool_results_at": {
+                      "type": "number",
+                      "minimum": 0,
+                      "exclusiveMaximum": 1
+                    },
+                    "keep_tool_uses": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 100
+                    },
+                    "clear_at_least_tokens": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 10000000
+                    }
+                  },
+                  "additionalProperties": false
                 }
               },
               "additionalProperties": false
@@ -300,7 +351,9 @@
                   "type": "boolean"
                 },
                 "max_context_tokens": {
-                  "type": "integer"
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 10000000
                 }
               },
               "additionalProperties": false
@@ -458,7 +511,9 @@
                 "type": "boolean"
               },
               "max_context_tokens": {
-                "type": "integer"
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 10000000
               }
             },
             "additionalProperties": false

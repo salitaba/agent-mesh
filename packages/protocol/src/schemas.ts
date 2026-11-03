@@ -209,7 +209,7 @@ const agentConfigSchema = {
     interests: { type: "array", items: { type: "string", maxLength: 200 } },
     session: {
       type: "object",
-      properties: { persistent: { type: "boolean" }, max_context_tokens: { type: "integer" } },
+      properties: { persistent: { type: "boolean" }, max_context_tokens: { type: "integer", minimum: 0, maximum: 10000000 } },
       additionalProperties: false,
     },
     delegation: {
@@ -391,6 +391,32 @@ export const meshConfigSchema = {
                 extra_read_roots: { type: "array", items: { type: "string", maxLength: 500 } },
                 // Model calls one turn may make.
                 max_steps: { type: "integer", minimum: 1, maximum: 10000 },
+                // The conversation economy. Every key is optional; the runtime's defaults
+                // (200k budget, 10x that per turn, 40 calls) apply to what is absent.
+                context: {
+                  type: "object",
+                  properties: {
+                    // The conversation budget, in tokens. 0 = the model window at 60%, capped at 200k.
+                    fit_tokens: { type: "integer", minimum: 0, maximum: 10000000 },
+                    // Messages at the tail kept whole when compacting.
+                    keep_recent_messages: { type: "integer", minimum: 2, maximum: 200 },
+                    // Tool results and tool-call arguments longer than this are elided when compacting.
+                    elide_above_chars: { type: "integer", minimum: 200, maximum: 10000000 },
+                    // The hardest a single tool result may ever be, in characters.
+                    max_tool_result_chars: { type: "integer", minimum: 1000, maximum: 10000000 },
+                    // Billable tokens one turn may spend before it ends cleanly. 0 = no ceiling.
+                    max_turn_tokens: { type: "integer", minimum: 0, maximum: 1000000000 },
+                    // Fraction of the ceiling at which the seat is told, once, to wrap up.
+                    warn_at: { type: "number", exclusiveMinimum: 0, exclusiveMaximum: 1 },
+                    // Fraction of the budget at which old tool traffic is cleared within a turn. 0 = off.
+                    clear_tool_results_at: { type: "number", minimum: 0, exclusiveMaximum: 1 },
+                    // Tool-use rounds kept whole when clearing mid-turn.
+                    keep_tool_uses: { type: "integer", minimum: 1, maximum: 100 },
+                    // Minimum tokens one mid-turn clear must free to be worth the cache invalidation.
+                    clear_at_least_tokens: { type: "integer", minimum: 0, maximum: 10000000 },
+                  },
+                  additionalProperties: false,
+                },
               },
               additionalProperties: false,
             },
@@ -402,7 +428,7 @@ export const meshConfigSchema = {
           properties: {
             session: {
               type: "object",
-              properties: { persistent: { type: "boolean" }, max_context_tokens: { type: "integer" } },
+              properties: { persistent: { type: "boolean" }, max_context_tokens: { type: "integer", minimum: 0, maximum: 10000000 } },
               additionalProperties: false,
             },
             delegation: {

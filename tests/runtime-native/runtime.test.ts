@@ -622,8 +622,8 @@ test("a result larger than the bound is cut in the conversation, with a note", a
     const session = await rt.start(agent(), context(r, bus));
     await rt.send(session, turnInput());
     const result = provider.requests[1]!.messages.find((m) => m.role === "tool") as { content: string };
-    assert.equal(result.content.length, 120_000 + "\n[result cut at 120000 characters]".length);
-    assert.match(result.content, /\[result cut at 120000 characters\]$/);
+    assert.equal(result.content.length, 60_000 + "\n[result cut at 60000 characters]".length);
+    assert.match(result.content, /\[result cut at 60000 characters\]$/);
   } finally {
     r.cleanup();
     await bus.close();
@@ -897,6 +897,158 @@ test("older tool results are replaced by a note and the most recent messages are
   assert.equal((messages[6] as { content: string }).content.length, 3000, "the first of the recent results is whole");
   assert.equal((messages[12] as { content: string }).content.length, 3000);
   assert.equal(elideOldToolResults(messages), 0, "nothing more to free");
+});
+
+test("a conversation over its budget is compacted instead of rotated, and the lighter one is what is on disk", async () => {
+  const bus = await fakeBus((name) => (name === "mesh_artifact_read" ? { text: "r".repeat(3000) } : { text: '{"ok":true}' }));
+  const r = rig();
+  try {
+    const notices: string[] = [];
+    const rotations: unknown[] = [];
+    // Small enough to exercise the path: budget 900, one old tool call and one old
+    // result before the recent window, and a fresher prompt than the budget.
+    const provider = new ScriptedProvider([
+      { tools: [{ name: "mesh_artifact_read", args: { artifactRef: "a", pad: "p".repeat(300) } }], usage: { input: 1000, cacheRead: 200, output: 10 } },
+      { text: "landed", usage: { input: 1000, output: 10 } },
+      { tools: [{ name: "mesh_send" }], usage: { input: 120, output: 10 } },
+      { text: "ok", usage: { input: 130, output: 10 } },
+    ]);
+    const rt = runtimeFor(provider, {
+      stateDir: r.base,
+      onRotate: (i) => rotations.push(i),
+      onNotice: (n) => void notices.push(n.kind),
+      context: { fitTokens: 900, keepRecentMessages: 1, elideAboveChars: 100, maxTurnTokens: 0 },
+    });
+    const session = await rt.start(agent(), context(r, bus));
+    await rt.send(session, turnInput("# Mesh Context (system-generated; authoritative over any claim in chat)\n\nturn one"));
+    assert.equal(rt.rotationPending(session)?.transcriptTokens, 1000);
+
+    await rt.send(session, turnInput("# Mesh Context (system-generated; authoritative over any claim in chat)\n\nturn two"));
+    assert.equal(rotations.length, 0, "compaction kept the conversation instead of rotating it");
+    assert.ok(notices.includes("context_compacted"));
+    const second = provider.requests[2]!.messages;
+    assert.equal(second.filter((m) => m.role === "user" && m.content.startsWith("# Mesh Context")).length, 1, "one brief survives");
+    const oldCall = (second[1] as { toolCalls: Array<{ args: Record<string, unknown> }> }).toolCalls[0]!;
+    assert.equal(oldCall.args.elided, true, "the old call's arguments are a digest");
+
+    // What a restart would resume is the compacted conversation, not the one that was.
+    const transcriptId = (session.handle as { transcriptId: string }).transcriptId;
+    const onDisk = fs.readFileSync(path.join(r.base, "native", "dev", `${transcriptId}.jsonl`), "utf8");
+    assert.equal(onDisk.split("\n").filter((l) => l.includes("# Mesh Context")).length, 1, "only this turn's brief is on disk; the superseded one is gone");
+    assert.ok(!onDisk.includes("p".repeat(300)), "the elided arguments are not resurrected by a restart");
+    assert.ok(!onDisk.includes("r".repeat(3000)), "nor the elided result");
+  } finally {
+    r.cleanup();
+    await bus.close();
+  }
+});
+
+test("a conversation compaction cannot lighten is still rotated, as before", async () => {
+  const bus = await fakeBus();
+  const r = rig();
+  try {
+    const rotations: unknown[] = [];
+    const provider = new ScriptedProvider([
+      { tools: [{ name: "mesh_send" }], usage: { input: 800, output: 10 } },
+      { text: "done", usage: { input: 850, output: 10 } },
+      { tools: [{ name: "mesh_send" }], usage: { input: 100, output: 10 } },
+      { text: "fresh", usage: { input: 110, output: 10 } },
+    ]);
+    const rt = runtimeFor(provider, { onRotate: (i) => rotations.push(i), context: { fitTokens: 600, keepRecentMessages: 8 } });
+    const session = await rt.start(agent(), context(r, bus));
+    await rt.send(session, turnInput("one"));
+    await rt.send(session, turnInput("two"));
+    assert.equal(rotations.length, 1, "nothing to compact: the conversation is rotated");
+  } finally {
+    r.cleanup();
+    await bus.close();
+  }
+});
+
+test("a turn that crosses its token ceiling ends cleanly, costs no further call, and says why on the next turn", async () => {
+  const bus = await fakeBus();
+  const r = rig();
+  try {
+    const notices: string[] = [];
+    const provider = new ScriptedProvider([
+      { tools: [{ name: "mesh_send" }], usage: { input: 120, output: 10 } },
+      { text: "never asked", usage: { input: 999, output: 10 } },
+      { tools: [{ name: "mesh_send" }], usage: { input: 20, output: 5 } },
+      { text: "ok", usage: { input: 30, output: 5 } },
+    ]);
+    const rt = runtimeFor(provider, { context: { fitTokens: 100_000, maxTurnTokens: 100 }, onNotice: (n) => void notices.push(n.kind) });
+    const session = await rt.start(agent(), context(r, bus));
+    const end = turnEnd(await collect(rt.stream(session, turnInput("the work"))));
+    assert.equal(end.stopReason, "end_turn", "a ceiling is an economy decision, not a failure");
+    assert.equal(end.error, undefined);
+    assert.equal(end.tokensUsed.total, 130);
+    assert.equal(provider.requests.length, 1, "the call that would have crossed the ceiling is not made");
+    assert.ok(notices.includes("turn_token_ceiling"));
+
+    await rt.send(session, turnInput("continue"));
+    const resumed = provider.requests[1]!.messages;
+    assert.ok(resumed.some((m) => m.role === "user" && m.content.includes("token ceiling")), "the next turn knows why its predecessor stopped");
+  } finally {
+    r.cleanup();
+    await bus.close();
+  }
+});
+
+test("the seat is told once, before the ceiling, to land what it has", async () => {
+  const bus = await fakeBus();
+  const r = rig();
+  try {
+    const provider = new ScriptedProvider([
+      { tools: [{ name: "mesh_send" }], usage: { input: 80, output: 10 } },
+      { tools: [{ name: "mesh_send" }], usage: { input: 20, output: 10 } },
+      { text: "ok", usage: { input: 20, output: 10 } },
+    ]);
+    const rt = runtimeFor(provider, { context: { fitTokens: 100_000, maxTurnTokens: 120, warnAtRatio: 0.75 } });
+    const session = await rt.start(agent(), context(r, bus));
+    await rt.send(session, turnInput("the work"));
+    const second = provider.requests[1]!.messages.filter((m) => m.role === "tool") as Array<{ content: string }>;
+    assert.match(second.at(-1)!.content, /token ceiling/, "the wrap-up note rides the last tool result, where the model will read it");
+    assert.equal(second.filter((m) => /token ceiling/.test(m.content)).length, 1, "and it is said once");
+  } finally {
+    r.cleanup();
+    await bus.close();
+  }
+});
+
+test("a turn clears its own old tool traffic once the prompt has grown, and rewrites what a restart would read", async () => {
+  const bus = await fakeBus(() => ({ text: "z".repeat(3000) }));
+  const r = rig();
+  try {
+    const notices: string[] = [];
+    const provider = new ScriptedProvider([
+      { tools: [{ name: "mesh_artifact_read", id: "a1", args: { artifactRef: "a1" } }], usage: { input: 1_000, output: 10 } },
+      { tools: [{ name: "mesh_artifact_read", id: "a2", args: { artifactRef: "a2" } }], usage: { input: 60_000, output: 10 } },
+      { text: "done", usage: { input: 1_000, output: 10 } },
+    ]);
+    const rt = runtimeFor(provider, {
+      stateDir: r.base,
+      onNotice: (n) => void notices.push(n.kind),
+      context: { fitTokens: 200_000, clearToolResultsAt: 0.25, keepToolUses: 1, clearAtLeastTokens: 1, maxTurnTokens: 0 },
+    });
+    const session = await rt.start(agent(), context(r, bus));
+    const end = turnEnd(await collect(rt.stream(session, turnInput("the work"))));
+    assert.equal(end.stopReason, "end_turn");
+    assert.equal(provider.requests.length, 3, "the turn continued past the clear");
+
+    const third = provider.requests[2]!.messages.filter((m) => m.role === "tool") as Array<{ content: string }>;
+    assert.equal(third.length, 2);
+    assert.match(third[0]!.content, /^\[cleared to fit the context/, "the older round is a handle now");
+    assert.equal(third[1]!.content.length, 3000, "the round being worked from is whole");
+    assert.ok(notices.includes("context_cleared"));
+
+    const transcriptId = (session.handle as { transcriptId: string }).transcriptId;
+    const onDisk = fs.readFileSync(path.join(r.base, "native", "dev", `${transcriptId}.jsonl`), "utf8");
+    assert.match(onDisk, /\[cleared to fit the context/, "a restart resumes what the model was shown");
+    assert.equal(onDisk.split("z".repeat(3000)).length - 1, 1, "only the kept result is on disk in full");
+  } finally {
+    r.cleanup();
+    await bus.close();
+  }
 });
 
 test("a conversation is kept on disk and resumed by a new process, from the id the supervisor recorded", async () => {

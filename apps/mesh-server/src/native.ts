@@ -61,6 +61,10 @@ export function nativeRuntimeOptions(config: ResolvedMeshConfig, wiring: NativeW
     ...(spec?.shellEnv ? { shellEnv: spec.shellEnv } : {}),
     ...(spec?.extraReadRoots.length ? { extraReadRoots: spec.extraReadRoots } : {}),
     ...(spec?.maxSteps ? { maxSteps: spec.maxSteps } : {}),
+    // The conversation economy: what a seat's context may weigh, what is dropped when
+    // it gets there, and the ceiling one turn may spend. Absent: the runtime's defaults
+    // (200k budget, 10x that per turn, 40 calls).
+    ...(spec?.context ? { context: spec.context } : {}),
     ...(contextWindow !== undefined ? { contextWindow } : {}),
     env: wiring.env,
     onNotice: (n) => wiring.notice(`native runtime: ${n.message}`),

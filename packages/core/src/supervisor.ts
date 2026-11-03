@@ -45,6 +45,7 @@ import {
   type MeshMessage,
   type MeshOp,
   type MeshOpWithdraw,
+  type MemoryKind,
   type MessageType,
   type ReplayState,
   type RuntimeContext,
@@ -11552,7 +11553,7 @@ export class Supervisor {
           return kept ? { ok: true, op: op.op, reason: kept, caveat: true } : { ok: true, op: op.op };
         }
         case "remember": {
-          await this.rememberMemory(actorId, op.key, op.value);
+          await this.rememberMemory(actorId, op.key, op.value, op.kind);
           return { ok: true, op: op.op };
         }
         case "write_continuity": {
@@ -12592,10 +12593,10 @@ export class Supervisor {
     return undefined;
   }
 
-  async rememberMemory(agentId: string, key: string, value: string): Promise<void> {
+  async rememberMemory(agentId: string, key: string, value: string, kind?: MemoryKind): Promise<void> {
     await this.deps.kernel.emit("memory.updated", {
       agentId,
-      note: { agentId, key, value, updatedAt: this.deps.kernel.clock.iso(), eventId: "" },
+      note: { agentId, key, value, ...(kind ? { kind } : {}), updatedAt: this.deps.kernel.clock.iso(), eventId: "" },
     }, { actorId: agentId });
   }
 

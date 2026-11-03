@@ -772,8 +772,12 @@ export function buildAgentContext(
   // most recent ones rather than the oldest.
   const memoryMap = state.memory.get(agentId);
   const allMemory = (memoryMap ? [...memoryMap.values()] : []).filter((n) => n.key !== ELIDED_MEMORY_KEY);
+  const authored = allMemory.filter((n) => !isAutoMemoryNote(n.key));
   const agentMemory = [
-    ...allMemory.filter((n) => !isAutoMemoryNote(n.key)),
+    // A playbook line is a deliberate, stable instruction and is admitted before
+    // facts and turn exhaust, so a tight budget cannot evict "how we do this".
+    ...authored.filter((n) => n.kind === "procedure"),
+    ...authored.filter((n) => n.kind !== "procedure"),
     ...allMemory.filter((n) => isAutoMemoryNote(n.key)).reverse(),
   ].slice(0, maxMemory);
   countOmitted("memory", allMemory.length, agentMemory.length);
@@ -1339,7 +1343,7 @@ function commonToolsLine(hidden: ReadonlySet<string>, contracts: boolean): strin
     ["mesh_task_complete", "mesh_task_complete"],
     ["mesh_decision_propose", "mesh_decision_propose (topic/decision)"],
     ["mesh_escalate", "mesh_escalate (reason/detail)"],
-    ["mesh_remember", "mesh_remember (key/value)"],
+    ["mesh_remember", "mesh_remember (key/value/kind — kind 'procedure' is a playbook line (how this team does something) rendered on every later turn; the default 'fact' is state of the work)"],
     ["mesh_discharge", "mesh_discharge (messageId/reason/refusal — close a request addressed to you that you will NOT answer; `reason` is your own words and the asker reads them, and `refusal` names WHICH no it is from the contract the ask's own mail line lists, which is how the asker tells 'wrong seat' from 'bad ask' from 'I disagree' without interpreting your sentence)"],
     ["mesh_withdraw", "mesh_withdraw (messageId/reason — close an ask YOU raised, once its answer stops mattering; everyone who still owes you one is told to stop and released from the debt, and it costs them no turn, so take it rather than waiting or chasing)"],
     ["mesh_collab", "mesh_collab (with/topic — open a TIME-BOXED discussion for work too open-ended to name as one ask; it obliges nobody to answer, but it ends on a clock and a message count, and overrunning either raises a card for the human, so close it with mesh_collab_close the moment you have what you came for)"],
@@ -1478,8 +1482,20 @@ export function renderContextInstructions(bundle: AgentContextBundle): string {
   // `agentMemory` during assembly, so the old `length > 0` guard hid the warning
   // from precisely the agent that lost its history and needed to be told.
   if (bundle.agentMemory.length > 0 || (bundle.elidedMemory ?? 0) > 0) {
-    lines.push("## Your memory (L2)");
-    for (const m of bundle.agentMemory) lines.push(`- ${m.key}: ${m.value}`);
+    const procedures = bundle.agentMemory.filter((m) => m.kind === "procedure");
+    const facts = bundle.agentMemory.filter((m) => m.kind !== "procedure");
+    if (procedures.length > 0) {
+      lines.push("## Your playbook (L2 — how this team does things)");
+      for (const m of procedures) lines.push(`- ${m.key}: ${m.value}`);
+      lines.push("");
+    }
+    if (facts.length > 0 || bundle.agentMemory.length === 0) {
+      // The header stays when there are no notes at all, because that is the
+      // one case the elision warning below has to live under: a seat whose
+      // whole history was evicted must not be left holding a bare marker.
+      lines.push("## Your memory (L2)");
+      for (const m of facts) lines.push(`- ${m.key}: ${m.value}`);
+    }
     partial(bundle.omitted?.memory, "note(s) you wrote", "held back to fit this turn; still in your memory");
     if (bundle.elidedMemory) {
       lines.push(

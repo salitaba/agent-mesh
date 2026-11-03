@@ -60,7 +60,7 @@ const LEGACY_OP_NAMES: Readonly<Record<string, string>> = {
  */
 export const READ_TOOLS: ReadonlySet<string> = new Set([
   "mesh_inbox", "mesh_run_status", "mesh_query_events", "mesh_steps", "mesh_failures",
-  "mesh_agent_activity", "mesh_run_digest",
+  "mesh_agent_activity", "mesh_run_digest", "mesh_artifact_list", "mesh_memory_search",
 ]);
 
 /**

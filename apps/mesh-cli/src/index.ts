@@ -368,10 +368,11 @@ usage:
   curule respond <escalationId> <text>       human escalation response
   curule artifacts [--bus url] [--settled] [--status S]  artifact ledger, grouped: delivered / in progress / rejected
   curule budgets [--bus url]                 budget keys with consumed/limit and an EXCEEDED mark
-  curule ledger [mesh.yaml] [--top n] [--json]  per-turn token ledger from the audit file: fresh vs cached vs written
-    vs written, which turns hold the uncached bill, and fresh input by gap since a seat last finished.
+  curule ledger [mesh.yaml] [--top n] [--json]  per-turn token ledger from the audit file: fresh vs cached vs written, which turns hold the uncached bill, and fresh input by gap since a seat last finished.
     Offline: reads logs/turn-audit.jsonl, needs no running mesh. Ratios are published Anthropic
     units (cache read 0.1x, write 1.25x, output 5x) — a comparable unit, not a price.
+  curule economy [mesh.yaml] [--top n] [--json]  tokens per OUTCOME, from the audit file and the event log: billable per accepted criterion, recorded review, merged patch and completed task, plus cache-hit ratio and the turns that carried the bill.
+    Offline too: reads the same state dir (logs/turn-audit.jsonl + logs/events.jsonl).
   curule host [--port n] [--home dir] [--memory mb] [--live] [--git|--no-git]
     multi-project host: supervises one child per open project, serves the dashboard (default port ${DEFAULT_HOST_PORT})
     git flags force every child on/off; without them each child obeys its own mesh.workspace.git
@@ -938,6 +939,9 @@ export async function main(argv: string[]): Promise<number> {
       case "ledger": {
         return await offlineLedger(args);
       }
+      case "economy": {
+        return await offlineEconomy(args);
+      }
       case "bench": {
         return await runBenchmark(args.flags);
       }
@@ -1114,6 +1118,87 @@ async function offlineLedger(args: Args): Promise<number> {
         `    ${r.at.slice(0, 19)}  ${r.agentId.padEnd(12)} ${(r.kind ?? "-").padEnd(9)}` +
           ` fresh ${fmt(r.input).padStart(10)}  cached ${fmt(r.cacheRead ?? 0).padStart(11)}  written ${fmt(r.output).padStart(8)}`,
       );
+    }
+  }
+  console.log("");
+  return 0;
+}
+
+/**
+ * `curule economy` — what the mission spent against what it produced.
+ *
+ * Same offline inputs as `curule ledger` (the audit file) plus the event log,
+ * which is where the outcomes are: an accepted criterion, a recorded review, a
+ * merged patch, a completed task, a published artifact. Dividing one by the
+ * other is the only figure that says whether a mission's token bill bought
+ * anything, and until now it had to be assembled by hand.
+ */
+async function offlineEconomy(args: Args): Promise<number> {
+  const candidate = args.positional[0] ?? process.env.MESH_CONFIG ?? "mesh.yaml";
+  if (candidate !== "mesh.yaml" && !fs.existsSync(candidate)) {
+    console.error(`curule economy: no config at ${candidate}`);
+    return 1;
+  }
+  const dir = stateDirFor(candidate);
+  const audit = path.join(dir, "logs", "turn-audit.jsonl");
+  const eventFile = path.join(dir, "logs", "events.jsonl");
+  if (!fs.existsSync(audit)) {
+    console.error(`curule economy: no audit file at ${audit}\nthe mesh writes one line per settled turn once it has run`);
+    return 1;
+  }
+  const { parseTurnAudit, buildEconomyReport } = await import("../../../packages/observability/src/index");
+  const { rows } = parseTurnAudit(fs.readFileSync(audit, "utf8"));
+  const events: Array<{ type: string; actorId?: string; timestamp?: string; payload?: Record<string, unknown> }> = [];
+  if (fs.existsSync(eventFile)) {
+    for (const line of fs.readFileSync(eventFile, "utf8").split("\n")) {
+      if (!line.trim()) continue;
+      try {
+        const e = JSON.parse(line) as { type?: string; actorId?: string; timestamp?: string; payload?: Record<string, unknown> };
+        if (typeof e.type === "string") events.push({ type: e.type, actorId: e.actorId, timestamp: e.timestamp, payload: e.payload });
+      } catch {
+        // A torn tail from a kill is the one damaged line this tolerates; the
+        // audit parser reports its own damage, and this file is only outcomes.
+      }
+    }
+  }
+  const wantTop = Number(args.flags.top ?? 10);
+  const rep = buildEconomyReport(rows, events, Number.isFinite(wantTop) && wantTop > 0 ? wantTop : 10);
+  if (args.flags.json) {
+    console.log(JSON.stringify(rep, null, 2));
+    return 0;
+  }
+  if (rep.turns === 0) {
+    console.log(`token economy — no turn records in ${audit}`);
+    return 0;
+  }
+  const fmt = (n: number) => Math.round(n).toLocaleString("en-US");
+  const short = (n: number) => (n >= 1_000_000 ? `${(n / 1_000_000).toFixed(1)}M` : n >= 1_000 ? `${Math.round(n / 1_000)}k` : String(Math.round(n)));
+  const pct = (x: number) => `${(100 * x).toFixed(1)}%`;
+
+  console.log(`token economy — ${fmt(rep.turns)} turns, ${fmt(rep.billable)} billable tokens`);
+  console.log(`  cache hit     ${rep.cacheHitRatio === null ? "unmeasured" : pct(rep.cacheHitRatio)} of all prompt tokens served from cache`);
+  console.log(`  fresh input   ${fmt(rep.input).padStart(12)}`);
+  console.log(`  output        ${fmt(rep.output).padStart(12)}`);
+  console.log(`  cache read    ${fmt(rep.cacheRead).padStart(12)}`);
+
+  console.log("\n  tokens per outcome");
+  const row = (label: string, tokens: number | null, count: number) =>
+    console.log(`    ${label.padEnd(20)} ${(tokens === null ? "—" : fmt(tokens)).padStart(12)}  (${fmt(count)})`);
+  row("accepted criterion", rep.tokensPer.criterion, rep.outcomes.criterionAccepted);
+  row("recorded review", rep.tokensPer.review, rep.outcomes.reviews);
+  row("merged patch", rep.tokensPer.mergedPatch, rep.outcomes.patchesMerged);
+  row("completed task", rep.tokensPer.completedTask, rep.outcomes.tasksCompleted);
+  row("published artifact", rep.tokensPer.artifact, rep.outcomes.artifactsPublished);
+
+  console.log("\n  by seat");
+  for (const a of rep.byAgent) {
+    console.log(`    ${a.agentId.padEnd(20)} ${short(a.billable).padStart(8)}  ${pct(a.share).padStart(6)}  ${fmt(a.turns).padStart(6)} turns  ${pct(a.input + a.cacheRead ? a.cacheRead / (a.input + a.cacheRead) : 0).padStart(6)} cache`);
+  }
+
+  if (rep.topTurns.length) {
+    console.log(`\n  most expensive turns (the top 5% of turns carried ${pct(rep.topShare)} of the bill)`);
+    for (const t of rep.topTurns) {
+      console.log(`    ${t.at.slice(0, 19)}  ${t.agentId.padEnd(20)} ${fmt(t.billable).padStart(12)}  fresh ${fmt(t.input).padStart(11)}  cached ${fmt(t.cacheRead ?? 0).padStart(11)}`);
     }
   }
   console.log("");

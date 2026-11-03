@@ -133,7 +133,36 @@ export interface RawMeshFile {
       /** Which runtime answers the designer's chat. Defaults to the default runtime when that is `native`. */
       designer?: "claude" | "native";
       designer_model?: string;
-      native?: { shell_env?: "inherit" | "minimal"; extra_read_roots?: string[]; max_steps?: number };
+      native?: {
+        shell_env?: "inherit" | "minimal";
+        extra_read_roots?: string[];
+        max_steps?: number;
+        /**
+         * The conversation economy: what a seat's context may weigh, what is dropped
+         * when it gets there, and the ceiling one turn may spend. See
+         * `packages/runtime-native/src/context-policy.ts`.
+         */
+        context?: {
+          /** The conversation budget in tokens. 0 = the model window at 60% (capped at 200k). */
+          fit_tokens?: number;
+          /** Messages at the tail kept whole when compacting. */
+          keep_recent_messages?: number;
+          /** Tool results and tool-call arguments longer than this are elided when compacting. */
+          elide_above_chars?: number;
+          /** The hardest a single tool result may ever be, in characters. */
+          max_tool_result_chars?: number;
+          /** Billable tokens one turn may spend before it ends cleanly. 0 = no ceiling. */
+          max_turn_tokens?: number;
+          /** Fraction of the turn ceiling at which the seat is told, once, to wrap up. */
+          warn_at?: number;
+          /** Fraction of the budget at which old tool traffic is cleared within a turn. 0 = off. */
+          clear_tool_results_at?: number;
+          /** Tool-use rounds kept whole when clearing mid-turn. */
+          keep_tool_uses?: number;
+          /** Minimum tokens a mid-turn clear must free to be worth the cache invalidation. */
+          clear_at_least_tokens?: number;
+        };
+      };
     };
     defaults?: { session?: RawSessionPolicy; delegation?: RawDelegationPolicy; hard_actions?: RawHardActions };
     /**
@@ -988,6 +1017,18 @@ export interface NativeRuntimeSpec {
   /** Absolute. */
   extraReadRoots: string[];
   maxSteps?: number;
+  /** The conversation economy (see `runtime-native/src/context-policy.ts`). */
+  context?: {
+    fitTokens?: number;
+    keepRecentMessages?: number;
+    elideAboveChars?: number;
+    maxToolResultChars?: number;
+    maxTurnTokens?: number;
+    warnAtRatio?: number;
+    clearToolResultsAt?: number;
+    keepToolUses?: number;
+    clearAtLeastTokens?: number;
+  };
 }
 
 /**
@@ -1077,6 +1118,7 @@ function resolveNativeRuntime(
       ...(m.temperature !== undefined ? { temperature: m.temperature } : {}),
     };
   }
+  const context = resolveNativeContext(rt?.native?.context, rt?.context_window, "mesh.runtime.native.context", errors, warnings);
   return {
     providers,
     ...(rt?.default_provider ? { defaultProvider: rt.default_provider } : {}),
@@ -1086,7 +1128,80 @@ function resolveNativeRuntime(
     ...(rt?.native?.shell_env ? { shellEnv: rt.native.shell_env } : {}),
     extraReadRoots: (rt?.native?.extra_read_roots ?? []).map((r) => path.resolve(dir, r)),
     ...(rt?.native?.max_steps ? { maxSteps: rt.native.max_steps } : {}),
+    ...(context ? { context } : {}),
   };
+}
+
+/**
+ * Check the conversation economy.
+ *
+ * Every key here costs money when it is wrong, and the failure is silent: a budget
+ * larger than the window never rotates, a ceiling of 0 disables the guard, and a
+ * `warn_at` outside (0,1) never warns. So each is refused with a sentence rather than
+ * coerced, and the two that interact are checked against each other.
+ */
+function resolveNativeContext(
+  raw:
+    | {
+        fit_tokens?: number;
+        keep_recent_messages?: number;
+        elide_above_chars?: number;
+        max_tool_result_chars?: number;
+        max_turn_tokens?: number;
+        warn_at?: number;
+        clear_tool_results_at?: number;
+        keep_tool_uses?: number;
+        clear_at_least_tokens?: number;
+      }
+    | undefined,
+  window: number | undefined,
+  at: string,
+  errors: string[],
+  warnings: string[],
+): NativeRuntimeSpec["context"] | undefined {
+  if (!raw) return undefined;
+  const out: NonNullable<NativeRuntimeSpec["context"]> = {};
+  const integer = (value: number | undefined, key: string, min: number, max: number): number | undefined => {
+    if (value === undefined) return undefined;
+    if (!Number.isInteger(value) || value < min || value > max) {
+      errors.push(`${at}.${key} must be a whole number between ${min} and ${max} (got ${String(value)})`);
+      return undefined;
+    }
+    return value;
+  };
+  const fit = integer(raw.fit_tokens, "fit_tokens", 0, 10_000_000);
+  if (fit !== undefined) {
+    out.fitTokens = fit;
+    if (fit > 0 && window !== undefined && fit >= window) {
+      warnings.push(
+        `${at}.fit_tokens ${fit} is at or above mesh.runtime.context_window ${window}: the conversation would never rotate before the model's own limit`,
+      );
+    }
+  }
+  const keep = integer(raw.keep_recent_messages, "keep_recent_messages", 2, 200);
+  if (keep !== undefined) out.keepRecentMessages = keep;
+  const elide = integer(raw.elide_above_chars, "elide_above_chars", 200, 10_000_000);
+  if (elide !== undefined) out.elideAboveChars = elide;
+  const result = integer(raw.max_tool_result_chars, "max_tool_result_chars", 1_000, 10_000_000);
+  if (result !== undefined) out.maxToolResultChars = result;
+  const ceiling = integer(raw.max_turn_tokens, "max_turn_tokens", 0, 1_000_000_000);
+  if (ceiling !== undefined) out.maxTurnTokens = ceiling;
+  if (raw.warn_at !== undefined) {
+    if (typeof raw.warn_at !== "number" || !Number.isFinite(raw.warn_at) || raw.warn_at <= 0 || raw.warn_at >= 1) {
+      errors.push(`${at}.warn_at must be a fraction above 0 and below 1 (got ${String(raw.warn_at)})`);
+    } else out.warnAtRatio = raw.warn_at;
+  }
+  if (raw.clear_tool_results_at !== undefined) {
+    const v = raw.clear_tool_results_at;
+    if (v !== 0 && (typeof v !== "number" || !Number.isFinite(v) || v <= 0 || v >= 1)) {
+      errors.push(`${at}.clear_tool_results_at must be 0 (off) or a fraction above 0 and below 1 (got ${String(v)})`);
+    } else out.clearToolResultsAt = v;
+  }
+  const keepUses = integer(raw.keep_tool_uses, "keep_tool_uses", 1, 100);
+  if (keepUses !== undefined) out.keepToolUses = keepUses;
+  const clearAtLeast = integer(raw.clear_at_least_tokens, "clear_at_least_tokens", 0, 10_000_000);
+  if (clearAtLeast !== undefined) out.clearAtLeastTokens = clearAtLeast;
+  return Object.keys(out).length > 0 ? out : undefined;
 }
 
 export class ConfigError extends Error {

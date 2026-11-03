@@ -1,6 +1,6 @@
 ﻿import { ARTIFACT_TYPES, MESSAGE_TYPES, obligesRecipients, toolAdvertised, type AgentDefinition, type Artifact, type MeshEvent, type MeshMessage, type MeshOp, type MessageType } from "../../../packages/protocol/src/index";
 import type { Supervisor, OpResult, TurnRecord } from "../../../packages/core/src/index";
-import { HUMAN_AGENT_ID, MAX_UNREAD_PER_AGENT, pageCut, readableMailDepth, resolveUnread, settlersOf, stillOwes, verifySeatToken } from "../../../packages/core/src/index";
+import { HUMAN_AGENT_ID, MAX_UNREAD_PER_AGENT, ELIDED_MEMORY_KEY, pageCut, readableMailDepth, resolveUnread, settlersOf, stillOwes, verifySeatToken } from "../../../packages/core/src/index";
 import {
   buildAgentActivity,
   buildCostReport,
@@ -54,7 +54,7 @@ const EVENT_FAMILIES: Record<string, MeshEvent["type"][]> = {
  * `mesh_inbox` observes the caller's own mailbox, and earns the same place
  * because reading a mailbox is not draining one (see `inboxView`).
  */
-const READ_TOOLS = new Set(["mesh_run_status", "mesh_query_events", "mesh_steps", "mesh_failures", "mesh_agent_activity", "mesh_run_digest", "mesh_inbox"]);
+const READ_TOOLS = new Set(["mesh_run_status", "mesh_query_events", "mesh_steps", "mesh_failures", "mesh_agent_activity", "mesh_run_digest", "mesh_inbox", "mesh_artifact_list", "mesh_memory_search"]);
 
 /**
  * Which tools a seat is shown is decided by `toolAdvertised` (protocol `tool-visibility.ts`), and
@@ -484,7 +484,7 @@ export class McpToolset {
       case "mesh_done":
         return { op: "done", summary: a.summary };
       case "mesh_remember":
-        return { op: "remember", key: a.key, value: a.value };
+        return { op: "remember", key: a.key, value: a.value, ...(a.kind ? { kind: a.kind } : {}) };
       case "mesh_write_continuity":
         return { op: "write_continuity", nextIntent: a.nextIntent, beliefs: a.beliefs, rejected: a.rejected };
       case "mesh_contracts":
@@ -522,6 +522,10 @@ export class McpToolset {
         return this.agentActivityView(a);
       case "mesh_run_digest":
         return this.runDigest(a);
+      case "mesh_artifact_list":
+        return this.artifactListView(a);
+      case "mesh_memory_search":
+        return this.memorySearchView(agentId, a);
       default:
         throw new Error(`unknown read tool ${name}`);
     }
@@ -667,6 +671,80 @@ export class McpToolset {
       a,
       Number.MAX_SAFE_INTEGER,
     );
+  }
+
+  /**
+   * Find an artifact without already knowing its id.
+   *
+   * The brief names a handful of artifacts; the rest of the store was reachable
+   * only by guessing a URI. That made "read the DesignSpec" a lottery and pushed
+   * seats to paste content they already had a handle for. This is the handle
+   * lookup: a bounded, newest-first list filtered by name, type, status or owner.
+   */
+  private artifactListView(a: Record<string, any>): Record<string, unknown> {
+    const name = typeof a.name === "string" && a.name.trim() ? a.name.trim().toLowerCase() : undefined;
+    const type = typeof a.type === "string" ? a.type : undefined;
+    const status = typeof a.status === "string" ? a.status : undefined;
+    const owner = typeof a.owner === "string" ? a.owner : undefined;
+    const limit = this.clampInt(a.limit, 20, 100);
+    const all = [...this.supervisor.state.artifacts.values()].filter(
+      (x) =>
+        (!name || x.name.toLowerCase().includes(name)) &&
+        (!type || x.type === type) &&
+        (!status || x.status === status) &&
+        (!owner || x.owner === owner),
+    );
+    const rows = all
+      .sort((x, y) => (x.createdAt < y.createdAt ? 1 : x.createdAt > y.createdAt ? -1 : 0))
+      .slice(0, limit)
+      .map((x) => {
+        const commit = (x.metadata as Record<string, unknown> | undefined)?.commit;
+        return {
+          id: x.id,
+          name: x.name,
+          type: x.type,
+          status: x.status,
+          version: x.version,
+          owner: x.owner,
+          ...(typeof commit === "string" ? { commit } : {}),
+          updatedAt: x.createdAt,
+        };
+      });
+    return {
+      artifacts: rows,
+      total: all.length,
+      ...(all.length > rows.length ? { note: `${all.length - rows.length} more match; narrow the filter or raise limit` } : {}),
+    };
+  }
+
+  /**
+   * The caller's own L2 notes, all of them.
+   *
+   * The brief renders at most `maxMemory` of them and marks the rest as held
+   * back. This is how a seat reads the ones that did not fit, or finds the note
+   * it wrote three sessions ago, without anyone putting them in a prompt. Own
+   * notes only: a seat's memory is not a shared board.
+   */
+  private memorySearchView(agentId: string, a: Record<string, any>): Record<string, unknown> {
+    const map = this.supervisor.state.memory.get(agentId);
+    const query = typeof a.query === "string" && a.query.trim() ? a.query.trim().toLowerCase() : undefined;
+    const kind = a.kind === "procedure" || a.kind === "fact" ? a.kind : undefined;
+    const limit = this.clampInt(a.limit, 30, 100);
+    const all = [...(map?.values() ?? [])].filter((n) => n.key !== ELIDED_MEMORY_KEY);
+    const rows = all
+      .filter(
+        (n) =>
+          (!kind || (n.kind ?? "fact") === kind) &&
+          (!query || n.key.toLowerCase().includes(query) || n.value.toLowerCase().includes(query)),
+      )
+      .sort((x, y) => (x.updatedAt < y.updatedAt ? 1 : x.updatedAt > y.updatedAt ? -1 : 0))
+      .slice(0, limit)
+      .map((n) => ({ key: n.key, value: n.value.slice(0, 1200), ...(n.kind ? { kind: n.kind } : {}), updatedAt: n.updatedAt }));
+    return {
+      notes: rows,
+      total: all.length,
+      ...(all.length > rows.length ? { note: `${all.length - rows.length} more note(s); narrow the query or raise limit` } : {}),
+    };
   }
 
   private async queryEvents(a: Record<string, any>): Promise<Record<string, unknown>> {
@@ -1147,7 +1225,7 @@ export class McpToolset {
       { name: "mesh_merge", description: "Merge a MERGEABLE patch (requires git.merge capability and configured approvals). Returns what landed, as result.", inputSchema: { type: "object", required: ["artifactId"], properties: { artifactId: str("artifact id"), comment: str("merge note") }, additionalProperties: false } },
       { name: "mesh_wait", description: "Declare that you are waiting for responses (runtime state becomes WAITING).", inputSchema: { type: "object", properties: { reason: str("what you await") }, additionalProperties: false } },
       { name: "mesh_done", description: "Finish your current activation turn. If you hold a claimed task, finishing COMPLETES it with this summary, exactly as mesh_task_complete does: end a turn with mesh_done only when the task's work is done. Waiting for something, or not started yet? Say so (mesh_wait) and end the turn without mesh_done: the task stays yours. A turn that called mesh_wait and made nothing (no artifact, commit, review, verdict or task) does not complete it even if it ends with mesh_done: the reply says so and the task stays claimed. Once every mandatory criterion is evidenced, mesh_done completes it as before.", inputSchema: { type: "object", properties: { summary: str("turn summary (the task's completion summary when you hold a claimed task)") }, additionalProperties: false } },
-      { name: "mesh_remember", description: "Persist a note into your own L2 agent memory.", inputSchema: { type: "object", required: ["key", "value"], properties: { key: str("note key"), value: str("note value") }, additionalProperties: false } },
+      { name: "mesh_remember", description: "Persist a note into your own L2 agent memory. Use kind 'procedure' for how this team does something (a playbook line you want on every later turn) and the default 'fact' for something true about the work. A note with the same key replaces the old one.", inputSchema: { type: "object", required: ["key", "value"], properties: { key: str("note key"), value: str("note value"), kind: { type: "string", enum: ["fact", "procedure"], description: "procedure = a playbook line rendered every turn; fact (default) = state of the work" } }, additionalProperties: false } },
       { name: "mesh_write_continuity", description: "Hand your working state to the session that replaces yours. Call this when told your session is about to be rotated. Do NOT list your open asks — the mesh fills those in.", inputSchema: { type: "object", required: ["nextIntent"], properties: { nextIntent: str("one sentence: what you were about to do next"), beliefs: { type: "array", description: "what you concluded, and what each conclusion stands on", items: { type: "object", required: ["claim", "basis", "confidence"], properties: { claim: str("what you believe"), basis: str("artifact uri, message id or event id that supports it"), confidence: { type: "string", enum: ["asserted", "assumed"], description: "asserted = you verified it; assumed = you proceeded on it unchecked" } }, additionalProperties: false } }, rejected: { type: "array", description: "what you already tried that was turned down", items: { type: "object", required: ["what", "rejectedBy", "reason"], properties: { what: str("artifact uri, or a short description"), rejectedBy: str("who rejected it"), reason: str("why") }, additionalProperties: false } } }, additionalProperties: false } },
       { name: "mesh_contracts", description: "List the named asks this mesh knows how to route, with the shape each one expects and who can answer it. Call this before mesh_call when you are unsure what to ask for.", inputSchema: { type: "object", properties: { role: str("only contracts a seat in this role would raise") }, additionalProperties: false } },
       { name: "mesh_call", description: "Raise a named contract (see mesh_contracts). Preferred over mesh_send for the asks it covers: the mesh picks the recipient, validates the request shape before anyone is woken, and names the refusals you may get back. Unknown names are refused with the list of known ones.", inputSchema: { type: "object", required: ["contract"], properties: { contract: str("contract name, e.g. review.artifact"), request: obj("fields the contract requires"), to: strArr("override the recipient the mesh would pick"), ifUnanswered }, additionalProperties: false } },
@@ -1166,6 +1244,8 @@ export class McpToolset {
       { name: "mesh_agent_activity", description: "Read-only per-agent activity snapshot: lifecycle, running turn, mailbox depth, activations, tokens, last error. Optionally filter to one agent.", inputSchema: { type: "object", properties: { agentId: str("filter to one agent") }, additionalProperties: false } },
       { name: "mesh_run_digest", description: "Read-only one-shot run digest over a bounded event window: outcome, goal progress, denial/op-failure/no-tool-turn counts, agent failures, stuck artifacts, conflicts, mission tokens and top event types. Cheapest broad answer before drilling into other tools. If the digest does not fit one result it returns a `sections` index instead — read one with section=\"denials\" (etc.), paging with offset.", inputSchema: { type: "object", properties: { top: { type: "number", description: "max rows per section (default 5, max 20)" }, window: { type: "number", description: "how many recent events to scan (default 2000, max 10000)" }, section: str("read one section instead of the whole digest: denials | refusedSends | rejectedOps | turnsWithZeroToolCalls | stuckArtifacts | topEventTypes"), offset: { type: "number", description: "rows to skip within that section (default 0) — use nextOffset from a previous call" } }, additionalProperties: false } },
       { name: "mesh_inbox", description: "Read-only view of YOUR OWN mailbox: messages addressed to you that you have not answered yet, in box order — sender, type, priority, thread subject, note, artifact refs and payload, with answerOwed marking the ones you still owe a reply (an ask that already closed says how, in closed) and dueBy giving the deadline they will be closed at where the mesh sets one. A page is bounded by characters, not just by `limit`: if the result says truncated, call again with its nextOffset — raising `limit` will not make one page bigger. Use it when a wake showed you a few messages and you want the rest of the queue, or to see what is waiting before you finish a turn. This is a VIEW, not a receipt: nothing is marked read, the mail stays owed, and you are still woken for it.", inputSchema: { type: "object", properties: { limit: { type: "number", description: "max messages to return (default 25, max 200)" }, offset: { type: "number", description: "skip this many messages (default 0) — use nextOffset from a previous call to page" } }, additionalProperties: false } },
+      { name: "mesh_artifact_list", description: "Read-only lookup of artifacts by name, type, status or owner — the way to find an artifact's id without already knowing it. Newest first, bounded. Then read it with mesh_artifact_read. Prefer this over guessing a URI or pasting content.", inputSchema: { type: "object", properties: { name: { type: "string", description: "substring of the artifact name, case-insensitive" }, type: { ...str("artifact type"), enum: [...ARTIFACT_TYPES] }, status: str("only this status, e.g. APPROVED or MERGED"), owner: str("only artifacts owned by this agent"), limit: { type: "number", description: "max rows (default 20, max 100)" } }, additionalProperties: false } },
+      { name: "mesh_memory_search", description: "Read-only search over YOUR OWN L2 memory notes (the ones the brief renders a subset of). Filter by words or by kind: 'procedure' notes are your playbook (how this team does things), 'fact' notes are state of the work. Use it to recover a note the brief held back, or to check what you already wrote down before re-deriving it.", inputSchema: { type: "object", properties: { query: { type: "string", description: "substring over key and value, case-insensitive" }, kind: { type: "string", enum: ["fact", "procedure"], description: "only notes of this kind" }, limit: { type: "number", description: "max notes (default 30, max 100)" } }, additionalProperties: false } },
     ];
   }
 }

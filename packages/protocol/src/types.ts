@@ -1345,6 +1345,8 @@ export interface AgentMemoryNote {
   agentId: AgentId;
   key: string;
   value: string;
+  /** `procedure` notes are the seat's playbook: how this team does things. */
+  kind?: MemoryKind;
   updatedAt: string;
   eventId: EventId;
 }
@@ -2047,7 +2049,15 @@ export interface MeshOpRemember {
   op: "remember";
   key: string;
   value: string;
+  /**
+   * What kind of note this is. `fact` (the default) is something true about the
+   * work; `procedure` is how this team does something — a playbook line the seat
+   * wants rendered on every turn until it changes its mind.
+   */
+  kind?: MemoryKind;
 }
+
+export type MemoryKind = "fact" | "procedure";
 
 export interface MeshOpPlan {
   op: "plan";
