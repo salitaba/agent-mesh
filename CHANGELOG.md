@@ -18,7 +18,9 @@ conversation runs against a budget (`mesh.runtime.native.context.fit_tokens`, a 
 the newest is authoritative), old tool results and old tool-call arguments are replaced by a note, the last eight messages
 stay whole, and the lighter conversation is written back to disk so a restart does not resurrect what was dropped. A turn
 now has a token ceiling (default 10× the budget): at 75% the seat is told once to land what it has, at 100% the turn ends
-cleanly with a note in the conversation, not as a failure. `max_steps` now defaults to 40, and `max_context_tokens` —
+cleanly with a note in the conversation, not as a failure. `max_steps` now defaults to 120 — a runaway guard, since the token
+ceiling is what bounds spend; at 40, two developer seats doing ordinary work were killed at exactly 40 calls with 145k and 101k
+tokens spent, far under the ceiling. `max_context_tokens` —
 accepted and ignored since it was added — is what the native runtime measures against.
 
 ### Added: in-turn tool clearing, a playbook memory, retrieval tools, and tokens per outcome

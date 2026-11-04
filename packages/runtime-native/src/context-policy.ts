@@ -124,10 +124,14 @@ export const DEFAULT_CLEAR_AT_LEAST_TOKENS = 5_000;
  */
 export const COMPACT_HEADROOM_RATIO = 0.8;
 /**
- * How many messages one turn may make. The native loop used to allow 200, which is
- * 200 x the whole conversation if a model keeps calling tools without finishing.
+ * How many messages one turn may make. It is a runaway guard, not the spend
+ * guard: a turn's bill is bounded by `maxTurnTokens`, and a turn at a small
+ * context can make many cheap calls without spending much. 40 was too tight —
+ * on the first live run with this economy, two developer seats doing ordinary
+ * implementation work were killed at exactly 40 calls with 145k and 101k
+ * tokens spent, well under the ceiling.
  */
-export const DEFAULT_MAX_STEPS = 40;
+export const DEFAULT_MAX_STEPS = 120;
 
 /** The first line of every turn brief. Used to find superseded ones after a restart. */
 export const BRIEF_MARKER = "# Mesh Context (system-generated";

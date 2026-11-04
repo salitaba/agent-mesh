@@ -154,7 +154,7 @@ call the model with the seat's tools, run the calls it makes in order, give it t
   complete (a continuity record landed) lets the batch in progress finish and spends no further call.
 - **Cut off.** A reply cut off by the output cap is asked to continue, twice at most. A call whose arguments were cut off, or are
   not a JSON object, is not run as if complete: the seat is shown what it sent and asked to send it again.
-- **Limits.** A turn may make 40 model calls (`mesh.runtime.native.max_steps`); past that it fails with what it spent. It also has
+- **Limits.** A turn may make 120 model calls (`mesh.runtime.native.max_steps`); past that it fails with what it spent. It also has
   a token ceiling (`mesh.runtime.native.context.max_turn_tokens`, default ten times the conversation budget): at 75% of it the
   seat is told once, on its last tool result, to land what it has; at 100% the turn ends cleanly — not as a failure — with a note
   in the conversation saying why, and the next turn continues from there.
@@ -238,7 +238,7 @@ mesh:
   runtime:
     context_window: 1000000        # the model's real window; the budget below is what it runs at
     native:
-      max_steps: 40                # model calls one turn may make
+      max_steps: 120               # model calls one turn may make (the token ceiling is the spend guard)
       context:
         fit_tokens: 200000         # the conversation budget; 0 = 60% of the window, capped at 200k
         keep_recent_messages: 8    # messages kept whole when compacting
