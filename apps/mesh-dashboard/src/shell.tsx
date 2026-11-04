@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { createContext, useCallback, useContext, useMemo, useRef, useState } from "react";
+import { createContext, useCallback, useContext, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { fmt, mandatoryProgress, plural } from "./format";
 import { useMesh, type View } from "./store";
 import { MessageDrawer, ApprovalDrawer, StepDrawer, AgentDrawer } from "./drawers";
@@ -514,12 +514,35 @@ export function Shell({ viewNode }: { viewNode: React.ReactNode }): React.JSX.El
   // walks the whole top bar and every sidebar tab again to reach the list they clicked for. When a change lands with nothing
   // focused, focus goes to the new page's own heading, which a screen reader reads out as the page's name. A change made from the
   // sidebar keeps its focus on the tab (and the off-canvas menu hands it back to ☰), so that path is untouched.
+  //
+  // The scroller is the frame's, not the page's: React swaps #view's children but the element and its scrollTop survive, so a new
+  // page used to open wherever the last one was read. Measured at 360 on the delivered demo, Cost read to its end (913 of 913) then
+  // Agents from the drawer opened at 498 — Agents' own maximum — with its title 420 px above the screen. A page starts at its head,
+  // before paint and whether or not focus was on a control.
+  //
+  // Back/Forward is the other half: focus stays on the dock tab that was pressed on the page being left (the dock survives a route
+  // change), and that tab is the last control in the document. Measured after Back from Needs you to Agents: focus was the "Needs
+  // you" dock tab while the page was Agents, and the next Tab left the page entirely (activeElement came back <body>), so the
+  // heading was never announced and its content was only reachable by Shift+Tab. A tab is a place to keep only while it names the
+  // page in front; a tab for another page is where the reader came from, not where they are.
   const lastView = useRef(view);
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (lastView.current === view) return;
     lastView.current = view;
-    if (document.activeElement !== document.body) return;
     const root = document.getElementById("view");
+    if (!root) return;
+    // #view scrolls smoothly; a route change is not a movement to watch, and the old offset belongs to the page that is gone.
+    const behaviour = root.style.scrollBehavior;
+    root.style.scrollBehavior = "auto";
+    root.scrollTop = 0;
+    root.style.scrollBehavior = behaviour;
+    const active = document.activeElement;
+    const staleTab = active instanceof HTMLElement
+      && Boolean(active.closest("#dock") || active.closest("#sidebar"))
+      && active.getAttribute("data-view") !== view;
+    // A tab for another page is where the reader came from, not where they are: let it go, and the heading below is the landing.
+    if (staleTab) active.blur();
+    if (document.activeElement !== document.body) return;
     // The sr-only h1 is not a landing place: the page's own h2 is what a person sees at the top of what they asked for.
     const head = root?.querySelector<HTMLElement>("h2") ?? null;
     if (head?.hasAttribute("tabindex")) head.focus({ preventScroll: true });
