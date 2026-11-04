@@ -3181,3 +3181,114 @@ account held by request interception. Heights are `document.documentElement.scro
   the form's own line; a field refusal is the one this pass moved.
 - **The checkout stand-in, the prose-only 18–19px links, the usage read's rate limit and the key form's
   height are unchanged.** They are the earlier entries.
+
+## 2026-11-04: the step that was said twice
+
+Same harness: Chromium 1248 through `playwright-core` against this worktree's trial (`trial --port 7661`, whose plans are
+the trial's own fixtures), 320 / 360 / 390 / 768 / 1440 at 800 and 900 tall, light and dark, forced colours and print at
+360, `prefers-reduced-motion: reduce`, a touch pointer below 721, the root raised to 32px at 320 and 360, and axe-core
+4.14 over every view. "Before" is the base commit's own pages (`6521258`), measured on this worktree before the first
+edit, not a figure copied from an earlier record: a fresh account made through `/signup` and confirmed by the mail link
+(no plan, the state a customer lands on), the same account with `/api/me` and `/api/plans` held to the answers named
+below, and one paid account held by a `/api/me` answer of its own (a Team plan, one running workspace named Research,
+`$10.00` available) because buying a plan or starting a container is not this pass's to do. Heights are
+`document.documentElement.scrollHeight`; positions are `getBoundingClientRect` plus `scrollY`; names are
+`document.activeElement`.
+
+- **The step of choosing a plan is the plan section, not a block above it.** A customer with no plan met a 345.53px block
+  (184.22–529.75 at 360) that said the step three times over — the rail's `02 Choose a plan`, a heading of the same words,
+  and a full-width `Choose a plan` button — and then, 40px below, the section `02 Plans` with the two cards that are the
+  actual choice. The block's one button went to a heading already on the screen. This is the shape the 2026-10-31 pass
+  gave a workspace that can be opened: the card is not drawn when the list holds the action. The block is not drawn for
+  `no-plan` now; the section carries the rail (`#plan-steps`) and the step's one sentence (`#plan-lede`) under its own
+  heading, and each plan card's own button is the choice. At 360 the page is **1,589 → 1,400px**, `02 Plans` is at
+  **569.75 → 224.22**, the first plan's price at **670.19 → 481.41**, and its `Choose Team` at **942–986 → 753.19–797.19**
+  — inside an 800px screen instead of 186px past its foot. The words "Choose a plan", visible three times in the first
+  screen, are **3 → 1** (the rail's current step; the live region still announces the step in words).
+- **The step's sentence says what a plan is and stops.** It ended "…Choose one below and pay on the next page." — the
+  button that led to the list said the same thing in two words, and the list is 16px below the sentence now. At 360 the
+  sentence is **127.97 → 76.78px** (three lines), and the first plan's button is 753 because of it.
+- **A failed plans read is said once, with one action.** With `/api/plans` answering 503 a person with no plan was told
+  twice, in one screen: the block's "The plans could not be loaded / No plan or price is shown just now, and nothing was
+  changed." with a **106 × 44 Try again at y = 407.56**, and the section's "The plans could not be loaded just now, so no
+  price is shown." with a second **Try again** at the foot of its note. The section is the step now, so it is the only
+  place the failure is said: the note carries the sentence and one **106 × 44 Try again at 426.69**, the rail above it
+  still says which step this is, the sentence that promises cards is not drawn, and the page is **915 → 800px**. It now
+  ends "Nothing was changed.", which the block used to be the only place to say. Pressing it re-reads the plans in place:
+  the cards appear, the sentence returns, the page is 1,400px and `document.activeElement` is **H2#plan-h**.
+- **A service that offers no plan says so instead of leaving a blank panel.** With the plans read and the list empty,
+  the account's plan section was a heading, a rail and nothing: **0px of content** under `02 Plans` on an 800px page, the
+  blank panel the design table forbids. It now says **"No plan is on offer just now, so no price is shown."** — the front
+  page's own words — in a 51.19px paragraph, and the step's announcement says the same sentence rather than promising a
+  card.
+- **A plan's period is not orphaned by the line break.** Every plan card's allowance read
+  "$10.00 of model usage each / month" at 360 and 390: the fact's two lines measured **218 + 50px**, the period alone
+  under it, because the card's 278px content box minus the bullet's 26px could not hold the phrase. `planFacts` joins
+  "each" to the period with a no-break space (the device the balance's "left of $10.00 a month" already uses): the lines
+  are **177 + 91px** — the amount on one, "each month" on the next — and no height moved anywhere.
+- **The used figure carries the period it is used in.** The glance's balance tile said `$0.00 of $10.00 used` while the
+  Balance panel 900px below said `left of $10.00 a month`: a figure without its period on the first screen, which the
+  direction does not allow. It reads **`$0.00 of $10.00 used this month`**, from the plan's own `period`, and the glance
+  is **124.88px** at 320, 360 and 390 before and after: the note was already on a line of its own.
+- **The paid account, the way in and the front page did not move.** The paid account held by its own `/api/me` answer is
+  **1,904 / 2,026 / 1,989** at 360 / 768 / 1,440 before and after, with the glance, the record, the plan row and the
+  folders where they were; sign-up **1,410 / 1,582 / 909**, sign-in 1,255 / 1,381 / 800, the confirmation page 1,199 /
+  1,249 / 800, forgot 1,161 / 1,185, reset 973 / 1,021 and the 404 800 at every width are unchanged to the pixel, and the
+  front page's plan cards take the no-break space without changing a height (4,269 at 360).
+- **Widths, schemes and the floor.** 320 / 360 / 390 / 768 / 1440 in light and dark on the plan-less account: no sideways
+  page scroll (320: 320; 360: 360; 390: 390; 768: 768; 1,440: 1,440), nothing computes below **12px**, no control under
+  44 × 44 below 721, and **10 axe-core runs** (every width in both schemes, the WCAG 2.0–2.2 A and AA rules and the
+  best-practice set) find **no violation**. Forced colours at 360 draws the rail's numeral black on white and the plan's
+  border as the system's; with scripts off the page is the same **800px** (the rail, the sentence and the panels are
+  `hidden` in the markup) and print is the page it is.
+  At **200% text** the plan-less account is **2,668 → 2,397px** at 360 and **2,804 → 2,502** at 320 — the block's padding
+  and its button paid for most of it — still 360 and 320 wide.
+- **The budget.** `app.css` is **40,945 → 40,937 bytes of 40,960** (23 left). The rail's 12px rule is 37 bytes and 45 were
+  given back by three `margin: 0` declarations that only repeated the global `ul, ol { margin: 0; padding: 0 }`
+  (`.record-list`, `.how`, `.causes`).
+- **Tests.** `npm test` — **6,492 tests, 6,490 pass, 0 fail**, 2 skipped; typecheck clean, lint 0 errors (its 211 existing
+  warnings). The page tests are 189. `pages-stage.test.ts` now holds the shortened sentence, the empty list's sentence,
+  the section's rail as the no-plan page's step and the cursor's new home; `pages-app.test.ts` holds the folded step, the one
+  warning with one Try again, the cursor on the heading after the retry answers, the empty list, the period on the plan's
+  facts and on the glance's used figure; `pages.test.ts` holds the section's five children and the rail's own rule.
+
+| measured at 360, light | before | after |
+| --- | --- | --- |
+| The block above the sections | 184.22–529.75, **345.53px** | **not drawn** |
+| `02 Plans` begins at | y = 569.75 | **224.22** |
+| The first plan's price / its button | 670.19 / 942–986 (186px past an 800 screen) | **481.41 / 753.19–797.19** (inside it) |
+| "Choose a plan", visible | **3** (rail, heading, button) | **1** (the rail's step) |
+| The step's sentence | 127.97px, ending "…pay on the next page." | **76.78px** |
+| The account | 1,589px | **1,400** |
+| … at 320 / 390 / 768 / 1,440 | 1,724 / 1,516 / 1,076 / 1,017 | **1,535 / 1,352 / 973 / 936** |
+| A failed plans read: warnings / Try agains / page | 2 / 2 (y = 407.56 and ≈660) / 915 | **1 / 1 (426.69) / 800** |
+| No plan on offer: the section under `02 Plans` | **0px** (a blank panel) | **51.19px**, the sentence |
+| A plan's allowance at 360 | lines of **218 + 50** ("month" alone) | **177 + 91** ("each month") |
+| The glance's used figure | `$0.00 of $10.00 used` | **`$0.00 of $10.00 used this month`** |
+| The glance / the paid account | 124.88 / 1,904px | **124.88 / 1,904** |
+| At 200% text, 320 / 360 | 2,804 / 2,668 | **2,502 / 2,397** |
+| axe-core, 10 views | 0 | **0** |
+| `app.css` | 40,945 bytes | **40,937** |
+
+### What this pass leaves
+
+- **The section's number and the journey's stop are both 02.** `02 Plans` heads the section and the rail's current step is
+  `02 Choose a plan` directly under it. They are the same number because they are the same place in the record (the
+  2026-10-31 pass gave the steps the journey's numbers), but a reader meets "02" twice in 40px. Renaming the heading
+  would put "Choose a plan" back over a list of plans, which the 2026-10-26 pass removed.
+- **At 320 the first plan's button is 23px below an 800px screen.** The rail takes three rows (81.95px) there and the
+  sentence 76.78; at 360 the button is inside. The 320 first screen was already the phone the record has not won.
+- **The skeleton still draws a block the plan-less page no longer has.** It is the shape of the paid account (a stage, two
+  tiles and a card) and it cannot know the plan before the read; the page is 844px while it is up and 1,400 after.
+- **A cancelled checkout's notice costs the first screen.** Its 98px at 360 puts the first plan's button at 851, below the
+  screen, until the notice is gone. It was 1,040 before this pass; the notice was not this pass's to shorten.
+- **The ended subscription, the late payment, the first workspace, a starting one, a failed one and the missing key still
+  have the card**, and it still carries their rail. Only the plain step of choosing a plan moved.
+- **The checkout stand-in, the prose-only 18–19px links, the usage read's rate limit and the key form's height are
+  unchanged.** They are the earlier entries.
+
+### Next pass
+
+- The 320 first screen: the rail's third row is 46px of it, and the sentence's three lines another 77.
+- The skeleton's shape for the plan-less account, if a first paint may wait for the plans rather than the account.
+- The cancelled-checkout notice: 98px at 360 for a sentence a customer needs once.

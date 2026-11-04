@@ -95,9 +95,13 @@ const card = (v: ReturnType<typeof view>) => h.nextStepOf(h.stageOf(v), v);
 
 test("the card says one thing for each stage, in a sentence, with the one action that is next", () => {
   const link = { kind: "link", label: "Choose a plan", href: "#plan-h" };
-  assert.deepEqual(card(view({ subscription: null })), { tone: "", title: "Choose a plan", text: "A plan is a flat monthly price for your account, and it says how many workspaces you may run at once. Choose one below and pay on the next page.", action: link });
-  assert.deepEqual(card(hostingView([], { subscription: null })), { tone: "", title: "Choose a plan", text: "A plan is a flat monthly price for your account, and it says how many workspaces you may run at once. Choose one below and pay on the next page. You bring your own model key and pay your model provider yourself.", action: link });
+  // A person with no plan reads this sentence as the plan section's own lede, under the rail, so it says what a plan is and stops: the cards
+  // under it name what each includes and carry the button that chooses it, and the sentence used to end on "Choose one below and pay on the
+  // next page", which the button that led to the list below said a second time.
+  assert.deepEqual(card(view({ subscription: null })), { tone: "", title: "Choose a plan", text: "A plan is a flat monthly price for your account, and it says how many workspaces you may run at once.", action: link });
+  assert.deepEqual(card(hostingView([], { subscription: null })), { tone: "", title: "Choose a plan", text: "A plan is a flat monthly price for your account, and it says how many workspaces you may run at once. You bring your own model key and pay your model provider yourself.", action: link });
   assert.deepEqual(card(view({ subscription: null, plans: [], plansKnown: false })), { tone: "warn", title: "The plans could not be loaded", text: "No plan or price is shown just now, and nothing was changed.", action: { kind: "retry", label: "Try again" } }, "a plan is promised only when one was read");
+  assert.equal(card(view({ subscription: null, plans: [] })).text, "No plan is on offer just now, so no price is shown.", "and a service that offers none promises none");
   assert.deepEqual(card(view({ subscription: { plan: "team", title: "Team", status: "ended" } })), {
     tone: "warn",
     title: "Choose a plan to start again",
@@ -176,7 +180,6 @@ const mainFocusable = (v: Visit): FakeNode[] =>
 
 test("the account opens with one statement: the card, or the record that has taken its place", async () => {
   const cases: Array<[string, () => ReturnType<typeof world>]> = [
-    ["no plan", () => world()],
     ["a plan and no workspace", () => world(paid)],
     ["a late payment", () => world((x) => { x.subscription = LATE; x.workspaces = [workspace()]; })],
   ];
@@ -191,6 +194,14 @@ test("the account opens with one statement: the card, or the record that has tak
     const first = mainFocusable(v)[0]!;
     assert.ok(v.$("stage").contains(first), `${what}: the first thing a keyboard reaches is in the card, and is ${first.tag} ${first.id || first.textContent}`);
   }
+  // A customer with no plan is at the step of choosing one, and the plan section is that step: a block above it would say the step a
+  // second time, and its one button would scroll to a list already on the screen.
+  const choosing = await visit("account", { routes: world().routes });
+  assert.equal(choosing.shows(choosing.$("stage")), false, "no plan: the card is not drawn");
+  assert.equal(choosing.shows(choosing.$("plan-steps")), true, "no plan: the section carries the rail");
+  assert.equal(choosing.$("plan-lede").hidden, false, "no plan: and the step's sentence");
+  assert.equal(mainFocusable(choosing)[0]!.textContent, "Choose Team", "no plan: the first thing a keyboard reaches is the first plan's own button");
+
   // A workspace that can be opened, or resumed, or that is running without the key its plan asks for, is its own record: the card
   // would say the same thing a card-length above it.
   const records: Array<[string, () => ReturnType<typeof world>, string]> = [
@@ -254,12 +265,14 @@ test("each stage is said on the page: its title and sentence, the steps while a 
   assert.equal(s.v.shows(s.v.$("stage-steps")), false, "a person whose workspace needs a key is not shown the steps of getting started");
 
   s = await stage(world());
-  assert.equal(s.steps, "02 Choose a plan (you are here) 03 Make a workspace (still to do) 04 Describe your team (still to do)");
-  assert.equal(s.v.doc.getElementById("stage-steps")!.querySelectorAll("li").filter((li) => li.getAttribute("aria-current") === "step").length, 1, "one step is the current one, for what reads the page aloud");
-  assert.ok(s.v.doc.getElementById("stage-steps")!.querySelectorAll("span").filter((n) => n.className === "num").every((n) => n.getAttribute("aria-hidden") === "true"), "and the numbers are for the eye: the words say it all");
-  assert.equal(s.v.$("stage-steps").getAttribute("aria-label"), "Where you are");
+  assert.equal(s.v.shows(s.v.$("stage")), false, "a person with no plan has the step in the plan section, not in a block above it");
+  assert.equal(s.v.text("plan-steps"), "02 Choose a plan (you are here) 03 Make a workspace (still to do) 04 Describe your team (still to do)");
+  assert.equal(s.v.doc.getElementById("plan-steps")!.querySelectorAll("li").filter((li) => li.getAttribute("aria-current") === "step").length, 1, "one step is the current one, for what reads the page aloud");
+  assert.ok(s.v.doc.getElementById("plan-steps")!.querySelectorAll("span").filter((n) => n.className === "num").every((n) => n.getAttribute("aria-hidden") === "true"), "and the numbers are for the eye: the words say it all");
+  assert.equal(s.v.$("plan-steps").getAttribute("aria-label"), "Where you are");
+  assert.equal(s.v.text("plan-lede"), "A plan is a flat monthly price for your account, and it says how many workspaces you may run at once.", "and the section says what a plan is, once");
 
-  assert.deepEqual([s.v.$("stage").getAttribute("role"), s.v.$("stage").getAttribute("aria-labelledby")], ["group", "stage-title"], "the card is a group named by what it says, and not a landmark: with no plan it says what the plan section below says, and two landmarks of one name are one too many");
+  assert.deepEqual([s.v.$("stage").getAttribute("role"), s.v.$("stage").getAttribute("aria-labelledby")], ["group", "stage-title"], "the card is a group named by what it says, and not a landmark: the sections below it are the page's landmarks");
   assert.equal(s.v.$("stage-title").getAttribute("tabindex"), "-1", "its title can be given the cursor, and is not a stop of the tab key");
   const live = s.v.$("stage-live");
   assert.deepEqual([live.getAttribute("role"), live.getAttribute("aria-live"), live.className], ["status", "polite", "sr"], "what it says when it changes is announced politely, to a screen reader and to nobody else");
@@ -389,8 +402,8 @@ test("the card that arrived is announced, a card that says something else is ann
   await v.until("the page to say it is waiting", () => /being confirmed|confirms a payment/.test(v.text("notice")));
   assert.equal(
     v.text("stage-live"),
-    "Choose a plan. A plan is a flat monthly price for your account, and it says how many workspaces you may run at once. Choose one below and pay on the next page.",
-    "the card that arrived with the account is announced, so the skeleton's 'Loading your account.' is answered by what is there now",
+    "Choose a plan. A plan is a flat monthly price for your account, and it says how many workspaces you may run at once.",
+    "what arrived with the account is announced, so the skeleton's 'Loading your account.' is answered by what is there now",
   );
   v.type("current", "typing in the password form while the page waits");
   w.subscription = ACTIVE;
@@ -509,7 +522,7 @@ test("the account is as long as the person's stage needs: only what they can use
   }
 });
 
-test("a plan that is chosen, a payment that was cancelled and a payment that is late each leave the card saying what to do, and nothing is said twice", async () => {
+test("a plan that is chosen, a payment that was cancelled and a payment that is late each leave the page saying what to do, and nothing is said twice", async () => {
   const w = world();
   w.answers.set("POST /api/checkout", { json: { url: "https://pay.example/c/abc" } });
   const v = await visit("account", { routes: w.routes });
@@ -519,7 +532,7 @@ test("a plan that is chosen, a payment that was cancelled and a payment that is 
 
   const back = await visit("account", { routes: world().routes, search: "?cancelled=1" });
   assert.equal(back.text("notice"), "Checkout was cancelled. Nothing was charged. Choose a plan below when you are ready.");
-  assert.equal(back.text("stage-title"), "Choose a plan", "and the way to try again is where it was");
+  assert.equal(back.text("plan-lede"), "A plan is a flat monthly price for your account, and it says how many workspaces you may run at once.", "and the way to try again is where it was: the list, with its step above it");
   const late = await visit("account", { routes: world((x) => { x.subscription = LATE; x.workspaces = [workspace({ status: "suspended", statusReason: "payment is overdue" })]; }).routes, search: "?cancelled=1" });
   assert.equal(late.text("notice"), "Checkout was cancelled. Nothing was charged, and your plan and balance are as they were.", "a payment that was late is still late, and the card says what to do about it");
   assert.equal(late.text("stage-title"), "Your last payment did not go through");

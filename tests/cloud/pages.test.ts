@@ -576,6 +576,26 @@ test("a long table keeps the name of its row at the edge while its figures scrol
   assert.deepEqual(entries, [["01", "Workspaces"], ["02", "Plan"], ["03", "Usage"], ["04", "Balance"], ["05", "Settings"]]);
 });
 
+test("the plan section can carry the step of choosing one: a rail and a sentence that a browser with no script does not show", () => {
+  // A person with no plan is at the step of choosing one, and the section is where they choose: the rail and the sentence are the section's
+  // own, and the block above it is not drawn. The markup holds them hidden, so a browser that runs no script is promised nothing.
+  const account = pages().find((p) => p.name === "account")!;
+  const panel = account.all.find((n) => attr(n, "id") === "plan-panel")!;
+  assert.deepEqual(panel.children.filter((n) => !n.isText).map((n) => attr(n, "id")), ["plan-h", "plan-steps", "plan-lede", "plan-status", "plan"], "the heading, the step, then the list");
+  const rail = account.all.find((n) => attr(n, "id") === "plan-steps")!;
+  assert.equal(rail.tag, "ol");
+  assert.ok(rail.className.split(/\s+/).includes("steps"), "the rail is the one the card draws, not a copy of it");
+  assert.equal(attr(rail, "aria-label"), "Where you are");
+  assert.ok(rail.attrs.has("hidden"), "the script draws the step; nothing is promised before it runs");
+  const lede = account.all.find((n) => attr(n, "id") === "plan-lede")!;
+  assert.equal(lede.tag, "p");
+  assert.ok(lede.className.split(/\s+/).includes("muted"));
+  assert.ok(lede.attrs.has("hidden"));
+  const rule = cssRules(read(path.join(ASSETS, "app.css"))).find((r) => r.selectors.includes("#plan-steps"));
+  assert.ok(rule, "the rail has a rule of its own: it is not inside the card's gap");
+  assert.equal(declared(rule!, "margin-bottom"), "12px", "and it takes the record's 12px before the sentence it introduces");
+});
+
 test("the balance is the record, and adding credit is one 44px row on a phone that opens the form", () => {
   const account = pages().find((p) => p.name === "account")!;
   const panel = account.all.find((n) => attr(n, "id") === "balance-panel")!;

@@ -25,7 +25,7 @@ test("the tiles say what the account has in a few words: the plan and its state,
 
   assert.deepEqual(tiles(view()), [
     { id: "plan", label: "Plan", value: "Team", unit: "", note: "$149.00 per month", badge: ["Active", "ok"] },
-    { id: "balance", label: "Balance", value: "$20.00", unit: "", note: "$0.00 of $20.00 used" },
+    { id: "balance", label: "Balance", value: "$20.00", unit: "", note: "$0.00 of $20.00 used this month" },
   ], "the workspaces are the record above it, not a count repeated here");
   const several = tiles(view({ subscription: { ...ACTIVE!, plan: "business", title: "Business" }, workspaces: [ws("A", "running"), ws("B", "running"), ws("C", "suspended"), ws("D", "provisioning"), ws("E", "requested"), ws("F", "failed")] }));
   assert.deepEqual(several.map((t) => t.id), ["plan", "balance"], "however many workspaces there are");
@@ -47,7 +47,7 @@ test("the tiles are on the page for an account that has a plan, in words that ar
 
   const running = await visit("account", { routes: world((x) => { paid(x); x.workspaces = [workspace()]; }).routes });
   assert.equal(running.shows(running.$("glance")), true);
-  assert.equal(running.text("glance-list"), "Plan Team Active $149.00 per month Balance $20.00 $0.00 of $20.00 used");
+  assert.equal(running.text("glance-list"), "Plan Team Active $149.00 per month Balance $20.00 $0.00 of $20.00 used this month");
   assert.equal(running.$("glance").getAttribute("aria-labelledby"), "glance-h");
   assert.equal(running.text("glance-h"), "At a glance");
   assert.equal(running.$("glance-h").className, "sr", "the heading is for a reader who has not the tiles in front of them");

@@ -102,8 +102,9 @@ test("words and dates: plurals, the reasons a workspace is stopped for, the day 
   assert.equal(h.when("garbage"), "");
   assert.equal(h.count(1_234_567), "1,234,567");
 
-  assert.deepEqual(h.planFacts(PLANS.plans[0], "USD"), ["$20.00 of model usage each month", "1 workspace", "Model tiers: fast, balanced"]);
-  assert.deepEqual(h.planFacts(PLANS.plans[1], "USD"), ["$100.00 of model usage each month", "3 workspaces"]);
+  // The period is joined to "each" by a no-break space: a plan card on a phone is narrow enough to break the line, and "month" was left alone under it.
+  assert.deepEqual(h.planFacts(PLANS.plans[0], "USD"), ["$20.00 of model usage each\u00A0month", "1 workspace", "Model tiers: fast, balanced"]);
+  assert.deepEqual(h.planFacts(PLANS.plans[1], "USD"), ["$100.00 of model usage each\u00A0month", "3 workspaces"]);
 
   const before = { account: { subscription: null }, balance: { balance: { included: 0, purchased: 0 } } };
   const after = { account: { subscription: { plan: "team", status: "active", periodEnd: "2026-11-05T12:00:00.000Z" } }, balance: { balance: { included: 20_000_000, purchased: 0 } } };
@@ -886,15 +887,15 @@ test("a confirmation link that has just been opened is confirmed where the perso
   assert.deepEqual(v.history, ["/account"], "and the query leaves the address");
 });
 
-test("a new account sees what to do first: choose a plan, and nothing to create, open, pay for or use yet", async () => {
+test("a new account sees what to do first: the plan section is the step, and nothing to create, open, pay for or use yet", async () => {
   const w = world();
   const v = await visit("account", { routes: w.routes });
   assert.equal(v.text("who"), "Signed in as ada@example.com");
-  assert.equal(v.shows(v.$("stage")), true);
-  assert.equal(v.text("stage-title"), "Choose a plan");
-  assert.equal(v.text("stage-text"), "A plan is a flat monthly price for your account, and it says how many workspaces you may run at once. Choose one below and pay on the next page.");
-  assert.equal(v.link("stage-actions", "Choose a plan").getAttribute("href"), "#plan-h");
-  assert.equal(v.text("stage-steps"), "02 Choose a plan (you are here) 03 Make a workspace (still to do) 04 Describe your team (still to do)");
+  assert.equal(v.shows(v.$("stage")), false, "the block above is not drawn: the section is the step, and it says it once");
+  assert.equal(v.shows(v.$("plan-steps")), true, "the section carries the rail");
+  assert.equal(v.text("plan-steps"), "02 Choose a plan (you are here) 03 Make a workspace (still to do) 04 Describe your team (still to do)");
+  assert.equal(v.text("plan-lede"), "A plan is a flat monthly price for your account, and it says how many workspaces you may run at once.");
+  assert.equal(v.text("stage-live"), "Choose a plan. A plan is a flat monthly price for your account, and it says how many workspaces you may run at once.", "and what arrived is announced as what the section says");
   assert.equal(v.shows(v.$("workspaces-panel")), false, "there is no workspace to list");
   assert.equal(v.shows(v.$("create")), false);
   assert.equal(v.text("plan-h"), "Plans");
@@ -1117,7 +1118,7 @@ test("the plans being unavailable leaves the rest of the account usable, says wh
   w.workspaces = [workspace({ status: "suspended", statusReason: "paused by its owner" })];
   const v = await visit("account", { routes: w.routes });
   const last = v.$("plan").querySelectorAll("p").at(-1)!;
-  assert.equal(v.text(last), "The plans could not be loaded just now, so no price is shown.");
+  assert.equal(v.text(last), "The plans could not be loaded just now, so no price is shown. Nothing was changed.");
   assert.equal(v.text(v.$("topup-hint")), "");
   assert.deepEqual(v.labels("topup-options"), []);
   assert.equal(v.$("topup-add").hidden, true, "the amounts' caption goes with the amounts");
@@ -1138,24 +1139,35 @@ test("the plans being unavailable leaves the rest of the account usable, says wh
   assert.equal(v.button("plan", "Manage billing").tag, "button");
   assert.deepEqual(v.consoleErrors, []);
 
-  // A new account: the card at the top does not promise a plan it cannot show, and its own Try again is the way to the list.
+  // A new account: the section says the read failed, once, and its own Try again is the way to the list. Before this, the block above
+  // said the same sentence with a second Try again 100px above this one, and the page had two ways to ask for one thing.
   const fresh = world((x) => {
     x.plans = failure(503, "unavailable", "Down.");
   });
   const n = await visit("account", { routes: fresh.routes });
-  assert.equal(n.text(n.$("plan").querySelectorAll("p").at(-1)!), "The plans could not be loaded just now, so no price is shown.");
-  assert.equal(n.text("stage-title"), "The plans could not be loaded", "the card says what failed, not what the person may choose");
-  assert.equal(n.text("stage-text"), "No plan or price is shown just now, and nothing was changed.");
-  assert.equal(n.$("stage").className, "stage stage-warn");
-  assert.deepEqual(n.labels("stage-actions"), ["Try again"], "and the action is the read again, not a jump to a promise");
+  assert.equal(n.shows(n.$("stage")), false, "the block above is not drawn: the section is where the step is");
+  assert.equal(n.text(n.$("plan").querySelectorAll("p").at(-1)!), "The plans could not be loaded just now, so no price is shown. Nothing was changed.");
+  assert.equal(n.$("plan-lede").hidden, true, "and no sentence promises a list that is not on the page");
+  assert.equal(n.shows(n.$("plan-steps")), true, "the rail still says which step this is");
+  assert.deepEqual(n.labels("plan"), ["Try again"], "the section has one action, and it is the read again");
   fresh.plans = { json: PLANS };
-  n.click(n.button("stage-actions", "Try again"));
+  n.click(n.button("plan", "Try again"));
   await n.idle();
-  assert.deepEqual(n.labels("plan"), ["Choose Team", "Choose Business"], "the list the card at the top offers is drawn without a reload");
-  assert.equal(n.text("stage-title"), "Choose a plan", "and the card says what is now true");
-  assert.equal(n.link("stage-actions", "Choose a plan").getAttribute("href"), "#plan-h");
-  assert.equal(n.doc.activeElement, n.$("stage-title"), "the cursor is on what the card says now, not on a button that went");
+  assert.deepEqual(n.labels("plan"), ["Choose Team", "Choose Business"], "the list is drawn in place, without a reload");
+  assert.equal(n.$("plan-lede").hidden, false);
+  assert.equal(n.text("plan-lede"), "A plan is a flat monthly price for your account, and it says how many workspaces you may run at once.");
+  assert.equal(n.doc.activeElement, n.$("plan-h"), "the cursor is on the heading of the section that answered, not on a button that went");
   assert.deepEqual(n.consoleErrors, []);
+
+  // A service that offers no plan at all: the section says so in one line. It used to end on its heading and the rail, with nothing under
+  // them, while the sentence above promised a list of cards.
+  const offeredNothing = world((x) => {
+    x.plans = { json: { ...PLANS, plans: [] } };
+  });
+  const z = await visit("account", { routes: offeredNothing.routes });
+  assert.equal(z.$("plan-lede").hidden, true, "no sentence promises a list that is not on the page");
+  assert.equal(z.text("plan"), "No plan is on offer just now, so no price is shown.");
+  assert.deepEqual(z.labels("plan"), [], "and there is nothing to press, because nothing is on offer");
 });
 
 // ---- workspaces ----
