@@ -230,7 +230,7 @@ td, th, dd, .price, .num, .badge, .auth-points li::before { font-variant-numeric
   gap: 8px;
   min-height: 40px;
   padding: 0 16px;
-  border: 1px solid var(--k-line-strong);
+  border: 1px solid var(--k-line-control);
   border-radius: var(--k-r-md);
   background: var(--k-surface);
   color: var(--k-ink);
@@ -244,7 +244,7 @@ td, th, dd, .price, .num, .badge, .auth-points li::before { font-variant-numeric
   transition: var(--k-dur-1) var(--k-ease);
   transition-property: background-color, border-color, box-shadow, color, transform;
 }
-.btn:hover { background: var(--k-surface-2); border-color: var(--k-line-control); text-decoration: none; }
+.btn:hover { background: var(--k-surface-2); border-color: var(--k-ink); text-decoration: none; }
 .btn:active { background: var(--k-sunken); transform: translateY(.5px); box-shadow: none; }
 .btn-primary {
   border-color: transparent;
@@ -769,7 +769,7 @@ tfoot > tr > * { background: var(--k-surface-2); font-weight: 650; }
   animation: sweep 1.4s linear infinite;
 }
 .sk-stage { height: 168px; border-radius: var(--k-r-xl); }
-.sk-tiles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-top: 16px; }
+.sk-tiles { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; margin-top: 16px; }
 .sk-tiles .sk { height: 84px; }
 .sk-card { height: 200px; margin-top: 40px; }
 .sk-plan { height: 360px; }
@@ -877,6 +877,7 @@ tfoot > tr > * { background: var(--k-surface-2); font-weight: 650; }
   .logo { height: 20px; }
 }
 @media (max-width: 389px) { .subnav a { padding: 0 4px; font-size: max(12px, min(.75rem, 3.8vw)); min-width: 44px; } }
+@media (max-width: 359px) { .subnav { gap: 0 } .subnav a { padding: 0; justify-content: center } .subnav a + a { border-left: 1px solid var(--k-line-strong) } }
 
 /* ---- forced colours */
 @media (forced-colors: active) {

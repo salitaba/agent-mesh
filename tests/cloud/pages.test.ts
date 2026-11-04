@@ -475,6 +475,52 @@ test("what a finger has to hit is as tall as a button on a phone: the buttons, t
   assert.notEqual(value(".subnav", "overflow-x"), "auto", "and there is no sideways strip to discover");
 });
 
+test("a button's edge is a control's edge, and the contents line is one row on a 320 phone", () => {
+  const rules = cssRules(read(path.join(ASSETS, "app.css")));
+  // A neutral button is a white fill on the page's paper: the fill is 1.0:1 against the page, so the 1px edge is the control's whole
+  // boundary. At --k-line-strong it was 1.52:1 on the page and 1.58:1 on a card in light, 1.87 and 1.74 in dark; a control boundary
+  // needs 3:1, and --k-line-control is the token the kit's own test holds above it (3.92 on the page, 4.08 on a card, 3.75/4.04 dark).
+  const button = rules.find((r) => r.selectors.includes(".btn") && declared(r, "border") !== undefined)!;
+  assert.match(declared(button, "border")!, /var\(--k-line-control\)/, "the secondary button's edge is the control token, not the decorative hairline");
+  assert.equal(declared(button, "background"), "var(--k-surface)", "the fill alone is the page's own paper and cannot be the boundary");
+
+  // The five names and four gaps were 316.8px in the 288px a 320 phone has, so Settings took a second row and the first screen lost 43px.
+  // Below 360 the side padding goes and four 1px rules separate the names: 283.1 of 288, each name still 44 × 44. At 360 the 4px
+  // padding stays, because the row already fits there with its spacing intact.
+  const narrow = rules.filter((r) => r.at.includes("max-width: 389px"));
+  const small = rules.filter((r) => r.at.includes("max-width: 359px"));
+  const strip = small.find((r) => r.selectors.includes(".subnav") && declared(r, "gap") !== undefined);
+  assert.equal(declared(strip!, "gap"), "0", "the five names sit on one row, with the rules between them doing the separating");
+  const link = small.find((r) => r.selectors.includes(".subnav a") && declared(r, "padding") !== undefined);
+  assert.equal(declared(link!, "padding"), "0", "the name is the target's width; the 44px minimum is unchanged");
+  assert.equal(declared(link!, "justify-content"), "center", "a name narrower than its 44px target is centred in it, not pushed against the next name");
+  const rule = small.find((r) => r.selectors.includes(".subnav a + a") && declared(r, "border-left") !== undefined);
+  assert.match(declared(rule!, "border-left")!, /var\(--k-line-strong\)/, "one rule between two names, as the ledger's own edge");
+  const sized = narrow.find((r) => r.selectors.includes(".subnav a") && declared(r, "min-width") !== undefined);
+  assert.equal(declared(sized!, "min-width"), "44px", "so Plan, Usage and Balance are a finger wide at 320 and at 360");
+  assert.equal(declared(sized!, "font-size"), "max(12px, min(.75rem, 3.8vw))", "and the line is sized by the row it is on, at 12px on both");
+  assert.ok(!narrow.some((r) => declared(r, "padding") === "0"), "the compact padding is below 360 only: the 360 row has room and keeps its spacing");
+});
+
+test("the loading skeleton has the shape of the account it stands in for: the two facts the glance carries, not three", () => {
+  const account = pages().find((p) => p.name === "account")!;
+  const tiles = account.all.find((n) => n.className === "sk-tiles")!;
+  assert.equal(tiles.children.filter((n) => n.tag === "div").length, 2, "the glance has Plan and Balance since the workspaces tile left it");
+  const rules = cssRules(read(path.join(ASSETS, "app.css")));
+  const grid = rules.find((r) => r.selectors.includes(".sk-tiles") && declared(r, "grid-template-columns") !== undefined)!;
+  assert.equal(declared(grid, "grid-template-columns"), "repeat(2, 1fr)", "two tiles on a wide screen, as the two facts are");
+});
+
+test("a way-in page's tab names the heading it shows, and the account's password form is not offered before the script has an account", () => {
+  const titles = Object.fromEntries(pages().map((p) => [p.name, p.all.find((n) => n.tag === "title")!.textContent]));
+  for (const [name, h1] of [["signup", "Create your account"], ["login", "Back to your account"], ["forgot", "Forgot your password?"], ["reset", "Choose a new password"], ["verify", "Confirming your address"]] as const) {
+    assert.equal(titles[name], `${h1} – Curule Cloud`, `${name}: the tab is the page's own action, not a description of the form`);
+  }
+  const account = pages().find((p) => p.name === "account")!;
+  const settings = account.all.find((n) => attr(n, "id") === "settings-panel")!;
+  assert.ok(settings.attrs.has("hidden"), "Settings is drawn by the script: with no script it is not a password form whose submit would put both passwords in an address");
+});
+
 test("a phone's bar is part of the page, so no control is ever under it, and the section a contents link names opens at the edge", () => {
   const rules = cssRules(read(path.join(ASSETS, "app.css")));
   const value = (selector: string, property: string, within = ""): string | undefined => {
