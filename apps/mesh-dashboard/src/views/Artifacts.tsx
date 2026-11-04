@@ -37,13 +37,15 @@ const PHONE = "(max-width: 620px)";
  * The list refreshes itself when an agent publishes or a status changes (it used to be read once, on arrival, and then go
  * stale for the whole run). If a refresh fails after a good load, the page keeps what it has and says so. */
 
-function FileRow({ a, current, tabbable, onOpen, onKey, hold }: {
+function FileRow({ a, current, tabbable, onOpen, onKey, hold, closed }: {
   a: Art;
   current: boolean;
   tabbable: boolean;
   onOpen: () => void;
   onKey: (e: KeyboardEvent<HTMLButtonElement>) => void;
   hold: (el: HTMLButtonElement | null) => void;
+  /** The mission closed with this file never decided: say so, instead of "ready for review" forever. */
+  closed: boolean;
 }): React.JSX.Element {
   const path = repoPathOf(a);
   return (
@@ -69,7 +71,7 @@ function FileRow({ a, current, tabbable, onOpen, onKey, hold }: {
           </span>
           {path ? <span className="file-path mono" title={path}><bdi>{path}</bdi></span> : null}
         </span>
-        <span className="file-state" data-tone={artifactCls(a.status)}>{plainArtifact(a.status)}</span>
+        <span className="file-state" data-tone={artifactCls(a.status)}>{closed ? "closed without verdict" : plainArtifact(a.status)}</span>
       </button>
     </li>
   );
@@ -149,6 +151,14 @@ export default function Artifacts(): React.JSX.Element {
 
   const visible = useMemo(() => filterFiles(arts, filter), [arts, filter]);
   const groups = useMemo(() => groupFiles(visible), [visible]);
+  // A delivered mission can still carry files nobody ever reviewed. They stay in
+  // the list — the fact that no verdict was recorded is worth keeping — but the
+  // page stops calling them "in review", which reads as work still in progress.
+  const delivered = facts.goalStatus === "COMPLETED";
+  const groupText = (g: { id: string; label: string; short?: string }, kind: "label" | "short"): string =>
+    delivered && g.id === "review"
+      ? kind === "label" ? "Closed without a verdict" : "No verdict"
+      : kind === "label" ? g.label : (g.short ?? g.label);
   const flat = useMemo(() => groups.flatMap((g) => g.items), [groups]);
   const types = useMemo(() => typeCounts(arts), [arts]);
   const counts = useMemo(() => groupCounts(filterFiles(arts, { ...filter, group: "" })), [arts, filter]);
@@ -189,7 +199,7 @@ export default function Artifacts(): React.JSX.Element {
         onChange={(id) => setFilter({ ...filter, group: id })}
         options={[
           { id: "" as FileFilter["group"], label: <>All<span className="seg-n">{total}</span></> },
-          ...FILE_GROUPS.filter((g) => counts[g.id] > 0 || filter.group === g.id).map((g) => ({ id: g.id as FileFilter["group"], label: <>{g.short}<span className="seg-n">{counts[g.id]}</span></>, hint: g.label })),
+          ...FILE_GROUPS.filter((g) => counts[g.id] > 0 || filter.group === g.id).map((g) => ({ id: g.id as FileFilter["group"], label: <>{groupText(g, "short")}<span className="seg-n">{counts[g.id]}</span></>, hint: groupText(g, "label") })),
         ]}
       />
       <span className="files-latest" title="When two files share a name and type, show only the newest. Older ones stay in the manifest.">
@@ -265,7 +275,7 @@ export default function Artifacts(): React.JSX.Element {
               ) : (
                 groups.map((g) => (
                   <section className="files-group" key={g.id} aria-labelledby={`fg-${g.id}`}>
-                    <h3 className="files-group-h" id={`fg-${g.id}`}>{g.label}<span className="files-group-n">{g.items.length}</span></h3>
+                    <h3 className="files-group-h" id={`fg-${g.id}`}>{groupText(g, "label")}<span className="files-group-n">{g.items.length}</span></h3>
                     <ul className="file-rows">
                       {g.items.map((a) => {
                         index += 1;
@@ -279,6 +289,7 @@ export default function Artifacts(): React.JSX.Element {
                             onOpen={() => open(a)}
                             onKey={(e) => onKey(e, i)}
                             hold={(el) => { if (el) rows.current.set(a.id, el); else rows.current.delete(a.id); }}
+                            closed={delivered && (a.status === "READY_FOR_REVIEW" || a.status === "UNDER_REVIEW")}
                           />
                         );
                       })}

@@ -351,6 +351,8 @@ policies:
     thread: { max_depth: 8 }
     repeated_conflict: { threshold: 3 }
     artifact_review_rounds: { max: 5 }
+  completion:                          # what "done" means (see below)
+    require_reviews: true              # hold completion until every put-forward file has a verdict
   rules:                               # optional extra deny/escalate rules (§19)
     - id: explorer-read-only
       when: { actor_role: explorer }
@@ -359,6 +361,29 @@ policies:
       when: { actor_role: developer, to: qa }      # `to` scopes to a recipient
       deny: { message_types: [INFORM] }
 ```
+
+### completion
+
+`policies.completion.require_reviews: true` holds a mission open while any artifact
+it put forward is still waiting on a verdict (`READY_FOR_REVIEW` or
+`UNDER_REVIEW`). Everything else can be satisfied — every mandatory criterion
+evidenced, no claimed task, no rejected patch in limbo — and the goal stays
+`ACTIVE` instead of `COMPLETED`; the watchdog says so once in the audit log
+("completion held by policies.completion.require_reviews: N artifact(s) still
+await a verdict"). Reviewing or archiving the last one releases it.
+
+It is **on in the template every new project starts from**, so a new project's
+"Delivered" cannot sit beside a review queue nobody answered. It is **off in the
+schema default**, because a scripted or unattended mesh submits reports nobody
+reviews, and gating completion on them deadlocks it (the same reading that keeps
+open escalation cards out of the gate).
+
+With the gate off, undecided reviews are still recorded: the completion event
+carries `openReviews`, the goal projection carries their count
+(`goal.completion.openReviews`), and the console shows "Delivered, with work left
+on the table: N files were never given a verdict" rather than a clean "Delivered".
+Those files also stop reading as "in review" once the mission is closed — the
+artifact page labels them *closed without verdict*.
 
 ### transitions
 

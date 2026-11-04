@@ -451,13 +451,18 @@ export function openReviewSummary(a: Artifact): OpenReviewSummary {
 }
 
 export type TerminationVerdict =
-  | { kind: "continue" }
   /**
    * `openCards` names the OPEN escalations that were still on the table when
    * the mission closed. Absent when there were none, so a clean completion
    * reads exactly as it always did. The cards are reported, NOT resolved.
    */
   | { kind: "complete"; reason: string; evidenceSummary: string[]; openCards?: OpenCardSummary[]; openReviews?: OpenReviewSummary[] }
+  /**
+   * Still running. `blockedBy` names a non-gating condition that would
+   * otherwise have completed the goal — today only undecided reviews under
+   * `policies.completion.require_reviews`. Absent means ordinary progress.
+   */
+  | { kind: "continue"; blockedBy?: { reviews: number } }
   /**
    * `supports` is set only for derived verdicts (stalemate): the ids of the
    * open primary escalations that justify it. Absent means "this verdict
@@ -625,6 +630,13 @@ export class TerminationManager {
     // ran 6 completes / 5 reopens this way, re-approving the same architecture
     // six times and delivering nothing new.
     const satisfied = (c: (typeof mandatory)[number]): boolean => criterionSatisfied(goal, c);
+    /**
+     * Undecided reviews that the mission's own policy says must be answered
+     * before it can be called done. `0` unless `policies.completion.require_reviews`
+     * is on: with it off, the reviews are carried in the completion record
+     * (see `openReviews` below) and do not hold the mission.
+     */
+    let blockedReviews = 0;
     if (mandatory.length > 0 && mandatory.every(satisfied)) {
       // A card does NOT hold a finished mission shut.
       //
@@ -693,6 +705,13 @@ export class TerminationManager {
       // the audit line says it in words. A DRAFT is not here at all — nobody owes it a verdict, and the supervisor
       // archives the goal's drafts as it closes, so they cannot read as unfinished work either.
       const unansweredReviews = openReviews(state, goalId);
+      // `policies.completion.require_reviews`: a mission whose delivery still
+      // has verdicts outstanding is not done, however many criteria are
+      // evidenced. Opt-in, because a scripted or unattended mesh submits
+      // artifacts nobody reviews and the gate would deadlock it; the default
+      // project template turns it on so a new project's "Done" means an empty
+      // review queue.
+      const reviewsHold = config.requireReviewsAtCompletion && unansweredReviews.length > 0;
       // A mission that ships code has to have RUN it. A live mesh (2026-10-14) delivered a repository of tests and docs
       // around a CLI no seat had ever started: 47 CodePatches merged, the product runnable — its own `--help` worked the
       // moment a person typed it — and the operator's words were "product just have test script and it doesn't have run
@@ -709,7 +728,7 @@ export class TerminationManager {
         },
       );
       const needsRun = shippedCode(state, goalId).length > 0 && runEvidence(state, goalId).length === 0 && canRun;
-      if (ownedTasks.length === 0 && rejectedPatches.length === 0 && !needsRun) {
+      if (ownedTasks.length === 0 && rejectedPatches.length === 0 && !needsRun && !reviewsHold) {
         const nowMs = input.nowMs ?? Date.now();
         return {
           kind: "complete",
@@ -720,6 +739,9 @@ export class TerminationManager {
           ...(openCards.length > 0 ? { openCards: openCards.map((e) => openCardSummary(e, nowMs)) } : {}),
           ...(unansweredReviews.length > 0 ? { openReviews: unansweredReviews.map(openReviewSummary) } : {}),
         };
+      }
+      if (reviewsHold && ownedTasks.length === 0 && rejectedPatches.length === 0 && !needsRun) {
+        blockedReviews = unansweredReviews.length;
       }
     }
 
@@ -768,7 +790,7 @@ export class TerminationManager {
       };
     }
 
-    return { kind: "continue" };
+    return { kind: "continue", ...(blockedReviews > 0 ? { blockedBy: { reviews: blockedReviews } } : {}) };
   }
 }
 

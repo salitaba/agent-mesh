@@ -110,6 +110,7 @@ export function applyGoalEvent(state: Projections, event: MeshEvent, p: Record<s
         const hadVerdict = goal.status === "COMPLETED" || goal.status === "FAILED";
         goal.status = "ACTIVE";
         goal.completedAt = undefined;
+        goal.completion = undefined;
         goal.reopenedAt = event.timestamp;
         // A reopen starts a new run, and everything stamped with the old
         // episode is now history rather than a live constraint. Bumped here,
@@ -199,7 +200,16 @@ export function applyGoalEvent(state: Projections, event: MeshEvent, p: Record<s
           "goal.failed": "FAILED",
         };
         goal.status = map[event.type];
-        if (event.type === "goal.completed") goal.completedAt = event.timestamp;
+        if (event.type === "goal.completed") {
+          goal.completedAt = event.timestamp;
+          // What the mission carried out with it. Counts only: the lists live in
+          // the event, and a projection is serialized into every snapshot.
+          goal.completion = {
+            reason: String((p as { reason?: unknown }).reason ?? ""),
+            openReviews: Array.isArray((p as { openReviews?: unknown }).openReviews) ? ((p as { openReviews: unknown[] }).openReviews.length) : 0,
+            openCards: Array.isArray((p as { openCards?: unknown }).openCards) ? ((p as { openCards: unknown[] }).openCards.length) : 0,
+          };
+        }
         state.goalHistory.push({ status: goal.status, at: event.timestamp, reason: p.reason });
       }
       break;

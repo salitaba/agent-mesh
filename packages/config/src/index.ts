@@ -223,6 +223,16 @@ export interface RawMeshFile {
   policies?: {
     communication?: Record<string, { may_contact?: string[]; may_be_contacted_by?: string[] }>;
     transitions?: Record<string, { requires?: string[] }>;
+    /**
+     * How a mission may be declared done.
+     *
+     * `require_reviews: true` holds completion until every artifact put forward
+     * for review has a verdict (or has been archived). Off by default in code,
+     * because a scripted or unattended mesh submits artifacts nobody reviews and
+     * the gate would deadlock it; the default project template turns it on, so a
+     * new project's "Done" means its review queue is empty.
+     */
+    completion?: { require_reviews?: boolean };
     escalation?: {
       thread?: { max_depth?: number };
       repeated_conflict?: { threshold?: number };
@@ -817,6 +827,11 @@ export interface ResolvedMeshConfig {
   agentOrder: string[];
   communication: Record<string, CommunicationPolicy>;
   transitionGates: Record<string, string[]>;
+  /**
+   * `policies.completion.require_reviews`: hold completion while artifacts put
+   * forward for review have no verdict. See `RawMeshFile.policies.completion`.
+   */
+  requireReviewsAtCompletion: boolean;
   escalation: {
     threadMaxDepth: number;
     repeatedConflictThreshold: number;
@@ -1836,6 +1851,7 @@ function buildResolved(raw: RawMeshFile, dir: string): ResolvedMeshConfig {
     agentOrder: agentIds,
     communication,
     transitionGates: mapValues(raw.policies?.transitions ?? {}, (t) => t.requires ?? []),
+    requireReviewsAtCompletion: raw.policies?.completion?.require_reviews === true,
     escalation: {
       threadMaxDepth: raw.policies?.escalation?.thread?.max_depth ?? 8,
       repeatedConflictThreshold: raw.policies?.escalation?.repeated_conflict?.threshold ?? 3,
@@ -3293,6 +3309,14 @@ agents:
       persistent: true
 
 policies:
+  # What "done" means. On for the default team: a delivered mission must have a
+  # verdict on every file it put forward, so the Completed screen cannot sit
+  # beside a review queue nobody answered. The watchdog holds completion (and
+  # says so once in the audit log) until those are reviewed or archived. Off by
+  # default in the schema, because a scripted or unattended mesh submits reports
+  # nobody reviews and the gate would deadlock it.
+  completion:
+    require_reviews: true
   communication:
     # Who may cold-approach whom. A seat absent from this list can still be reached by an ask it owes an
     # answer to; the matrix bounds the approach, which is what keeps ten seats from talking past each

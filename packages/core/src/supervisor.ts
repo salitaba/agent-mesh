@@ -4579,6 +4579,8 @@ export class Supervisor {
   private turnPublishedVersions = new Map<string, { turnId: string; versions: Map<string, number> }>();
   /** `<dependent>@v<n>:<input>` / `<task>:<artifact>` pairs already told about a newer input, so each is told once. */
   private staleNoticesSent = new Set<string>();
+  /** Goals whose completion has already been audited as held by undecided reviews. */
+  private reviewsHoldNoted = new Set<string>();
   /**
    * Review asks superseded while the new version was not yet reviewable, per
    * artifact. Re-issued the moment the artifact becomes reviewable through a
@@ -13350,6 +13352,17 @@ export class Supervisor {
         );
       }
       await this.completeMission();
+    } else if (verdict.kind === "continue" && verdict.blockedBy?.reviews) {
+      // `policies.completion.require_reviews`: everything else is done, and the
+      // only thing holding the mission is a review queue. Said once, because the
+      // watchdog will keep evaluating and the operator needs the fact, not a
+      // line per tick.
+      if (!this.reviewsHoldNoted.has(goalId)) {
+        this.reviewsHoldNoted.add(goalId);
+        this.auditLine(
+          `completion held by policies.completion.require_reviews: ${verdict.blockedBy.reviews} artifact(s) still await a verdict — review or archive them, and the mission can close`,
+        );
+      }
     } else if (verdict.kind === "escalate" && goal.status !== "ESCALATED") {
       await this.escalate({
         reason: verdict.reason,

@@ -918,6 +918,13 @@ export interface Goal {
    * and two facts can be compared without either of them carrying a clock.
    */
   episodeOrdinal?: number;
+  /**
+   * What the mission left on the table when it closed: why it completed, and how
+   * many reviews and cards were never answered. Absent for a goal that never
+   * completed. The full lists are in the `goal.completed` event; this is what a
+   * surface needs to tell "Done" apart from "Done with N undecided reviews".
+   */
+  completion?: { reason: string; openReviews: number; openCards: number };
 }
 
 /** The episode this goal is currently in. See {@link EpisodeId}. */

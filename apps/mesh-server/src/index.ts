@@ -2243,7 +2243,16 @@ if (parts[0] === LIVE_UI_PREFIX && parts.length >= 2 && req.method === "OPTIONS"
         return json(200, a);
       }
       if (parts[0] === "artifacts" && req.method === "GET") {
-        return json(200, paginateCompat([...kernel.state.artifacts.values()], u, 100));
+        // A file the mission put forward and never had decided reads as "in
+        // review" forever; once the goal is COMPLETED, say what it is instead.
+        // Derived, never stored: reopening the goal makes it a review again.
+        const goalStatus = kernel.state.activeGoalId ? kernel.state.goals.get(kernel.state.activeGoalId)?.status : undefined;
+        const rows = [...kernel.state.artifacts.values()].map((a) =>
+          goalStatus === "COMPLETED" && (a.status === "READY_FOR_REVIEW" || a.status === "UNDER_REVIEW")
+            ? { ...a, closedWithoutVerdict: true }
+            : a,
+        );
+        return json(200, paginateCompat(rows, u, 100));
       }
 
       // ----------------------------------------------------------- budgets
@@ -2594,6 +2603,12 @@ if (parts[0] === LIVE_UI_PREFIX && parts.length >= 2 && req.method === "OPTIONS"
           // Surfaced for the console's destructive-action guard (reset asks the
           // operator to type this id back).
           meshId: config.meshId,
+          // Files the active mission put forward that nobody has decided. Read
+          // from state, not from `goal.completion`, so a mission that closed
+          // before that field existed still says what it left behind.
+          openReviews: [...kernel.state.artifacts.values()].filter(
+            (a) => (a.status === "READY_FOR_REVIEW" || a.status === "UNDER_REVIEW") && (!kernel.state.activeGoalId || a.goalId === kernel.state.activeGoalId),
+          ).length,
           mode: instance.mode,
           uiOnly: instance.uiOnly,
           // The state that hides itself, said out loud: parked, with an ACTIVE

@@ -7,6 +7,24 @@ sections 1 to 26) are described there, run by run.
 
 ## Unreleased
 
+### Changed: a delivered mission says what it left in review, and a new project gates completion on it
+
+A live mission closed COMPLETED with **95 files still READY_FOR_REVIEW** — 46 TestReports, 31 SecurityReports, 11
+DisagreementRecords, plus research and records, and zero CodePatches (all code was merged). The state was correct by the
+mission's contract — the four mandatory criteria were evidenced — but the console showed "Delivered" beside a review queue
+and nothing joined the two.
+
+- **Completion records it.** `goal.completed` already carried `openReviews`/`openCards`; the goal projection now keeps their
+  counts (`goal.completion`), and the hero reads "Delivered, with work left on the table: N files were never given a verdict"
+  in the warning tone instead of a clean green "Delivered".
+- **Those files stop reading as pending.** Once the goal is completed, an undecided artifact is labelled *closed without
+  verdict* on the artifact page (and `/artifacts` marks it `closedWithoutVerdict`), instead of "in review" forever. Derived,
+  never stored: reopening the goal turns it back into a review.
+- **New projects gate completion on it.** `policies.completion.require_reviews: true` holds completion while any put-forward
+  artifact has no verdict, and the watchdog says once why it is held. It is set in the default team template every new
+  project is written from; the schema default stays off, because a scripted or unattended mesh submits reports nobody
+  reviews and the gate would deadlock it (the same reading that kept escalation cards out of the completion gate).
+
 ### Changed: the stable half of the brief moves to the system prompt, and cost is counted as the invoice counts it
 
 Measuring the mission properly changed the target. Cache reads are **69%** of its weighted cost (102.7M fresh + 343.3M

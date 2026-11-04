@@ -122,6 +122,12 @@ export interface MissionFacts {
   /** Open decisions that are notices: the mission carries on whether or not anyone answers them. */
   advisoryDecisions: number;
   /**
+   * Artifacts the completed mission put forward and never had decided (the count
+   * in `goal.completion`, from the `goal.completed` record). Non-zero means
+   * "Delivered" would be hiding a review queue, so the hero says so instead.
+   */
+  openReviews?: number;
+  /**
    * The same cards `blockingDecisions` counts, as the server dates each one (`status.needsOperator`), longest waiting first:
    * who raised it, what it asks and how long it has waited. `needsOperator` also lists notices, which hold nothing and are
    * counted by `advisoryDecisions`, so they are not read here — a notice is not something the operator owes. Empty when the
@@ -214,6 +220,7 @@ export function factsFromStatus(
       return held.scope === "seat" ? [held.seat] : [];
     }),
     advisoryDecisions: decisions.filter((e) => e?.advisory === true).length,
+    openReviews: Number(status?.openReviews ?? status?.goal?.completion?.openReviews ?? 0) || 0,
     owedCards: owedOf(status),
     hostCeilingTripped: extra.hostCeilingTripped === true,
     working: agents.filter((a) => RUNNING.has(a.lifecycle)).length,
@@ -321,14 +328,21 @@ function describePhase(f: MissionFacts): Omit<MissionState, "next"> & { next?: N
     // tone says a person is still needed before any word is read, and the headline names what is waiting. The phase stays
     // "done" — nothing is paused, and the needs-you wording ("the mission is paused until…") would be false of a finished run.
     const owed = f.owedCards.length;
+    // The same reading for the review queue: a file put forward and never decided is a fact about how the mission closed,
+    // and "Delivered" on its own was what left an operator reading a review list beside the word.
+    const reviews = f.openReviews ?? 0;
+    const left = [
+      owed > 0 ? `${plural(owed, "decision")} ${owed === 1 ? "is" : "are"} still waiting on you` : null,
+      reviews > 0 ? `${plural(reviews, "file")} ${reviews === 1 ? "was" : "were"} never given a verdict` : null,
+    ].filter((x): x is string => x !== null);
     return {
       ...base,
       phase: "done",
-      tone: owed > 0 ? "warn" : "ok",
+      tone: left.length > 0 ? "warn" : "ok",
       label: "Delivered",
       primary: null,
-      headline: owed > 0
-        ? `Delivered. ${plural(owed, "decision")} ${owed === 1 ? "is" : "are"} still waiting on you.`
+      headline: left.length > 0
+        ? `Delivered, with work left on the table: ${left.join(" and ")}.`
         : "Delivered. Every mandatory check is evidenced.",
       secondary: [REOPEN],
       next: DELIVERED_NEXT,

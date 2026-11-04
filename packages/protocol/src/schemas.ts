@@ -494,6 +494,13 @@ export const meshConfigSchema = {
     policies: {
       type: "object",
       properties: {
+        completion: {
+          type: "object",
+          description:
+            "How a mission may be declared done. require_reviews holds completion while artifacts put forward for review have no verdict; off by default so an unattended mesh cannot deadlock on a queue nobody reads, and on in the default template for new projects.",
+          properties: { require_reviews: { type: "boolean" } },
+          additionalProperties: false,
+        },
         communication: {
           type: "object",
           additionalProperties: {

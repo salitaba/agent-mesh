@@ -130,3 +130,18 @@ test("yamlScalar leaves an ordinary name plain and quotes what would not read ba
     assert.equal(JSON.parse(yamlScalar(quoted)), quoted, "a JSON string is a valid YAML string, and reads back exactly");
   }
 });
+
+test("a new project is written with review-gated completion, and the flag resolves", () => {
+  const dir = tmp("completion");
+  try {
+    const file = writeDefaultMeshYaml(dir, "acme");
+    const cfg = resolveConfig(file);
+    assert.equal(cfg.requireReviewsAtCompletion, true, "a new project's Done means an empty review queue");
+
+    // The same file with the flag off is the schema's default behaviour, and it must load.
+    fs.writeFileSync(file, fs.readFileSync(file, "utf8").replace("require_reviews: true", "require_reviews: false"), "utf8");
+    assert.equal(resolveConfig(file).requireReviewsAtCompletion, false);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});

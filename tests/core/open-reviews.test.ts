@@ -117,13 +117,43 @@ test("a submitted artifact does not hold the mission, and the completion names i
     );
     assert.equal(status(m, report), "READY_FOR_REVIEW", "the artifact is untouched: it still waits on the verdict someone owes it");
     assert.equal(verdict(m).kind, "continue", "a completed goal evaluates as continue: there is nothing left to decide");
+    // The console reads this count: "Delivered" with an empty review queue is a
+    // different claim from "Delivered" beside 95 files still marked in review.
+    const goal = m.kernel.state.goals.get(m.kernel.state.activeGoalId ?? "");
+    assert.equal(goal?.completion?.openReviews, 1, "the projection carries how many reviews closed undecided");
+    assert.equal(goal?.completion?.openCards, 0);
   } finally {
     await m.cleanup();
   }
 });
 
-test("a working copy holds nothing, and the mission archives it as it closes rather than leave it in draft", async () => {
+test("with policies.completion.require_reviews, an undecided review holds the mission and the verdict names it", async () => {
   const m = await fixture();
+  try {
+    // The default team template sets this; opt in here the way that template does.
+    (m.config as { requireReviewsAtCompletion: boolean }).requireReviewsAtCompletion = true;
+    const library = await mergeable(m, "library");
+    const report = await artifact(m, "qa-report");
+    assert.equal((await m.supervisor.transitionArtifact("dev", report, { to: "READY_FOR_REVIEW" })).ok, true, "fixture: a report put forward");
+
+    const res = await op(m, "lead", { op: "merge", artifactId: library });
+    assert.equal(res.ok, true, res.reason);
+    await settle(m);
+    assert.notEqual(goalStatus(m), "COMPLETED", "the mission does not close with a verdict outstanding");
+    const v = verdict(m);
+    assert.equal(v.kind, "continue");
+    assert.deepEqual(v.kind === "continue" ? v.blockedBy : undefined, { reviews: 1 }, "and the verdict says which condition holds it");
+
+    // The policy is what held it: with the gate off, the same state completes.
+    (m.config as { requireReviewsAtCompletion: boolean }).requireReviewsAtCompletion = false;
+    await settle(m);
+    assert.equal(goalStatus(m), "COMPLETED", "with the queue no longer gating, the mission can close");
+  } finally {
+    await m.cleanup();
+  }
+});
+
+test("a working copy holds nothing, and the mission archives it as it closes rather than leave it in draft", async () => {  const m = await fixture();
   try {
     const library = await mergeable(m, "library");
     // Every artifact is created into review; a working copy is one its owner pulled back and never put forward again.
