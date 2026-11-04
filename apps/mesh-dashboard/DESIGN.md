@@ -273,6 +273,15 @@ Breakpoints: **1280 1100 900 800 760 620 560**. 800 is the sidebar drawer (JS
 - **A delivered receipt dates its result.** Under "Ran for 2m 36s" the sub-line says "Delivered 14m ago" (the goal's own completion time),
   not how the figure was measured: the phone's first screen otherwise says nothing about how fresh the result is, and the date is one
   line where the measurement sentence took two at 320 and 360. Pinned by `tests/dashboard/overview-receipt.test.ts` (2026-11-04).
+- **A waiting condition is read across the card, and its fix follows.** The attention row's 145 px action took more than half of a phone
+  card: the sentence was 66 px wide at 320 (310 px tall) and 94 at 360, so one condition was a 400 px card and the evidence under it was
+  a screen down. Below a 420 px card the sentence gets the row and the fix sits under it; one condition's head is the hero's own sentence
+  and is read but not drawn. At 360 the card is 232 → 139 and the page 1,102 → 1,009, with the fix whole above the 747 px dock. Pinned by
+  `tests/dashboard/attention-phone.test.ts` (2026-11-04).
+- **A glyph that opens a menu is 44 × 44 on any finger.** The width floor lived in the 800 px block, so at 820–900 on a touch tablet the
+  top bar's and the hero's `…` measured 36 × 44 while the sidebar was back. A coarse pointer takes a 44 px square at every width; at 820
+  the two are 44 × 44 now and the page's only target under 44 is the 1 × 1 skip link. Pinned by `tests/dashboard/phone-targets.test.ts`
+  (2026-11-04).
 
 ## Open problems (carried forward)
 
@@ -366,6 +375,61 @@ Breakpoints: **1280 1100 900 800 760 620 560**. 800 is the sidebar drawer (JS
     card's primary opens host settings, so the note is written on the way back, not on the way out.
 
 ## Pass log
+
+### 2026-11-04 — a waiting condition is read across the card, and a touch tablet's `…` is a full target
+
+Surface: `views/AttentionList.tsx` (the `single` class), `views/overview.css` (the attention row's container query and the phone
+padding), `styles.css` (the coarse-pointer width floor), `tests/dashboard/attention-phone.test.ts` (new) and one selector in
+`tests/dashboard/phone-targets.test.ts`.
+
+Measured on the scripted demo at **Delivered** (490 events, 51.0k of 2.0M tokens, 7 checks, 9 files: 3 delivered, 6 awaiting
+review, 7 seats, ran 13s) in the production build served by `curule console`, Chromium 1248 at 320/360/390/560/620/820/1,440 in
+light and at 360 in dark, a touch pointer at 820, reduced motion, axe-core 4.14. Both halves are the **same delivered log**: the
+before bundle was rebuilt from `git stash` and swapped under the running console for each pair. The waiting state is one real
+host-spend ceiling card raised through the console's own API (`POST /escalations/host-ceiling`), which also adds the
+DisagreementRecord artifact the card points at; the delivered pairs were read before it was raised.
+
+**The attention sentence was a 66 px column with a 145 px button beside it.** The row is a 3-column grid — a 28 px mark, the line,
+the fix — and `.ov-fix` is `white-space: nowrap`, so "Review decisions" took 144.7 px of a 296 px card at 320 and left the
+sentence **66 px** of it. The line was **310 px tall** (one or two words a line), the card was **400 px** for one condition, and
+the evidence under it began a screen down; at 360 the line was 94 and 142, at 390 123 and 121. Below a **420 px card** the row is
+two columns: the mark, the sentence across the card, and the fix under it at the row's end. The card was a `single` condition's
+whole answer, and the hero directly above already says "1 decision is still waiting on you.", so its head ("Attention 1") is read
+by a screen reader but not drawn; a list of two or more keeps its head. The card's block padding on a phone is 12 rather than 16
+and the stacked row's gap 6 rather than 12, which is what keeps the fix whole above the 747 px dock at 390.
+
+| One condition waiting | Before | After |
+|---|---|---|
+| The card, 320 / 360 / 390 | 400 / 232 / 211 | **139 / 139 / 139** |
+| The line, 320 | 66 × 310 | **209 × 58** |
+| The line, 360 | 94 × 142 | **231 × 58** |
+| The line, 390 | 123 × 121 | **282 × 58** |
+| The fix (y), 320 / 360 / 390 | 675.5–719.5 / 675.5–719.5 / 684.7–728.7 | 691.5–735.5 / 691.5–735.5 / 700.7–744.7 |
+| The Overview, 320 / 360 / 390 | 1,270 / 1,102 / 1,090 | **1,009 / 1,009 / 1,018** |
+| The card, 560 / 620 | 148 / 127 | 140 / 119 |
+| The Overview, 560 / 620 | 982 / 961 | 974 / 953 |
+| The card and page, 820 / 1,440 | 148 / 111; 929 / 1,998 | 148 / 111; 929 / 1,998 |
+| The card and page, 360 dark | 232; 1,102 | **139; 1,009** |
+| The delivered Overview, 360 / 1,440 | 858 / 1,789 | 858 / 1,789 |
+
+**The touch tablet's `…` was 36 × 44.** The 44 px width floor for `.menu-btn` lived in the `max-width: 800px` block, and at 820
+the sidebar is back while the floor is not: the top bar's "More actions" and the hero's "More actions on the mission" measured
+**36 × 44** on a touch pointer at 820 (and the bar's at 900), the console's only controls under 44 there. A coarse pointer takes
+`min-width: 44px` at every width now: both are **44 × 44**, and the page's only target under 44 at 820 is the 1 × 1 skip link, as
+it is at 360. A fine pointer at 820 keeps the 36 px pointer-density control.
+
+**Floors.** `npm run typecheck` and `npm run build` clean; `dist/tests/dashboard` plus the build tests **1,251 pass, 0 fail**;
+`npm run qa:console` at 360 and 1,440 in both themes: **52 screenshots, 52 axe runs, 0 violations**, one page-wide console error in
+each (the one-mesh `/api/projects` 404); every frame is 0 px of horizontal page scroll (`document.documentElement.scrollWidth` is
+the viewport at 320–1,440), the 11 delivered frames and 8 waiting frames are axe-clean, and the smallest text stays on the ramp.
+The attention head is visually hidden with the console's sr-only pattern, not removed: `aria-labelledby` still names the card.
+
+**Left.** With two or more conditions waiting the head stays and each row stacks, which is a list rather than a band; the first
+row's fix can sit under the fold there, and that case was not measured with real cards. The 420 px threshold is a **container**
+width, like the figures' 361, not a new viewport break: 560 and 620 keep the side-by-side row (line 282 / 347 px) and only lose the
+card's 8 px of block padding. The delivered page itself is untouched — this pass is the state where a decision waits and a touch
+tablet's menu. The events page's "Live" chip on a delivered mission and the delivery notice over a phone's page head are still the
+open items they were; a fine pointer at 820 keeps the sidebar's 36 px rows and the 36 px `…`, as pointer density.
 
 ### 2026-11-04 — the fold ends where the sidebar gives the page its width back, and a desk's index is pinned
 
