@@ -186,6 +186,16 @@ details.ov-note { display: block; }
 .ship-skel-row { display: flex; align-items: center; gap: var(--s3); min-height: 44px; padding: var(--s1-5) var(--s3); }
 .ship-skel-row > span { display: grid; flex: 1 1 auto; gap: var(--s1); min-width: 0; }
 
+/* At the desk's own grid the result's waiting files are two columns. One column of six rows in a 1,152 px card set a name, a type
+   and a state at 44 px each and left 600 px of every row empty between them: the card was 621 px tall and Latest work began at
+   1,103 — past the 900 px of a desk's first screen. Two-up, the same six files are 132 px of rows, the card is 497 px and Latest
+   work begins at 979. The second column's first row drops its rule, so the two columns read as one ledger under the group's
+   caption rather than two lists side by side. */
+@media (min-width: 1101px) {
+  .ship-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: var(--s4); }
+  .ship-list > li:nth-child(2) { border-top: 0; }
+}
+
 /* ---------- the checks ---------- */
 .ov-goal-text { margin: var(--s3) 0 var(--s1-5); max-width: 70ch; white-space: pre-line; overflow-wrap: anywhere; }
 .ov-goal-text.clamp { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 4; line-clamp: 4; overflow: hidden; }
@@ -265,11 +275,14 @@ details.ov-note { display: block; }
   .stat-cell:first-child, .stat-cell:nth-child(odd) { padding-left: var(--s6); border-left: 0; }
   .stat-cell:nth-child(n + 3) { border-top: 1px solid var(--line); }
 }
-/* The fold follows the thumb's dock (800), not the phone's width. A 768 px tablet has the navigation drawer and the five places
-   at its thumb and is read in the hand like a phone, but the desk shape opened all four sections and the page was 3,121 px — 4.2
-   screens. The rows are the same 53 px ruled bands at 768 as at 360 (measured: 3,121 → 841). `Overview.tsx` asks the dock's own
-   break, so the fold, the rows-as-index and the figure door cannot disagree with the CSS. */
-@media (max-width: 800px) {
+/* The fold follows the width the sections are drawn in, not the phone's 620 and not the dock's 800. A 768 px tablet had the
+   drawer and the dock and opened all four sections at once, so it was 3,121 px. Moving the fold to the dock's 800 fixed the
+   tablet and left the seam just above it: from 801 the sidebar is drawn in the flow and takes 232 px, so the view is 569 to 668
+   px — narrower than a 768 phone — while the page drew the full desk shape (measured on the delivered demo: 801 px was 3,228 px,
+   820 px 3,365, 900 px 3,167, against 841 at 768). 900 is the ladder's "dense grids stack" step, the last width at which the
+   sidebar has not given the page its width back. `Overview.tsx` asks the same break, so the fold and the rows-as-index cannot
+   disagree with the CSS. A desk (1101 and up) never folds; its index is pinned instead, below. */
+@media (max-width: 900px) {
   /* A folded section is one row: its name, one figure, Show. The figure may not wrap the row into two lines, so it truncates. */
   .ov .card-fold-sum { flex: 1 1 auto; min-width: 0; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   /* An open section's head is its title and its one control on the first row, and the count under them. Measured at 360 on the
@@ -447,7 +460,31 @@ details.ov-note { display: block; }
 }
 
 /* The Overview's own index, under the attention list and above the long tail. A row of quiet doors, not a toolbar. It is drawn
-   above the phone's break only: below it the four closed rows directly under this spot carry the same four names, so the index
-   would say them twice within 250 px (2026-10-28, DESIGN.md). */
+   above the fold's break only: below it the four closed rows directly under this spot carry the same four names and figures, so
+   the index would say them twice within 250 px (2026-10-28, DESIGN.md).
+   At a desk it is pinned, because the page it indexes is long: 1,913 px at 1440 and 2,909 px at 1100, where Just happened begins
+   2,574 px down. Before this the row sat at 422–458 once and scrolled away: 600 px into the page there was no index at all, and a
+   reader at the event log had no way back to the result. The break is the board's own, 1280: with a figure on each door the row is
+   985 px in 992 there (one line), and at 1101–1279 it wraps to two and would eat 89 px of the window, so it scrolls as it did.
+   Its ground is the page's, so what scrolls under it is covered; its hairline is what makes it read as a bar rather than four
+   links adrift. */
 .ov-jump { display: flex; flex-wrap: wrap; align-items: center; gap: 0 var(--s2); margin-top: var(--s4); }
 .ov-jump-h { margin-right: var(--s1); }
+/* The figure a section is read for: the section's own number, in the ink the rule under it is drawn in, so the label stays the
+   loud half of the door. It belongs to the pinned bar and is drawn only where that bar is: at 901–1279 a fifth of a figure's
+   width is what tips the row onto a second line (measured at 1100: 36 → 72 px and 36 px of page), and the plain row is the one
+   this break has always drawn. */
+.ov-jump-n { margin-left: var(--s1-5); font: 600 12px/1 var(--sans); font-variant-numeric: tabular-nums; letter-spacing: 0; color: var(--text-dim); }
+@media (max-width: 1279px) { .ov-jump-n { display: none; } }
+/* The bar's own height, for what has to clear it: 36 px of controls, 8 px of padding above and below, 1 px of hairline — the same
+   shape the Designer's `--ms-bar-h` gives its own sticky bar. */
+@media (min-width: 1280px) { .ov { --ov-bar-h: calc(36px + var(--s2) * 2 + 1px); } }
+/* Pinned: the page's ground, a hairline so it reads as a bar, and the strip of the scroller's own top padding painted in that
+   ground. `#view` has 20 px of padding and a sticky child pins at its content edge — measured, the bar sits at 84 while the view's
+   top is 64 — so without the shadow the page showed through above the bar (a pixel of the shipped card at y=72). A jump has to
+   clear the view's padding and the bar both, or the section lands behind it: measured before this rule, a jump put the section at
+   124 in a bar of 84–137, 13 px under it; it lands at 145 now, 8 px clear. */
+@media (min-width: 1280px) {
+  .ov-jump { position: sticky; top: 0; z-index: var(--z-toolbar); margin-top: 0; padding-block: var(--s2); background: var(--bg); border-bottom: 1px solid var(--line); box-shadow: 0 calc(var(--s5) * -1) 0 var(--bg); }
+  .ov .card { scroll-margin-top: calc(var(--s5) + var(--ov-bar-h) + var(--s2)); }
+}

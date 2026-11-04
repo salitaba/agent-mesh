@@ -23,7 +23,7 @@ import { MissionHero } from "./MissionHero";
 import { Panel } from "./Panel";
 import type { Fold } from "./Panel";
 import { ReplayDrawer } from "./ReplayDrawer";
-import { Shipped, shippedLine } from "./Shipped";
+import { Shipped, shippedFigure, shippedLine } from "./Shipped";
 import { MiniFeed, TimelineSkeleton, WorkTimeline } from "./Timeline";
 import "./overview.css";
 
@@ -31,14 +31,16 @@ import "./overview.css";
 const EVENT_TAIL = 150;
 
 /**
- * Where the navigation is a drawer and the five daily places sit at the thumb (`shell.tsx`'s NARROW, the same value the dock is
- * drawn at). Two decisions follow it. The hero draws one action and keeps the rest behind "…": the dock and the figures already
- * carry what the quiet result links said, and at 360 the row was three rows and 148 px of the first screen (2026-10-31). And the
- * evidence below the hero folds to one row a section — not only at the phone's 620: a 768 px tablet had the drawer and the dock
- * and still opened all four sections at once, so the Overview was 3,121 px, 4.2 screens of a page read in the hand. The fold
- * follows the thumb, not the width.
+ * Where the evidence below the hero is drawn one row a section, and the hero keeps one action and behind "…" the rest.
+ *
+ * It began as the dock's own break (800). It is the ladder's 900 now, because 800 was the wrong question: above 800 the sidebar
+ * is drawn in the flow and takes 232 px of the window, so at 801–900 the view is 569–668 px wide — narrower than a 768 px phone
+ * — and the page opened all four sections in that column. Measured on the delivered demo: 768 px is 841 px tall (folded) and
+ * 801 px was 3,228 px (four screens), 820 px 3,365, 900 px 3,167. 900 is the ladder's own "dense grids stack" step, so the fold
+ * ends where the sidebar has given the page its width back. A desk (1101 and up, where the two-up grid returns) never folds: the
+ * four sections are open there, and the page's index is pinned instead (`overview.css`).
  */
-const DOCK = "(max-width: 800px)";
+const DOCK = "(max-width: 900px)";
 
 /** Where each fix on the attention list lives. */
 const FIX_VIEW: Record<FixTarget, View> = { inbox: "escalations", tools: "gates", designer: "designer", hostsettings: "hostsettings" };
@@ -48,18 +50,26 @@ const FIX_VIEW: Record<FixTarget, View> = { inbox: "escalations", tools: "gates"
  * Just happened begins 1,307 px down. One row, one press each, and the target takes focus as well as the scroll so a keyboard
  * user continues inside the section.
  *
- * A phone does not draw it. There the sections are one 53 px row each, immediately below the hero, each carrying the same name
- * and its one figure, so an index above them said the same four words a second time 137 px before they were read again (see the
- * 2026-10-28 entry in DESIGN.md). Those rows are the index there, and each carries the Show control that opens it.
+ * Each door carries the figure the section is read for ("3 of 9", "6", "7/7", "507"), so the row is the receipt's own index
+ * and not four bare names: reading the tail of the page used to leave no way to see what the other sections held. It is pinned
+ * at a desk (`overview.css`): the page is 1,913 px at 1440 and 2,909 at 1100, and the index scrolls out of reach 600 px in.
+ *
+ * A phone or a tablet does not draw it. There the sections are one 53 px row each, immediately below the hero, each carrying the
+ * same name and its one figure, so an index above them said the same four words a second time 137 px before they were read
+ * again (see the 2026-10-28 entry in DESIGN.md). Those rows are the index there, and each carries the Show control that opens it.
  */
-function JumpRow({ delivered, onOpen }: { delivered: boolean; onOpen: (id: string) => void }): React.JSX.Element {
+function JumpRow({ figures, onOpen }: {
+  figures: { shipped: string | null; work: string; checks: string; events: string };
+  onOpen: (id: string) => void;
+}): React.JSX.Element {
+  const figure = (text: string): React.JSX.Element => <span className="ov-jump-n">{text}</span>;
   return (
     <nav className="ov-jump" aria-label="Sections of this page">
       <span className="ov-jump-h caps">On this page</span>
-      {delivered ? <Button variant="ghost" icon="files" onClick={() => onOpen("ov-shipped")}>What shipped</Button> : null}
-      <Button variant="ghost" icon="steps" onClick={() => onOpen("ov-work")}>Latest work</Button>
-      <Button variant="ghost" icon="check" onClick={() => onOpen("ov-goal")}>Goal checks</Button>
-      <Button variant="ghost" icon="events" onClick={() => onOpen("ov-events")}>Just happened</Button>
+      {figures.shipped ? <Button variant="ghost" icon="files" onClick={() => onOpen("ov-shipped")}>What shipped {figure(figures.shipped)}</Button> : null}
+      <Button variant="ghost" icon="steps" onClick={() => onOpen("ov-work")}>Latest work {figure(figures.work)}</Button>
+      <Button variant="ghost" icon="check" onClick={() => onOpen("ov-goal")}>Goal checks {figure(figures.checks)}</Button>
+      <Button variant="ghost" icon="events" onClick={() => onOpen("ov-events")}>Just happened {figure(figures.events)}</Button>
     </nav>
   );
 }
@@ -380,9 +390,19 @@ export default function Overview(): React.JSX.Element {
         run={run}
       />
       <AttentionList items={attention} onFix={fix} />
-      {/* The wide screen's index only: a folded page's four closed rows, directly under this, say the same four names and open in
-          place. */}
-      {dock ? null : <JumpRow delivered={delivered} onOpen={jumpTo} />}
+      {/* The wide screen's index only: a folded page's four closed rows, directly under this, say the same four names, carry the
+          same figures and open in place. Its figures are the sections' own, so the row is an index of what the page holds. */}
+      {dock ? null : (
+        <JumpRow
+          figures={{
+            shipped: delivered ? (artsState === "ready" ? shippedFigure(goalArts) : artsState === "error" ? "unread" : "reading") : null,
+            work: steps.length ? String(steps.length) : stepsLoaded ? "none" : "reading",
+            checks: checks.total ? `${checks.done}/${checks.total}` : "none",
+            events: String(status.eventCount ?? timeline.length),
+          }}
+          onOpen={jumpTo}
+        />
+      )}
       {delivered ? <Shipped arts={goalArts} state={artsState} fold={foldOf("ov-shipped", artsFold)} onRetry={() => setAttempt((n) => n + 1)} openArt={openArt} onOpenFiles={() => setView("artifacts")} /> : null}
       {/* Renders nothing unless a collaboration is actually open, and owns its own hooks so this component's hook count does not move. */}
       <CollabCard />
