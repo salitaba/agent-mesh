@@ -442,6 +442,23 @@ that produced it, the before and the after, and what it deliberately did not cha
 > The console's passes after 2026-10-29 are recorded in full in
 > [`apps/mesh-dashboard/DESIGN.md`](../apps/mesh-dashboard/DESIGN.md#pass-log); the newest is summarised here.
 
+### 2026-11-04 — the fold ends where the sidebar gives the page its width back, and a desk's index is pinned
+
+The evidence below the hero folded at the dock's 800, but from 801 the sidebar is drawn in the flow and takes 232 px of the window, so
+the view is 569–668 px — narrower than a 768 phone — and the page drew the full desk shape. Measured on the scripted demo at
+**Delivered** (507 events, 9 files, 3 delivered, 6 awaiting review, 7 checks, 7 seats): 801 px was **3,228 px** tall, 820 **3,365**,
+900 **3,167**, against 841 at 768. The fold is the ladder's 900 now — **820 is 836, 900 is 836**; 768, 901, 1100 and 1440 do not move.
+The wide index carried four bare names and scrolled away (top −178 at 600 px of scroll on a 1,913 px page); it carries each section's
+figure now ("What shipped 3 of 9 · Latest work 6 · Goal checks 7/7 · Just happened 507") and is pinned at the board's 1280, where it is
+one line (985 px in 992) — top **84** at 600 and at 1,400. The result's six waiting files were six 1,152 px rows: two columns from 1101
+make the card **621 → 497 px**, put Latest work at **979** (was 1,103) and the page at **1,789** (was 1,913). Both halves of each pair
+are the same log: the before bundle was rebuilt from `git stash` and served over the same state. Chromium 1248 at 320 through 1440,
+light and dark; axe 0, no console error, no sideways scroll (108 reads).
+
+Deliberately not changed: the single column at 901–1100 is still ~2,900 px with a two-line index — a desk with its sections open, and
+folding it would take the result away from a mouse. `overview-fold`, `overview-receipt`, `page-exits` and the new `overview-index` pin
+the rules.
+
 ### 2026-11-03 — a delivered receipt says its claim once, so a second piece of evidence is above the dock
 
 The delivered Overview's hero carried the gate's own sentence ("Every mandatory acceptance criterion was evidenced, with no open

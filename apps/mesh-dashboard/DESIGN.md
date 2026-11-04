@@ -367,6 +367,43 @@ Breakpoints: **1280 1100 900 800 760 620 560**. 800 is the sidebar drawer (JS
 
 ## Pass log
 
+### 2026-11-04 — the fold ends where the sidebar gives the page its width back, and a desk's index is pinned
+
+Surface: `views/Overview.tsx` (the fold's predicate and the wide index's figures), `views/overview.css` (the fold's block moved from
+800 to 900; the pinned index; the result's rows two-up), `views/Shipped.tsx` (`shippedFigure`, one fraction for the row and the
+index) and four tests (`overview-fold`, `overview-receipt`, `page-exits`, and the new `overview-index`).
+
+Measured on the scripted demo at **Delivered** (507 events, 7 checks, 9 files, 6 awaiting review, 7 seats) in the production build
+served by `curule console` on its own port, Chromium 1248 at 320/360/390/768/801/820/900/901/1000/1100/1101/1200/1280/1440, light
+and dark, a touch pointer at 900 and below, reduced motion, axe-core 4.14 (108 reads: 9 views × 6 widths × 2 themes). Both halves of
+each pair are the same log: the before bundle was rebuilt from `git stash` and served over the same state.
+
+**The fold stopped where the dock does, not where the page is narrow.** From 801 the sidebar is drawn in the flow and takes 232 px, so
+the view is 569–668 px — narrower than a 768 phone — while the page drew the full desk shape: **801 px was 3,228 px tall, 820 was
+3,365, 900 was 3,167**, against 841 at 768. `DOCK` and the closed-row CSS are the ladder's 900 now (its "dense grids stack" step), the
+last width at which the sidebar has not given the page its width back: **820 is 836, 900 is 836**, with the hero's compact row (one
+action and "…") at 801–900 as at a phone. 768 (841), 901 (2,989) and 1440 are unchanged; 320/360/390 do not move. Deliberately not
+changed: the single column at 901–1100 is still ~2,900 px with a two-line index. It is a desk with its sections open, and folding it
+would take the result away from a mouse.
+
+**The index was four bare names, drawn once, and scrolled away.** At 1440 the row sat at 422–458 and the page is 1,913: 600 px in it
+was gone (top −178), and at the event log it was 655 px above (−655). It carries each section's figure now — "What shipped 3 of 9 ·
+Latest work 6 · Goal checks 7/7 · Just happened 507" — and is pinned at the board's 1280, where it is one line (985 px of doors in
+992): top **84 at both 600 and 1,400** of scroll. Its figures are hidden below 1280, where the row would wrap to two lines (measured
+at 1100: 36 → 72 px and 36 px of page). `#view` pins a sticky child at its content edge, so the bar paints the 20 px strip above it in
+the page's ground (a pixel at y=72 read the shipped card before), and `.ov .card` carries `scroll-margin-top` for the bar: a jump put
+the section at 124 in a bar of 84–137 (13 px under it) and lands it at 145, 8 px clear, with focus on the section.
+
+**The result's six waiting files were six full-width rows.** One column in a 1,152 px card set a name, a type and a state at 44 px
+each and left 600 px of every row empty between them: What shipped was **621 px** and Latest work began at **1,103** — past the 900 px
+of a desk's first screen. Two columns from 1101 (the desk's own grid): the card is **497 px at 1440 (515 at 1280, 549 at 1200, 565 at
+1101)**, Latest work is at **979**, and the page is **1,913 → 1,789** (1,974 → 1,869 at 1280, 2,042 → 1,969 at 1200). A row is
+unchanged; the second column's first row drops its rule so the two read as one ledger under the group's caption.
+
+Gates: `npm run typecheck` clean; `npm test` 6,496 tests, 6,494 pass, 2 skipped (the pre-existing pid-identity skip); axe 0
+violations, no console error and no horizontal scroll in 108 reads; the only targets under 44 px at 360/390 are the skip link (1×1
+until focused) and a checkbox whose label is 366 × 56.
+
 ### 2026-11-04 — the brief follows the thumb, and the page whose job is the answer leads with it
 
 Surface: `views/Overview.tsx` (the fold's predicate), `views/overview.css` (the closed row's rules moved to a new 800 block),

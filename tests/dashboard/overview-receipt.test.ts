@@ -89,8 +89,8 @@ test("a secondary action the hero already offers is not a menu item as well", ()
   assert.deepEqual(heroActions(running.next, running.secondary, true).menu, [], "pause is a step there, so it is not listed twice");
 });
 
-test("the hero asks the model which actions go where, and the dock's own break decides", () => {
-  assert.match(overview, /const DOCK = "\(max-width: 800px\)";/, "the break is the one the navigation drawer and the dock use");
+test("the hero asks the model which actions go where, and the width the sections are drawn in decides", () => {
+  assert.match(overview, /const DOCK = "\(max-width: 900px\)";/, "the break is the one the evidence folds at (2026-11-04: the sidebar still takes 232 px at 801–900)");
   assert.match(overview, /const dock = useMedia\(DOCK\);/, "asked, not guessed");
   assert.match(overview, /compact=\{dock\}/, "the hero is told");
   assert.match(hero, /const \{ row: rowNext, menu \} = heroActions\(p\.next, p\.secondary, p\.compact\);/, "one decision, from the model");

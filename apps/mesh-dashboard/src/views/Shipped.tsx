@@ -37,12 +37,16 @@ const groupOf = (status: unknown): ShipKey => {
   return tone === "completed" ? "delivered" : tone === "waiting" ? "review" : tone === "failed" ? "rework" : "draft";
 };
 
+/** The result as a fraction — "3 of 9" — for a row that has already named it: the page's index and the phone's closed row. */
+export function shippedFigure(arts: readonly { status?: string }[]): string {
+  if (!arts.length) return "no files";
+  return `${arts.filter((a) => groupOf(a.status) === "delivered").length} of ${arts.length}`;
+}
+
 /** The result in one short line, for the phone's closed row: "3 of 9 delivered". It is the honest figure to summarise the
  *  result with: how much of what the team made has actually landed. */
 export function shippedLine(arts: readonly { status?: string }[]): string {
-  if (!arts.length) return "no files";
-  const delivered = arts.filter((a) => groupOf(a.status) === "delivered").length;
-  return `${delivered} of ${arts.length} delivered`;
+  return arts.length ? `${shippedFigure(arts)} delivered` : "no files";
 }
 
 /** One settled file: the card the result has always drawn — type, state, name, what it is and where it lives. */

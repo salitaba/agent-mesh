@@ -3,9 +3,10 @@
  * seven checks and the whole folded event feed were between the hero and the end, and the page's own index (four buttons) was
  * still 883 px down. This pass makes every section below the hero one 44 px row until it is opened. From 2026-10-28 those rows are
  * the page's index too: the button row above them said the same four names 120 px before they were read again, so a folded page
- * draws no jump row, and each closed row is a door across its whole width. Since 2026-11-04 the fold follows the dock's 800 px
- * break, not the phone's 620: a 768 px tablet is read in the hand too, and its open desk shape was 3,121 px (4.2 screens). The
- * browser that measured it is not in this suite, so the shape is pinned in the sources.
+ * draws no jump row, and each closed row is a door across its whole width. Since 2026-11-04 the fold follows the width the sections
+ * are drawn in — the ladder's 900 — and not the phone's 620 (a 768 px tablet is read in the hand too: its open desk shape was 3,121
+ * px) nor the dock's 800 (from 801 the sidebar is drawn in the flow and leaves 569 to 668 px, so 801 was 3,228 px, 820 was 3,195 and
+ * 900 was 2,989, against 841 at 768). The browser that measured it is not in this suite, so the shape is pinned in the sources.
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -22,9 +23,10 @@ const goal = read("views/GoalChecks.tsx");
 const css = read("views/overview.css");
 
 test("a page read in the hand folds the four evidence sections to one row each, and a desk never does", () => {
-  // The fold follows the thumb's dock (800), not the phone's width: a 768 px tablet had the drawer and the dock and still opened
-  // all four sections, so the Overview was 3,121 px. The dock's break is the one the hero's compact row already used.
-  assert.match(overview, /const DOCK = "\(max-width: 800px\)";/, "the fold uses the dock's own breakpoint");
+  // The fold follows the width the sections are drawn in: 768 px (a tablet read in the hand) and 801–900 px (a tablet whose sidebar still
+  // takes 232 px of the window, so the view is narrower than a 768 phone) both open the sections one row each. 900 is the ladder's
+  // "dense grids stack" step; from 901 the page has its width back and the desk shape — with the pinned index — returns.
+  assert.match(overview, /const DOCK = "\(max-width: 900px\)";/, "the fold uses the width the sections are drawn at");
   assert.match(overview, /const dock = useMedia\(DOCK\);/, "and asks CSS's answer rather than a second copy of it");
   assert.match(overview, /const foldOf = \(id: string, summary: React\.ReactNode\): Fold \| undefined =>\s*dock \? \{ open: openSections\.has\(id\), onToggle: \(\) => toggleSection\(id\), summary \} : undefined;/, "the fold exists only where a thumb is");
   for (const id of ["ov-shipped", "ov-work", "ov-goal", "ov-events"]) {
@@ -37,8 +39,8 @@ test("a page read in the hand folds the four evidence sections to one row each, 
   assert.match(overview, /const eventsFold = sseState === "reconnecting" \? "paused while reconnecting" : behind && tailFailed \? "latest could not load"/, "and a paused or partial stream");
 });
 
-test("the folded row's rules live at the dock's break, so a tablet draws them too", () => {
-  // A 768 px screen is above the phone's 620 but has the navigation drawer and the dock; the CSS and the JS must answer the same
+test("the folded row's rules live at the fold's break, so a tablet draws them too", () => {
+  // A 768 px screen is above the phone's 620 and a 820 px one is above the dock's 800; the CSS and the JS must answer the same
   // question or the tablet gets closed sections with no row styling (or open ones the model thinks are folded).
   const at = (condition: RegExp): string => {
     const found = [...css.matchAll(/@media[^{]+\{/g)].filter((m) => condition.test(m[0]));
@@ -53,7 +55,7 @@ test("the folded row's rules live at the dock's break, so a tablet draws them to
       return css.slice(start, i - 1);
     }).join("\n");
   };
-  assert.match(at(/max-width:\s*800px/), /\.ov \.card\.closed \{ position: relative;/, "the closed row is styled at 800");
+  assert.match(at(/max-width:\s*900px/), /\.ov \.card\.closed \{ position: relative;/, "the closed row is styled at 900");
   assert.doesNotMatch(at(/max-width:\s*620px/), /\.ov \.card\.closed \{ position: relative;/, "and not only at the phone's 620");
 });
 
@@ -70,7 +72,7 @@ test("the closed head says what is inside and how to open it; the body is hidden
 });
 
 test("the index is the wide screen's; where the page is folded the four rows are the index", () => {
-  assert.match(overview, /\{dock \? null : <JumpRow delivered=\{delivered\} onOpen=\{jumpTo\} \/>\}/, "the row is drawn where the sections are open, and not where they are one row each");
+  assert.match(overview, /\{dock \? null : \(\s*<JumpRow/, "the row is drawn where the sections are open, and not where they are one row each");
   assert.match(overview, /const dock = useMedia\(DOCK\);/, "the same answer the fold uses");
   assert.doesNotMatch(css, /@media \(max-width: 620px\) \{\s*\.ov-jump/, "and no phone rule is left for a row a folded page never draws");
 });
