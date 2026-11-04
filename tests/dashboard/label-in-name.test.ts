@@ -35,3 +35,14 @@ test("a Designer seat is named from the face, the name and the role it draws", (
   assert.match(tsx, /id=\{`ms-seat-face-\$\{id\}`\}/, "the face has an id because it holds the initial the person sees");
   assert.doesNotMatch(tsx, /data-seat=\{id\} aria-pressed=\{sel\} aria-label=\{label\}/, "no shorter label overrides the card");
 });
+
+test("an inbox control with a count is named by the words it draws", () => {
+  // Measured 2026-11-04 with one decision waiting: axe 4.14 reported label-content-name-mismatch (serious) on the bar's inbox
+  // button and on the dock's "Needs you" tab — the name "Needs you: 1 waiting on you" interrupted the drawn "Needs you 1" with a
+  // colon. Both draw the label and then the count, so both read that way, with no punctuation between them.
+  const shell = read("shell.tsx");
+  assert.match(shell, /aria-label=\{`Needs you \$\{inbox\} waiting on you`\}/, "the bar's button names the label and count in the order it draws them");
+  assert.match(shell, /const drawn = waiting > 99 \? "99\+" : String\(waiting\);/, "the badge's visible cap is the number the name uses");
+  assert.match(shell, /const name = waiting > 0 \? `\$\{n\.label\} \$\{drawn\} waiting on you` : n\.label;/, "and so does the dock's tab");
+  assert.doesNotMatch(shell, /Needs you: \$\{inbox\}/, "the colon that broke the contiguous name is gone");
+});
