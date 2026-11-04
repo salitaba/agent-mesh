@@ -234,6 +234,13 @@ main:has(.hero) .section-head .eyebrow::before { counter-increment: sec; content
 .btn-primary { border-color: var(--accent); background: var(--accent) linear-gradient(color-mix(in srgb, white 10%, transparent), transparent); color: var(--k-on-accent); }
 .btn-primary:hover { border-color: var(--k-accent-hover); background-color: var(--k-accent-hover); box-shadow: var(--k-hl), var(--k-shadow-2); }
 .btn-primary:active { border-color: var(--k-accent-press); background-color: var(--k-accent-press); }
+/* A control's own edge is a boundary, not a decorative rule, and it is the same boundary at rest as under a pointer. The
+   outlined button, the Copy button and the menu button took the decorative line at rest (#d3cdc2: 1.58:1 on the button's
+   white, 1.37:1 on the code band, 1.52:1 on the header's paper) and the control line only on :hover (3.92:1) — so at a
+   desk the control appeared under the mouse, and on a phone, where nothing hovers, it never did. They keep the control
+   line at rest, as the fields already do; the chosen segment below keeps it too. A chip in a row (the On this page bar, the
+   plan chooser) keeps the decorative rule: its words are the control, and the row it sits in says where the pill starts. */
+.btn:not(.btn-primary), .copy, .menu summary { border-color: var(--k-line-control); }
 /* A control is a thumb's height on a coarse pointer, the four sections of the bar too: at 768 and up they are a row of
    36px links, which is a mouse's row in a 44px bar, but a tablet's finger gets 44 of the bar's 68. */
 @media (max-width: 719px), (pointer: coarse) { .btn, .signin, .menu summary, .nav-main a { min-height: 44px; } }
@@ -365,7 +372,11 @@ main:has(.hero) .section-head .eyebrow::before { counter-increment: sec; content
    453px plate, or over a 706px one, read as a floating chip. */
 .hero-visual .tabs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); width: 100%; }
 .billing { --n: 2; margin-bottom: 24px; }
-.tabs::before, .billing::before { content: ""; position: absolute; top: 3px; bottom: 3px; left: 3px; width: calc((100% - 6px) / var(--n)); border-radius: var(--k-r-sm); background: var(--panel); box-shadow: var(--lift), 0 0 0 1px var(--line2); }
+/* The chosen segment of a switch is a state, and a state has a boundary a reader can see: the thumb was a white pill on
+   #f1eee8 (1.13:1) edged in #d3cdc2 (1.37:1), and in the dark #1b1a18 on #0e0d0c edged in #45423b (1.74:1), so the billing
+   period the whole page's figures were in — and the product view the plate showed — was carried by the words alone. The
+   thumb's edge is the control line now: 3.53:1 on the trough in light, 4.19:1 in dark. */
+.tabs::before, .billing::before { content: ""; position: absolute; top: 3px; bottom: 3px; left: 3px; width: calc((100% - 6px) / var(--n)); border-radius: var(--k-r-sm); background: var(--panel); box-shadow: var(--lift), 0 0 0 1px var(--k-line-control); }
 .tabs label, .billing label { position: relative; display: flex; align-items: center; justify-content: center; gap: 8px; min-height: 36px; padding: 0 clamp(8px, 3vw, 20px); color: var(--ink2); font-size: 14px; font-weight: 600; white-space: nowrap; cursor: pointer; user-select: none; }
 .billing label small { color: var(--muted); font-size: 13px; font-weight: 500; }
 @media (max-width: 719px), (pointer: coarse) { .tabs label, .billing label { min-height: 44px; } }
@@ -1124,6 +1135,10 @@ body:has(#billing-monthly:checked) .head-price-monthly { display: inline; }
 }
 @media print {
   .site-header, .skip, .tabs, .billing, .copy, .copy-note, .doc-filter, .foot-grid, .hero::before, .hero::after, .cta::after, .to-top-dock { display: none; }
+  /* The plate's switcher is `.hero-visual .tabs` (0,2,0) and outranked the line above, so the printed home page kept a
+     dead Overview/Events/Designer row — 730 × 42 at 794, with 16px of paper under it — above the one view a sheet can show.
+     The radios still choose the Overview pane; only the control that cannot be pressed goes. */
+  .hero-visual .tabs { display: none; }
   .calc-total { display: none; }
   .stack-table { display: none !important; }
   #compare .table-wrap, #calculator .table-wrap { display: block !important; }
