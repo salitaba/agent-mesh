@@ -1865,8 +1865,9 @@
         }
         actions.replaceChildren(...(card.action ? [stageAction(card.action, w, false), ...(card.also ? [stageAction(card.also, w, true)] : [])] : []));
       }
-      // What a screen reader is told, once, when the account moves on: the page was not asked, and nothing it was looking at is gone.
-      if (state.stageId !== undefined && state.stageId !== stage.id) $("stage-live").textContent = `${card.title}. ${card.text}`;
+      // A screen reader hears the page move on once: the skeleton's "Loading your account." is replaced by what arrived, and a card that
+      // later says something else is announced then. A card that says the same is left alone, so a look at the account is silent.
+      if (state.stageId !== stage.id) $("stage-live").textContent = `${card.title}. ${card.text}`;
       state.stageId = stage.id;
       if (had !== null) {
         // The card that had the cursor is gone: the cursor goes to the record that now says the same thing.
@@ -1909,7 +1910,13 @@
       const base = el("input", { id: `key-base-${id}`, name: "baseUrl", type: "text", inputmode: "url", autocomplete: "off", spellcheck: "false", value: draft.baseUrl, placeholder: "https://openrouter.ai/api/v1" });
       // autocomplete off and a password field: the browser neither fills in nor offers to remember a secret that is not a sign-in.
       const key = el("input", { id: `key-secret-${id}`, name: "key", type: "password", autocomplete: "off", spellcheck: "false", maxlength: 512 });
-      const baseField = el("div", { class: "field" }, el("label", { for: base.id }, "Provider address"), base, el("span", { class: "hint" }, "Starts with https://, and is your provider's public address. OpenRouter, OpenAI, DeepSeek and Gemini's compatible endpoint all work."));
+      // A refusal is said in the field it names, as every other form on the pages does: the one note at the foot of this form is for what
+      // happened to the request, and a sentence about the model would otherwise be 300px below the field the cursor jumps to.
+      const fieldNote = (name) => el("p", { id: `key-${name}-note-${id}`, class: "note", role: "status", "aria-live": "polite" });
+      const modelNote = fieldNote("model");
+      const baseNote = fieldNote("base");
+      const keyNote = fieldNote("secret");
+      const baseField = el("div", { class: "field" }, el("label", { for: base.id }, "Provider address"), base, el("span", { class: "hint" }, "Starts with https://, and is your provider's public address. OpenRouter, OpenAI, DeepSeek and Gemini's compatible endpoint all work."), baseNote);
       const chosen = () => provider.value || draft.provider;
       const sync = () => {
         draft.provider = chosen();
@@ -1934,9 +1941,9 @@
               const kind = chosen();
               const typed = key.value.trim();
               say(note, "", "");
-              if (!draft.model.trim()) return invalid(model, note, "Name the model your teams should run on, as your provider names it.");
-              if (kind === "openai-compatible" && !/^https:\/\//i.test(draft.baseUrl.trim())) return invalid(base, note, "Give your provider's address, starting with https://.");
-              if (typed.length < 8 || /\s/.test(typed)) return invalid(key, note, "Paste the whole key, with no spaces.");
+              if (!draft.model.trim()) return invalid(model, modelNote, "Name the model your teams should run on, as your provider names it.");
+              if (kind === "openai-compatible" && !/^https:\/\//i.test(draft.baseUrl.trim())) return invalid(base, baseNote, "Give your provider's address, starting with https://.");
+              if (typed.length < 8 || /\s/.test(typed)) return invalid(key, keyNote, "Paste the whole key, with no spaces.");
               state.keyBusy.add(id);
               for (const b of buttons) hold(b, true);
               say(note, "", "Keeping it, and starting the workspace again with it.");
@@ -1956,9 +1963,9 @@
             },
           },
           el("div", { class: "field" }, el("label", { for: provider.id }, "Provider"), provider),
-          el("div", { class: "field" }, el("label", { for: model.id }, "Model"), model, el("span", { class: "hint" }, "As your provider names it, like claude-sonnet-4-5 or openai/gpt-4o.")),
+          el("div", { class: "field" }, el("label", { for: model.id }, "Model"), model, el("span", { class: "hint" }, "As your provider names it, like claude-sonnet-4-5 or openai/gpt-4o."), modelNote),
           baseField,
-          el("div", { class: "field" }, el("label", { for: key.id }, kept ? "New key" : "Key"), key, el("span", { class: "hint" }, "Paste it here once. It is never shown again, by this page or by anything else of ours.")),
+          el("div", { class: "field" }, el("label", { for: key.id }, kept ? "New key" : "Key"), key, el("span", { class: "hint" }, "Paste it here once. It is never shown again, by this page or by anything else of ours."), keyNote),
           el("div", { class: "btn-row" }, save),
           el("p", { class: "muted small" }, "Saving or removing a key starts the workspace's host again, which ends a turn that is running. Its files are kept."),
         ),
@@ -2552,6 +2559,9 @@
       // Settings is the account's own form. It is not drawn while the account is being read, or when the read failed: a password form
       // under a page that says the account could not be read looks like the account, and a person would type into it to learn otherwise.
       $("settings-panel").hidden = true;
+      // The bar does not offer "Sign in" to a customer whose session is still being read: until the answer, neither door is certainly
+      // theirs. The one that is arrives with the account, and a signed-out visitor is sent to the sign-in page instead.
+      for (const node of doc.querySelectorAll(".bar [data-when]")) node.hidden = true;
     }
     if (page === "home") planShape();
     doc.addEventListener("input", (event) => {

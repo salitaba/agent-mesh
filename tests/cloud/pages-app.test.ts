@@ -147,6 +147,20 @@ test("the header and the front page: a visitor is offered the way in, a customer
   assert.deepEqual(v.doc.querySelectorAll("[data-from-price]").map((n) => n.textContent), ["From $149.00 a month", "From $149.00 a month"], "the price is said at the top and again at the foot");
 });
 
+test("the account's bar does not offer the wrong door while the session is being read", async () => {
+  const w = world(paid);
+  const v = new Visit("account", { routes: w.routes });
+  const started = v.start();
+  const signin = v.doc.querySelector('[data-nav="login"]')!;
+  const account = v.doc.querySelector('[data-nav="account"]')!;
+  assert.equal(v.shows(signin), false, "a customer is not offered Sign in while the page is still finding out who they are");
+  assert.equal(v.shows(account), false, "nor is the account door drawn before there is an account to open");
+  await started;
+  assert.equal(v.shows(signin), false, "the answer leaves a signed-in customer without the wrong door");
+  assert.equal(v.shows(account), true, "and with the one that is theirs");
+});
+
+
 test("a front page for someone who is signed in marks their plan and points the others at their account", async () => {
   const w = world(paid);
   const v = await visit("home", { routes: w.routes });
@@ -2043,7 +2057,8 @@ test("an openai-compatible provider asks for its address, which must be https, a
   v.type("key-base-ws_1", "http://openrouter.ai/api/v1");
   await v.send(v.$("key-form-ws_1"));
   assert.equal(v.to("POST", "/api/workspaces/ws_1/model-key").length, 0, "nothing is sent over http");
-  assert.equal(v.text("key-note-ws_1"), "Give your provider's address, starting with https://.");
+  assert.equal(v.text("key-base-note-ws_1"), "Give your provider's address, starting with https://.");
+  assert.equal(v.text("key-note-ws_1"), "", "the form's own line says nothing: the sentence is in the field it is about");
   assert.equal(v.$("key-base-ws_1").getAttribute("aria-invalid"), "true");
   v.type("key-base-ws_1", "https://openrouter.ai/api/v1");
   await v.send(v.$("key-form-ws_1"));
@@ -2053,13 +2068,14 @@ test("an openai-compatible provider asks for its address, which must be https, a
 test("a key that is missing, short or has spaces in it is said before anything is sent, and the cursor goes to the field", async () => {
   const v = await visit("account", { routes: hosting().routes });
   await v.send(v.$("key-form-ws_1"));
-  assert.equal(v.text("key-note-ws_1"), "Name the model your teams should run on, as your provider names it.");
+  assert.equal(v.text("key-model-note-ws_1"), "Name the model your teams should run on, as your provider names it.");
   assert.equal(v.$("key-model-ws_1").getAttribute("aria-invalid"), "true");
+  assert.match(v.$("key-model-ws_1").getAttribute("aria-describedby")!, /key-model-note-ws_1/, "and the field describes the sentence it is marked for");
   v.type("key-model-ws_1", "claude-sonnet-4-5");
   for (const bad of ["", "short", "has a space in it"]) {
     v.type("key-secret-ws_1", bad);
     await v.send(v.$("key-form-ws_1"));
-    assert.equal(v.text("key-note-ws_1"), "Paste the whole key, with no spaces.", JSON.stringify(bad));
+    assert.equal(v.text("key-secret-note-ws_1"), "Paste the whole key, with no spaces.", JSON.stringify(bad));
   }
   assert.equal(v.to("POST", "/api/workspaces/ws_1/model-key").length, 0);
 });

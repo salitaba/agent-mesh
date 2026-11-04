@@ -382,12 +382,16 @@ test("the form for a first workspace is in the card, goes back to the workspaces
   assert.equal(v.text("stage-live"), "Research is starting. This page checks every few seconds and shows when it is ready.", "which a screen reader is told, once");
 });
 
-test("a card that says something else is announced once, and one that says the same is left alone: no announcement and no cursor taken for a look at the account", async () => {
+test("the card that arrived is announced, a card that says something else is announced once, and one that says the same is left alone: no announcement and no cursor taken for a look at the account", async () => {
   const w = world();
   const v = new Visit("account", { routes: w.routes, search: "?paid=1", storage: { "curule:before-payment": JSON.stringify([null, [20_000_000, 0]]) } });
   const started = v.start();
   await v.until("the page to say it is waiting", () => /being confirmed|confirms a payment/.test(v.text("notice")));
-  assert.equal(v.text("stage-live"), "", "nothing was announced for what was there when the page opened");
+  assert.equal(
+    v.text("stage-live"),
+    "Choose a plan. A plan is a flat monthly price for your account, and it says how many workspaces you may run at once. Choose one below and pay on the next page.",
+    "the card that arrived with the account is announced, so the skeleton's 'Loading your account.' is answered by what is there now",
+  );
   v.type("current", "typing in the password form while the page waits");
   w.subscription = ACTIVE;
   await started;
@@ -401,7 +405,7 @@ test("a card that says something else is announced once, and one that says the s
 test("a workspace that becomes ready is announced and its record offers to open it; one that is still starting after ten minutes of looking says the page has stopped", async () => {
   const w = world((x) => { paid(x); x.workspaces = [workspace({ status: "provisioning" })]; });
   const v = await visit("account", { routes: w.routes });
-  assert.equal(v.text("stage-live"), "");
+  assert.equal(v.text("stage-live"), "Research is starting. This page checks every few seconds and shows when it is ready.", "the card on the page is announced once it has arrived");
   w.workspaces = [workspace()];
   await v.until("the workspace to be seen running", () => /^Research Running Open it to describe/.test(v.text("workspaces")));
   assert.equal(v.text("stage-live"), "Research is running. Open it to describe your team and start a mission.");
