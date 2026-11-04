@@ -12,7 +12,7 @@ python3 -m http.server --directory site 8080      # then open http://127.0.0.1:8
 
 | File | Address | What it holds |
 |---|---|---|
-| `index.html` | `/` | The tagline, what Curule is and a picture of it beside the first actions (a product frame: overview, events, designer), a numbered *On this page* bar (the eight sections, each keeping its ledger number), the plans in a line (four rows of one rate card on a phone), the two ways in (we run it, or you do), then the proof: a tour of the console in six views and the commands that run the demo today, then why it is not a group chat, how a mission goes, security in brief, and the questions |
+| `index.html` | `/` | The tagline, what Curule is and a picture of it beside the first actions (a product frame: overview, events, designer), a numbered *On this page* bar (the eight sections, each keeping its ledger number), the plans in a line (four rows of one rate card on a phone), the two ways in (we run it, or you do), then the proof: a tour of the console in six views (one at a time on a phone, chosen by number and name) and the commands that run the demo today, then why it is not a group chat, how a mission goes, security in brief, and the questions |
 | `pricing/index.html` | `/pricing/` | The four licence figures in a ruled line at the head, in the billing period the switch below chooses (so the price is on the first screen), then the two ways to pay (while Curule Cloud is open), the plans with the Annual/Monthly choice — one plan at a time on a phone, chosen by name and figure — the comparison table, what a plan pays for, a calculator, how licences work, and questions |
 | `docs/index.html` | `/docs/` | "Start here": a card for each thing a visitor comes to do (run the demo, deploy it, describe a team and its rules, use Curule Cloud), each naming the one document to open first; then a map of the documents in the repository: what each is for, and whether it is reference, a guide, short, or a log, with a filter over them. An On this page row under the heading names the three sections, as on the other long pages |
 | `security/index.html` | `/security/` | An At a glance box (what it protects, what leaves your environment, what it does not do: one line each, from the page's own sentences, each linking to its section, with a mark that says what kind of answer it is), then the three in full, a hardening checklist, assurance, and how to report a problem |
@@ -107,6 +107,13 @@ uses them by name. What is particular to the site:
   not in monospace.
 - **Two controls with a thumb.** The home page's product tabs and the pricing page's Annual/Monthly switch are radio inputs and CSS:
   the thumb that slides under the chosen one is a pseudo-element moved by `--n` steps, so they work without a script.
+- **Choosers on a phone.** A set of things a reader picks from is one thing at a time below 720: the pricing page's four plans
+  (a 2 × 2 chooser of name and figure) and the home page's six console views (a 2 × 3 chooser of number and name). Both are
+  radio inputs and CSS, so they work without a script; the chosen one carries a rule, a tint and a dot, and the six view cards
+  share one grid cell, so the row is as tall as its tallest view and switching one moves nothing below it.
+- **A closed menu is not laid out.** Chrome leaves a closed `<details>` panel's links in the layout tree even though no reader
+  can see them; `display: none` on `.menu:not([open]) .menu-panel` puts them where a closed menu's contents belong, and the
+  panel is unchanged when it opens.
 - **Drawings.** An icon is a 24-unit drawing shown at 20 px with a 1.8-unit stroke (a test holds the attributes to the rules). The
   drawings on the four reasons, the three steps and the places to start are decoration: `aria-hidden`, no words in them, no
   `style`, and no two cards of a group share one. The glyph of a notice is made with gradients, so that no `data:` address is needed
