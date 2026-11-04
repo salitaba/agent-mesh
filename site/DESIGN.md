@@ -2726,3 +2726,103 @@ whole, because most of it is not this pass's (see what is left).
 - **Curule Cloud's prices are still in the app**, the captures were not retaken, and `site/ux/` was not edited. This
   pass's frames — the plate's tabs and the billing switch at 360, the printed plate at 794 — were handed to the /ux page
   with the report.
+
+## 2026-11-04, second pass: a phone chooses a view, and a closed menu takes no room
+
+Measured with `ux-render` (the workspace image's Chrome, 360×900, reduced motion, touch, light unless said) and with the
+same browser over CDP for the geometry and the states. The before column is the site at `b86e295` (main), exported with
+`git archive`, served on a second port and measured in the same run; no number is copied from an earlier pass. The
+absolute heights are this container's, where the untouched home page is 12,581 at 360; both halves are one browser in
+one run, so the differences stand.
+
+### What changed
+
+- **A phone chooses one of the six console views, instead of swiping a row of six.** The row was 1,933px of cards in a
+  360px scroller: a reader met one capture, and the five others stood outside the viewport behind an ancestor that
+  clips, so the probe could only call them unreachable (it cannot scroll a row). The six names and their ledger numbers
+  are now a 2 × 3 chooser (each chip **161 × 44** at 360, **141 × 44** at 320, **176 × 44** at 390), and the card below
+  is the view chosen: **328 × 451.69** at 360, where the row's card was 309.59 × 440.17. The card's frame is
+  **306 × 192** (the image 304 × 190) where it was 287.59 × 180.48 (285.59 × 178.48), and its words read across 278px
+  instead of 259.59. It is radio inputs and CSS — the pattern the four plans already use on a phone — so it works with
+  no script and the first view is chosen in the markup.
+- **The six cards share one grid cell, so switching one moves nothing below it.** The chosen card is `visibility:
+  visible`; the other five are in the same cell and hidden, so the row is as tall as its tallest view (Approvals,
+  451.69 at 360) and the page below does not jump by the 48px the six cards' own heights differ by. All six remain in
+  the page for print, which shows them all.
+- **The chosen view is a dot, a rule and a tint.** The chip takes `--accent` at its border, an inset ring and the tint;
+  the figure before its name is a dot, so the state is never colour alone. A chip that takes the keyboard's focus draws
+  the 2px ring on the label, not on the 1 × 1 radio behind it, and a forced-colour mode keeps the chosen chip as a 2px
+  `Highlight` outline and its dot as `Highlight` where the tint is dropped.
+- **A closed menu is not laid out.** Chrome's closed `<details>` hides its contents from the reader but leaves their boxes
+  in the layout tree: at 360 the six links of the closed panel measured **93.7px wide from x=323 and reached 416.7**,
+  which is what the probe reported as six links past the viewport on every page. The panel is `display: none` while it is
+  closed (`.menu:not([open]) .menu-panel`); opened at 360 it is **16–344** and every link is **23–337**, **314 × 48**, as
+  before. At 320 the panel is 16–304 and the links 23–297; at 600 and 767 the open panel is 552 and 705.66 wide.
+- **A capture is a control, so its frame has a control's edge.** The plate and the graph are one press across the frame,
+  and a view card is one press across the card, but the frame's border was `#d3cdc2` on the page (**1.52:1**) and a view
+  card's `#e4e0d9` (**1.21:1** on the band). Both take `--k-line-control` at rest — **3.92:1** and **3.75:1** — and the
+  chooser's unselected labels take it too (**3.75:1** on the band). The decorative rules a card, a hairline and the On
+  this page chips keep are rule 8's: a chip's words are the control and the row says where the pill starts.
+
+### Measurements after this pass
+
+| Page, the probe's failures at 360 | Before | After |
+|---|---|---|
+| Home | 17 | **6** |
+| Pricing | 14 | **8** |
+| Documentation | 13 | **7** |
+| Security | 9 | **3** |
+| Contact | 11 | **5** |
+| Legal | 9 | **3** |
+| 404 | 8 | **2** |
+
+| The home page at 320 / 360 / 768 / 1440 | Before | After |
+|---|---|---|
+| Its height | 13,415 / 12,581 / 12,173 / 11,263 | **13,515 / 12,685 / 12,173 / 11,263** |
+| `#product` | 912.73 / 853.09 / 1,630.36 / 2,074.09 | **1,012.75 / 956.61 / 1,630.36 / 2,074.09** |
+| `#try` and everything below (at 360) | 4,586.33 | **4,689.84** (+103.52) |
+| The first screen at 360: h1 / actions / price / plate | 150.59 / 462.36 / 526.36 / 641.38 | **unchanged, to the hundredth** |
+
+- At 360 the chooser stands **3,976.38–4,120.38**, the hint is 4,132.38 and the card begins **4,189.16**; at 320 they
+  are 4,345.45, 4,446.45 and 4,558.23. The card is the tallest view at both widths (451.69 and 450.69). The six chips
+  are 2 × 3 at every phone width (328 × 144 at 360, 288 × 144 at 320, 358 × 144 at 390).
+- The page costs **104px at 360, 100 at 320**, and **nothing at 768 or 1,440**, where the chooser is hidden and the six
+  are the grid they were. The six other pages are unchanged at every width; only their fingerprint and their menu moved.
+- The probe's 11 rows that went on the home page are the six menu links and the five captures; the six on every other
+  page are the menu links. The six that remain on the home page at 320 and 360 are the decorative hairlines above
+  (1.14–1.52:1): the pressable frame and the view card are no longer among them.
+- At 768 the probe reports **19** and at 1,440 **35**, exactly as before: they are the mouse's 36–40px rows and the
+  decorative rules, which this pass did not touch. At 320 the same six remain as at 360; the dark run at 360 is 17 → 6.
+- The chooser is right with no script: at 360 the page is **12,662** and the first view is the one on screen (one card
+  visible, six radios, six labels). Print at 794 is **11,892**, unchanged, and prints all six cards. With
+  `forcedColors: active` at 360 the page is 12,685, the chosen label keeps a 2px `Highlight` outline and its dot. At a
+  24px root it is **19,807** at 360 (19,737) and at 32px **29,874** (29,864); **0px over** at 320, 360 and 720 at every
+  root.
+- The smallest computed text is still **12px** (the chips' numbers); a chip's name is 13px at every user text size, as
+  the header's controls and the bar's chips keep theirs. The smallest target is a chip's **141 × 44** at 320; the 1 × 1
+  radio behind each is not the control. The only targets under 44 × 44 are the same inline links in sentences.
+- **0 axe-core WCAG 2.0–2.2 A and AA violations** on all seven pages at 360 light, on the home page at 360 dark and at
+  1,440 light. No page scrolls sideways at 320, 360, 768 or 1,440 in light or at 360 in dark; 0 console errors.
+
+### What this pass deliberately left
+
+- **The phone's page is 104px longer.** The chooser is 144px of chips where the old index was 44, against a card 11.5px
+  taller; the six captures are one press each and none is clipped, which is the trade. Removing the hint would save 57,
+  and putting the six chips in one row of numbers would save the rest and lose the names; neither was taken.
+- **The five views not chosen are not read on a phone.** Their descriptions and titles are in the page for a reader who
+  chooses them and for print, but a phone reads one at a time; the comparison of six is the chooser's names, not their
+  paragraphs. A summary of each beside its chip would be the 1,933px row again.
+- **The decorative hairlines stay light.** The card's top rule is 1.45:1, the section rules and the footer's line
+  1.14–1.26, and the On this page chips 1.52 — rule 8's exception, where the words are the control. The two boundaries
+  that identify a press (the plate/graph frame and a view card) are 3.75–3.92 now, and the outline button, Copy and menu
+  button already were.
+- **The documentation page's "Start here" links still measure 25.59px.** The card is the target (`::before` covers its
+  328 × 336), and the link is a line of the card, as the last pass argued; a 44px row would add 55px to the page and undo
+  a deliberate 20px per card.
+- **The pricing page's 24 × 24 usage-reports checkbox** is unchanged: its label is the 44px target.
+- **No capture was retaken** (the console is being redesigned in parallel), `site/ux/` was not edited, and
+  `npm run site:check` still exits 1 on the owner's `TODO(owner)` for the terms at `site/legal/index.html:134`.
+
+The next pass's first job is still the page's length: 12,685 at 360 is 15.9 screens of 800, and the demo (1,666.73) and
+the two ways (849.30) are where the words are. After it, the pricing page's Cloud answer and the shared 48px Terminal
+row, both queued by the previous passes.

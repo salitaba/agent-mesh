@@ -512,12 +512,13 @@ test("nothing is hidden by the stylesheet to be shown later: what arrives as the
   const css = fs.readFileSync(path.join(SITE, "assets", "site.css"), "utf8");
   const outside = withoutBlock(withoutBlock(css, "@media (prefers-reduced-motion: no-preference)"), "@media print");
   assert.ok(!/\.rv\b/.test(outside), "no rule hides anything outside the block for a visitor who allows motion");
-  // The only things the stylesheet makes invisible on its own: the radio buttons behind the two segmented controls (they are used,
-  // not seen) and the back-to-top button, which only the script makes.
+  // The only things the stylesheet makes invisible on its own: the radio buttons behind the two segmented controls and the
+  // six views' chooser (they are used, not seen), the view cards the chooser is not showing (one is always visible, and the
+  // first is chosen in the markup, so a page with no script shows a view), and the back-to-top button, which only the script makes.
   const invisible = [...outside.replace(/\/\*[\s\S]*?\*\//g, "").matchAll(/([^{}]+)\{([^{}]*)\}/g)]
     .filter((m) => /\bopacity: 0;|\bvisibility: hidden;/.test(m[2]!))
     .map((m) => m[1]!.trim().replace(/\s+/g, " "));
-  assert.deepEqual(invisible, [".tab-input, .billing-input, .choice-input", ".to-top:not(.is-shown)"], "nothing else is made invisible by the stylesheet alone");
+  assert.deepEqual(invisible, [".tab-input, .billing-input, .choice-input", ".view-input", ".tiles > .tile", ".to-top:not(.is-shown)"], "nothing else is made invisible by the stylesheet alone");
   assert.match(/@media print \{[\s\S]*?\n\}/.exec(css)![0], /\.rv \{ opacity: 1 !important; transform: none !important; \}/, "and a page printed half-way down is printed whole");
   // A browser does not print backgrounds unless it is told to: the primary button's white label and the closing band's light one would
   // be white on white. On paper a button is black text in a black line, and the band is black text on the paper.
@@ -705,6 +706,10 @@ test("the phone's bar fits: the wordmark at its own proportions, one Sign in, an
   // A tablet has a coarse pointer, and this band is what a tablet is: the four links are 36px for a mouse, 44 for a finger.
   assert.match(css, /@media \(max-width: 719px\), \(pointer: coarse\) \{ \.btn, \.signin, \.menu summary, \.nav-main a \{ min-height: 44px; \} \}/, "the four sections are a thumb's height on a coarse pointer");
   assert.match(css, /\n\.menu-icon \{[^}]*border-block: 2px solid currentColor;/, "the icon is three bars, since on a phone the word is not beside it");
+  // A closed menu is not laid out. Chrome leaves the closed panel's links in the layout tree; at 360 they measured 93.7px wide
+  // from x=323 to 416.7, so the page's menu read as six links past the viewport (opened, the panel is 16–344 and every link is
+  // inside it). `display: none` says what the closed state means, and the panel is unchanged when it opens.
+  assert.match(css, /\n\.menu:not\(\[open\]\) \.menu-panel \{ display: none; \}/, "a closed menu's panel is not in the layout");
   assert.match(css, /@media \(forced-colors: active\) \{[\s\S]*?\.menu-icon::before \{ background: CanvasText; \}/, "and the middle bar survives a forced-colour mode, where a background is dropped");
   // The current page is a tint in the navigation and a line as well: in a forced-colour mode the tint is Canvas over Canvas and
   // the colour is LinkText on every link, so the line is the mark that is left. Measured at 360 with forcedColors: active.
@@ -718,7 +723,7 @@ test("the phone's bar fits: the wordmark at its own proportions, one Sign in, an
   }
 });
 
-test("every capture has a named way to its full size, in the same window, and the phone's six views are one snap row", () => {
+test("every capture has a named way to its full size, and a phone chooses one of six views instead of swiping a row", () => {
   const home = page(pages, "index.html").html;
   const links = [...home.matchAll(/<a class="shot-open" href="([^"]+)"[^>]*aria-label="([^"]+)"[^>]*>Full size<\/a>/g)];
   assert.equal(links.length, 10, "three in the hero, six in the console, and the graph in the steps");
@@ -728,16 +733,36 @@ test("every capture has a named way to its full size, in the same window, and th
     assert.ok(fs.existsSync(path.join(SITE, href!)), `${href} is there`);
   }
   assert.ok(!/\starget="_blank"/.test(home), "no link opens a window behind the visitor");
-  assert.match(home, /<p class="small muted tiles-hint">Six views\. Swipe or scroll sideways; every capture opens at full size\.<\/p>/);
+  assert.match(home, /<p class="small muted tiles-hint">Six views\. Choose one; every capture opens at full size\.<\/p>/);
   const css = fs.readFileSync(path.join(SITE, "assets", "site.css"), "utf8");
-  assert.match(css, /@media \(max-width: 719px\) \{\n  \.tiles-hint \{ display: block; margin: 0 0 12px; \}\n  \.tiles \{[^}]*grid-auto-flow: column;[^}]*overflow-x: auto;/);
+  assert.match(css, /@media \(max-width: 719px\) \{ \.tiles-hint \{ display: block; margin: 0 0 12px; \} \}/);
   assert.match(css, /\n\.shot-open \{[^}]*min-height: 44px;/, "the way to the full size is a thumb's height");
-  // The row's page index: six 44px tabs, one per card, only where the row scrolls.
-  const index = /<nav class="row-index" aria-label="Jump to a view">([\s\S]*?)<\/nav>/.exec(home)?.[1] ?? "";
-  assert.equal((index.match(/<a href="#view-[a-z]+"/g) ?? []).length, 6, "one tab for each view");
-  for (const id of ["overview", "events", "steps", "designer", "cost", "approvals"]) assert.ok(home.includes(`id="view-${id}"`), `the card ${id} is the tab's destination`);
-  assert.match(css, /\n\.row-index \{ display: none; \}/);
-  assert.match(css, /@media \(max-width: 719px\) \{\n  \.row-index \{ display: block;/, "the index is shown where the row scrolls");
+  // A phone chooses one of the six by number and name. The row of six cards was 1,933px in a 360 scroller: five captures
+  // stood outside the viewport behind an ancestor that clips, and a text probe could not follow the row to them. Radios and
+  // CSS are the same shape the plans use on a phone, so it works with no script.
+  const choice = /<fieldset class="view-choice">([\s\S]*?)<\/fieldset>/.exec(home)?.[1] ?? "";
+  assert.match(choice, /<legend class="sr">Choose a view<\/legend>/);
+  const inputs = [...choice.matchAll(/<input class="view-input" type="radio" name="view-tile" id="show-([a-z]+)"( checked)?>/g)];
+  assert.deepEqual(inputs.map((m) => m[1]), ["overview", "events", "steps", "designer", "cost", "approvals"], "one radio for each view, in order");
+  assert.equal(inputs.filter((m) => m[2]).length, 1, "and one is chosen, so the page is whole with no script");
+  assert.match(inputs[0]![0]!, /checked/, "the first view is the one a reader meets");
+  const labels = [...choice.matchAll(/<label for="show-([a-z]+)"><span class="view-n">(\d\d)<\/span> ([^<]+)<\/label>/g)].map((m) => [m[1], m[2], m[3]]);
+  assert.deepEqual(labels, [
+    ["overview", "01", "Mission control"],
+    ["events", "02", "Live events"],
+    ["steps", "03", "Per-turn ledger"],
+    ["designer", "04", "Team designer"],
+    ["cost", "05", "Cost and budgets"],
+    ["approvals", "06", "Approvals"],
+  ], "each chip names the card it shows");
+  for (const [id] of labels) assert.ok(home.includes(`id="view-${id}"`), `the card ${id} is the one its chip shows`);
+  assert.ok(!/class="row-index"/.test(home), "the scrolled row and its jump index are gone, not kept beside the chooser");
+  assert.match(css, /\n\.view-choice \{ display: none; \}/, "the chooser is a phone's control");
+  assert.match(css, /@media \(max-width: 719px\) \{\n  \.view-choice \{ display: block;/, "and is shown where it is used");
+  assert.match(css, /\n  \.view-choice label \{[^}]*min-height: 44px;[^}]*border: 1px solid var\(--k-line-control\)/, "a chip is a thumb's height, with a control's edge");
+  assert.match(css, /\n  \.tiles > \.tile \{ grid-area: 1 \/ 1; visibility: hidden; \}/, "the six share one cell, so the row is as tall as its tallest view");
+  for (const id of ["overview", "events", "steps", "designer", "cost", "approvals"]) assert.match(css, new RegExp(`body:has\\(#show-${id}:checked\\) #view-${id}`), `${id}: the chip shows its card`);
+  assert.match(css, /\n  \.view-input:checked \+ label \{[^}]*box-shadow: inset 0 0 0 1px var\(--accent\)/, "the chosen view is a rule and a tint, not colour alone");
 });
 
 test("a capture is one press across its surface, not a chip beside it", () => {
@@ -760,6 +785,10 @@ test("a capture is one press across its surface, not a chip beside it", () => {
   // The graph and the hero's plate are captures too, and their links cover their frames. The plate's
   // chrome is laid out in the row, not positioned: if it were, the chip's cover would stop at its 44px.
   assert.match(css, /\n\.frame:has\(\.shot-open\) \{ position: relative; \}/, "the capture's frame is a containing block");
+  // The thing a thumb presses has an edge a thumb can see: the frame took the decorative line at 1.52:1 and a view card at
+  // 1.32:1; both take the control line at rest (3.92:1 and 4.08:1). A control's edge is a boundary, not a decoration.
+  assert.match(css, /\n\.frame:has\(\.shot-open\), \.tile \{ border-color: var\(--k-line-control\); \}/, "a pressable capture's edge is the control line");
+  assert.match(css, /\n\.tile \{ border-color: var\(--k-line-control\); \}/, "and the view card's, after the surface rule takes it back");
   assert.match(css, /\n\.frame:has\(\.shot-open\) \.shot-open::before,/, "the graph's and the plate's links share the cover");
   assert.ok(!/\n\.frame-bar \{[^}]*position: relative/.test(css), "the plate's chrome is not the containing block");
 });
@@ -1019,8 +1048,13 @@ test("at a reader's 200% text a phone's page keeps its width and the Enterprise 
   // for; the row's scrollWidth grows instead of the page's (0px over at a 24px and at a 32px root).
   assert.match(css, /\n\.toc \.n \{[^}]*font-size: \.75rem;/, "the contents entry's number keeps its 12px when the reader's root grows");
   assert.match(css, /\n\.toc \{[^}]*overflow-x: auto;/, "and the row scrolls rather than pushing the page sideways");
-  // The six-view index takes a second row instead of pushing the page sideways.
-  assert.match(css, /\n  \.row-index ol \{ display: flex; flex-wrap: wrap; gap: 4px; list-style: none; \}/, "the six-view index wraps at a large text size");
+  // The six views' chooser is a two-column grid whose chips may shrink: its labels keep their 13px and its numbers their 12px,
+  // as the bar's chips and the header's controls do, so a 26px label cannot run out of a 161px chip; and the six cards share
+  // one cell so no card is wider than the column.
+  assert.match(css, /\n  \.view-choice-grid \{ display: grid; grid-template-columns: repeat\(2, minmax\(0, 1fr\)\); gap: 6px; \}/, "the six-view chooser stands in two columns that may shrink");
+  assert.match(css, /\n  \.view-choice label \{[^}]*font-size: 13px;/, "a view's name keeps its layout size");
+  assert.match(css, /\n  \.view-n \{[^}]*font-size: 12px;/, "and its number the bar's 12px figure");
+  assert.match(css, /\n  \.tiles > \.tile \{ grid-area: 1 \/ 1; visibility: hidden; \}/, "and the six cards share one cell");
   // The closing band's grid children may be narrower than their content, as .cols > * already are.
   assert.match(css, /\n\.cta \.wrap > \* \{ min-width: 0; \}/, "the band's h2 may be narrower than its longest word");
   // A control's sub-label keeps its layout size, and the footer's address breaks like the contact page's.
