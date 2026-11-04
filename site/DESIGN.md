@@ -2927,3 +2927,118 @@ the same run; no number is copied from an earlier pass. The absolute heights are
   is still the page's length.
 - **The captures were not retaken** (the console is being redesigned in parallel), `site/ux/` was not edited, and
   `npm run site:check` still exits 1 on the owner's `TODO(owner)` at `site/legal/index.html:134`.
+
+## 2026-11-04, fourth pass: the proof's caption fits its slot, the price's notes fit a line, and the three steps share a row
+
+Measured with the same probe (Chrome 156.0.8078.4 over CDP; reduced motion; light unless said; touch at 320/360/390; a mouse at
+768 and 1,440; dark at 360 and 1,440; print at 794; no script at 360; a 24px root at 320/360/720 and a 32px root at 320/360). The
+before column is the site at `c1ce347`, exported with `git archive` and served on a second port, measured in the same run; no
+number is copied from an earlier pass. The absolute heights are this container's (the untouched home page at 360 is 12,604 where
+the record's is 12,602.66); both halves are one browser in one run, so the differences stand.
+
+### What changed
+
+- **The plate's Events caption fits the height the three views share.** A tab press is a state of the proof, and it must not
+  move what is under it. At 360 the Events caption took **five** lines where the slot reserved four (**126.5px in 107**), so
+  pressing Events grew the frame **419 → 438.5**, the note under the plate **1,076.38 → 1,095.88**, the proof
+  **1,254.72 → 1,274.22** and the page **12,604 → 12,623**. At 1,040 and 1,100 the same press grew the frame
+  **559.5 → 579** and moved the note **688.09 / 690.5 → 707.59 / 710**; at 1,200 and up it did not. The caption says the same claim in
+  fewer words — "here filtered" → "filtered"; "things the runtime refused or did not do, with the reason it gives" → "what
+  the runtime refused or did not do, and why" — **171 → 147 characters with its link (161 → 137 without)**. It is four
+  lines at 360 (107), five at 320 (126.5) and three on a desk (87.5), the heights the stylesheet reserves; all three tabs
+  now measure **419 at 360 and 559.5 at 1,040 and up**, and the page and the note are one number for every tab at every
+  width measured (320, 340, 360, 390, 420, 540, 719, 720, 768, 900, 1,024, 1,040, 1,100, 1,200, 1,280, 1,366, 1,440, 1,600).
+- **The note under the price is held to the prose measure.** At 1,440 the note under the rate card was **1,120px** wide and
+  its first line **1,107px**, about **158 characters**; the site's prose measure is 68ch. It takes the stylesheet's own
+  `.measure` (the contact page's closing note already uses it) and is **612px**, its longest line **605px**, about
+  **86 characters**; it is two lines before and after, so the home page does not change height. The pricing page's two
+  notes outside a generated block — under the plans and under the comparison — are held the same way: **1,105 → 602**
+  (about 157 → 86 characters) and **1,089 → 593** (156 → 85); their line counts are 2 → 3 and 3 → 5. The model table's
+  note is inside the exporter's `run-costs` block and was left (1,068px, one line, 153 characters). The pricing page is
+  **9,185 → 9,253** at 1,440 (+68), **10,122 → 10,144** at 768 (+22), and unchanged at 360 and 320, where the wrap is
+  already narrower than 612.
+- **The three steps' words share a row.** At 1,440 the middle step's heading takes two lines ("The agents work / through
+  contracts") and the other two take one, so the middle step's body began **24.69px below** its neighbours' (p tops
+  **7,393.58 / 7,418.27 / 7,393.58**; heading heights **24.69 / 49.38 / 24.69**). The steps take a subgrid row at 860 and
+  up, as the plan cards and the places to start already do: **every body starts at 7,418.27** and every heading row is
+  49.38. The section's row was already as tall as its tallest column, so the page is **11,226** before and after. At 860,
+  900, 1,000 and 1,039 the three bodies are level too; below 860 the steps are stacked and unchanged.
+
+### Measurements after this pass
+
+| Page, height at 320 / 360 / 390 / 768 / 1440 | Before | After |
+|---|---|---|
+| Home | 13,405 / 12,604 / 12,160 / 12,105 / 11,226 | **unchanged** |
+| Pricing | 14,440 / 13,488 / 12,841 / 10,122 / 9,185 | **14,440 / 13,488 / 12,841 / 10,144 / 9,253** |
+| Documentation | 8,975 / 8,382 / 8,065 / 5,284 / 4,429 | unchanged |
+| Security | 12,527 / 11,600 / 10,883 / 7,884 / 7,638 | unchanged |
+| Contact | 4,755 / 4,381 / 4,215 / 3,413 / 2,857 | unchanged |
+| Legal | 5,513 / 5,037 / 4,741 / 3,419 / 3,313 | unchanged |
+| 404 | 2,266 / 2,089 / 2,045 / 1,437 / 1,516 | unchanged |
+
+| The plate at 360 | Overview | Events, before → after | Designer |
+|---|---|---|---|
+| The caption | 107 | **126.5 → 107** | 107 |
+| The frame | 419 | **438.5 → 419** | 419 |
+| The note under it | 1,076.38 | **1,095.88 → 1,076.38** | 1,076.38 |
+| The proof | 1,254.72 | **1,274.22 → 1,254.72** | 1,254.72 |
+| The page | 12,604 | **12,623 → 12,604** | 12,604 |
+
+| The plate at 1,040 / 1,100 | Overview / Designer | Events, before → after |
+|---|---|---|
+| The frame | 559.5 | **579 → 559.5** |
+| The note | 688.09 / 690.5 | **707.59 / 710 → 688.09 / 690.5** |
+| The page | 10,550 / 10,745 | unchanged (the left column sets the hero's height) |
+
+| The note under the price at 1,440 | Before | After |
+|---|---|---|
+| Its width | 1,120 | **612** |
+| Its longest line | 1,107 | **605** |
+| Characters on that line | about 158 | **about 86** |
+| Its lines | 2 | 2 |
+| The home page at 360 / 1,440 | 12,604 / 11,226 | **12,604 / 11,226** |
+
+| The pricing page's notes at 1,440 | Plans | Comparison |
+|---|---|---|
+| Width, before → after | 1,120 → **612** | 1,120 → **612** |
+| Longest line | 1,105 → **602** | 1,089 → **593** |
+| Characters on it | 157 → **86** | 156 → **85** |
+| Lines | 2 → **3** | 3 → **5** |
+
+| The three steps at 1,440 | Before | After |
+|---|---|---|
+| The heading rows | 24.69 / 49.38 / 24.69 | **49.38 / 49.38 / 49.38** |
+| The body tops | 7,393.58 / 7,418.27 / 7,393.58 | **7,418.27 / 7,418.27 / 7,418.27** |
+| The page | 11,226 | **11,226** |
+
+- No page scrolls sideways at 320, 360, 390, 768 or 1,440 in light or dark (**0** on all 70 page/width/theme pairs), the probe
+  reports **0** console errors on 14 loads, **0 axe-core WCAG 2.0–2.2 A and AA violations** on all seven pages at 360 and
+  1,440 in both schemes (28 runs), and the smallest computed text is **12px**. The worst text pair is **5.61:1** in light
+  (all text passes in dark too), and the target census is unchanged: the same 1 × 1 radios, the 24 × 24 checkbox whose label
+  is 44, the inline links in sentences, and the mouse's 36–40px rows at 1,440.
+- Print at 794: the home page is **11,840** unchanged and pricing **9,994 → 10,017**; every page is 0px over. Without a
+  script at 360: home **12,581** and pricing **12,249**, unchanged. At a 24px root every page is 0px over at 320, 360 and
+  720; at 32px the pricing page's recorded debt is unchanged (**40px over at 320, 20 at 360**). Dark at 360 and 1,440 is
+  the height it is in light.
+- The site's own suites — `site`, `site-chrome`, `site-copy`, `site-pricing`, `site-script`, `site-cloud`,
+  `site-cloud-state`, `site-pages`, `ui-kit-tokens`, `brand-assets`, `no-mojibake`, `docs-links` — are **168** tests, all
+  passing. `site-chrome --check` and `build-brand --check` are clean. `npm run site:check` still exits 1 on the owner's
+  `TODO(owner)` for the terms at `site/legal/index.html:134`, as the earlier passes recorded.
+
+### What this pass deliberately left
+
+- **The pricing page is 68px taller at 1,440 and 22px at 768** for the two notes' measure. That is the price of a line a
+  reader can follow; at 360 and 320 the page does not move.
+- **The model table's note is still 1,120px wide (153 characters on its one line)**: it is inside the exporter's
+  `run-costs` block, so moving it out is a change to the exporter, not a hand edit of a generated block.
+- **The footer's legal block is still 960px wide (about 134 characters a line)** and the FAQ's answers 46rem (about 87),
+  both as the footer and FAQ passes measured them. They are the same kind of prose, but neither is the price, and a
+  narrower footer or answer is a change to those surfaces, not to this one.
+- **The plate's crop still cuts the mission's title at its right edge** ("Build and ship a small idempotent payment e…"), as
+  the crop before it did; the whole capture is one press through the caption's Full size link.
+- **The plans chooser still changes the page's height when another plan is chosen** (Community 730.64, Team 624.55,
+  Business 749.44, Enterprise 658.64 at 360) because the card is the chosen plan, not a shared cell. The six console views
+  share one cell; the plans do not.
+- **The 32px-root pricing debt is unchanged** (40px over at 320, 20 at 360); this pass adds no overflow, and the 24px case
+  is 0.
+- **No capture was retaken**, `site/ux/` was not edited, and Curule Cloud's prices are still in the app.
