@@ -35,10 +35,12 @@ test("one \"Latest of each name\" switch, with the other filters, at every width
 });
 
 test("the phone filter block shares the search's row while the two fit", () => {
-  // At 360 the search is 220.5 px, the counted button 103.5 px and the gap 12: 336 px, so the button no longer owns a second
-  // 44 px row and the first group begins at 229.6 instead of 281.6. At 320 the search keeps the line (296 px) and the button takes
-  // the next, as before. The fold itself is unchanged: the panel is still one full-width column under both.
-  assert.match(css, /\.files-bar \.srch \{ flex: 1 1 220px; min-width: 200px; \}/, "the search takes a 220px basis and gives way to the button");
+  // At 360 the new 200 px basis plus the counted button (105 px) and the 12 px gap is 317 in 336, so the line has 19 px of
+  // slack; the search then grows to 219. The old 220 px basis had 337 in 336 — under a pixel over, and a wrapped flex container
+  // breaks before it shrinks, so the bar took two rows (96 px) and the first group began 52 px lower. At 320 the search keeps the
+  // line (296 px) and the button takes the next, as before. The fold itself is unchanged: the panel is still one full-width column
+  // under both.
+  assert.match(css, /\.files-bar \.srch \{ flex: 1 1 200px; min-width: 200px; \}/, "the search takes a 200px basis, which leaves the row room for a real button label");
   assert.match(css, /@media \(max-width: 620px\)[\s\S]*?\.files-bar \.srch \{ max-width: none; \}/, "on a phone the search may grow into the row it shares");
   assert.match(css, /\.files-bar \.files-filters-toggle \{ flex: none; \}/, "the button keeps its own width so the search gives way");
   assert.match(css, /\.files-filters \{[^}]*display: grid/, "the folded controls stack in one column");
