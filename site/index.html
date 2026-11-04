@@ -10,7 +10,7 @@
 <link rel="apple-touch-icon" href="assets/apple-touch-icon.png">
 <meta name="theme-color" content="#fbfaf8" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#131211" media="(prefers-color-scheme: dark)">
-<link rel="stylesheet" href="assets/site.css?v=bc77a8d930">
+<link rel="stylesheet" href="assets/site.css?v=fe770a271a">
 <meta property="og:type" content="website">
 <link rel="canonical" href="https://curule.dev/">
 <meta property="og:url" content="https://curule.dev/">
@@ -204,17 +204,24 @@
       <h2 class="title">What you see while it runs.</h2>
       <p class="lede">The console is a set of views of one event log. These are captures of the scripted demo, not mockups.</p>
     </div>
-    <p class="small muted tiles-hint">Six views. Swipe or scroll sideways; every capture opens at full size.</p>
-    <nav class="row-index" aria-label="Jump to a view">
-      <ol>
-        <li><a href="#view-overview" aria-label="View 01, Mission control">01</a></li>
-        <li><a href="#view-events" aria-label="View 02, Live events">02</a></li>
-        <li><a href="#view-steps" aria-label="View 03, Per-turn ledger">03</a></li>
-        <li><a href="#view-designer" aria-label="View 04, Team designer">04</a></li>
-        <li><a href="#view-cost" aria-label="View 05, Cost and budgets">05</a></li>
-        <li><a href="#view-approvals" aria-label="View 06, Approvals">06</a></li>
-      </ol>
-    </nav>
+    <fieldset class="view-choice">
+      <legend class="sr">Choose a view</legend>
+      <div class="view-choice-grid">
+        <input class="view-input" type="radio" name="view-tile" id="show-overview" checked>
+        <label for="show-overview"><span class="view-n">01</span> Mission control</label>
+        <input class="view-input" type="radio" name="view-tile" id="show-events">
+        <label for="show-events"><span class="view-n">02</span> Live events</label>
+        <input class="view-input" type="radio" name="view-tile" id="show-steps">
+        <label for="show-steps"><span class="view-n">03</span> Per-turn ledger</label>
+        <input class="view-input" type="radio" name="view-tile" id="show-designer">
+        <label for="show-designer"><span class="view-n">04</span> Team designer</label>
+        <input class="view-input" type="radio" name="view-tile" id="show-cost">
+        <label for="show-cost"><span class="view-n">05</span> Cost and budgets</label>
+        <input class="view-input" type="radio" name="view-tile" id="show-approvals">
+        <label for="show-approvals"><span class="view-n">06</span> Approvals</label>
+      </div>
+    </fieldset>
+    <p class="small muted tiles-hint">Six views. Choose one; every capture opens at full size.</p>
     <ul class="tiles">
       <li class="tile" id="view-overview">
         <figure class="frame"><img src="assets/shots/shot-tile-overview.jpg" width="720" height="450" loading="lazy" alt="Mission control: the Delivered card with the goal and four actions (open the files, reopen with feedback, what it cost, replay), then seven of seven checks evidenced, how long it ran from creation to delivery, tokens against the 2.0M budget, and the seven agents, none working."></figure>
@@ -509,6 +516,6 @@ docker build -t curule .</code></pre></div>
   </div>
 </footer>
 <!-- generated:chrome-footer:end -->
-<script src="assets/site.js?v=bd1f874271" defer></script>
+<script src="assets/site.js?v=77d7a7423a" defer></script>
 </body>
 </html>

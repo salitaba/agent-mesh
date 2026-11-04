@@ -206,6 +206,11 @@ main:has(.hero) .section-head .eyebrow::before { counter-increment: sec; content
 .menu-icon { position: relative; width: 16px; height: 12px; border-block: 2px solid currentColor; }
 .menu-icon::before { content: ""; position: absolute; left: 0; right: 0; top: 50%; height: 2px; margin-top: -1px; border-radius: 1px; background: currentColor; }
 .menu-panel { position: absolute; left: var(--gutter); right: var(--gutter); top: calc(100% + 4px); padding: 6px; border: 1px solid var(--line); border-radius: var(--k-r-lg); background: var(--panel); box-shadow: var(--k-hl), var(--k-shadow-3); }
+/* A closed menu is not laid out. Chrome's closed <details> already hides its contents from the reader, but it leaves their
+   boxes in the layout tree: at 360 the six links measured 93.7px wide from x=323 to 416.7, so a text-only probe reported
+   the page's menu as six links past the viewport (opened, the panel is 16–344 and every link is inside it). `display: none`
+   says the same thing the closed state means, and the panel is the same when it opens. */
+.menu:not([open]) .menu-panel { display: none; }
 .menu-panel nav { display: grid; }
 .menu-panel a { display: flex; align-items: center; min-height: 48px; padding: 0 14px; border-radius: var(--k-r-md); color: var(--ink2); font-size: 1rem; font-weight: 500; text-decoration: none; }
 .menu-panel a:hover { background: var(--panel2); color: var(--ink); }
@@ -324,6 +329,12 @@ main:has(.hero) .section-head .eyebrow::before { counter-increment: sec; content
 
 /* the product frame, and the choice of view */
 .frame { margin: 0; overflow: hidden; border: 1px solid var(--line2); border-radius: var(--k-r-lg); background: var(--panel); box-shadow: var(--k-hl), var(--k-shadow-2); }
+/* A capture is a control, and a control's edge is a boundary: the plate and the graph are one press across the frame
+   (their Full size link covers it), and a view card is one press across the card. The frame's decorative line was
+   #d3cdc2 at 1.52:1 on the page's paper and the card's #e4e0d9 at 1.21:1 on the band, so the thing a thumb presses had no
+   edge a thumb could see. They take the control line (3.92:1 and 3.75:1 at rest); the mini frame inside a view card is
+   chrome and keeps the decorative line. */
+.frame:has(.shot-open), .tile { border-color: var(--k-line-control); }
 .frame-bar { display: flex; align-items: center; gap: 6px; height: 44px; padding: 0 16px; border-bottom: 1px solid var(--line); background: var(--panel2); box-shadow: var(--k-hl); }
 .frame-bar i { flex: none; width: 10px; height: 10px; border-radius: 50%; background: var(--line2); }
 /* The address and the full-size chip share the bar with the lights. The address was pinned to the bar's own centre and the
@@ -397,6 +408,9 @@ main:has(.hero) .section-head .eyebrow::before { counter-increment: sec; content
    missing page. Explanatory prose is a ruled entry: a top rule, a mark, a title and words, with no
    panel around it. */
 .way, .plan, .doc-card, .start, .glance, .result, .tile, .teaser, .addresses, .nf-list a { border: 1px solid var(--line); border-radius: var(--k-r-lg); background: var(--panel); box-shadow: var(--lift); }
+/* A view card is one press across its surface, so its edge is a control's boundary too (the frame rule above). It is set
+   here, after the surface rule, because the shorthand there would otherwise take the decorative line back. */
+.tile { border-color: var(--k-line-control); }
 /* A card a link points at says so inside its border: it does not move. */
 .doc-card:target, .plan:target { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
 .card { display: flex; flex-direction: column; padding: 20px 0 0; border-top: 1px solid var(--line2); }
@@ -486,29 +500,42 @@ main:has(.hero) .section-head .eyebrow::before { counter-increment: sec; content
 }
 
 /* what you see: every view in a frame of one size, so a retaken picture drops in. On a phone the
-   six views are one snap row with the next one showing, not six screens of scroll. */
-/* The six views are one snap row on a phone; this is its page index: six 44px tabs that also
-   jump to a card, so a reader can reach the last view without five swipes. It is not shown where
-   the cards are a grid and every one is already on screen. At a reader's 32px text a tab is 51.4px
-   wide and the six need 328.4px of a 320 phone's 288: the row takes a second line instead of the
-   page taking a sideways scroll. At 16px the six are 284px and stay one line. */
-.row-index { display: none; }
+   six views are one card at a time, chosen by number and name: the row was six cards in a sideways
+   scroller (309px each, 1,933px of row) and a probe could not follow it, so five captures stood
+   outside the viewport behind an ancestor that clips. A chooser is the pattern the plans already
+   use on this site: radios and CSS, so it works with no script, and the card below is the view
+   chosen. From 720px the cards fit two by two and the six are a grid again. The six labels are
+   161 × 44 at 360 and 141 × 44 at 320, and the chosen one is a dot, a rule and a tint. */
+.view-choice { display: none; }
+.view-input { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
 @media (max-width: 719px) {
-  .row-index { display: block; margin: -4px 0 12px; }
-  .row-index ol { display: flex; flex-wrap: wrap; gap: 4px; list-style: none; }
-  .row-index a { display: inline-flex; align-items: center; justify-content: center; min-width: 44px; min-height: 44px; padding: 0 8px; border: 1px solid var(--line); border-radius: var(--k-r-sm); background: var(--panel); color: var(--ink2); font-size: .75rem; font-weight: 600; text-decoration: none; font-variant-numeric: tabular-nums; }
-  .row-index a:hover { border-color: var(--k-line-control); color: var(--link); }
-  /* The view the row is showing: a tint, a border and a line under the number, so it is not colour alone. */
-  .row-index a[aria-current="true"] { border-color: color-mix(in srgb, var(--accent) 40%, transparent); background: var(--soft); color: var(--link); text-decoration: underline; text-underline-offset: .2em; }
+  .view-choice { display: block; min-width: 0; margin: 0 0 12px; padding: 0; border: 0; }
+  .view-choice-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+  .view-choice label { display: flex; align-items: center; gap: 8px; min-height: 44px; padding: 0 10px; border: 1px solid var(--k-line-control); border-radius: var(--k-r-sm); background: var(--panel); color: var(--ink2); font-size: 13px; font-weight: 600; line-height: 1.25; overflow-wrap: anywhere; cursor: pointer; }
+  /* The label keeps its 13px layout size and the number its 12px, as the bar's chips and the header's controls do: at a 32px
+     user default the label grew to 26px, "Approvals" could not break in a 161px chip, and the page was 25px wider than a
+     360px window. The floor is respected (12px) and the chip stays 44px at every text size. */
+  .view-n { color: var(--muted); font-size: 12px; font-weight: 600; letter-spacing: .04em; font-variant-numeric: tabular-nums; }
+  /* The chosen view is a dot, a rule and a tint, so it is not colour alone, and the rule survives High Contrast. */
+  .view-input:checked + label { border-color: var(--accent); background: var(--soft); color: var(--link); box-shadow: inset 0 0 0 1px var(--accent); }
+  .view-input:checked + label .view-n { color: var(--link); }
+  .view-input:checked + label .view-n::before { content: ""; display: inline-block; width: 6px; height: 6px; margin-right: 6px; border-radius: 50%; background: currentColor; vertical-align: middle; }
+  .view-input:focus-visible + label { outline: 2px solid var(--accent); outline-offset: 2px; }
+  /* One card is the page's card: the six share one grid cell and the chosen one is visible, so the row's height is its
+     tallest view and switching one moves nothing below the section. Nothing is clipped and no capture is off the page. */
+  .tiles { display: grid; grid-template-columns: minmax(0, 1fr); margin: 0; padding: 0; }
+  .tiles > .tile { grid-area: 1 / 1; visibility: hidden; }
+  body:has(#show-overview:checked) #view-overview,
+  body:has(#show-events:checked) #view-events,
+  body:has(#show-steps:checked) #view-steps,
+  body:has(#show-designer:checked) #view-designer,
+  body:has(#show-cost:checked) #view-cost,
+  body:has(#show-approvals:checked) #view-approvals { visibility: visible; }
 }
 .tiles { gap: 20px; }
 @media (min-width: 720px) { .tiles { grid-template-columns: var(--c2); gap: 24px; } }
 .tiles-hint { display: none; }
-@media (max-width: 719px) {
-  .tiles-hint { display: block; margin: 0 0 12px; }
-  .tiles { grid-template-columns: none; grid-auto-flow: column; grid-auto-columns: min(86vw, 340px); gap: 12px; margin-inline: calc(-1 * var(--gutter)); padding: 0 var(--gutter) 12px; overflow-x: auto; scroll-snap-type: x proximity; scroll-padding-inline: var(--gutter); }
-  .tiles > .tile { scroll-snap-align: start; }
-}
+@media (max-width: 719px) { .tiles-hint { display: block; margin: 0 0 12px; } }
 /* A view card is the door its Full size link names. At 360 the card was 460.17 and the link under
    the picture 74.97 × 44 (2.3% of it); a press 40px into the 285.59 × 178.48 picture did nothing,
    though the whole card lifts under the pointer. The link is the card's own action row now, full
@@ -1127,8 +1154,9 @@ body:has(#billing-monthly:checked) .head-price-monthly { display: inline; }
   /* The chosen plan's dot is a background too, and its tint goes: the rule around the label is the mark that stays. */
   .choice-input:checked + label { outline: 2px solid Highlight; outline-offset: -2px; }
   .choice-input:checked + label .choice-name::before { forced-color-adjust: none; background: Highlight; }
-  /* The view the row is showing: its tint and colour go, so its line and its rule stay. */
-  .row-index a[aria-current="true"] { outline: 2px solid Highlight; outline-offset: -2px; }
+  /* The chosen view's tint and colour go, so its rule and its dot stay. */
+  .view-input:checked + label { outline: 2px solid Highlight; outline-offset: -2px; }
+  .view-input:checked + label .view-n::before { forced-color-adjust: none; background: Highlight; }
   /* The row's edge shadow is a background; a forced-colour mode cannot fade the system's ink, so the edge is a 2px line
      instead (a 28px gradient of CanvasText was a black band over the last chip). */
   .toc-bar.is-back::before, .toc-bar.is-more::after { forced-color-adjust: none; width: 2px; background: CanvasText; }
@@ -1159,6 +1187,9 @@ body:has(#billing-monthly:checked) .head-price-monthly { display: inline; }
   .head-price-annual, .head-price-monthly { display: block !important; }
   /* A printed page has no swipe: the rows and the table are laid out, not scrolled. */
   .tiles, .plans { display: grid; grid-template-columns: var(--c2); grid-auto-flow: row; gap: 16px; margin-inline: 0; padding: 0; overflow: visible; }
+  /* A sheet has no chooser and can show all six views, not the one chosen on screen. */
+  .view-choice { display: none; }
+  .tiles > .tile { display: flex !important; visibility: visible !important; grid-area: auto; }
   .table-wrap { overflow: visible; }
   .compare { min-width: 0; }
   /* The plate is a crop of the capture on a screen; a printed page has room for the whole picture. */
