@@ -66,7 +66,7 @@ test("the phone floor names every control family that was measured under 44 px",
 test("glyph-only controls get a 44 px square, not only a tall strip", () => {
   const selector = selectorsFor(/min-width:\s*44px/);
   assert.ok(selector, "a phone rule sets a 44 px minimum width");
-  for (const s of [".pj-home", ".ptab-x", ".ptab-add", ".agent-open", ".icon-btn", ".close-x", ".palette-x", ".toast-x", ".copy-btn.compact", ".srch-clear"]) {
+  for (const s of [".pj-home", ".ptab-x", ".ptab-add", ".agent-open", ".icon-btn", ".close-x", ".palette-x", ".toast-x", ".copy-btn.compact", ".srch-clear", ".menu-btn"]) {
     assert.ok(selector.includes(s), `the 44 px minimum width covers ${s}`);
   }
 });

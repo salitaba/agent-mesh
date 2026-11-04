@@ -135,6 +135,21 @@ details.ov-note { display: block; }
 .ov-ad-body p { margin: 0; }
 .ov-ad.plain { min-height: 28px; padding-top: var(--s1); font-size: 14px; }
 .ov-fix { align-self: start; margin-top: var(--s0); white-space: nowrap; }
+/* The row is the width the card gives it, and on a phone the sentence takes it. The action was a 145 px control beside the line,
+   which left the line 66 px wide at 320 (310 px tall, one word or two a line), 94 at 360 and 123 at 390: the card was 400 px tall
+   at 320 for one sentence, and the rows under it were pushed a screen down. Below a 420 px card the line gets the row and the fix
+   follows it, which is the shape every other phone row in this page uses. One condition's head is what the hero above already said
+   ("1 decision is still waiting on you"), so it is read but not drawn; a list keeps it. Measured on one delivered mission with one
+   card waiting: at 360 card 232 → 139, line 94 × 142 → 231 × 58, page 1,102 → 1,009; at 320 400 → 139 and 1,270 → 1,009; at 390
+   211 → 139 and 1,090 → 1,018. 560 and 620 do not stack (their line is 282 / 347 px) and lose only the card's 8 px of phone
+   padding; 1,440 is unchanged. */
+.ov-attn { container-type: inline-size; }
+@container (max-width: 420px) {
+  .ov-attn li { grid-template-columns: 28px minmax(0, 1fr); row-gap: var(--s1-5); }
+  .ov-attn li > .ov-ad { padding-top: 0; }
+  .ov-attn li > .ov-fix { grid-column: 2; justify-self: end; margin-top: 0; }
+  .ov-attn.single .card-head { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+}
 
 /* ---------- the result ---------- */
 .ov-files { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: var(--s3); margin: 0; padding: 0; list-style: none; }
@@ -404,6 +419,9 @@ details.ov-note { display: block; }
   .ov .ov-note.disc { padding-block: 0; }
   .ov .ov-note.disc > .ov-note-body { padding-block: var(--s2) var(--s3-5); }
   .ov .ov-ad > summary::before { margin-top: 0; }
+  /* The attention card is a band on a phone, not a 16 px-padded card: its sentence and its fix are the content. Measured with
+     the stacked row, 12 px of block padding keeps the fix whole above the 747 px dock at 360 and 390 (744.7 at 390). */
+  .ov-attn { padding-block: var(--s3); }
   .ov .ov-ev .chip { min-height: 44px; padding: 0 var(--s3); }
 }
 
