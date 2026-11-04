@@ -3292,3 +3292,112 @@ below, and one paid account held by a `/api/me` answer of its own (a Team plan, 
 - The 320 first screen: the rail's third row is 46px of it, and the sentence's three lines another 77.
 - The skeleton's shape for the plan-less account, if a first paint may wait for the plans rather than the account.
 - The cancelled-checkout notice: 98px at 360 for a sentence a customer needs once.
+
+## 2026-11-04: the row that fits, the answer at the field, and the bill that said itself twice
+
+Same harness: Chromium 156.0.8078.47 through `playwright-core` 1.64 over CDP (the workspace image's browser) against this
+worktree's trial (`trial --port 7840`, whose plans are the trial's own fixtures), 320 / 360 / 390 / 768 / 1440 in light,
+320 / 360 / 1440 in dark, `prefers-reduced-motion: reduce`, a touch pointer below 721. "Before" is the base commit's own
+pages on the same trial and the same fixtures: a Team account with one running workspace named Research, `$10.00`
+available and an empty usage table; a fresh account with no plan; the same paid account with `/api/me` held to an empty
+workspace list; a sign-in refusal with the address then cleared; and `/api/plans` held to one annual plan. The refused
+frames were served from the base commit's own `account.html`, `login.html`, `app.css` and `app.js` through a proxy in
+front of the trial, so the two halves are the same browser and the same answers. Heights are
+`document.documentElement.scrollHeight`; positions are `getBoundingClientRect` plus `scrollY`; names are
+`document.activeElement`.
+
+- **The account's two rows of actions fit one line on a 320 phone.** At 320 the record's line is 278px: `Open` (92.8) +
+  `Pause` (75.7) + `More` (94.2) and two 8px gaps are **278.7**, so `More` fell to a second row and the actions were
+  **100px**; the plan's row had `Manage billing` (130.1) + `Change plan` (137.3) and a 12px gap, **279.4** in the same 278,
+  so both took two rows. The 320 phone's button rows take the space scale's smallest step, 4px: the record's actions are
+  **100 → 48** (one line, at x = 16 / 112.8 / 192.5), the plan's **100 → 44** (x = 16 and 150.1), the plan panel
+  **326.3 → 270.3**, the record **358.4 → 306.4** and the page **2,103 → 1,890**. The plan and balance summary moves
+  from **807.1** to **755.1**, so its first row and its figure (**760.1–796.1**) are on a 320 × 800 screen where before the
+  summary began below it. At 360 and 390 the rows keep their 8 and 12px gaps and nothing moves.
+- **An empty bill is not said twice.** The Usage panel's standing sentence — what the calls are and that their text is not
+  kept — sat above the empty entry that already says what would be here and why it is not. It is hidden when the read
+  answers **0 calls** and stays on a failed read and on a bill with calls: the panel is **265.8 → 160.3** at 320,
+  **221 → 137.9** at 360 and **198.7 → 137.9** at 768 and 1,440, the account **1,883 → 1,800** at 360 and
+  **1,990 → 1,929** at 1,440, and Settings begins at **1,704.2 → 1,621** and **1,810.9 → 1,750.1**. The empty entry
+  itself is unchanged at 99px, and a read that fails still draws the sentence.
+- **A new workspace's empty name is refused at the field it names.** The sentence went into `#create-note` under the
+  form: at 360 it was at **y = 703**, **225px below the input** (bottom 478) and 12px below the button, while the cursor
+  went back to the field. It is `#create-name-error` inside the field now, **8px under the input**, and `#create-note`
+  stays for the plan's hint, a service refusal and the read-back: the sentence is at **486**, `aria-describedby` reads
+  **create-name-error** (was `create-note`), the cursor is still in the field, and the note's 50px and the field's 8px gap
+  move the button **643 → 701** (the page is **1,799 → 1,795**, the old note having taken its own 12px above it). Typing
+  one character clears the sentence and the mark, and a form that is no longer asking for a name (the plan is full)
+  clears the mark with it.
+- **A resend with no address says which field to fill.** After a refused sign-in the page offers `Send a new link`; with
+  the address cleared the button did nothing at all — **no sentence anywhere**, the cursor still on the button, the page
+  **1,476px**. It now goes through `invalid()`: **"Enter your email address."** at y = 435, 50px at 360, the cursor in the
+  email field, `aria-invalid="true"`, the page **1,476 → 1,534**, and **0** `POST /api/verify/resend`. Typing clears it.
+- **The step of choosing a plan names no period.** The sentence said "A plan is a flat **monthly** price for your
+  account…" while a plan the service sells by the year is on the same page: with one annual plan held, the card's price
+  read **$1,490.00 per year** and the sentence still promised a month. It reads **"A plan is one flat price for its own
+  period, and it says how many workspaces you may run at once."**; with the annual plan the lede and the live
+  announcement now say "its own period", the page is **1,399px** in both halves, and the plan-less page at 16px is
+  **1,423** before and after (the shorter clause happens to take the same lines at 320, 360 and 1,440).
+  `pages-stage.test.ts` now also rejects a period word in that sentence.
+- **The Plan contents link is a finger's width at 390.** At 390 the five labels with the 13px type leave `Plan` at
+  **40.5 × 44**; the 44px minimum is the line's own rule now, so it is **44 × 44** and the row is 322.4 of the 348 that
+  width has. At 320 and 360 the link was already 44 and the row does not move.
+- **Widths, schemes and the floor.** 320 / 360 / 390 / 768 / 1,440 in light, 320 / 360 / 1,440 in dark, and the two
+  refused frames at 360: no sideways page scroll (320: 320; 360: 360; 390: 390; 768: 768; 1,440: 1,440), nothing computes
+  below **12px**, no control under 44 × 44 below 721, and **14 axe-core runs** (the paid account at five widths, three in
+  dark, the plan-less account at three, the refused create form, the refused resend and forced colours at 360) find **no
+  violation**. Forced colours draws the empty bill's rule and the refusals' notes as the system's own, and is the same
+  **1,800px** page with no overflow. The pass changes no colour: the measured pairs are ink on the page **16.49:1** light
+  and **15.87:1** dark, muted on the page **6.58 / 7.64**, `--k-accent-ink` on the page **6.83 / 9.56**, the neutral
+  button's edge **4.08 on a card / 3.92 on the page** and **3.75 / 4.04** in dark, and the new refusals' ink on their bad
+  tint **15.23 / 13.24** on a card.
+- **The budget.** `app.css` is **40,937 → 40,955 bytes of 40,960** (the test's budget is 40 × 1024; **5 bytes remain**).
+  The 4px row gap costs 29 bytes and the line's own `min-width` replaces the narrow rule's copy (net 0); the `.section-head
+  h2` rule gave back its `margin: 0`, which the global heading rule already sets (−11).
+- **Tests.** `dist/tests/cloud/pages*.test.js` and the three page-related build tests — **51 pass, 0 fail**; the cloud
+  suite (`node --test "dist/tests/cloud/*.test.js"`) — **886 pass, 0 fail**; typecheck, build and
+  `node scripts/build-brand.mjs --check` clean; lint 0 errors (its 211 pre-existing warnings). `pages-app.test.ts` pins
+  the field's sentence, its `aria-describedby` and its clearing, the empty bill's hidden sentence and the billed one's
+  shown sentence, and the resend's sentence, cursor and zero request; `pages.test.ts` pins the 320 gap and the line's
+  `min-width`; `pages-stage.test.ts` holds the sentence that names no period.
+
+| measured | before | after |
+| --- | --- | --- |
+| The workspace's actions at 320 | 278 × **100px**, `More` alone on a second row | **278 × 48**, one row |
+| The plan's actions at 320 | 278 × **100**, two rows | **278 × 44**, one |
+| The record / the plan panel at 320 | 358.4 / 326.3px | **306.4 / 270.3** |
+| The account at 320 | 2,103px | **1,890** |
+| … at 360 / 390 | 1,883 / 1,861 | **1,800 / 1,778** |
+| … at 768 / 1,440 | 1,976 / 1,990 | **1,915 / 1,929** |
+| The glance at 320 | 807.1px (below an 800 screen) | **755.1**; its figure 760.1–796.1 |
+| The Usage panel at 320 / 360 / 1,440 | 265.8 / 221 / 198.7px | **160.3 / 137.9 / 137.9** |
+| Settings begins at 360 / 1,440 | 1,704.2 / 1,810.9 | **1,621 / 1,750.1** |
+| A create refusal's sentence | y = 703, 225px under the input, `#create-note` | **y = 486, 8px under it, `#create-name-error`** |
+| … the form's page | 1,799px | **1,795** |
+| A resend with no address | no sentence, cursor on the button, 1,476px | **"Enter your email address." at 435, cursor in the field, 1,534** |
+| An annual plan's step sentence | "a flat **monthly** price" beside "$1,490.00 per **year**" | **"one flat price for its own period"** |
+| The Plan contents link at 390 | 40.5 × 44 | **44 × 44** |
+| `app.css` | 40,937 bytes | **40,955** |
+
+### What this pass leaves
+
+- **A cancelled checkout's notice still costs the first screen.** Its 98px at 360 puts the first plan's `Choose Team` at
+  **874–918**, 74px below an 800px screen (measured again today on this fixture). Folding "nothing was charged" into the
+  plan section's own sentence is the next drawing: the notice is the page's only status, and a shorter notice still
+  leaves the button below the screen.
+- **The 320 phone's plan-less first screen is still short.** `02 Plans` begins at 247 and the rail takes three rows
+  (82px), the sentence 77; the first `Choose Team` is at **806–850** at 320 and **776–820** at 360, measured today, 20px
+  below an 800px screen even at 360. The pass made the paid account's first screen at 320 show its summary; it did not
+  move the plan-less one.
+- **The usage read's rate limit, the key form's height, the prose-only 18–19px links and the sticky header over a target
+  at a hand-chosen scroll are unchanged.** They are the earlier entries.
+- **The skeleton still draws a shape the plan-less page does not have**, and the empty bill's entry is the script's, as
+  before. Nothing was added for the checkout stand-in.
+
+### Next pass
+
+- The cancelled checkout: a sentence in the plan section instead of 98px above it, and the first plan's button on the
+  first screen at 360.
+- The 320 plan-less rail: three rows for four stops is 82px, and the first plan's button is 806–850 at 320 and 776–820 at
+  360.
+- A real usage table with a model key behind it, to see the empty sentence's hiding with a bill that has rows.
