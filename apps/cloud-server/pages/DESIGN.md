@@ -3068,3 +3068,116 @@ heights are `document.documentElement.scrollHeight`, positions are `getBoundingC
   `pages-app.test.ts` (92 tests) rather than by a screenshot.
 - **The reset and confirmation pages' failures are unchanged.** They already quote the service's reason
   and were not part of this measurement.
+
+## 2026-11-04: the edge of a button, the row at 320, and the answer at the key
+
+Same harness: Chromium 156.0.8078.4 through `playwright-core` (the workspace image's browser) against this
+worktree's trial (`trial --port 7560`), 320 / 360 / 768 / 1440, light and dark, forced colours at 320, the root
+raised to 32px at 320 and 360, `prefers-reduced-motion: reduce`, a touch pointer below 721, and axe-core 4.14
+over the account and the way-in pages. "Before" is the base commit's own page files served by the same trial,
+measured in the same session as the after: a Team account at $149.00 a month with one running workspace named
+Research, an empty usage table (`/api/usage` held to one empty answer in both halves, because the trial's
+60-reads-an-hour limit was met during the pass), a fresh account with no plan, and a hosting-only missing-key
+account held by request interception. Heights are `document.documentElement.scrollHeight`; positions are
+`getBoundingClientRect` plus `scrollY`; names are `document.activeElement`.
+
+- **A secondary button has a control's edge.** The neutral `.btn` was a white fill on the page's paper — 1.0:1
+  against the page — with a `--k-line-strong` hairline: **1.52:1** on the page and **1.58:1** on a card in
+  light, **1.87 / 1.74** in dark. The edge is the whole boundary of that control, and WCAG 1.4.11 asks 3:1. It
+  is `--k-line-control` now, the token the kit's own test already holds above 3:1: **4.08:1** on a card and
+  **3.92** on the page in light, **3.75 / 4.04** in dark. Every neutral button on every page changes: Pause,
+  Manage billing, Send a new link, Pay, the plan switches and the legal pages' doors. Primary, ghost and quiet
+  buttons keep no border, because their fill or their text is what the eye reads. Hover takes the edge to the
+  ink, so the state is a change of weight rather than a colour that only exists under a mouse.
+- **The account's contents line is one row on a 320 phone.** The five names and their padding were **316.8px
+  in the 288px** a 320 page has, so Settings took a second row: the strip was **87px (two rows)** and the page
+  **2,147px**. Below 360 the side padding goes and four 1px rules separate the names: **279.1 + 4 = 283.1px in
+  288**, the strip is **44px (one row)**, and the page is **2,104px** (−43). Each name is still a **44 × 44**
+  target: Workspaces 81.19, Plan 44, Usage 44, Balance 54.25 and Settings 57.66 wide, ending at x = 297 on a
+  320 page. At 360 the 4px padding stays and nothing moves (44px, 1 row, 1,904px page). At 200% text the 320
+  strip is also **87 → 44** and the page **4,087 → 4,044**; at 360/200% it stays 87 (two rows) and 3,928.
+- **A key's refusal is said at the field it names.** The key form had one status line after the form: pressing
+  **Save key** with no model put "Name the model your teams should run on…" at **y = 1,218.5**, **384.7px below
+  the model input** (y = 833.8) and **139px below the button** (y = 1,079.4), while the cursor jumped back to
+  the field. The sentence is now in the field's own block (`key-model-note`, `key-base-note`,
+  `key-secret-note`): at 360 it is at **935.4**, **101.6px under the model** and above the button, and with the
+  browser's focus scroll the field is at 180.8, the sentence at 282.4 and Save key at 532.4 in a 900px screen.
+  The field carries `aria-describedby` to the sentence it is marked for, as every other form on the pages does.
+  The form's own line is still the place a service refusal and "Keeping it…" are said, and it is empty (and not
+  drawn) while a field has nothing to say. The tests pin the model, base and key refusals, the description and
+  the empty form line.
+- **The account's loading state stops offering the wrong door, and says what arrived.** While `/api/session`
+  was held for four seconds the bar offered **Plans and Sign in** to a customer who was about to be shown as
+  signed in; the page's live line said **"Loading your account."** and then nothing when the account arrived.
+  The account page now hides both session doors until the answer, so the loading bar is **Plans** only, and
+  `#stage-live` says what the card says when it first arrives: **"Research is running. Open it to describe your
+  team and start a mission."** (a plan-less account: "Choose a plan. A plan is a flat monthly price for your
+  account, and it says how many workspaces you may run at once. Choose one below and pay on the next page.").
+  The skeleton had three tiles for a glance that has had two facts since the Workspaces tile left it; it has
+  two now, **628 → 556px**, and the loading page **916 → 900**. The later announcements are unchanged, and a
+  look at the account still says nothing when the card says the same.
+- **A browser with no script is not offered a password form.** Settings was the one panel the markup showed
+  before the account was read, so with no script the page carried a `Current password`, `New password` and a
+  submit whose form has no action — a GET to `/account` with both passwords in the address. The panel is
+  `hidden` in the markup now and drawn by `renderAll`: with scripts off the account shows its `noscript`
+  sentence and no password controls; with a script nothing moves. The page is 900px either way.
+- **The sign-up tab names the action it shows.** Its title was "Start with an email and a password", the h1
+  the 2026-10-31 pass had already replaced with "Create your account"; the tab, the history entry and the
+  bookmark now say **"Create your account – Curule Cloud"**. A test holds every way-in page's tab to the h1.
+- **Widths, schemes and the floor.** 320 / 360 / 768 / 1440 in light and dark on the paid account, the
+  plan-less account at 320/360/1440, forced colours at 320, and 200% text at 320/360: no sideways page scroll
+  (320: 320; 360: 360; 768: 768; 1,440: 1,440), nothing computes below **12px** (12.16 at 320/200), no control
+  under 44 × 44 below 721 on the paid account (the fresh account's one measured row is the stage title, a
+  `tabindex="-1"` landing place, not a control), no console error, and **0 text-contrast failures** on the paid
+  account at every width and scheme. **12 axe-core runs** (account at 320/360/768, the key form with its refusal at 360, and sign-up, sign-in,
+  forgot, reset, verify, the 404, terms and privacy at 360) find **no violation**. Forced colours draws the
+  new rules on the 320 strip and the button edges in the system's own ink; the strip stays 44px and one row.
+- **The budget.** `app.css` is **40,933 → 40,945 bytes of 40,960** (a net **+12**, 15 left). The control edge
+  and the two strip rules cost about 260 bytes; the removed comments (the icon legend, the field-note line
+  and the base/meters/documents/motion section markers) and the shorter hover token paid
+  for them. The stylesheet is still one rule per line.
+- **Tests.** `node --test "dist/tests/**/*.test.js"` — **6,486 tests, 6,484 pass, 0 fail, 2 skipped**;
+  `dist/tests/cloud/pages*.test.js` — **188 pass, 0 fail**; `dist/tests/build/{brand-assets,ui-kit-tokens}.test.js`
+  — **12 pass, 0 fail**; typecheck and build clean; `npm run lint` 0 errors and its 211 pre-existing warnings.
+  New tests hold the button's control token, the 320 rules and the unchanged 360 padding, the two-tile
+  skeleton, the way-in tabs, the no-script Settings panel, the loading bar, the first announcement, and the
+  three key-field refusals with their descriptions.
+
+| measured | before | after |
+| --- | --- | --- |
+| A neutral button's edge, light card / page | **1.58 / 1.52:1** | **4.08 / 3.92:1** |
+| … dark card / page | **1.74 / 1.87:1** | **3.75 / 4.04:1** |
+| The account's contents line at 320 | **87px, 2 rows**, page 2,147 | **44px, 1 row**, page **2,104** |
+| … at 320 with 200% text | 87px, 2 rows, page 4,087 | **44px, 1 row**, page **4,044** |
+| … at 360 (normal and 200%) | 44px / 87px | **the same** |
+| The loading bar's visible links | **Plans, Sign in** | **Plans** |
+| The loading skeleton / the page | **628px, 3 tiles / 916** | **556px, 2 tiles / 900** |
+| `#stage-live` after a paid account arrives | **""** | **"Research is running. Open it to describe your team and start a mission."** |
+| The account with scripts off | Settings shown, two password fields and a submit in it | **no password form** |
+| A key refusal's sentence | y = 1,218.5, **384.7 below the model**, 139 below Save key | **y = 935.4, 101.6 below the model**, above Save key |
+| Save key while the refusal is shown | y = 1,079.4 | **1,185.4** (the sentence is above it) |
+| The sign-up tab | "Start with an email and a password – Curule Cloud" | **"Create your account – Curule Cloud"** |
+| `app.css` | 40,933 bytes | **40,945** |
+
+### What this pass leaves
+
+- **`Save key` is still below an 800px screen at 360, before a refusal.** The form is **493.5px** and the
+  record's own sentence is 128px of the 306.7px above it; the first screen reaches the Provider select and the
+  Model label, and the button is at y = 1,079.4. The fix is a shorter form — two fields to a row, or the hints
+  behind the field they belong to — not another card, and it is not this pass's drawing.
+- **The create form's refusal is still under the form.** An empty workspace name is marked on the field and
+  described by `#create-note`, but the sentence sits at y = 701.7, **268px below the name field** and 60px
+  below the button, because that line is also the plan-full hint and the read-back failure. Moving it would
+  need a second note and a new home for the form's own line; it is left as the 2026-10-26 record made it.
+- **The home page's hero still offers "Sign in" during its own session read.** The account's bar no longer
+  does, because the account cannot be shown without a session; the front page's first paint is a decision about
+  a cold visitor, and hiding both doors until the read answers would leave the hero without an action for a
+  stranger too.
+- **The 320 strip's rules are a phone's grammar.** At 360 the names keep their padding and no rules; at 390 and
+  wider the strip is unchanged. A reader who compares 320 and 360 sees two drawings of one line, which is the
+  price of fitting five names and five 44px targets into 288px.
+- **The key form's service refusal is still at the foot.** A refusal that comes back from the service (an
+  address on a private network, a key the provider rejects) is about the request, not one field, and stays in
+  the form's own line; a field refusal is the one this pass moved.
+- **The checkout stand-in, the prose-only 18–19px links, the usage read's rate limit and the key form's
+  height are unchanged.** They are the earlier entries.
