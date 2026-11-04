@@ -437,7 +437,7 @@ test("the plans' table has equal columns after the one that names the row, and a
   // A fixed layout takes its widths from the first row, which is the header row, so the first cell says how wide the names are.
   assert.match(css, /\n\.compare \{[^}]*table-layout: fixed;/);
   assert.match(css, /\n\.compare th:first-child \{ width: \d+%; \}/);
-  assert.match(css, /\n\.compare \.unit \{ display: block; \}/);
+  assert.match(css, /\n\.compare \.unit \{ display: block; font-size: \.8125rem; \}/, "the yearly total is a caption under the figure, at 13px, so it fits its cell at 720 and 768");
   const pricing = page(pages, "pricing/index.html").markup;
   const tables = [...pricing.matchAll(/<table class="compare">[\s\S]*?<\/table>/g)].map((m) => m[0]);
   assert.equal(tables.length, 2, "the plans, and the models the mission is priced at");
@@ -554,7 +554,7 @@ test("a block of commands has its label from the stylesheet and its button from 
 
 test("a segmented control has as many inputs as its thumb has steps: the tabs of the hero are three and the billing period is two", () => {
   const css = fs.readFileSync(path.join(SITE, "assets", "site.css"), "utf8");
-  assert.match(css, /\n\.tabs, \.billing \{ --n: 3;/);
+  assert.match(css, /\n\.tabs \{ --n: 3;/);
   assert.match(css, /\n\.billing \{ --n: 2;/);
   const home = page(pages, "index.html").markup;
   const pricing = page(pages, "pricing/index.html").markup;
@@ -562,9 +562,10 @@ test("a segmented control has as many inputs as its thumb has steps: the tabs of
   assert.equal((/<div class="tabs">[\s\S]*?<\/div>/.exec(home)![0].match(/<label\b/g) ?? []).length, 3, "a label for each");
   assert.equal((pricing.match(/class="billing-input"/g) ?? []).length, 2);
   assert.equal((/<div class="billing">[\s\S]*?<\/div>/.exec(pricing)![0].match(/<label\b/g) ?? []).length, 2);
-  // The thumb goes one step for each input after the first: two for the tabs' third, one for the billing's second.
-  assert.match(css, /\.tab-input:nth-of-type\(2\):checked ~ \.tabs::before, \.billing-input:nth-of-type\(2\):checked ~ \.billing::before \{ transform: translateX\(100%\); \}/);
-  assert.match(css, /\.tab-input:nth-of-type\(3\):checked ~ \.tabs::before \{ transform: translateX\(200%\); \}/);
+  // The thumb goes one step for each input after the first: two for the tabs' third, one for the billing's second. The tabs
+  // are inside the frame their radios choose, so the step is written against `.frame .tabs`.
+  assert.match(css, /\.tab-input:nth-of-type\(2\):checked ~ \.frame \.tabs::before, \.billing-input:nth-of-type\(2\):checked ~ \.billing::before \{ transform: translateX\(100%\); \}/);
+  assert.match(css, /\.tab-input:nth-of-type\(3\):checked ~ \.frame \.tabs::before \{ transform: translateX\(200%\); \}/);
 });
 
 test("the drawings of an idea are decorative: hidden from a screen reader, with no words of their own and no style attribute, one for each reason and each step", () => {
@@ -665,6 +666,10 @@ test("on a phone the four plans are one rate card read in rows, with how buying 
 test("explanatory prose is ruled, and a surface is kept for something a person acts on", () => {
   const css = fs.readFileSync(path.join(SITE, "assets", "site.css"), "utf8");
   assert.match(css, /\n\.way, \.plan, \.doc-card, \.start, \.glance, \.result, \.tile, \.teaser, \.addresses, \.nf-list a \{ border: 1px solid var\(--line\);[^}]*background: var\(--panel\);/, "the plans, starts, document cards, addresses and ways out keep their border");
+  // Two of those surfaces are one press across the whole card (the docs' Start here cards and the 404's ways), as a view
+  // card is: their border is the only edge that says where the target starts, so it is the control line, not the paper's.
+  assert.match(css, /\n\.start, \.nf-list a \{ border-color: var\(--k-line-control\); \}/, "a card that is one press takes a control's edge");
+  assert.match(css, /\n\.nf-list a:hover \{ border-color: var\(--k-line-control\);/, "and pointing at it does not take the visible edge back");
   assert.match(css, /\n\.card \{ display: flex; flex-direction: column; padding: 20px 0 0; border-top: 1px solid var\(--line2\); \}/, "a reason or a security answer is a ruled entry, not a panel");
   assert.ok(!/\n\.card, \.way/.test(css), "and it is not one of the border surfaces");
   // The phone does not spend a thousand pixels on drawings that repeat what the words say.
@@ -760,6 +765,9 @@ test("every capture has a named way to its full size, and a phone chooses one of
   assert.match(css, /\n\.view-choice \{ display: none; \}/, "the chooser is a phone's control");
   assert.match(css, /@media \(max-width: 719px\) \{\n  \.view-choice \{ display: block;/, "and is shown where it is used");
   assert.match(css, /\n  \.view-choice label \{[^}]*min-height: 44px;[^}]*border: 1px solid var\(--k-line-control\)/, "a chip is a thumb's height, with a control's edge");
+  // The number is one token: "05" broke into "0" and "5" in the 161px chip at 360 (and "01" in its own), because the span was
+  // a flex item that could shrink. The label's words may wrap; the two digits may not.
+  assert.match(css, /\n  \.view-n \{ flex: none;[^}]*white-space: nowrap; \}/, "the ledger number never breaks across two lines");
   assert.match(css, /\n  \.tiles > \.tile \{ grid-area: 1 \/ 1; visibility: hidden; \}/, "the six share one cell, so the row is as tall as its tallest view");
   for (const id of ["overview", "events", "steps", "designer", "cost", "approvals"]) assert.match(css, new RegExp(`body:has\\(#show-${id}:checked\\) #view-${id}`), `${id}: the chip shows its card`);
   assert.match(css, /\n  \.view-input:checked \+ label \{[^}]*box-shadow: inset 0 0 0 1px var\(--accent\)/, "the chosen view is a rule and a tint, not colour alone");
@@ -790,7 +798,10 @@ test("a capture is one press across its surface, not a chip beside it", () => {
   assert.match(css, /\n\.frame:has\(\.shot-open\), \.tile \{ border-color: var\(--k-line-control\); \}/, "a pressable capture's edge is the control line");
   assert.match(css, /\n\.tile \{ border-color: var\(--k-line-control\); \}/, "and the view card's, after the surface rule takes it back");
   assert.match(css, /\n\.frame:has\(\.shot-open\) \.shot-open::before,/, "the graph's and the plate's links share the cover");
-  assert.ok(!/\n\.frame-bar \{[^}]*position: relative/.test(css), "the plate's chrome is not the containing block");
+  assert.ok(!/\n\.frame-bar \{[^}]*position: relative/.test(css), "the plate's bar is not the containing block");
+  // The plate's bar is the view switcher now, so the one link's cover starts under it: a press on the capture opens it, and a
+  // press on Overview, Events or Designer switches it. Without the 50px offset the cover would swallow the three tabs.
+  assert.match(css, /\n\.hero-visual \.frame:has\(\.shot-open\) \.shot-open::before \{ top: 50px; \}/, "the cover begins under the bar, so the tabs stay pressable");
 });
 
 test("a place to start is one press across its card, not a 45.59px line inside it", () => {
@@ -815,21 +826,22 @@ test("a place to start is one press across its card, not a 45.59px line inside i
   assert.match(css, /\n\.start p a:not\(\.arrow-link\) \{ position: relative; \}/, "an inline link in the card's words stays above the cover, so no control is lost to it");
 });
 
-test("a caption is text: the graph's way to the full size is a line of it, and the figure is the target", () => {
+test("a caption is text: a capture's way to its full size is a line of it, and the figure is the target", () => {
   const home = page(pages, "index.html").html;
   const css = fs.readFileSync(path.join(SITE, "assets", "site.css"), "utf8");
-  // The one capture whose way to its full size is inside its caption: the plate's chip is in its chrome, and the six
-  // cards' links are rows of their own.
+  // The plate's three views and the graph end their captions with the link; the six cards' links are rows of their own.
   const captions = [...home.matchAll(/<figcaption>([\s\S]*?)<\/figcaption>/g)].map((m) => m[1]!);
   const withLink = captions.filter((c) => /class="shot-open"/.test(c));
-  assert.equal(withLink.length, 1, "one capture's way to its full size is in its caption");
-  assert.match(withLink[0]!, /^<b>Graph\.<\/b>[\s\S]*<a class="shot-open" href="assets\/shots\/shot-graph\.jpg" aria-label="Open the Graph capture at full size">Full size<\/a>$/, "the graph's caption is its words, then its link");
+  assert.equal(withLink.length, 4, "four captures put their way to the full size in the caption");
+  assert.match(withLink[0]!, /^<b>Overview\.<\/b>[\s\S]*<a class="shot-open" href="assets\/shots\/shot-overview-light\.jpg" aria-label="Open the Overview capture at full size">Full size<\/a>$/, "each of the plate's captions is its words, then its link");
+  for (const n of ["Events", "Designer"]) assert.ok(withLink.some((c) => c.includes(`<b>${n}.</b>`) && c.endsWith(`>Full size</a>`)), `${n}: the same shape`);
+  assert.match(withLink[3]!, /^<b>Graph\.<\/b>[\s\S]*<a class="shot-open" href="assets\/shots\/shot-graph\.jpg" aria-label="Open the Graph capture at full size">Full size<\/a>$/, "the graph's caption is its words, then its link");
   // A 44px link in a 13px caption made its last line 44px tall: at 360 the line above stood 31.75px from it in a
   // 19.5px caption, and the caption was 151px beside a 173px picture. The caption's link keeps the caption's line, and
   // the cover above is what a thumb presses (326 × 300 at 360), so no target is smaller for it.
   assert.match(css, /\n\.frame figcaption \.shot-open \{ min-height: 0; \}/, "a caption's link is a line of the caption");
-  assert.match(css, /\n\.shot-open \{[^}]*min-height: 44px;/, "every other way to the full size is a thumb's height");
-  assert.match(css, /\n\.frame-open \{ position: static;[^}]*height: 44px;/, "the plate's chip is 44px of its chrome");
+  assert.match(css, /\n\.shot-open \{[^}]*min-height: 44px;/, "the cards' rows are still a thumb's height");
+  assert.match(css, /\n\.frame-bar \{[^}]*height: 50px;/, "the plate's bar is the 50px row its three labels fill");
   assert.match(css, /\n\.tile \.tile-open \.shot-open \{[^}]*width: 100%;/, "the cards' rows are the cards' width");
   assert.match(css, /\n\.frame:has\(\.shot-open\) \.shot-open::before,\n\.tile \.shot-open::before \{ content: ""; position: absolute; inset: 0; \}/, "the figure, not the caption's line, is the press");
 });
@@ -1004,25 +1016,29 @@ test("the footer's index is three stacked groups of wrapped links on a narrow ph
 });
 
 /**
- * The plate's chrome holds the address the demo runs on and the way to the full-size capture in one 44px row. The address
- * was pinned to the bar's own centre and the chip to its right end, so at 320 the chip's cell began at 201.03 while the
- * 129.16px address ended at 224.58: its 1px rule crossed the address's last two characters, and "Full size" began 1.45px
- * after them (at 360 the pill was still 3.55px under the rule). They are siblings in the bar's flex row now: the address is
- * centred in the room the lights and the chip leave, and at 359 and below the three decorative lights give way, because the
- * lights, the address and the chip need 281px of the 254px a 320 phone's bar has. The chip keeps its 44px cell and the 6px
- * inset it had as an absolutely placed span, and the address is whole at every width.
+ * The plate's bar is its view switcher. The three labels used to stand in a trough above a 44px bar of decorative lights, the
+ * demo's address and a Full size chip: 50 + 16 + 44 = 110px of chrome before the picture, so at 360 the first screen held
+ * 48px of the capture. The bar is one 50px row now, the labels fill it, the lights and the address are gone (the address was
+ * aria-hidden decoration; the note under the picture already says the demo runs locally), and the Full size link is in the
+ * caption it describes. The picture begins 60px higher, and the first screen holds the Delivered line.
  */
-test("the plate's address and its full-size chip share the bar without crossing, and the lights give way at 320", () => {
+test("the plate's bar is its view switcher, and the capture is 60px higher on the first screen", () => {
   const css = fs.readFileSync(path.join(SITE, "assets", "site.css"), "utf8");
   const home = page(pages, "index.html").markup;
-  assert.match(css, /\n\.frame-bar \.frame-address \{[^}]*flex: 0 1 auto;[^}]*margin-inline: auto;/, "the address takes the room the lights and the chip leave, and is centred in it");
-  assert.ok(!/\.frame-bar \.frame-address \{[^}]*position: absolute/.test(css), "it is laid out in the row, not centred over the chip");
-  assert.match(css, /\n\.frame-open \{ position: static; align-self: flex-start; flex: none;/, "the chip is a flex item of the same row");
-  assert.match(css, /\n\.frame-open \{[^}]*margin-right: -10px;/, "and the bar's 16px padding with this -10px keeps its edge 6px inside the frame, where it was");
-  assert.match(css, /@media \(max-width: 359px\) \{ \.frame-bar i \{ display: none; \} \}/, "at 320 the decorative lights give way so the address stays whole");
-  assert.match(css, /\n\.frame-bar i \{ flex: none;/, "a light is its 10px circle at every width");
-  assert.equal((home.match(/class="frame-open frame-open-\d"/g) ?? []).length, 3, "one chip for each of the three views");
-  assert.equal((home.match(/class="frame-bar"/g) ?? []).length, 1, "in the plate's one chrome");
+  assert.match(css, /\n\.frame-bar \{[^}]*height: 50px; padding: 0 4px;/, "the bar is one 50px row with the frame's own inset");
+  assert.match(css, /\n\.frame-bar \.tabs \{ flex: 1; height: 44px; \}/, "the tabs fill it, 44px tall");
+  assert.match(css, /\n\.tabs \{ --n: 3; position: relative; display: grid; grid-template-columns: repeat\(3, minmax\(0, 1fr\)\);/, "three equal cells, the plate's width");
+  assert.match(css, /\n\.tabs label \{ min-height: 44px; padding: 0 8px; font-size: 13px; \}/, "a label keeps a thumb's 44px and the chrome's 13px at every user text size");
+  assert.ok(!/\.frame-bar (i|\.frame-address)|\.frame-open|frame-open-\d/.test(css), "the lights, the address and the separate Full size chip are gone");
+  assert.equal((home.match(/<div class="frame-bar">/g) ?? []).length, 1, "one bar in the plate");
+  assert.ok(/<div class="frame-bar">\s*<div class="tabs">/.test(home), "and the tabs are inside it, so the control and the picture share the frame's edges");
+  assert.equal((home.match(/class="frame-address"/g) ?? []).length, 0, "the decorative address is not in the bar");
+  // The three radios are before the frame, so the tab rules step through `.frame .tabs`, and the caption's link covers the
+  // frame from under the bar.
+  assert.match(css, /\.tab-input:nth-of-type\(2\):checked ~ \.frame \.tabs::before/);
+  assert.match(css, /\n\.hero-visual \.frame:has\(\.shot-open\) \.shot-open::before \{ top: 50px; \}/);
+  // Print keeps the capture, not the control: the bar is hidden, so the sheet's one view has no dead switcher above it.
+  assert.match(css, /@media print \{\n  \.site-header, \.skip, \.tabs, \.billing, \.copy, \.copy-note, \.doc-filter, \.foot-grid, \.frame-bar,/, "a printed page has no view switcher");
 });
 
 
