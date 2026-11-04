@@ -469,7 +469,7 @@ meter::-moz-meter-bar { border-radius: var(--k-r-pill); background: currentColor
 .resend .note, .resend p { margin: 0; }
 #resend-wait:empty { display: none; }
 .card .causes-h { margin: 24px 0 8px; font-size: 1rem; }
-.causes { display: grid; gap: 6px; padding-left: 1.25rem; margin: 0; }
+.causes { display: grid; gap: 6px; padding-left: 1.25rem; }
 #again form { display: grid; gap: 14px; margin-top: 4px; }
 #again form .field, #again form p, #again form .note { margin: 0; }
 @media (min-width: 1000px) {
@@ -494,7 +494,7 @@ body[data-page="home"] main { background: var(--k-glow) top / 100% 520px no-repe
   .record { padding: 24px; border-radius: var(--k-r-xl); }
 }
 .record-h { margin: 0 0 12px; color: var(--k-muted); font-size: .75rem; font-weight: 650; letter-spacing: var(--k-track-caps); text-transform: uppercase; }
-.record-list { display: grid; margin: 0; padding: 0; list-style: none; font-family: var(--k-mono); font-size: .8125rem; }
+.record-list { display: grid; list-style: none; font-family: var(--k-mono); font-size: .8125rem; }
 .record-list li { display: grid; grid-template-columns: 3.5rem minmax(0, 1fr); gap: 8px; padding: 12px 0; border-top: 1px solid var(--k-line); color: var(--k-ink-2); }
 .record-t { color: var(--k-muted); }
 .record figcaption { margin-top: 12px; color: var(--k-muted); font-size: .8125rem; }
@@ -502,7 +502,7 @@ body[data-page="home"] main { background: var(--k-glow) top / 100% 520px no-repe
 .section-head h2 { margin: 0; font-size: clamp(1.25rem, 1.1rem + .6vw, 1.5rem); }
 .entry-no { color: var(--k-accent-ink); font-family: var(--k-mono); font-size: .75rem; font-weight: 650; letter-spacing: var(--k-track-caps); }
 .section-note { max-width: 44rem; margin: 10px 0 20px; color: var(--k-muted); font-size: .9375rem; }
-.how { display: grid; max-width: 48rem; list-style: none; margin: 0; counter-reset: how; }
+.how { display: grid; max-width: 48rem; list-style: none; counter-reset: how; }
 .how li {
   counter-increment: how;
   display: grid;
@@ -626,6 +626,7 @@ body[data-page="home"] main { background: var(--k-glow) top / 100% 520px no-repe
 .panel > h2::before, .panel summary h2::before { content: attr(data-entry) / ""; margin-right: -4px; color: var(--k-accent-ink); font: 650 .75rem var(--k-mono); letter-spacing: var(--k-track-caps); }
 .panel > h2::after, .section > h2::after { content: ""; flex: 1; height: 1px; background: var(--k-line); }
 .panel > p { max-width: 42rem; margin-bottom: 16px; }
+#plan-steps { margin-bottom: 12px; }
 .panel h3 { margin: 22px 0 12px; }
 .disclosed { display: grid; justify-items: start; gap: 12px; margin-top: 4px; }
 .disclosed > .plans { justify-self: stretch; }

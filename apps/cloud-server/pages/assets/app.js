@@ -29,7 +29,7 @@
     verify: ["bar-say", "status", "title", "again", "resend-form", "resend", "resend-wait", "resend-status", "email"],
     forgot: ["bar-say", "form", "status", "email", "email-error"],
     reset: ["bar-say", "card", "form", "status", "title", "lede", "ask", "password", "password-error"],
-    account: ["bar-say", "who", "notice", "retry-row", "skeleton", "glance", "glance-list", "subnav", "settings-panel", "stage", "stage-steps", "stage-title", "stage-text", "stage-status", "stage-actions", "stage-live", "workspaces-panel", "workspaces", "create-slot", "create-box", "create", "workspace-name", "create-plan-field", "workspace-plan", "create-note", "plan-panel", "plan-h", "plan-status", "plan", "balance-panel", "usage-panel", "usage-h", "usage-say", "figures", "topup-fail", "topup-details", "topup", "topup-amount", "topup-unit", "topup-hint", "topup-status", "topup-add", "topup-options", "usage", "password-form", "password-status", "current", "current-error", "next", "next-error"],
+    account: ["bar-say", "who", "notice", "retry-row", "skeleton", "glance", "glance-list", "subnav", "settings-panel", "stage", "stage-steps", "stage-title", "stage-text", "stage-status", "stage-actions", "stage-live", "workspaces-panel", "workspaces", "create-slot", "create-box", "create", "workspace-name", "create-plan-field", "workspace-plan", "create-note", "plan-panel", "plan-h", "plan-steps", "plan-lede", "plan-status", "plan", "balance-panel", "usage-panel", "usage-h", "usage-say", "figures", "topup-fail", "topup-details", "topup", "topup-amount", "topup-unit", "topup-hint", "topup-status", "topup-add", "topup-options", "usage", "password-form", "password-status", "current", "current-error", "next", "next-error"],
     terms: ["bar-say"],
     privacy: ["bar-say"],
     notfound: ["bar-say"],
@@ -161,7 +161,9 @@
   /** What a plan includes, one fact to a line. */
   function planFacts(plan, currency) {
     // A hosting-only plan sells no model usage: the customer's own key is what the workspace runs on.
-    const facts = plan.byok ? ["Your own model key; you pay your provider directly", plural(plan.workspaces, "workspace")] : [`${usageMoney(plan.includedUsageMicros, currency)} of model usage each ${plan.period}`, plural(plan.workspaces, "workspace")];
+    // The period is joined to "each" by a no-break space, so a narrow plan card breaks the line before the phrase rather than
+    // leaving "month" alone under it: a period belongs to the amount it is the period of.
+    const facts = plan.byok ? ["Your own model key; you pay your provider directly", plural(plan.workspaces, "workspace")] : [`${usageMoney(plan.includedUsageMicros, currency)} of model usage each\u00A0${plan.period}`, plural(plan.workspaces, "workspace")];
     if (Array.isArray(plan.tiers) && plan.tiers.length > 0) facts.push(`Model tiers: ${plan.tiers.join(", ")}`);
     return facts;
   }
@@ -204,6 +206,13 @@
    * keeps the card: it is the only place its action is.
    */
   const ON_RECORD = new Set(["ready", "needs-key", "stopped"]);
+
+  /**
+   * Whether the step of choosing a plan is the plan section's own: a customer with no plan, whose subscription has not ended (that card
+   * carries the warning about what happens to their workspaces, which the list does not know). The plan section draws the rail and the
+   * step's sentence, and each plan card carries the button that chooses it.
+   */
+  const chooseOnList = (stage) => stage.id === "no-plan" && !stage.ended;
 
   /**
    * Where the account is, from what the service says of it. `view` is `{ subscription, workspaces, plans, plansKnown, topups, policy }`:
@@ -256,9 +265,12 @@
         if (!view.plansKnown) {
           return { tone: "warn", title: "The plans could not be loaded", text: "No plan or price is shown just now, and nothing was changed.", action: { kind: "retry", label: "Try again" } };
         }
-        const pays = "Choose one below and pay on the next page.";
+        // The step's sentence is the plan section's own lede (the card is not drawn for this state), so it says what a plan is and stops:
+        // the cards under it name what each one includes and carry the button that chooses it.
         const what = "A plan is a flat monthly price for your account, and it says how many workspaces you may run at once.";
-        return { tone: "", title: "Choose a plan", text: stage.byok ? `${what} ${pays} You bring your own model key and pay your model provider yourself.` : `${what} ${pays}`, action };
+        // A service that offers no plan at all says what the section under it says, so the page and its announcement agree.
+        if (view.plans.length === 0) return { tone: "", title: "Choose a plan", text: "No plan is on offer just now, so no price is shown.", action };
+        return { tone: "", title: "Choose a plan", text: stage.byok ? `${what} You bring your own model key and pay your model provider yourself.` : what, action };
       }
       case "late": {
         const stopped = view.workspaces.some((x) => x.statusReason === "payment is overdue");
@@ -327,9 +339,10 @@
     const [state, tone] = planState(sub);
     tiles.push({ id: "plan", label: "Plan", value: sub.title || "Your plan", unit: "", note: plan ? `${money(plan.priceMinor, currency)} per ${plan.period}` : "", badge: [state, tone] });
     if (sectionsOf(view).balance) {
-      // What is left, and what the calls have used of what the plan includes: the question a person opens the account with.
+      // What is left, and what the calls have used of what the plan includes: the question a person opens the account with. The used
+      // figure carries the period it is used in, as every other figure on the page carries its own.
       const left = allowanceLeft(plan, balance);
-      const note = !balance ? "Not available just now" : left ? `${balanceMoney(left.of - left.left, balance.currency)} of ${balanceMoney(left.of, balance.currency)} used` : "available";
+      const note = !balance ? "Not available just now" : left ? `${balanceMoney(left.of - left.left, balance.currency)} of ${balanceMoney(left.of, balance.currency)} used this ${plan.period}` : "available";
       tiles.push({ id: "balance", label: "Balance", value: balance ? balanceMoney(balance.balance.available, balance.currency) : "", unit: "", note });
     }
     return tiles;
@@ -1813,8 +1826,10 @@
       }
       if (state.focusStage) {
         state.focusStage = false;
-        // When the stage is the record, its title is not drawn: the cursor goes to the record's own action instead.
+        // When the stage is the record, its title is not drawn: the cursor goes to the record's own action instead. When it is the plan
+        // section's step, the cursor goes to the section's heading, which is where the step now is.
         if (Boolean(w) && ON_RECORD.has(stage.id)) state.focusRecord = w.workspaceId;
+        else if (chooseOnList(stage) && $("plan-panel") && !$("plan-panel").hidden) $("plan-h").focus();
         else $("stage-title").focus();
       }
       // A record that is already drawn can take the cursor now; one that is drawn after this keeps it for renderWorkspaces.
@@ -1834,12 +1849,16 @@
       // A workspace that can be opened, or resumed, is a record: its own sentence and button are the page's statement, and the card
       // would say the same thing a card-length above it. The card is drawn for every state whose action is not in the list.
       const onRecord = Boolean(w) && ON_RECORD.has(stage.id);
+      // A person with no plan is at the step of choosing one, and the list is where it is chosen: the plan section carries the step
+      // (its rail and its sentence) and every card in it carries the button. The block above would say the step a second time and its
+      // one button would scroll to a list already on the screen.
+      const onList = chooseOnList(stage);
       state.stageTarget = !onRecord && card.action && w ? { kind: card.action.kind, id: w.workspaceId } : null;
-      box.hidden = onRecord;
+      box.hidden = onRecord || onList;
       box.className = card.tone ? `stage stage-${card.tone}` : "stage";
       // The steps are for a person who is getting started; one whose workspace can be opened is not shown them.
       const steps = $("stage-steps");
-      steps.hidden = onRecord || stage.step === "open";
+      steps.hidden = onRecord || onList || stage.step === "open";
       steps.replaceChildren(...stage.steps.map(stepItem));
       $("stage-title").textContent = card.title;
       const text = $("stage-text");
@@ -2151,8 +2170,23 @@
       const sub = subscription();
       const live = holdsPlan(sub);
       const plan = planOf();
+      // A person with no plan is at the step of choosing one, and this section is that step: its rail (where they are in the journey) and
+      // the step's sentence sit above the list, and each card carries the button. With the plans unread there is no sentence to promise
+      // anything with, so the warning below says what happened and the sentence is not drawn.
+      const view = viewOf();
+      const stage = stageOf(view);
+      const card = nextStepOf(stage, view);
+      const onList = chooseOnList(stage);
+      const rail = $("plan-steps");
+      rail.hidden = !onList;
+      rail.replaceChildren(...(onList ? stage.steps.map(stepItem) : []));
+      // The sentence says what a plan is and points at the list under it, so it is drawn only when there is a list: a service that offers
+      // none says so in one line instead, rather than promising cards that are not there.
+      const offered = state.plansKnown && state.plans.length > 0;
+      $("plan-lede").hidden = !onList || !offered;
+      $("plan-lede").textContent = onList && offered ? card.text : "";
       $("plan-panel").hidden = false;
-      // A person with no plan is at the step of choosing one, and the panel is the list to choose from: the card at the top already says the words of the step.
+      // The section is the plan itself once there is one, and the list to choose from before: the step's sentence is in the lede above.
       $("plan-h").textContent = live ? "Plan" : "Plans";
       const checkout = (p) => (event) => leaveFor(event.currentTarget, () => call("POST", "/api/checkout", { purpose: "subscription", plan: p.id }), (r) => failedHere(r, p.id), rememberBefore);
       const parts = [];
@@ -2198,11 +2232,14 @@
           el(
             "div",
             { class: "note note-warn" },
-            el("p", null, "The plans could not be loaded just now, so no price is shown."),
+            el("p", null, "The plans could not be loaded just now, so no price is shown. Nothing was changed."),
             button("Try again", { onclick: retryPlans }),
           ),
         );
       } else if (!live && state.plans.length > 0) parts.push(el("div", { class: "plans" }, state.plans.map((p) => planCard(p, state.currency, { subscription: sub, picked: state.picked === p.id, action: (x) => button(`Choose ${x.title}`, { kind: "primary", onclick: checkout(x) }) }))));
+      // A service that offers nothing this moment leaves the section with something to read rather than a heading over an empty box. The
+      // step's own sentence is the one to say while the section is the step; a subscription that ended said its sentence in the card above.
+      else if (!live) parts.push(el("p", { class: "muted" }, onList ? card.text : "No plan is on offer just now, so no price is shown."));
       box.replaceChildren(...parts);
       // A sentence already in the panel about an action goes back with that action, wherever the panel was drawn again.
       attachStatus();
