@@ -35,6 +35,18 @@
   .files-bar .files-filters select.sel { flex: none; width: 100%; max-width: 100%; }
   .files-bar .files-filters .seg { flex-wrap: wrap; max-width: 100%; }
   .files-bar .files-filters .files-latest { min-height: 44px; }
+  /* The list is the page's long output, so its tools stay in reach: the fold makes the bar one 44 px row, and the row sticks as
+     the files pass under it. Measured at 360 on the delivered demo (9 files, 383 px of travel), the end of the list left the search
+     and Filters at y=-213 — off the screen entirely — so filtering while reading meant scrolling back up the whole list. It is
+     `--bg` with no shadow, like the Steps toolbar, because it is the page's own ground and not a layer. While the fold is open the
+     panel is 200 px of controls, and a bar that deep would cover the files it is filtering; then the bar stays in the flow (the
+     search keeps its own line). */
+  .files-bar:not(:has(.files-filters)) {
+    position: sticky;
+    top: calc(var(--s3) * -1);
+    z-index: var(--z-toolbar);
+    background: var(--bg);
+  }
 }
 .seg-n { margin-left: var(--s1-5); font-weight: 500; font-variant-numeric: tabular-nums; color: var(--muted); }
 .seg button[aria-pressed="true"] .seg-n { color: inherit; }

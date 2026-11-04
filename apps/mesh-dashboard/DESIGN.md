@@ -44,6 +44,9 @@ ring), not only how wide it is.
    phone that brief is ruled lines, not a card (2026-10-28).
    A route change that lands focus on the page's heading announces the page; the heading wears no ring, because it is a place,
    not a control (the same for `#view`). A control's keyboard ring is untouched.
+   The new page also starts at the top of `#view` — the frame's one scroller keeps its offset across the child swap — and a
+   focused dock or sidebar tab that names a page **not** in front (Back/Forward leaves the tab that was pressed on the page you
+   left) hands focus to the heading; the tab you pressed that still names the page keeps it (2026-11-04).
 2. **The state, before the content** — a banner for stale or refused, an
    `ErrorState` with a retry, an `EmptyState` with the next move. Never an empty
    card, never zeros standing in for "not read".
@@ -137,6 +140,14 @@ Breakpoints: **1280 1100 900 800 760 620 560**. 800 is the sidebar drawer (JS
   keyboard (2026-10-29).
 - Filters that are not needed to read the page fold behind one 44 px button with
   a count, as Events and Steps do; the search stays out.
+- **A long list's tools ride with the list.** At 620 px and below the Files bar
+  is the search row with the folded filter button (one 44 px row at 360, 96 px
+  as two rows at 320) and it sticks flush under the top bar (top -12, the
+  phone's gutter) as the files pass under it. On the delivered demo at 360 the
+  end of the nine-file list left it at y=-213: filtering while reading meant
+  scrolling the whole list back. With the fold open the bar is ~200 px of
+  controls and stays in the flow, so it never becomes a ceiling over the files
+  it filters (2026-11-04).
 - A phone's page head is one line where its title, its status and its action
   fit, and the columns use the row's own 8 px, not the desk's 12. The Events head
   needed 333.1 px in 332 with the live chip at its widest, so the hold took a row
@@ -325,6 +336,66 @@ Breakpoints: **1280 1100 900 800 760 620 560**. 800 is the sidebar drawer (JS
 12. Check the frame's safe-area claims on a notched device in both orientations; the insets are in the CSS but the stand-in browser reports them as zero.
 
 ## Pass log
+
+### 2026-11-04 — a page starts at its head, and focus names the page in front
+
+Surface: `shell.tsx` (the view-change effect: scroll reset + the stale-tab rule), `views/files.css` (one rule in the 620 block),
+`DESIGN.md`. No server, schema or other surface moved.
+
+Measured on the scripted demo at **Delivered** in the production build served by `curule console` at 360 (Chromium over CDP,
+touch, reduced motion); the Files rule also at 320/620/621/768/1,440 and at 360 in dark.
+
+**The problem.** The frame has one scroller (`#view`) and React only swaps its children, so a new page inherited the old page's
+scroll offset, clamped to its own height. Read Cost to its end (913 of 913) and open Agents from the drawer: Agents opened at
+**498 — its own maximum** — with its title **420 px above the screen** and the list beginning at its third seat. The page's own
+name, status and first seats were below the reader, who had asked for the page from a menu two screens up. The same effect
+turns Back/Forward into a keyboard trap: the dock survives the route change, so focus stayed on the tab that had been pressed
+on the page being left. After Back from Needs you to Agents, focus was the **“Needs you” dock tab while the page was Agents**;
+the dock is the last control in the document, so the **next Tab left the page** (activeElement came back `<body>`, then the skip
+link) and the heading was never announced. A third, smaller reach problem: Files' search and folded Filters sat at the top of a
+long list, so at its end (383 px of travel) the bar was at **y=-213** — filtering while reading meant scrolling the whole list
+back.
+
+**What changed.**
+
+- **A route change resets `#view` to 0 before paint.** The reset is a layout effect (the browser would otherwise paint one frame
+  at the old offset) and it forces `scroll-behavior: auto` for the assignment, because `#view` scrolls smoothly and a route
+  change is not a movement to watch.
+- **A tab for another page is not a landing place.** If the focused control is in `#dock` or `#sidebar` and its `data-view` is
+  not the view in front, it is blurred; the existing rule then focuses the new page's `h2` (no ring, `preventScroll`). A tab
+  whose `data-view` is the view in front keeps its focus, so pressing Files in the dock still leaves the keyboard on Files, and
+  the off-canvas menu still hands focus back to ☰.
+- **Files' tools ride with the list on a phone.** At 620 and below `.files-bar`, when the filter fold is closed, is `position:
+  sticky; top: -12px` on the page's own `--bg` (the Steps toolbar's pattern, no shadow). With the fold open the bar is ~200 px
+  and stays in the flow; above 620 nothing changes.
+
+**Measured.**
+
+| | Before | After |
+|---|---|---|
+| Cost read to end, then Agents from the drawer (`#view.scrollTop`) | 498 of 498 | 0 |
+| Agents' `h2` y at that arrival | −420 | 78 |
+| First thing on screen at that arrival | a mid-list seat (tech-lead) | the page title, status and Cards/List |
+| Back from Needs you to Agents: focused control | `button.dock-tab` “Needs you” | `h2` “Agents” |
+| First Tab after that Back | leaves the document (`<body>`) | “Cards”, the page's own control |
+| Files bar at the end of the list, 360 | y −213…−169 | y 64…108, stuck |
+| Files bar at the end of the list, 320 | off the screen (two rows, 96 px) | y 64…160, stuck |
+| Files bar with the fold open, 360 | 170…378 | 170…378 (in flow) |
+| Files bar, 621 / 768 / 1,440 | static, 104 / 68 / 36 | unchanged |
+| Files, first group at 360 (at rest) | y 230 | y 230 (nothing moves until it sticks) |
+
+**Floors.** `npm run typecheck` and `npm run build` clean; `dist/tests/dashboard` **1,218 pass, 0 fail**; eslint 0 on
+`shell.tsx`; axe-core 4.14 **0 violations** on the nine views at 360; no document sideways scroll at 320/360 (360 = 360);
+the Files bar's own Filters still reads 14.75:1 in dark; the dark 360 render adds no failure. The 44 px floor is untouched:
+the bar's search and button were already 44 and the sticky rule changes only position.
+
+**Left.** The delivery notice still sits over the page head for its 4.8 s life at 360 (visible in this pass's captures): it is
+transient and dismissible, and moving it out of the scrollport's top is a layer decision, not this pass. The same offset problem
+is not solved for the Steps search above the sticky filter (the filter rides, the search does not), nor for Files at 621–768,
+where the bar is 104 px and the fold stays in plain sight: both are measured, neither is a phone. And neither new rule is pinned
+by a test — `primitives-a11y.test.ts` reads the focus effect as text, so its two assertions were kept literal; the scroll and
+Back behaviour were measured in the browser, not asserted. The 96 px two-row bar at 320 is the shape the search/button pair
+already had; whether the reach is worth a third of the narrowest screen's top is a thumb question.
 
 ### 2026-11-03 — a delivered receipt says its claim once, so a second piece of evidence is above the dock
 
