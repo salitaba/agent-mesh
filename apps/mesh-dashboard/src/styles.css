@@ -730,6 +730,9 @@ button.linklike:disabled { opacity: .5; cursor: not-allowed; }
 @media (pointer: coarse), (max-width: 620px) {
   :where(button.primary, button.soft, button.small, button.ghost, :is(button, a).banner-act) { min-height: 44px; }
   .icon-btn, .icon-btn.sm { width: 44px; height: 44px; }
+  /* A menu opened by a glyph is 44 × 44 on a finger, not only below 800: at 820-900 on a touch tablet the mission's and the
+     Designer's `…` measured 36 × 44 (the width floor lived in the 800 block, and the sidebar returns at 801). */
+  .menu-btn { min-width: 44px; }
 }
 
 /* ============ tooltip ============

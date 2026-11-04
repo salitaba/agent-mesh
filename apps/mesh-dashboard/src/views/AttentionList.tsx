@@ -14,8 +14,10 @@ const ICON: Record<AttentionKind, IconName> = {
  */
 export function AttentionList({ items, onFix }: { items: AttentionItem[]; onFix: (target: FixTarget) => void }): React.JSX.Element | null {
   if (!items.length) return null;
+  // One condition is the card: the page's hero already names it, so at a narrow width the head is read by a screen reader and the
+  // sentence and its fix take the card (overview.css). A list of conditions keeps its head, which is what counts them.
   return (
-    <section className="card ov-attn" aria-labelledby="ov-attn-h">
+    <section className={`card ov-attn${items.length === 1 ? " single" : ""}`} aria-labelledby="ov-attn-h">
       <div className="card-head ruled">
         <h3 id="ov-attn-h">Attention</h3>
         <Pill tone="neutral" dot={false}>{items.length}</Pill>
