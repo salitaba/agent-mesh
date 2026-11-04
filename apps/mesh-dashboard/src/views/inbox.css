@@ -1,8 +1,8 @@
 /* ============ Needs you: decisions, notices and tool requests ============
    One card shape for every kind of decision, and the one loud thing on the page: what is asked and what it holds up, said once under a
-   title the size of a question; the context; then one answer, whose button is the largest control on the screen. The tone is a stripe
-   down the card's edge and the mark at its head, never a tint over the words. Tokens only; type from the ramp; breakpoints from the
-   ladder. */
+   title the size of a question; the consequence; then one answer, whose button is the largest control on the screen, and the evidence
+   it rests on after it. The tone is a stripe down the card's edge and the mark at its head, never a tint over the words. Tokens only;
+   type from the ramp; breakpoints from the ladder. */
 
 .ib { display: flex; flex-direction: column; gap: var(--s3); }
 .ib .tabs { margin: 0; }

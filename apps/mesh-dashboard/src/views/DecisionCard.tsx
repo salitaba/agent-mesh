@@ -172,9 +172,14 @@ export interface DecisionCardProps {
 }
 
 /**
- * One missing answer. What is being asked and what it holds up; the context (the request, the files, who is involved); then
- * one answer, whatever kind of card it is. The pattern does not change between a budget and a stalled request, only the words,
- * and the words are chosen from state in `answerPlan` so they stay true when the project is parked or the card is a notice.
+ * One missing answer. What is being asked and what it holds up; the request; the consequence; then one answer, whatever kind of
+ * card it is, and the evidence it rests on (the files, who is involved) after it. The pattern does not change between a budget and
+ * a stalled request, only the words, and the words are chosen from state in `answerPlan` so they stay true when the project is
+ * parked or the card is a notice.
+ *
+ * The evidence was before the answer until 2026-11-04. On a phone that put the host-spend card's "Raise the ceiling" at y=772,
+ * wholly under the 747 px dock: the first screen of the page whose one job is the answer showed no action. Evidence is read after
+ * the press it supports; the consequence that decides the press still comes before it.
  */
 export function DecisionCard({ e, status, list, msgs, artIndex, decisions: d }: DecisionCardProps): React.JSX.Element {
   const { openDrawer, setView, setEvSearch, setEvFilter } = useMesh();
@@ -271,18 +276,6 @@ export function DecisionCard({ e, status, list, msgs, artIndex, decisions: d }: 
         </div>
       ) : null}
 
-      {kind !== "stuck" && kind !== "derived" && (agents.length || disUri) ? (
-        <div className="dc-context">
-          {agents.length ? (
-            <div className="dc-refs">
-              <span>Involves:</span>
-              {agents.map((a) => <button key={a} type="button" className="chip-toggle" onClick={() => openDrawer(<AgentDrawer id={a} />)}>{a}</button>)}
-            </div>
-          ) : null}
-          {disUri ? <EvidenceRefs uris={[String(disUri)]} artIndex={artIndex} label="Decision record" /> : null}
-        </div>
-      ) : null}
-
       {text.next ? <p className="dc-next">{text.next}</p> : null}
 
       {kind === "stuck" || kind === "decision" || kind === "derived" || kind === "notice" || (kind === "ceiling" && plan.primary.id === "respond") ? (
@@ -311,6 +304,22 @@ export function DecisionCard({ e, status, list, msgs, artIndex, decisions: d }: 
       ) : null}
       {kind === "ceiling" && plan.primary.id === "open-settings" ? (
         <CeilingAnswer e={e} plan={plan} busy={busy} otherBusy={otherBusy} onSettings={() => setView("hostsettings")} onSend={(t) => void d.respond(e, text.title, t)} />
+      ) : null}
+
+      {/* The evidence follows the answer. On a phone the card's decision record was 72 px between the consequence and the form, and
+          it put the answer's button at y=772 on the host-spend card — wholly under the 747 px dock, so the first screen of the
+          page whose job is the answer showed no action. It is reference, not the question; it keeps its place on the card, after
+          the control it is evidence for. The DOM order is the same change, so the tab order still follows the screen. */}
+      {kind !== "stuck" && kind !== "derived" && (agents.length || disUri) ? (
+        <div className="dc-context">
+          {agents.length ? (
+            <div className="dc-refs">
+              <span>Involves:</span>
+              {agents.map((a) => <button key={a} type="button" className="chip-toggle" onClick={() => openDrawer(<AgentDrawer id={a} />)}>{a}</button>)}
+            </div>
+          ) : null}
+          {disUri ? <EvidenceRefs uris={[String(disUri)]} artIndex={artIndex} label="Decision record" /> : null}
+        </div>
       ) : null}
 
       <details className="disc dc-tech">
