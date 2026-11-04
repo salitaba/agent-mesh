@@ -42,7 +42,7 @@ test("a figure's label carries its own number and where the press leads", () => 
 
 test("the checks open the section here, and the other three leave for the page that owns the number", () => {
   assert.match(overview, /const openFigure = \(to: "goal" \| "steps" \| "cost" \| "agents"\): void => \{/, "one handler for the four");
-  assert.match(overview, /if \(to === "goal"\) \{\s*if \(phone && !openSections\.has\("ov-goal"\)\) toggleSection\("ov-goal"\);\s*jumpTo\("ov-goal"\);\s*return;\s*\}\s*setView\(to\);/, "a phone opens the closed section before it lands on it; the other three are pages");
+  assert.match(overview, /if \(to === "goal"\) \{\s*if \(dock && !openSections\.has\("ov-goal"\)\) toggleSection\("ov-goal"\);\s*jumpTo\("ov-goal"\);\s*return;\s*\}\s*setView\(to\);/, "a folded page opens the closed section before it lands on it; the other three are pages");
   assert.match(overview, /go=\{openFigure\}/, "the hero is handed the handler");
 });
 

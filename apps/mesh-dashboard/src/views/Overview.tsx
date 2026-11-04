@@ -30,13 +30,13 @@ import "./overview.css";
 /** How many of the newest events the page asks for when its buffer stops short of the log. */
 const EVENT_TAIL = 150;
 
-/** The phone's break, the same value styles.css and the other views use: below it the evidence sections fold to one row each. */
-const PHONE = "(max-width: 620px)";
-
 /**
  * Where the navigation is a drawer and the five daily places sit at the thumb (`shell.tsx`'s NARROW, the same value the dock is
- * drawn at). There the hero draws one action and keeps the rest behind "…": the dock and the figures already carry what the
- * quiet result links said. At 360 the row was three rows and 148 px of the first screen (2026-10-31, DESIGN.md).
+ * drawn at). Two decisions follow it. The hero draws one action and keeps the rest behind "…": the dock and the figures already
+ * carry what the quiet result links said, and at 360 the row was three rows and 148 px of the first screen (2026-10-31). And the
+ * evidence below the hero folds to one row a section — not only at the phone's 620: a 768 px tablet had the drawer and the dock
+ * and still opened all four sections at once, so the Overview was 3,121 px, 4.2 screens of a page read in the hand. The fold
+ * follows the thumb, not the width.
  */
 const DOCK = "(max-width: 800px)";
 
@@ -86,11 +86,9 @@ export default function Overview(): React.JSX.Element {
   const [attempt, setAttempt] = useState(0);
   // Bumped to read the steps again without reading everything else: the list can be a few seconds older than the status beside it.
   const [stepsTick, setStepsTick] = useState(0);
-  // On a phone the evidence below the hero is one row a section until it is opened: at 360 a delivered mission was 4,132 px, and
-  // the reader had to scroll through six file rows, five turns, seven checks and thirteen events to learn the page had four parts.
-  // Those four rows are also the phone's index, so the page draws no separate one there; the state lives here so the rows and
-  // anything else that opens a section agree with each other.
-  const phone = useMedia(PHONE);
+  // On a phone or a tablet whose navigation is a drawer, the evidence below the hero is one row a section until it is opened: at
+  // 360 a delivered mission was 4,132 px, and at 768 the open desk shape was 3,121. Those four rows are also the index there, so
+  // the page draws no separate one; the state lives here so the rows and anything else that opens a section agree with each other.
   const dock = useMedia(DOCK);
   const [openSections, setOpenSections] = useState<ReadonlySet<string>>(() => new Set<string>());
   const [pendingJump, setPendingJump] = useState<string | null>(null);
@@ -101,18 +99,18 @@ export default function Overview(): React.JSX.Element {
     return next;
   });
   const jumpTo = (id: string): void => setPendingJump(id);
-  // A figure is a door to what explains it. Goal checks are on this page, so that press opens the section (a phone's sections are
-  // closed until asked) and lands on it; the other three leave for the page that owns the number.
+  // A figure is a door to what explains it. Goal checks are on this page, so that press opens the section (a folded page's
+  // sections are closed until asked) and lands on it; the other three leave for the page that owns the number.
   const openFigure = (to: "goal" | "steps" | "cost" | "agents"): void => {
     if (to === "goal") {
-      if (phone && !openSections.has("ov-goal")) toggleSection("ov-goal");
+      if (dock && !openSections.has("ov-goal")) toggleSection("ov-goal");
       jumpTo("ov-goal");
       return;
     }
     setView(to);
   };
   const foldOf = (id: string, summary: React.ReactNode): Fold | undefined =>
-    phone ? { open: openSections.has(id), onToggle: () => toggleSection(id), summary } : undefined;
+    dock ? { open: openSections.has(id), onToggle: () => toggleSection(id), summary } : undefined;
   // The wide index lands on a section that is already open: the effect runs after the commit, so the scroll is computed against
   // the page the press made, not the one it left. `behavior: "smooth"` is the one animation on this page, so it asks the motion
   // preference rather than assuming it.
@@ -382,8 +380,9 @@ export default function Overview(): React.JSX.Element {
         run={run}
       />
       <AttentionList items={attention} onFix={fix} />
-      {/* The wide screen's index only: a phone's four closed rows, directly under this, say the same four names and open in place. */}
-      {phone ? null : <JumpRow delivered={delivered} onOpen={jumpTo} />}
+      {/* The wide screen's index only: a folded page's four closed rows, directly under this, say the same four names and open in
+          place. */}
+      {dock ? null : <JumpRow delivered={delivered} onOpen={jumpTo} />}
       {delivered ? <Shipped arts={goalArts} state={artsState} fold={foldOf("ov-shipped", artsFold)} onRetry={() => setAttempt((n) => n + 1)} openArt={openArt} onOpenFiles={() => setView("artifacts")} /> : null}
       {/* Renders nothing unless a collaboration is actually open, and owns its own hooks so this component's hook count does not move. */}
       <CollabCard />
