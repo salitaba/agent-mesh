@@ -335,16 +335,13 @@ main:has(.hero) .section-head .eyebrow::before { counter-increment: sec; content
    edge a thumb could see. They take the control line (3.92:1 and 3.75:1 at rest); the mini frame inside a view card is
    chrome and keeps the decorative line. */
 .frame:has(.shot-open), .tile { border-color: var(--k-line-control); }
-.frame-bar { display: flex; align-items: center; gap: 6px; height: 44px; padding: 0 16px; border-bottom: 1px solid var(--line); background: var(--panel2); box-shadow: var(--k-hl); }
-.frame-bar i { flex: none; width: 10px; height: 10px; border-radius: 50%; background: var(--line2); }
-/* The address and the full-size chip share the bar with the lights. The address was pinned to the bar's own centre and the
-   chip to its right end, so at 320 the chip's cell began at 201.03 while the 129.16px address ended at 224.58: the chip's
-   1px rule crossed the address's last two characters, and "Full size" began 1.45px after them (at 360 the pill was still
-   3.55px under the rule). They are one flex row now: the address takes the room the lights and the chip leave and is centred
-   in it, so nothing crosses. At 359 and below the three decorative lights give way, because the lights, the address and the
-   chip need 281px of the 254px a 320 phone's bar has. */
-.frame-bar .frame-address { flex: 0 1 auto; min-width: 0; margin-inline: auto; overflow: hidden; padding: 3px 14px; border-radius: var(--k-r-pill); background: var(--k-sunken); box-shadow: inset 0 0 0 1px var(--line); color: var(--muted); font: 12px/1.2 var(--mono); white-space: nowrap; text-overflow: ellipsis; }
-@media (max-width: 359px) { .frame-bar i { display: none; } }
+.frame-bar { display: flex; align-items: center; height: 50px; padding: 0 4px; border-bottom: 1px solid var(--line); background: var(--panel2); box-shadow: var(--k-hl); }
+/* The plate's bar is the view switcher, not a drawing of a browser's chrome. The three labels share the plate's width and
+   the bar is 50px: the old three-label trough stood above a 44px bar of dots, an address and a Full size chip, and the two
+   rows plus 16px between them were 110px before the picture, so at 360 the first screen held 48px of the capture. They are
+   one row now: the picture begins 60px higher, and the first screen holds the Delivered line. The dots and the address were
+   decoration; the Full size link is in the caption it describes, as the graph's is. */
+.frame-bar .tabs { flex: 1; height: 44px; }
 .frame img { display: block; width: 100%; height: auto; }
 .frame figcaption { margin: 0; padding: 14px 18px; border-top: 1px solid var(--line); background: var(--panel); color: var(--muted); font-size: .8125rem; line-height: 1.5; }
 .frame figcaption b { color: var(--ink); font-weight: 600; }
@@ -377,32 +374,34 @@ main:has(.hero) .section-head .eyebrow::before { counter-increment: sec; content
 .tab-input:nth-of-type(1):checked ~ .frame .pane:nth-of-type(1),
 .tab-input:nth-of-type(2):checked ~ .frame .pane:nth-of-type(2),
 .tab-input:nth-of-type(3):checked ~ .frame .pane:nth-of-type(3) { display: block; }
-/* A segmented control: a trough, and a thumb that slides to the chosen radio's label. */
-.tabs, .billing { --n: 3; position: relative; display: inline-grid; grid-auto-flow: column; grid-auto-columns: 1fr; max-width: 100%; margin-bottom: 16px; padding: 3px; border-radius: var(--k-r-md); background: var(--k-sunken); box-shadow: inset 0 0 0 1px var(--line); }
-/* The plate's control is the plate's width at every width, so the two share both edges: a 351px trough over a
-   453px plate, or over a 706px one, read as a floating chip. */
-.hero-visual .tabs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); width: 100%; }
-.billing { --n: 2; margin-bottom: 24px; }
+/* The billing switch: a trough, and a thumb that slides to the chosen radio's label. */
+.billing { --n: 2; position: relative; display: inline-grid; grid-auto-flow: column; grid-auto-columns: 1fr; max-width: 100%; margin-bottom: 24px; padding: 3px; border-radius: var(--k-r-md); background: var(--k-sunken); box-shadow: inset 0 0 0 1px var(--line); }
+/* The plate's control is the plate's width at every width, and it is the plate's bar: three equal cells, 44px tall, with
+   the thumb the chosen segment's size. The bar's 4px padding is the only inset, so the control and the picture share both
+   edges at 320, 360 and 1,440. */
+.tabs { --n: 3; position: relative; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); width: 100%; margin: 0; padding: 0; border-radius: 0; background: transparent; box-shadow: none; }
 /* The chosen segment of a switch is a state, and a state has a boundary a reader can see: the thumb was a white pill on
    #f1eee8 (1.13:1) edged in #d3cdc2 (1.37:1), and in the dark #1b1a18 on #0e0d0c edged in #45423b (1.74:1), so the billing
    period the whole page's figures were in — and the product view the plate showed — was carried by the words alone. The
-   thumb's edge is the control line now: 3.53:1 on the trough in light, 4.19:1 in dark. */
+   thumb's edge is the control line now: 3.53:1 on the trough in light, 4.19:1 in dark. The plate's thumb is the height of
+   its bar's labels, so it is the segment, not a pill inside one. */
 .tabs::before, .billing::before { content: ""; position: absolute; top: 3px; bottom: 3px; left: 3px; width: calc((100% - 6px) / var(--n)); border-radius: var(--k-r-sm); background: var(--panel); box-shadow: var(--lift), 0 0 0 1px var(--k-line-control); }
+.tabs::before { top: 0; bottom: 0; left: 0; width: calc(100% / var(--n)); }
 .tabs label, .billing label { position: relative; display: flex; align-items: center; justify-content: center; gap: 8px; min-height: 36px; padding: 0 clamp(8px, 3vw, 20px); color: var(--ink2); font-size: 14px; font-weight: 600; white-space: nowrap; cursor: pointer; user-select: none; }
+/* The bar's labels keep the chrome's 13px layout size, as the header's controls and the On this page chips keep theirs: a
+   rem size would be 19.5px at a reader's 24px default, where "Overview" is 84px in a 92.66px cell at 320. */
+.tabs label { min-height: 44px; padding: 0 8px; font-size: 13px; }
 .billing label small { color: var(--muted); font-size: 13px; font-weight: 500; }
-@media (max-width: 719px), (pointer: coarse) { .tabs label, .billing label { min-height: 44px; } }
+@media (max-width: 719px), (pointer: coarse) { .billing label { min-height: 44px; } }
 @media (max-width: 420px) {
   .billing label { flex-direction: column; gap: 0; padding: 0 12px; line-height: 1.25; }
   /* A control's sub-label keeps its 12px layout size, as the billing labels keep their 14px: at a reader's 32px
      text this was 24px, and "saves about 17%" made the switch 337.6px wide in a 320 phone's 288. */
   .billing label small { font-size: 12px; }
 }
-.tab-input:nth-of-type(2):checked ~ .tabs::before, .billing-input:nth-of-type(2):checked ~ .billing::before { transform: translateX(100%); }
-.tab-input:nth-of-type(3):checked ~ .tabs::before { transform: translateX(200%); }
-.tab-input:focus-visible ~ .tabs, .billing-input:focus-visible ~ .billing { outline: 2px solid var(--accent); outline-offset: 2px; }
-/* On a phone the view switcher is the plate's width, so the control and the capture it switches share both edges:
-   the three labels sit in equal 109.3px cells at 360 instead of a 268.7px trough ending 59.3px short of the frame. */
-@media (max-width: 719px) { .tabs { display: grid; } }
+.tab-input:nth-of-type(2):checked ~ .frame .tabs::before, .billing-input:nth-of-type(2):checked ~ .billing::before { transform: translateX(100%); }
+.tab-input:nth-of-type(3):checked ~ .frame .tabs::before { transform: translateX(200%); }
+.tab-input:focus-visible ~ .frame .tabs, .billing-input:focus-visible ~ .billing { outline: 2px solid var(--accent); outline-offset: 0; }
 
 /* Surfaces are for things a person acts on: a plan, a place to start, an address, a way out of a
    missing page. Explanatory prose is a ruled entry: a top rule, a mark, a title and words, with no
@@ -411,6 +410,11 @@ main:has(.hero) .section-head .eyebrow::before { counter-increment: sec; content
 /* A view card is one press across its surface, so its edge is a control's boundary too (the frame rule above). It is set
    here, after the surface rule, because the shorthand there would otherwise take the decorative line back. */
 .tile { border-color: var(--k-line-control); }
+/* A place to start and a way out of a missing page are the same shape as a view card: the link's cover makes the whole
+   card one press, so the border is the only thing that says where the target starts. They kept the decorative line
+   (1.26:1 on the paper), while the view cards and the pressable frames took the control line; they take it now (3.92:1).
+   The 404 page's six ways and the docs page's four Start here cards are 44px-plus targets across their whole surface. */
+.start, .nf-list a { border-color: var(--k-line-control); }
 /* A card a link points at says so inside its border: it does not move. */
 .doc-card:target, .plan:target { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
 .card { display: flex; flex-direction: column; padding: 20px 0 0; border-top: 1px solid var(--line2); }
@@ -515,7 +519,7 @@ main:has(.hero) .section-head .eyebrow::before { counter-increment: sec; content
   /* The label keeps its 13px layout size and the number its 12px, as the bar's chips and the header's controls do: at a 32px
      user default the label grew to 26px, "Approvals" could not break in a 161px chip, and the page was 25px wider than a
      360px window. The floor is respected (12px) and the chip stays 44px at every text size. */
-  .view-n { color: var(--muted); font-size: 12px; font-weight: 600; letter-spacing: .04em; font-variant-numeric: tabular-nums; }
+  .view-n { flex: none; color: var(--muted); font-size: 12px; font-weight: 600; letter-spacing: .04em; font-variant-numeric: tabular-nums; white-space: nowrap; }
   /* The chosen view is a dot, a rule and a tint, so it is not colour alone, and the rule survives High Contrast. */
   .view-input:checked + label { border-color: var(--accent); background: var(--soft); color: var(--link); box-shadow: inset 0 0 0 1px var(--accent); }
   .view-input:checked + label .view-n { color: var(--link); }
@@ -564,8 +568,8 @@ main:has(.hero) .section-head .eyebrow::before { counter-increment: sec; content
    plate's caption used to: at 360 its last line stood 31.75px below the one above it in a 19.5px caption, and the
    caption was 151px beside a 173px picture. The link's box is the caption's line now (it is an inline link in a
    sentence, the exception WCAG 2.5.5 allows); its target is not that box but the figure, which the cover below makes
-   one press — 326 × 300 at 360, larger than the 74.97 × 44 box it had. The plate's chip is in the frame's bar and
-   the cards' rows are rows, not captions, so both keep their 44. */
+   one press — 326 × 300 at 360, larger than the 74.97 × 44 box it had. The plate's three captions and the graph's
+   caption end with the same words; the six view cards' rows are rows, so they keep their 44. */
 .frame figcaption .shot-open { min-height: 0; }
 /* The picture is the door, not only the link: the six view cards' link covers the card, and the
    graph's and the hero's plate's link covers the frame. A press on a 326 × 173 picture did nothing
@@ -573,21 +577,10 @@ main:has(.hero) .section-head .eyebrow::before { counter-increment: sec; content
 .frame:has(.shot-open) { position: relative; }
 .frame:has(.shot-open) .shot-open::before,
 .tile .shot-open::before { content: ""; position: absolute; inset: 0; }
-/* The plate's own way to its full size is a chip in its chrome, not a 44px box in a 13px caption: inside the caption
-   the thumb-sized link made the last line 44px tall, so the line under it stood 31.8px from the one above instead of
-   19.5, and the pane was one caption line taller than its neighbours. It is the same link, the same words and the same
-   name; it is 44px of the bar the browser window already had, and the caption is only text. It is a flex item of that bar
-   beside the address now, and the bar's 16px padding with this -10px keeps its right edge 6px inside the frame, where the
-   absolute placement had it. */
-.frame-open { position: static; align-self: flex-start; flex: none; display: none; align-items: stretch; height: 44px; margin-right: -10px; border-left: 1px solid var(--line); }
-/* A chip's label keeps the chrome's 13px layout size, as the bar's buttons and tabs keep theirs: at a 24px user default
-   .8125rem is 19.5px and the cell 133.42px, which leaves the 129px address beside it 117px and clips it. */
-.frame-open .shot-open { padding: 0 10px; color: var(--ink2); font-size: 13px; text-decoration: none; }
-.frame-open .shot-open:hover { color: var(--link); }
-.frame-open .shot-open:focus-visible { outline-offset: -3px; }
-.tab-input:nth-of-type(1):checked ~ .frame .frame-open-1,
-.tab-input:nth-of-type(2):checked ~ .frame .frame-open-2,
-.tab-input:nth-of-type(3):checked ~ .frame .frame-open-3 { display: flex; }
+/* The plate's bar is a control of its own: its cover starts under the three labels, so a press on the picture or the
+   caption opens the capture and a press on Overview, Events or Designer switches it. Without this the one link would
+   cover the bar and no tab could be chosen. */
+.hero-visual .frame:has(.shot-open) .shot-open::before { top: 50px; }
 /* One caption height for the three views, so switching view moves nothing below the plate. The tallest is two lines
    at a tablet's width and four at 360 (the Events caption); a 320 screen needs five. The 29px is the caption's 28px of
    padding and its 1px rule, inside a border-box. */
@@ -878,7 +871,7 @@ body:has(#billing-monthly:checked) .head-price-monthly { display: inline; }
 .nf-list li { display: flex; }
 .nf-list a { position: relative; display: grid; flex: 1; align-content: start; gap: 2px; min-height: 44px; padding: 16px 48px 16px 20px; color: var(--ink); text-decoration: none; }
 .nf-list a::after { content: "\2192"; position: absolute; right: 20px; top: 50%; margin-top: -.6em; color: var(--muted); }
-.nf-list a:hover { border-color: var(--line2); box-shadow: var(--k-hl), var(--k-shadow-2); }
+.nf-list a:hover { border-color: var(--k-line-control); box-shadow: var(--k-hl), var(--k-shadow-2); }
 .nf-list a:hover::after { color: var(--link); transform: translateX(3px); }
 .nf-list span { color: var(--muted); font-size: .9375rem; }
 
@@ -937,7 +930,10 @@ body:has(#billing-monthly:checked) .head-price-monthly { display: inline; }
 .plan-cta { align-self: end; margin: 16px 0 0; }
 .plan-cta .btn { width: 100%; }
 .unit { white-space: nowrap; }
-.compare .unit { display: block; }
+/* The annual total is a note under the month's figure, and at 768 it did not fit its cell: "($1,488 a year)" is 119px in
+   the 105.86px a plan column leaves after its padding, so it ran to within 0.85px of the next column's rule. At the
+   caption's 13px it is 103px and stays inside its cell, and the two figures read as a figure and its note. */
+.compare .unit { display: block; font-size: .8125rem; }
 .table-wrap { position: relative; overflow-x: auto; border: 1px solid var(--line); border-radius: var(--k-r-lg); box-shadow: var(--lift); background: linear-gradient(to left, var(--panel) 30%, transparent) right / 48px 100% no-repeat local, linear-gradient(to left, var(--edge), transparent) right / 12px 100% no-repeat scroll, var(--panel); }
 /* A row that scrolls sideways keeps the gesture in the row: no page history swipe, no bounce of the page behind it. */
 .tiles, .plans, .toc, .table-wrap, .code pre { overscroll-behavior-x: contain; }
@@ -1162,11 +1158,10 @@ body:has(#billing-monthly:checked) .head-price-monthly { display: inline; }
   .toc-bar.is-back::before, .toc-bar.is-more::after { forced-color-adjust: none; width: 2px; background: CanvasText; }
 }
 @media print {
-  .site-header, .skip, .tabs, .billing, .copy, .copy-note, .doc-filter, .foot-grid, .hero::before, .hero::after, .cta::after, .to-top-dock { display: none; }
-  /* The plate's switcher is `.hero-visual .tabs` (0,2,0) and outranked the line above, so the printed home page kept a
-     dead Overview/Events/Designer row — 730 × 42 at 794, with 16px of paper under it — above the one view a sheet can show.
-     The radios still choose the Overview pane; only the control that cannot be pressed goes. */
-  .hero-visual .tabs { display: none; }
+  .site-header, .skip, .tabs, .billing, .copy, .copy-note, .doc-filter, .foot-grid, .frame-bar, .hero::before, .hero::after, .cta::after, .to-top-dock { display: none; }
+  /* A sheet has no view switcher: the plate prints the view chosen on screen, with its caption and the bar left off. The
+     tabs are inside the bar now, so hiding the bar hides them without the specificity rule the old three-label trough
+     needed (`.hero-visual .tabs` outranked `.tabs` here and printed a dead switcher on the sheet). */
   .calc-total { display: none; }
   .stack-table { display: none !important; }
   #compare .table-wrap, #calculator .table-wrap { display: block !important; }

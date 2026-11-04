@@ -2826,3 +2826,104 @@ one run, so the differences stand.
 The next pass's first job is still the page's length: 12,685 at 360 is 15.9 screens of 800, and the demo (1,666.73) and
 the two ways (849.30) are where the words are. After it, the pricing page's Cloud answer and the shared 48px Terminal
 row, both queued by the previous passes.
+
+## 2026-11-04, third pass: the plate's bar is its view switcher, and four edges a phone reads
+
+Measured with the same probe (Chrome over CDP; reduced motion; light unless said; touch at 320/360/390, a mouse at 768 and
+1,440; print at 794; dark at 360 and 1,440; forced colours at 360; no script at 360; a 24px root at 320/360 and a 32px root
+at 320/360). The before column is the site at `6521258`, exported with `git archive` and served on a second port, measured in
+the same run; no number is copied from an earlier pass. The absolute heights are this container's (the untouched home page at
+360 is 12,662.66 where the record's is 12,685); both halves are one browser in one run, so the differences stand.
+
+### What changed
+
+- **The plate's bar is its view switcher.** The three view labels stood in a 50px trough above a 44px bar of three decorative
+  lights, the demo's address and a Full size chip: 50 + 16 + 44 = **110px of chrome** before the picture, so an 800px phone
+  screen held **47.63px** of the capture (the top of the Delivered card) and at 320 the picture began at **849.94**, wholly
+  below the screen. The labels are inside the frame now, in its one 50px bar (`.frame-bar .tabs`), and the lights and the
+  address are gone. The picture begins **752.38 → 692.38 at 360** (320: 849.94 → 789.94; 390: 754.16 → 694.16; 768:
+  785.98 → 725.98; 1,440: 222 → 170), and the first screen holds **47.63 → 107.63px** of the crop at 360, **45.84 →
+  105.84** at 390, **114.02 → 174.02** at 768; at 320 the frame's top and 10.06px of the picture are on the screen where
+  before the whole frame was below it. The page is **60px shorter** at 320/360/390/768 and **15.97** at 1,440 (the left
+  column sets the hero there).
+- **The Full size link is in the caption it describes, as the graph's is.** Each of the plate's three captions ends with the
+  link (the same words, the same accessible name); the caption keeps its line and its fixed height, and the figure is still
+  the whole press: the link's cover begins under the bar (`top: 50px`), so a press on the picture or the caption opens the
+  capture and a press on Overview, Events or Designer switches it. One link, one name and one tab stop; no duplicate control.
+  At 360 the caption is the same 107px, at 320 126.5, at 768 68, at 1,440 87.5. The plate's way to the full size is now an
+  inline link in a sentence (the exception WCAG 2.5.5 allows), like the graph's since 2026-11-02; the target is the figure,
+  326 × 300 at 360.
+- **A view chooser's number is one token.** In the six-view chooser "05 Cost and budgets" printed its number as **"0" over
+  "5"** in the 161px chip at 360 (and "01 Mission control" as "0"/"1"): the `.view-n` span was a shrinkable flex item with
+  `white-space: normal`, so it broke inside the two digits. It is `flex: none; white-space: nowrap` now: `05` is **15.23 ×
+  30 → 16.97 × 15** and `01` **27.11 × 30 → 28.97 × 15**; the chip's name may still take two lines ("Cost and" / "budgets")
+  and the chip stays 44 × 161. The label keeps 13px at every user text size.
+- **A card that is one press takes a control's edge.** The documentation page's four Start here cards and the 404 page's six
+  ways are one press across the whole card (their link's `::before` covers it), but their border was the decorative line:
+  **1.26:1** on the paper, while the view cards and the pressable frames took the control line in the last two passes. They
+  take `--k-line-control` now (**4.08:1** on the panel and 3.92 on the paper), and a hover keeps it rather than taking it
+  back to `--line2`. The probe's boundary group at 1.26:1 on the docs page is **27 → 23 elements** and on the 404 page
+  **7 → 0**; the six ways' and four cards' old rows are gone from the failure list.
+- **The yearly total fits the cell it is in.** In the plans table "($1,488 a year)" is **119px** of text in the **105.86px**
+  the plan column leaves after its padding at 768 — 13.14px into the 14px padding, 0.86px from the next column's rule — and
+  at 720 it was **119 in 97**, 22px over, 8px past the cell's inner edge. The unit is the caption's 13px now, under the
+  month's figure: **106 in 106** at 768, **99 in 97** at 720 (12px clear of the next cell) and **103 in 103** at 800, with
+  the table's height unchanged (674.19 / 626.19 / 682.19 at 720/768/800). The 1,440 page is 3.2px shorter because the
+  annual row's note is shorter than the line it sat on; nothing else moved.
+- **A printed plate keeps no switcher.** The printed home page carried the 44px browser bar with a dead Full size chip above
+  its one capture; the bar is hidden in print now, with the sheet **11,882.88 → 11,838.88** (−44). The other six printed
+  pages are unchanged (pricing 9,993.41; docs 4,670.41; security 7,516.84; contact 3,077.61; legal 3,085.13; 404 1,091.94),
+  all 0px over 794.
+
+### Measurements after this pass
+
+| Page, height at 320 / 360 / 390 / 768 / 1440 | Before | After |
+|---|---|---|
+| Home | 13,464.14 / 12,662.66 / 12,218.86 / 12,172.06 / 11,241.31 | **13,404.14 / 12,602.66 / 12,158.86 / 12,112.06 / 11,225.34** |
+| Pricing | 14,439.34 / 13,487.05 / 12,840.19 / 10,140.58 / 9,187.53 | 14,439.34 / 13,487.05 / 12,840.19 / 10,140.58 / **9,184.33** |
+| Documentation / security / contact / legal / 404 | unchanged | unchanged |
+
+| The home page's first screen at | 320 | 360 | 390 | 768 | 1,440 |
+|---|---|---|---|---|---|
+| The bar's top | 804.94 | 641.38 (tabs) | 643.16 | 674.98 | 119 (tabs) |
+| The picture's top | **849.94 → 789.94** | **752.38 → 692.38** | **754.16 → 694.16** | **785.98 → 725.98** | **222 → 170** |
+| The picture visible in an 800/900 screen | **−49.94 → 10.06** | **47.63 → 107.63** | **45.84 → 105.84** | **114.02 → 174.02** | 420 → 420 (whole) |
+| The On this page row / `#pricing` | 1,722.73 / 1,783.73 → 1,662.73 / 1,723.73 | 1,583.28 / 1,644.28 → 1,523.28 / 1,584.28 | 1,537.08 / 1,598.08 → 1,477.08 / 1,538.08 | 1,563.23 / 1,624.23 → 1,503.23 / 1,564.23 | 987.47 / 1,048.47 → 971.5 / 1,032.5 |
+
+- The bar is **50px** at every width and the labels are **44px** in three equal cells: 92.66 at 320, 106 at 360, 116 at 390,
+  232 at 768, 147.55 at 1,440. The caption's link is **74.55 × 19.5** at 360 (its own line, not a 44px box), and the
+  figure is the press. No chip's number or name is cut at any of the five widths.
+- No page scrolls sideways at 320, 360, 390, 768 or 1,440 in light or dark (**0** on all 70 page/width/theme pairs), the
+  probe reports **0** console errors, **0 axe-core WCAG 2.0–2.2 A and AA violations** on all seven pages at 360 light,
+  360 dark and 1,440 light, and the smallest computed text is **12px**.
+- Without a script the home page is **12,581** at 360, 0px over: the bar is the same three labels, the first view is chosen
+  in the markup and the picture's link is the caption's. Print: the home page is 11,838.88 and the other six are unchanged,
+  all 0px over. With `forcedColors: active` at 360 the chosen segment keeps its 2px Highlight outline, the page is 12,602.66
+  and the Start here cards' edge is `CanvasText`. At a 24px root every page is **0px over** at 320 and 360; at 32px the
+  recorded pricing debt is unchanged (380 at 360 and 360 at 320), and the bar's labels stay 13px and 44px tall.
+- The probe's target census at 360 gains one inline link (the plate's caption link, 74.55 × 19.5) and loses the 44px chip;
+  no standalone control is under 44 × 44. The only control under 44 on the pricing page is still the 24 × 24 checkbox whose
+  label is 44.
+- `tests/build/site.test.ts` pins the new shape: the tabs inside the frame and their `~ .frame .tabs` step, the 50px bar and
+  its 44px, 13px labels, the cover's 50px offset, the bar hidden in print, the `nowrap` number, the control line on the Start
+  here cards and the ways out (and its hover), and the unit's 13px. The build suites are **225** tests and `npm test` is
+  **6,489 passing, 2 skipped, 0 failing**; `site-chrome --check` is clean.
+
+### What this pass deliberately left
+
+- **At 320 the first screen still shows only 10px of the picture** (the frame's top edge, where before the frame was 49.94px
+  below the screen). The 320 head, the 4-line price line and the 103.69px hero price own the rest; the 360 phone the owner
+  reads now holds the Delivered line and the goal.
+- **The plate's Full size is an inline link in its caption, not a 44px chip in its bar.** The bar has no room for a fourth
+  control at 320 (the tabs would have 60.8px cells and "Overview" is 56px at 13), and the figure is still one press across
+  326 × 300. The graph has had the same shape since 2026-11-02; the six view cards keep their 44px rows.
+- **The bar's decorative lights and the address `127.0.0.1:7420` are gone.** They were `aria-hidden` decoration; the note
+  under the picture still says the demo is scripted and runs on the machine, and the frame is still a window with a bar.
+  The address was the only place the demo's port was named, and the demo's own commands name `127.0.0.1:7420`.
+- **The chooser's names still take two lines in some 161px chips** ("Cost and" / "budgets", "Mission" / "control"); the chip
+  is 44px and the words are whole. The alternative is a shorter name or a wider grid.
+- **The pricing page's cards still repeat the host scope, the stack still repeats the limits, the security page's At a
+  glance box is still 930px, and the home page is still 12,602.66 at 360.** None of these changed; the next pass's first job
+  is still the page's length.
+- **The captures were not retaken** (the console is being redesigned in parallel), `site/ux/` was not edited, and
+  `npm run site:check` still exits 1 on the owner's `TODO(owner)` at `site/legal/index.html:134`.
