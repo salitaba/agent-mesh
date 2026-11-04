@@ -71,6 +71,7 @@
           <div class="field">
             <label for="workspace-name">Name a new workspace</label>
             <input id="workspace-name" name="name" type="text" maxlength="60" autocomplete="off" required>
+            <p class="note" id="create-name-error" role="status" aria-live="polite"></p>
           </div>
           <div class="field" id="create-plan-field" hidden>
             <label for="workspace-plan">Plan</label>
@@ -99,7 +100,7 @@
 
   <section class="panel" id="usage-panel" aria-labelledby="usage-h" hidden>
     <h2 id="usage-h" data-entry="03">Usage</h2>
-    <p class="muted small">Every call your agents made, by day and by workspace, and what each one was charged to your balance. The text of the calls is not kept.</p>
+    <p class="muted small" id="usage-lede">Every call your agents made, by day and by workspace, and what each one was charged to your balance. The text of the calls is not kept.</p>
     <p class="sr" id="usage-say" role="status" aria-live="polite"></p>
     <div id="usage"></div>
   </section>

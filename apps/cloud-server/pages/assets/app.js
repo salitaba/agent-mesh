@@ -29,7 +29,7 @@
     verify: ["bar-say", "status", "title", "again", "resend-form", "resend", "resend-wait", "resend-status", "email"],
     forgot: ["bar-say", "form", "status", "email", "email-error"],
     reset: ["bar-say", "card", "form", "status", "title", "lede", "ask", "password", "password-error"],
-    account: ["bar-say", "who", "notice", "retry-row", "skeleton", "glance", "glance-list", "subnav", "settings-panel", "stage", "stage-steps", "stage-title", "stage-text", "stage-status", "stage-actions", "stage-live", "workspaces-panel", "workspaces", "create-slot", "create-box", "create", "workspace-name", "create-plan-field", "workspace-plan", "create-note", "plan-panel", "plan-h", "plan-steps", "plan-lede", "plan-status", "plan", "balance-panel", "usage-panel", "usage-h", "usage-say", "figures", "topup-fail", "topup-details", "topup", "topup-amount", "topup-unit", "topup-hint", "topup-status", "topup-add", "topup-options", "usage", "password-form", "password-status", "current", "current-error", "next", "next-error"],
+    account: ["bar-say", "who", "notice", "retry-row", "skeleton", "glance", "glance-list", "subnav", "settings-panel", "stage", "stage-steps", "stage-title", "stage-text", "stage-status", "stage-actions", "stage-live", "workspaces-panel", "workspaces", "create-slot", "create-box", "create", "workspace-name", "create-name-error", "create-plan-field", "workspace-plan", "create-note", "plan-panel", "plan-h", "plan-steps", "plan-lede", "plan-status", "plan", "balance-panel", "usage-panel", "usage-h", "usage-lede", "usage-say", "figures", "topup-fail", "topup-details", "topup", "topup-amount", "topup-unit", "topup-hint", "topup-status", "topup-add", "topup-options", "usage", "password-form", "password-status", "current", "current-error", "next", "next-error"],
     terms: ["bar-say"],
     privacy: ["bar-say"],
     notfound: ["bar-say"],
@@ -267,7 +267,7 @@
         }
         // The step's sentence is the plan section's own lede (the card is not drawn for this state), so it says what a plan is and stops:
         // the cards under it name what each one includes and carry the button that chooses it.
-        const what = "A plan is a flat monthly price for your account, and it says how many workspaces you may run at once.";
+        const what = "A plan is one flat price for its own period, and it says how many workspaces you may run at once.";
         // A service that offers no plan at all says what the section under it says, so the page and its announcement agree.
         if (view.plans.length === 0) return { tone: "", title: "Choose a plan", text: "No plan is on offer just now, so no price is shown.", action };
         return { tone: "", title: "Choose a plan", text: stage.byok ? `${what} You bring your own model key and pay your model provider yourself.` : what, action };
@@ -1018,7 +1018,17 @@
       if (r.error.code === "invalid_credentials") {
         if (!wired) {
           wired = true;
-          resender($("resend-form"), $("resend"), $("resend-status"), $("resend-wait"), () => email.value.trim() || null);
+          // An address that is not there is said at the field, as every other refusal on the page is: a button that does nothing
+          // and says nothing is the one dead end this page can have.
+          const addressOf = () => {
+            const to = email.value.trim();
+            if (!to) {
+              invalid(email, $("email-error"), "Enter your email address.");
+              return null;
+            }
+            return to;
+          };
+          resender($("resend-form"), $("resend"), $("resend-status"), $("resend-wait"), addressOf);
         }
         $("resend-form").hidden = false;
       }
@@ -1757,6 +1767,8 @@
         // What went wrong with the last attempt stays until the next one.
         if (!note.className.includes("note-bad")) hint(note, "", "");
       }
+      // The field's own refusal goes with the form: a name it is no longer asking for is not still marked wrong.
+      if (form.hidden) unrefused($("workspace-name"));
     }
 
     function restoreFocus(id) {
@@ -2364,6 +2376,7 @@
 
     async function loadUsage(asked) {
       const box = $("usage");
+      const lede = $("usage-lede");
       // The page's own look at the usage is not a button anyone pressed: a failure of it is said in the panel's own line, because the
       // sentence below is for a person looking at the panel and a reader who is not looking at it would hear nothing otherwise.
       const said = $("usage-say");
@@ -2372,6 +2385,7 @@
       const r = await call("GET", "/api/usage");
       if (signInAgain(r)) return;
       if (!r.ok) {
+        lede.hidden = false;
         if (!asked) said.textContent = `Usage. ${r.error.message}`;
         // The button that asked goes with the answer it asked for: the cursor goes to the new one, and that button carries the reason
         // beside it, so a reader who comes back to it hears what failed as well as what to press.
@@ -2384,6 +2398,8 @@
       const u = r.data;
       state.usageCurrency = u.currency;
       state.usageCalls = u.total.calls;
+      // An empty bill says what would be here and why it is not; the standing sentence above would say it a second time.
+      lede.hidden = u.total.calls === 0;
       $("usage-panel").hidden = !sectionsOf(viewOf()).usage;
       renderSubnav();
       // A person who asked for the answer is taken to it: the section's heading, whose next Tab is the table (or its empty state). The
@@ -2443,7 +2459,7 @@
       const input = $("workspace-name");
       const note = $("create-note");
       const name = input.value.trim();
-      if (!name) return invalid(input, note, "Give the workspace a name.");
+      if (!name) return invalid(input, $("create-name-error"), "Give the workspace a name.");
       state.focusStage = true;
       // The plan the person picked for this workspace, if the form offered one; without it the account's plan is what it starts on.
       const chosen = $("create-plan-field").hidden ? "" : $("workspace-plan").value;

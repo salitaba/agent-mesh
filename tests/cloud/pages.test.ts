@@ -468,7 +468,7 @@ test("what a finger has to hit is as tall as a button on a phone: the buttons, t
   assert.equal(value(".toc-phone a", "min-height", "max-width: 999px"), "44px", "a contents link on a phone, where the side contents are not drawn");
   assert.equal(value(".toc-phone summary", "min-height", "max-width: 999px"), "44px", "and the control that opens it");
   assert.equal(value(".subnav a", "min-height", "max-width: 720px") ?? value(".subnav a", "min-height"), "44px", "a section of the account, on a phone: the line's own rule is 44 at every width, so the phone does not repeat it");
-  assert.equal(value(".subnav a", "min-width", "max-width: 389px"), "44px", "and the narrower pad on the smallest phones leaves each name a finger's width");
+  assert.equal(value(".subnav a", "min-width"), "44px", "a name is a finger's width at every width, so the 41px Plan at 390 is 44 too");
   assert.equal(value(".subnav a", "font-size", "max-width: 389px"), "max(12px, min(.75rem, 3.8vw))", "while the contents line is sized by the row it is on, so a raised root keeps its five names in the row the phone gives them");
   assert.equal(value(".subnav a", "font-size"), "min(.8125rem, 3.8vw)", "and 390 and wider takes the same cap, one row at 200% text");
   assert.equal(value(".subnav", "flex-wrap"), "wrap", "the account's sections wrap rather than hide the last one past the edge");
@@ -496,10 +496,22 @@ test("a button's edge is a control's edge, and the contents line is one row on a
   assert.equal(declared(link!, "justify-content"), "center", "a name narrower than its 44px target is centred in it, not pushed against the next name");
   const rule = small.find((r) => r.selectors.includes(".subnav a + a") && declared(r, "border-left") !== undefined);
   assert.match(declared(rule!, "border-left")!, /var\(--k-line-strong\)/, "one rule between two names, as the ledger's own edge");
-  const sized = narrow.find((r) => r.selectors.includes(".subnav a") && declared(r, "min-width") !== undefined);
-  assert.equal(declared(sized!, "min-width"), "44px", "so Plan, Usage and Balance are a finger wide at 320 and at 360");
-  assert.equal(declared(sized!, "font-size"), "max(12px, min(.75rem, 3.8vw))", "and the line is sized by the row it is on, at 12px on both");
+  const sized = rules.find((r) => r.at === "" && r.selectors.includes(".subnav a") && declared(r, "min-width") !== undefined);
+  assert.equal(declared(sized!, "min-width"), "44px", "so Plan, Usage and Balance are a finger wide at 320, at 360 and at 390");
+  assert.equal(declared(sized!, "font-size"), "min(.8125rem, 3.8vw)", "and the line is sized by the row it is on");
   assert.ok(!narrow.some((r) => declared(r, "padding") === "0"), "the compact padding is below 360 only: the 360 row has room and keeps its spacing");
+});
+
+test("the account's two rows of actions fit one line on a 320 phone", () => {
+  // At 320 the record's line is 278px: Open 92.8 + Pause 75.7 + More 94.2 and two 8px gaps are 278.7, so More fell to a second row and
+  // the record was 100px; the plan's Manage billing 130.1 + Change plan 137.3 and a 12px gap are 279.4. The 4px the row can give up
+  // puts both on one line, in the same space scale as every other row, and the page 108px shorter.
+  const rules = cssRules(read(path.join(ASSETS, "app.css")));
+  const narrow = rules.filter((r) => r.at.includes("max-width: 359px"));
+  const row = narrow.find((r) => r.selectors.includes(".row .btn-row") && declared(r, "gap") !== undefined);
+  assert.ok(row, "a 320 phone's rows have a gap of their own");
+  assert.equal(declared(row!, "gap"), "4px", "which is the smallest step the space scale has");
+  assert.ok(!rules.some((r) => !r.at.includes("max-width: 359px") && r.selectors.includes(".row .btn-row") && declared(r, "gap") !== undefined), "and only a 320 phone takes it: 360 keeps the 8 and 12 the rows are drawn with");
 });
 
 test("the loading skeleton has the shape of the account it stands in for: the two facts the glance carries, not three", () => {

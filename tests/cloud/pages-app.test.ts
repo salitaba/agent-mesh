@@ -787,6 +787,25 @@ test("a button that was pressed has the cursor again when its call is done, unle
   assert.equal(login.doc.activeElement, login.$("password"), "a page that puts it in the field that needs it is not undone");
 });
 
+test("asking for a new link with no address says which field to fill, instead of answering nothing", async () => {
+  const w = world((x) => (x.signedIn = false));
+  w.answers.set("POST /api/login", failure(401, "invalid_credentials", "That email and password do not match an account."));
+  const v = await visit("login", { routes: w.routes });
+  v.type("email", "ada@example.com");
+  v.type("password", "wrong password");
+  v.click(v.button("form", "Sign in"));
+  await v.idle();
+  assert.equal(v.shows(v.$("resend-form")), true, "a refusal offers the way to a new link");
+  v.type("email", "");
+  v.click(v.$("resend"));
+  await v.idle();
+  assert.equal(v.text("email-error"), "Enter your email address.", "and a resend with no address says where it needs one");
+  assert.equal(v.$("email").getAttribute("aria-invalid"), "true");
+  assert.equal(v.$("email").getAttribute("aria-describedby"), "email-error");
+  assert.equal(v.doc.activeElement, v.$("email"), "the cursor is in the field the sentence names");
+  assert.deepEqual(v.to("POST", "/api/verify/resend"), [], "nothing was sent, and no request was made about an address that was not given");
+});
+
 test("a main button says what it is doing while the call is out, and is itself again afterwards", async () => {
   const w = world((x) => (x.signedIn = false));
   let during = "";
@@ -894,8 +913,8 @@ test("a new account sees what to do first: the plan section is the step, and not
   assert.equal(v.shows(v.$("stage")), false, "the block above is not drawn: the section is the step, and it says it once");
   assert.equal(v.shows(v.$("plan-steps")), true, "the section carries the rail");
   assert.equal(v.text("plan-steps"), "02 Choose a plan (you are here) 03 Make a workspace (still to do) 04 Describe your team (still to do)");
-  assert.equal(v.text("plan-lede"), "A plan is a flat monthly price for your account, and it says how many workspaces you may run at once.");
-  assert.equal(v.text("stage-live"), "Choose a plan. A plan is a flat monthly price for your account, and it says how many workspaces you may run at once.", "and what arrived is announced as what the section says");
+  assert.equal(v.text("plan-lede"), "A plan is one flat price for its own period, and it says how many workspaces you may run at once.");
+  assert.equal(v.text("stage-live"), "Choose a plan. A plan is one flat price for its own period, and it says how many workspaces you may run at once.", "and what arrived is announced as what the section says");
   assert.equal(v.shows(v.$("workspaces-panel")), false, "there is no workspace to list");
   assert.equal(v.shows(v.$("create")), false);
   assert.equal(v.text("plan-h"), "Plans");
@@ -1155,7 +1174,7 @@ test("the plans being unavailable leaves the rest of the account usable, says wh
   await n.idle();
   assert.deepEqual(n.labels("plan"), ["Choose Team", "Choose Business"], "the list is drawn in place, without a reload");
   assert.equal(n.$("plan-lede").hidden, false);
-  assert.equal(n.text("plan-lede"), "A plan is a flat monthly price for your account, and it says how many workspaces you may run at once.");
+  assert.equal(n.text("plan-lede"), "A plan is one flat price for its own period, and it says how many workspaces you may run at once.");
   assert.equal(n.doc.activeElement, n.$("plan-h"), "the cursor is on the heading of the section that answered, not on a button that went");
   assert.deepEqual(n.consoleErrors, []);
 
@@ -1213,13 +1232,14 @@ test("naming a workspace creates it, and a workspace that is starting is watched
   const v = await visit("account", { routes: w.routes });
   assert.equal(v.shows(v.$("create")), true);
   await v.send(v.$("create"));
-  assert.equal(v.text("create-note"), "Give the workspace a name.");
+  assert.equal(v.text("create-name-error"), "Give the workspace a name.", "the sentence is in the field's own block, where the cursor goes");
+  assert.equal(v.text("create-note"), "", "and the line under the form, which is the plan's and the service's, says nothing");
   assert.equal(v.$("workspace-name").getAttribute("aria-invalid"), "true");
-  assert.equal(v.$("workspace-name").getAttribute("aria-describedby"), "create-note", "the reason is attached to the field it is about");
+  assert.equal(v.$("workspace-name").getAttribute("aria-describedby"), "create-name-error", "the reason is attached to the field it is about");
   assert.equal(v.doc.activeElement, v.$("workspace-name"));
   assert.deepEqual(v.to("POST", "/api/workspaces"), []);
   v.type("workspace-name", "R");
-  assert.equal(v.text("create-note"), "", "and the sentence goes when the field it names is changed");
+  assert.equal(v.text("create-name-error"), "", "and the sentence goes when the field it names is changed");
 
   v.type("workspace-name", "  Research  ");
   await v.send(v.$("create"));
@@ -1714,6 +1734,7 @@ test("usage is a table by day and one by workspace, with a total, the charge in 
     };
   });
   const v = await visit("account", { routes: w.routes });
+  assert.equal(v.shows(v.$("usage-lede")), true, "a bill with calls keeps the sentence that says what the section is");
   const tables = v.$("usage").querySelectorAll("table");
   assert.equal(tables.length, 2);
   const rows = (t: (typeof tables)[number]) => t.querySelectorAll("tr").map((r) => v.text(r));
@@ -1767,10 +1788,12 @@ test("a usage read that fails while the page draws is said to a reader, not only
   // looking at the panel, and a reader who is not looking at it would otherwise hear nothing at all.
   assert.equal(v.$("usage-say").getAttribute("role"), "status");
   assert.equal(v.text("usage-say"), "Usage. Usage could not be read just now. Try again in a moment.");
+  assert.equal(v.shows(v.$("usage-lede")), true, "and the sentence saying what the section is stays while the read is failed");
   w.answers.set("GET /api/usage", { json: NO_USAGE });
   v.click(v.button("usage", "Try again"));
   await v.idle();
   assert.match(v.text("usage"), /^Nothing has been used yet\./);
+  assert.equal(v.shows(v.$("usage-lede")), false, "an empty bill does not draw the standing sentence over the empty entry that already says what would be here");
   assert.equal(v.text("usage-say"), "", "the line goes when a read answers");
   assert.equal(v.doc.activeElement, v.$("usage-h"), "and the cursor goes to the section's heading, as a retry that answers does");
 });
