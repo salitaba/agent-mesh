@@ -214,3 +214,16 @@ test("the narrowest phone's closed row keeps its name and its figure on one line
   assert.match(css, /\.ov \.card\.closed \.card-head \{ flex-wrap: nowrap; margin: 0; padding: 0; border: 0; \}/, "the row is still one line, not two");
   assert.match(css, /\.ov \.card\.closed \.card-acts > button::after \{ content: ""; position: absolute; inset: 0; \}/, "and the row is still the door, not a label with a handle");
 });
+
+/**
+ * A finished receipt says when its result is from. The figure is "Ran for 2m 36s"; its sub-line used to explain the measurement
+ * ("From creation to delivery"), which the label already says, while the phone's first screen said nothing about how fresh the
+ * result was. "Delivered 14m ago" is one line where the old sub took two at 360 (36 → 18 px of the receipt), and it is the fact a
+ * person opening a finished mission asks first.
+ */
+test("a delivered receipt dates the result, and keeps the duration's label to say what it measured", () => {
+  assert.match(hero, /const finishedAt = clock\.ended \? ago\(\(goal as \{ completedAt\?: string \} \| null \| undefined\)\?\.completedAt\) : "";/, "the end time is the goal's own completion, not the last poll");
+  assert.match(hero, /const sub = clock\.ended\s*\? `Delivered \$\{finishedAt \|\| "at an unrecorded time"\}`/, "the sub-line says when, not how it was measured");
+  assert.doesNotMatch(hero, /"From creation to delivery"/, "the measurement sentence is gone");
+});
+

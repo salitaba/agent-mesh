@@ -17,7 +17,11 @@
 
 /* ---------- the page ---------- */
 .files-bar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s2) var(--s3); margin: 0 0 var(--s4); }
-.files-bar .srch { flex: 1 1 220px; min-width: 200px; }
+/* The search's basis decides the line, not its final width: a wrapped flex container breaks before it shrinks, so the
+   220 px basis the 2026-10-30 pass measured left 220 + 105 + 12 = 337 in a 336 px row at 360 — 0.94 px over, and the bar took
+   two rows (96 px, the first file 52 px lower) even though the search itself could have shrunk. A 200 px basis is the same
+   search at 360 (it grows to 219) and leaves 19 px of slack, so a 1 px change in the button's own label cannot wrap the bar. */
+.files-bar .srch { flex: 1 1 200px; min-width: 200px; }
 .files-bar select.sel { flex: 0 1 190px; min-width: 0; }
 .files-bar .seg { flex-wrap: wrap; max-width: 100%; }
 .files-bar .seg button { white-space: nowrap; }

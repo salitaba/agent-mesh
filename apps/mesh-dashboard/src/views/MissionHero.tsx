@@ -1,4 +1,4 @@
-import { dur, fmt, spanLabel } from "../format";
+import { ago, dur, fmt, spanLabel } from "../format";
 import { AgentAvatar, Button, IconTile, Menu, Pill, Progress, Stat, Tooltip, agentColor, useNow, type MenuItem, type TileTone } from "../components";
 import { Icon, type IconName } from "../icons";
 import { budgetTone } from "../cost";
@@ -87,8 +87,12 @@ function ClockKpi({ goal, ticking, go }: { goal: unknown; ticking: boolean; go: 
   const now = useNow(ticking ? 1000 : 15000);
   const clock = missionClock(goal as Parameters<typeof missionClock>[0], now);
   if (!clock) return null;
+  // A finished mission's figure says when its result is from, not how the figure was measured: "Ran for" already says that, and a
+  // receipt read in the hand wants the freshness fact ("Delivered 14m ago"), which no other word on the phone's first screen says.
+  // At 360 the old measurement sentence wrapped to two lines and cost the receipt 18 px; the date is one.
+  const finishedAt = clock.ended ? ago((goal as { completedAt?: string } | null | undefined)?.completedAt) : "";
   const sub = clock.ended
-    ? "From creation to delivery"
+    ? `Delivered ${finishedAt || "at an unrecorded time"}`
     : clock.limitMs === null
       ? "Since the goal was created"
       : clock.over ? `Over the ${spanLabel(clock.limitMs)} limit` : `of ${spanLabel(clock.limitMs)} allowed`;

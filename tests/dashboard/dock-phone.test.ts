@@ -54,7 +54,7 @@ test("the row exists only where the navigation is a drawer, and not where anothe
 
 test("a tab says where you are, and its count is in its name as well as on its shoulder", () => {
   assert.match(shell, /aria-current=\{here \? "page" : undefined\}/, "the chosen place is marked, as the sidebar marks it");
-  assert.match(shell, /const name = waiting > 0 \? `\$\{n\.label\}: \$\{waiting\} waiting on you` : n\.label;/, "the count is said, not only drawn");
+  assert.match(shell, /const name = waiting > 0 \? `\$\{n\.label\} \$\{drawn\} waiting on you` : n\.label;/, "the count is said, not only drawn, in the order the tab draws it");
   assert.match(shell, /\{waiting > 0 \? <em className="dock-badge" aria-hidden="true">\{waiting > 99 \? "99\+" : waiting\}<\/em> : null\}/, "the badge is decoration; the name carries the number");
   assert.match(shell, /const waiting = v === "escalations" \? inbox : 0;/, "Needs you counts what the top bar counts, decisions and tool requests");
 });

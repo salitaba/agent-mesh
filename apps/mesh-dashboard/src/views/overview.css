@@ -265,6 +265,38 @@ details.ov-note { display: block; }
   .stat-cell:first-child, .stat-cell:nth-child(odd) { padding-left: var(--s6); border-left: 0; }
   .stat-cell:nth-child(n + 3) { border-top: 1px solid var(--line); }
 }
+/* The fold follows the thumb's dock (800), not the phone's width. A 768 px tablet has the navigation drawer and the five places
+   at its thumb and is read in the hand like a phone, but the desk shape opened all four sections and the page was 3,121 px — 4.2
+   screens. The rows are the same 53 px ruled bands at 768 as at 360 (measured: 3,121 → 841). `Overview.tsx` asks the dock's own
+   break, so the fold, the rows-as-index and the figure door cannot disagree with the CSS. */
+@media (max-width: 800px) {
+  /* A folded section is one row: its name, one figure, Show. The figure may not wrap the row into two lines, so it truncates. */
+  .ov .card-fold-sum { flex: 1 1 auto; min-width: 0; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  /* An open section's head is its title and its one control on the first row, and the count under them. Measured at 360 on the
+     delivered demo, "What shipped" with its split ("9 files · 3 delivered · 6 awaiting review") put the meta on two lines and
+     Show on a third: the head was 103 px of a phone's first screen. The title and Show share the row, the meta takes the next. */
+  .ov #ov-shipped:not(.closed) .card-head > .card-meta { order: 3; flex: 1 1 100%; }
+  .ov #ov-shipped:not(.closed) .card-head > .card-acts { order: 2; margin-left: auto; }
+  /* Closed, the section is a ruled row, not a card with its heading and nothing under it: the four evidence sections read as one
+     ledger under the index, and the surface returns when a row opens. Measured at 360: a closed card was 103 px (16 padding, a
+     44 px control, a 12 px gap and a rule with no body under it); the row is 53, and the four rows are 212 against 412. */
+  .ov .card.closed { position: relative; background: none; border: 0; border-top: 1px solid var(--line); border-radius: 0; box-shadow: none; padding: var(--s1) var(--s2); }
+  .ov .card.closed .card-head { flex-wrap: nowrap; margin: 0; padding: 0; border: 0; }
+  /* The row is the door, not a label with a handle at its end. Its one control keeps the 56 × 44 box, the name it is announced by and
+     its place in the tab order; the press it takes is the row's, because a pseudo-element of the button *is* the button (a pseudo has
+     no element of its own), stretched over the whole closed section. Measured at 360 before: the row is 336 × 53 and the button 56 × 44
+     at its right edge — 17% of the row's width, and a press 40 px into the name opened **0 of 4** rows. The Graph's phone rows already
+     work this way (294 × 88 row, 294 × 88 button). The cost, stated: while a section is closed its words cannot be dragged to select —
+     a closed row is a door, and the words are read in the body one press later. */
+  .ov .card.closed .card-acts > button::after { content: ""; position: absolute; inset: 0; }
+  /* The press must not move the target out from under itself: a transformed button becomes the containing block of its own
+     pseudo-element, so the shared small button's half-pixel `:active` nudge collapsed the overlay back to 56 × 44 between
+     pointerdown and pointerup. Measured before this rule at 360: pointerdown target BUTTON.small, click target DIV.card-head, and
+     the row stayed closed. The nudge is decoration; the pressed fill and shadow stay. */
+  .ov .card.closed .card-acts > button:active { transform: none; }
+  /* And it says so before the press: pointed at, or reached by the keyboard, the whole band lights, not only the 56 px at its end. */
+  .ov .card.closed:is(:hover, :focus-within) { background: var(--panel-2); }
+}
 @media (max-width: 620px) {
   .ov-hero-top, .ov-now, .ov-note { padding-left: var(--s4); padding-right: var(--s4); }
   .ov-hero-top { gap: var(--s3); }
@@ -360,32 +392,6 @@ details.ov-note { display: block; }
   .ov .ov-note.disc > .ov-note-body { padding-block: var(--s2) var(--s3-5); }
   .ov .ov-ad > summary::before { margin-top: 0; }
   .ov .ov-ev .chip { min-height: 44px; padding: 0 var(--s3); }
-  /* A folded section is one row: its name, one figure, Show. The figure may not wrap the row into two lines, so it truncates. */
-  .ov .card-fold-sum { flex: 1 1 auto; min-width: 0; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  /* An open section's head is its title and its one control on the first row, and the count under them. Measured at 360 on the
-     delivered demo, "What shipped" with its split ("9 files · 3 delivered · 6 awaiting review") put the meta on two lines and
-     Show on a third: the head was 103 px of a phone's first screen. The title and Show share the row, the meta takes the next. */
-  .ov #ov-shipped:not(.closed) .card-head > .card-meta { order: 3; flex: 1 1 100%; }
-  .ov #ov-shipped:not(.closed) .card-head > .card-acts { order: 2; margin-left: auto; }
-  /* Closed, the section is a ruled row, not a card with its heading and nothing under it: the four evidence sections read as one
-     ledger under the index, and the surface returns when a row opens. Measured at 360: a closed card was 103 px (16 padding, a
-     44 px control, a 12 px gap and a rule with no body under it); the row is 53, and the four rows are 212 against 412. */
-  .ov .card.closed { position: relative; background: none; border: 0; border-top: 1px solid var(--line); border-radius: 0; box-shadow: none; padding: var(--s1) var(--s2); }
-  .ov .card.closed .card-head { flex-wrap: nowrap; margin: 0; padding: 0; border: 0; }
-  /* The row is the door, not a label with a handle at its end. Its one control keeps the 56 × 44 box, the name it is announced by and
-     its place in the tab order; the press it takes is the row's, because a pseudo-element of the button *is* the button (a pseudo has
-     no element of its own), stretched over the whole closed section. Measured at 360 before: the row is 336 × 53 and the button 56 × 44
-     at its right edge — 17% of the row's width, and a press 40 px into the name opened **0 of 4** rows. The Graph's phone rows already
-     work this way (294 × 88 row, 294 × 88 button). The cost, stated: while a section is closed its words cannot be dragged to select —
-     a closed row is a door, and the words are read in the body one press later. */
-  .ov .card.closed .card-acts > button::after { content: ""; position: absolute; inset: 0; }
-  /* The press must not move the target out from under itself: a transformed button becomes the containing block of its own
-     pseudo-element, so the shared small button's half-pixel `:active` nudge collapsed the overlay back to 56 × 44 between
-     pointerdown and pointerup. Measured before this rule at 360: pointerdown target BUTTON.small, click target DIV.card-head, and
-     the row stayed closed. The nudge is decoration; the pressed fill and shadow stay. */
-  .ov .card.closed .card-acts > button:active { transform: none; }
-  /* And it says so before the press: pointed at, or reached by the keyboard, the whole band lights, not only the 56 px at its end. */
-  .ov .card.closed:is(:hover, :focus-within) { background: var(--panel-2); }
 }
 
 /* ---------- the narrowest phone: the hero's gutter is the page's ----------

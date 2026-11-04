@@ -257,21 +257,43 @@ Breakpoints: **1280 1100 900 800 760 620 560**. 800 is the sidebar drawer (JS
   a density rule now, not the place the sentence wraps. Pinned by
   `tests/dashboard/overview-receipt.test.ts`.
 
+- **A page read in the hand folds by the thumb, not by the viewport.** Where the navigation is a drawer (800 and below) the Overview's
+  four evidence sections are one 53 px ruled row each and it draws no jump row; a 768 px tablet had the drawer and the dock and still
+  opened all four (3,121 px), and is 841 now. The fold's predicate is `DOCK` (the dock's own 800), the same one the hero's compact action
+  row uses, and the closed-row CSS lives in the 800 block. A desk (801+) keeps them open and keeps the index. Pinned by
+  `tests/dashboard/overview-fold.test.ts` (2026-11-04).
+- **A decision's answer is not behind its evidence.** The decision record and the involved seats follow the answer form; the consequence
+  that decides the press still comes before it. On the host-spend card at 360 this moved "Raise the ceiling" from y=772 — wholly under
+  the 747 px dock — to 688–732, whole above it. The DOM order is the visual order, so the tab order still walks the screen from top to
+  bottom. Pinned by `tests/dashboard/decision-card.test.ts` (2026-11-04).
+- **A control's name repeats the words it draws, in order.** The bar's inbox button and the dock's "Needs you" tab draw the label and
+  then the badge; their names used to read "Needs you: 1 …", and the colon interrupted the drawn "Needs you 1" — a serious
+  label-content-name-mismatch on every page with something waiting. The markup carries a real space between the label and the count, and
+  the name is "Needs you 1 waiting on you". Pinned by `tests/dashboard/label-in-name.test.ts` (2026-11-04).
+- **A delivered receipt dates its result.** Under "Ran for 2m 36s" the sub-line says "Delivered 14m ago" (the goal's own completion time),
+  not how the figure was measured: the phone's first screen otherwise says nothing about how fresh the result is, and the date is one
+  line where the measurement sentence took two at 320 and 360. Pinned by `tests/dashboard/overview-receipt.test.ts` (2026-11-04).
+
 ## Open problems (carried forward)
 
-- The Overview is now **921 px** at 360 px with a delivered mission (943 on this pass's base build, 952 before it, 1,124 before the 2026-10-31
-  receipt, 4,132 before the 2026-10-22 folding and shipped-card work, 8,582 before that): the four evidence sections are one ruled row each
-  until opened, and since 2026-10-28 those rows are also the phone's index. The open question is the default, not the length: What shipped is
-  closed like the other three, and a mission that has just delivered may deserve its six file rows open; measured, the closed row is 53 px and
-  the open panel 847, so the whole difference is one press or two screens.
-- A phone's first screen holds the receipt, the first evidence row and — at 360 — the second row **whole** now: the receipt is **498.14 px**
-  and What shipped begins at **627.73**, its 44 px head (**632.73–676.73**) 70.3 px clear of the 747 dock; Latest work is
-  **692.73–745.73**, its head **697.73–741.73**, the row's end 1.27 px above the dock. At 390 the second head is **706.92–750.92**
-  (3.9 px under) and at 320 **720.13–764.13** (17.1 under): both widths pay the receipt's height there (507.33 at 390, 520.53 at 320),
-  and the next 40 px is the receipt's two 20 px block paddings. The 20 px figure step still holds 9.19 px from 320 to 387 (2026-11-03).
+- The Overview is now **858 px** at 360 px with a delivered mission (876 before this pass, 921 before it, 943 on the pass before that,
+  952 before the 2026-10-31 receipt, 1,124 before the 2026-10-22 folding and shipped-card work, 8,582 before that): the four evidence sections
+  are one ruled row each until opened, and since 2026-10-28 those rows are also the page's index. Since 2026-11-04 the fold follows the
+  thumb dock (800) rather than the phone's 620, so a 768 px tablet is 841 px instead of 3,121 and a desk (801+) is where the sections open.
+  The open question is still the default, not the length: What shipped is closed like the other three, and a mission that has just delivered
+  may deserve its six file rows open; measured, the closed row is 53 px and the open panel 847, so the whole difference is one press or two
+  screens.
+- A phone's first screen holds the receipt, the first evidence row and — at 360 — the second row **whole**: the receipt is **480 px**
+  and What shipped begins at **609.5**, its 44 px head (**614.5–658.5**) 88.5 px clear of the 747 dock; Latest work is
+  **674.5–727.5**, its head **679.5–723.5**, the row's end 19.5 px above the dock. At 390 the second head is **688.7–732.7**
+  (14.3 px clear) and at 320 **701.9–745.9** (1.1 px clear, whole): 390's receipt is 489.1 and 320's 502.3 (2026-11-04, the
+  delivered date in the clock's sub-line is one line where the measurement sentence took two). The 20 px figure step still holds
+  9.19 px from 320 to 387 (2026-11-03).
 - Events and the approvals inbox still close without `NextLinks`, and that is now a decision rather than a pending question: Events ends on
   its window status (the newest 300 of 491 events) and the inbox on its empty state's Back to the Overview; a row of doors would repeat
-  the navigation each page already has (`Pause`/`Filters`, `Decisions`/`Tool gates`) rather than continue it.
+  the navigation each page already has (`Pause`/`Filters`, `Decisions`/`Tool gates`) rather than continue it. The inbox's *answer* is no
+  longer at the bottom of its card: since 2026-11-04 the decision record and involved seats follow the answer, so on the host-spend card
+  the action is 688–732 at 360, whole above the dock, where it began at 772.
 - At 621–800 px the project strip is still a row of tabs that scrolls inside itself when projects overflow. The phone's switcher and sheet
   prove the pattern; it was not measured here because `curule console` serves one mesh and `/api/projects` answers 404, so this mode has no
   strip to overflow. The hosted console is where the measurement can be made.
@@ -306,10 +328,11 @@ Breakpoints: **1280 1100 900 800 760 620 560**. 800 is the sidebar drawer (JS
 - The thumb's row is 53 px of chrome and 36 px of page on every project page from 800 px down (2026-10-31). It buys one press
   instead of two for five places, and the pages opened once pay it too. Whether it should hide on scroll, or be shorter than 52,
   is a use question; the measurement is in this pass's entry.
-- The Files bar is 44 px at 360 and 390 and 96 at 320: 220 + 103.52 + 12 = 335.5 in 296, so the button keeps the line under the
-  search there. The search's hint now reads "Name, owner,..." at 360; the next words decision is whether the 320 edge should
-  shorten the hint rather than give the button a row, or whether the button should be a 44 px glyph (which would keep the hint at
-  360 and 390).
+- The Files bar is 44 px at 360 and 390 and 96 at 320: the search's **200 px** basis plus the 105 px button and the 12 px gap is 317, so
+  the two share the row at 360 (the search grows to 219) and the button keeps its own line at 320 (296). The search's hint reads
+  "Name, owner,..." at 360; the next words decision is whether the 320 edge should shorten the hint rather than give the button a row,
+  or whether the button should be a 44 px glyph (which would keep the hint at 360 and 390). The 220 px basis this replaced was 0.94 px
+  over at 360: a wrapped flex container breaks its line before it shrinks, so the bar took two rows (2026-11-04).
 
 ## What the next pass should take
 
@@ -327,15 +350,116 @@ Breakpoints: **1280 1100 900 800 760 620 560**. 800 is the sidebar drawer (JS
 6. Decide whether the Steps filter fold belongs above 620: at 621–768 the chips take two rows and the switch a third (166 px),
    though the page's own reading is one button there. The tablet's `NextLinks` now take the 44 px floor on a coarse pointer, so the
    chips are the last of that family.
-7. Decide whether What shipped opens by default on a fresh delivery, and whether the phone's fold remembers a section (the page
-   resets to all closed on every visit). It is now the second thing on the phone's first screen (627.73, 70.3 px above the dock).
+7. Decide whether What shipped opens by default on a fresh delivery, and whether the fold remembers a section (the page
+   resets to all closed on every visit). It is now the second thing on the phone's first screen (609.5, its head 88.5 px above the dock);
+   the tablet (768) shows the same four rows and has the same question.
 8. Measure the project strip at 621–800 with enough projects, in the hosted console where a registry exists; `curule console` cannot show it.
 9. Remember the YAML preview's wrap choice, or move the toggle into the pane's own head; either is a small addition to a layer that now fits.
 10. Check the Events and inbox end-caps against real live content before adding any row (the decision above).
 11. Read the console with a real thumb on a real phone: the measurements here are Chromium at 360 px with touch emulation only in CSS, not a hardware device.
 12. Check the frame's safe-area claims on a notched device in both orientations; the insets are in the CSS but the stand-in browser reports them as zero.
+13. Decide whether the fold should follow the dock past 800 to the 1,100 grid break: at 801 the desk returns (the Overview is ~3,100 px again)
+    because the sidebar is back, and the four rows are 744 px wide with their figure at the far left and Show at the far right. Is a small
+    laptop a desk or a hand's width with a keyboard? Measure it with a real pointer.
+14. Decide whether the inbox's note field and "Clear this card" should also be on the first screen: the action is there now (688–732 at
+    360), but the card is 1,242 px and the field is at 764. The card's answer can be one press while its note needs a scroll; the host-spend
+    card's primary opens host settings, so the note is written on the way back, not on the way out.
 
 ## Pass log
+
+### 2026-11-04 — the brief follows the thumb, and the page whose job is the answer leads with it
+
+Surface: `views/Overview.tsx` (the fold's predicate), `views/overview.css` (the closed row's rules moved to a new 800 block),
+`views/files.css` (the search's basis), `views/DecisionCard.tsx` (the evidence after the answer), `views/MissionHero.tsx` (the
+delivered clock's sub-line), `shell.tsx` (the two inbox names), `views/inbox.css` (its header), and nine tests
+(`overview-fold`, `overview-figures`, `page-exits`, `overview-receipt`, `files-phone`, `label-in-name`, `dock-phone`,
+`frame-phone`, and the new `decision-card`).
+
+Measured on the scripted demo at **Delivered** (507 events, 7 checks, 9 files, 17 messages, 7 seats, ran 9.2s) in the production
+build served by `curule console`, Chromium at 320/360/390/620/621/768/801/1,440 in light and at 360/768/1,440 in dark (84 axe
+reads), a touch pointer at 800 and below, reduced motion, axe-core 4.14. The inbox's waiting state is one real host-spend ceiling
+card raised through the console's own API (`POST /escalations/host-ceiling`), which also adds the DisagreementRecord artifact the
+card's decision record points at; the two halves of each inbox pair are that card.
+
+**The tablet had the drawer and the dock, but the desk's scroll.** The Overview folded its four evidence sections only at the phone's
+620, while a 768 px tablet has the navigation drawer, the compact hero and the five places at its thumb. It opened all four sections
+at once and the What shipped panel drew 601 px of rows: the delivered page was **3,121 px**, 4.2 screens, and the first evidence
+started 709 px down with the whole result below it. At 621 the page was 3,621. The fold now uses `DOCK` (the dock's own 800), the
+same answer the hero's compact row already asked, and the closed-row CSS moved from the 620 block into a new 800 block so the JS and
+CSS cannot disagree. At 768 the page is **841**: the hero, two whole evidence rows, and the third row's head on the first screen; the
+tab stops in `#view` fall from 40 to 10. A desk (801+) keeps all four open and keeps the jump row; 1,440 is unchanged (1,913). The
+figures are still doors: pressing Checks at 768 opens Goal checks, scrolls to it and focuses it (`#view.scrollTop` 1,255, focus
+`#ov-goal`), and a press 40 px into a closed row opens it with focus on its own Show control.
+
+**The Files bar was a row over by less than a pixel.** The search's 220 px basis plus the Filters button (104.94) and the 12 px gap
+is **336.94 in a 336 px row at 360**. A wrapped flex container breaks its line before its items shrink, so 0.94 px was enough to put
+the bar back on two rows: **96 px**, the first group at 281.59 instead of 229.59, the first file 52 px lower, the search full width.
+The 2026-10-30 pass measured the button at 103.52 (336 in 336) — a half-pixel fit that a font's own edge could take away. The basis
+is **200 px** now: 200 + 104.94 + 12 leaves 19 px of slack, the search grows to 219, and the hint truncates as that pass intended
+("Name, owner,..."). Measured at 360: bar **96 → 44**, first group **281.6 → 229.6**, page **1,171 → 1,119**; at the end of the list
+the bar is still stuck under the top bar (y=64), now 44 px rather than 96. 320 keeps its two rows (296 of content cannot hold 317);
+390, 768 and 1,440 do not move.
+
+**The inbox's answer was wholly under the dock.** On the host-spend card the decision record (72 px of `.dc-context`) sat between
+the consequence and the form, so the card's primary control — **Raise the ceiling** — began at **y=772**, its whole 44 px box under
+the 747 px dock. "Needs you" is the page whose one job is the answer, and its first screen showed no action. The record and the
+involved seats now follow the answer in the **DOM** (not by a CSS `order`, which would have left the tab order walking a different
+screen): the consequence that decides the press still comes first, the answer is **688–732** at 360 and 320 — whole above the dock —
+and **583** at 768. The card is still 1,242 px, and its note field (764) and Clear this card (816) stay below the first screen, after
+the action.
+
+**The count broke the name.** With one decision waiting, axe reported `label-content-name-mismatch` (serious) on the bar's inbox
+button and the dock's Needs you tab: the drawn text is **"Needs you 1"**, and the accessible name was "Needs you: 1 waiting on you",
+whose colon interrupts the visible sequence (WCAG 2.5.3). It failed **22 of 22** reads with the badge — 11 views × 2 themes at 360 —
+and 2 nodes at 621 and 768 (the bar's button and the dock tab; 1 at 1,440, where the dock is not drawn). The name now repeats the
+drawn label and count in order, and the markup
+carries a real space between them so the visible text is the same sequence. After: **0** in 84 reads (14 views × 360/768/1,440 ×
+both themes). The dock's five tabs keep their 64/72/154 px boxes, and the bar's button its 67 × 44.
+
+**The receipt did not date itself.** Under "Ran for 2m 36s" the sub-line explained the measurement ("From creation to delivery"),
+which "Ran for" already says, and it wrapped to two lines at 320/360/390, while nothing on the phone's first screen said when the
+result was from. It is **"Delivered 14m ago"** now, from the goal's own `completedAt`, one line at every phone width. The receipt
+falls **18 px** at 320/360/390 (520.5/498.1/507.3 → 502.3/480/489.1), and at 320 the second evidence row's whole head is above the
+dock (701.9–745.9) where it began 17.1 px under it.
+
+| | Before | After |
+|---|---|---|
+| The Overview, 320 / 360 / 390 / 620 | 898 / 876 / 885 / 822 | 880 / 858 / 867 / 822 |
+| The Overview, 768 | 3,121 | **841** |
+| The Overview, 621 (one waiting card) | 3,621 | 980 |
+| The Overview, 1,440 | 1,913 | 1,913 |
+| The receipt (hero), 320 / 360 / 390 | 520.5 / 498.1 / 507.3 | 502.3 / 480 / 489.1 |
+| What shipped row, 360 | 627.7–680.7 | 609.5–662.5 |
+| Its 44 px head, 360 | 632.7–676.7 (70.3 clear of the 747 dock) | 614.5–658.5 (88.5 clear) |
+| Latest work head, 360 / 390 / 320 | 697.7–741.7 / 706.9–750.9 / 720.1–764.1 | 679.5–723.5 / 688.7–732.7 / 701.9–745.9 |
+| Latest work head clear of the dock, 320 | 17.1 under | 1.1 above (whole) |
+| Tab stops in `#view`, 768 (delivered) | 40 | 10 |
+| The Files bar, 360 | 96 | 44 |
+| The Files first group, 360 | 281.6 | 229.6 |
+| The Files search, 360 | 336 | 219 |
+| The Files page, 360 | 1,171 | 1,119 |
+| The Files bar at the list's end, 360 | y 64, 96 | y 64, 44 |
+| The inbox answer, 320 / 360 | 772 | 688 (688–732) |
+| axe `label-content-name-mismatch`, 360 with a badge | 22 of 22 reads, 1 serious each | 0 of 84 reads |
+| Horizontal page scroll, 320–1,440, both themes | 0 | 0 |
+| Controls under 44 × 44 in `#view`, 320/360/768 | 0 | 0 (the 34 × 20 notify switch inside its 44 px label is the recorded exception) |
+| Type census at 360 | 11 12 13 14 15 16 20 24 30 | the same (11 is the avatar initials) |
+
+**Floors.** `npm run typecheck` and `npm run build` clean; `dist/tests/dashboard` **1,223 pass, 0 fail**; the full suite
+**6,487 tests, 6,485 pass, 0 fail, 2 skipped**; eslint **0 errors** (211 pre-existing cross-package warnings); `npm run qa:console`
+at 360 and 1,440 in both themes: **52 screenshots, 52 axe runs, 0 violations, 0 page scroll**, and only the one-mesh
+`/api/projects` 404 in the console. `tests/build/console-palette.test.ts` and `type-ramp.test.ts` pass.
+
+**Left.** At **801** the sidebar returns and the fold does not, so the Overview jumps back to ~3,100 px (3,489 with a waiting card);
+whether the brief should follow the dock to the 1,100 grid break is the next measurement, with a pointer. At 768 the four rows are
+744 px wide with the figure at the far left and Show at the far right, which is a lot of air for a one-line rule; a tablet could put
+the figure under the name, but the phone's one-line row is the pinned shape. The tablet's closed rows were read by a scripted pointer
+and a keyboard, not a thumb. At 360 the third evidence row's head is still 7.5 px under the dock (739.5–783.5) and at 320 the third
+begins at 761.9, 14.9 under; the receipt's 18 px bought the second row at 320 and 30.8 px of the first screen at 360, not the third.
+The fold still forgets a section on every visit, and What shipped still opens closed (items 7), the delivery notice still sits over
+the page head for its 4.8 s (the previous pass), and the events chip still says "Live" on a delivered mission (item 3). The
+inbox's evidence is after its answer on a desk too, where the old order was not a reach problem; that is one card shape rather than
+a phone-only rule, and it is the same DOM the reader's tab order follows.
 
 ### 2026-11-04 — a page starts at its head, and focus names the page in front
 

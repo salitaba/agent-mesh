@@ -59,7 +59,7 @@ test("the phone bar is one row: the goal and the telemetry leave it, and the act
   assert.match(css, /\.bar-strip \{ display: none; \}/, "the telemetry is not a row of chrome on a phone");
   // The inbox keeps its icon and its number; its accessible name is the words that left.
   assert.match(css, /\.top-actions \.act-lbl \{[^}]*position: absolute/, "the label becomes the accessible name, not a second row");
-  assert.match(shell, /aria-label=\{`Needs you: \$\{inbox\} waiting on you`\}/, "the icon-only button still says what it does");
+  assert.match(shell, /aria-label=\{`Needs you \$\{inbox\} waiting on you`\}/, "the icon-only button still says what it does, in the words it draws");
   // The same rule at 800: measured at 768 the bar was 116px with the goal and telemetry in it.
   assert.match(narrow(), /#goal-strip \{ display: none; \}/);
   assert.match(narrow(), /\.bar-strip \{ display: none; \}/);

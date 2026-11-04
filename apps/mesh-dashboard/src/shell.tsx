@@ -832,10 +832,13 @@ export function Shell({ viewNode }: { viewNode: React.ReactNode }): React.JSX.El
               </Button>
             ) : null}
             {/* Anything waiting on the operator stays one click away from every page, whatever the mission is doing. When the
-                primary action is already "review" it is that button, so this one stands down. */}
+                primary action is already "review" it is that button, so this one stands down. Its name is the words it draws, in
+                the order it draws them (WCAG 2.5.3): the label and then the count, with no punctuation between them. "Needs you: 1"
+                was a serious label-content-name-mismatch against the drawn "Needs you 1" on every page with something waiting
+                (measured 2026-11-04, axe 4.14). */}
             {inbox > 0 && primary?.action !== "review" && view !== inboxView ? (
-              <Button id="btn-inbox" variant="soft" icon="inbox" title={`${inbox} waiting on you`} aria-label={`Needs you: ${inbox} waiting on you`} onClick={() => setView(inboxView)}>
-                <span className="act-lbl">Needs you</span><b className="count">{inbox}</b>
+              <Button id="btn-inbox" variant="soft" icon="inbox" title={`${inbox} waiting on you`} aria-label={`Needs you ${inbox} waiting on you`} onClick={() => setView(inboxView)}>
+                <span className="act-lbl">Needs you</span>{" "}<b className="count">{inbox}</b>
               </Button>
             ) : null}
             {phone ? null : (
@@ -886,12 +889,16 @@ export function Shell({ viewNode }: { viewNode: React.ReactNode }): React.JSX.El
             const n = NAV_ITEMS.find((item) => item.view === v)!;
             const here = view === v;
             const waiting = v === "escalations" ? inbox : 0;
-            const name = waiting > 0 ? `${n.label}: ${waiting} waiting on you` : n.label;
+            // The visible tab is the name and then the badge; the accessible name repeats those words in that order, so a
+            // voice-control user says what is drawn. The colon here was the same label-content-name-mismatch as the bar's, and
+            // the badge's own cap is repeated too: at 100+ it draws "99+", and a name saying "100" would break the rule again.
+            const drawn = waiting > 99 ? "99+" : String(waiting);
+            const name = waiting > 0 ? `${n.label} ${drawn} waiting on you` : n.label;
             return (
               <button key={v} type="button" className={`dock-tab${here ? " active" : ""}`} aria-current={here ? "page" : undefined}
                 aria-label={name} title={n.title} data-view={v} onClick={() => setView(v)}>
                 <Icon name={n.icon} size={20} />
-                <span className="dock-label" aria-hidden="true">{n.label}</span>
+                <span className="dock-label" aria-hidden="true">{n.label}</span>{" "}
                 {waiting > 0 ? <em className="dock-badge" aria-hidden="true">{waiting > 99 ? "99+" : waiting}</em> : null}
               </button>
             );
