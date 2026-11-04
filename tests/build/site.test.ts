@@ -658,7 +658,7 @@ test("on a phone the four plans are one rate card read in rows, with how buying 
   assert.match(css, /\.teaser \.amount \{ flex: 0 0 auto; align-self: center; \}/, "the amount keeps its size, and drops under the name when the line is too narrow");
   // The note that says how a paid plan starts is read before the two buttons, not after them.
   const button = section.indexOf('<p class="btn-row');
-  const notes = [...section.matchAll(/<p class="small muted mt-s"[^>]*>/g)].map((m) => m.index!);
+  const notes = [...section.matchAll(/<p class="small muted mt-s(?: measure)?"[^>]*>/g)].map((m) => m.index!);
   assert.equal(notes.length, 2, "one note for each state of Curule Cloud");
   for (const at of notes) assert.ok(at > section.indexOf("plan-teaser:end") && at < button, "after the four plans, and before the two buttons");
 });
@@ -876,6 +876,33 @@ test("each of the plate's three views is cropped to the thing it is about on a p
   assert.match(css, /\n\.hero-visual \.pane img \{ object-fit: none; \}/, "the window is a crop of the art at its own size");
   assert.match(css, /@media \(min-width: 720px\) and \(max-width: 1039px\) \{ \.hero-visual \.pane img \{ height: 440px; object-position: 30% 14%; \} \}/, "from 720 the window is tall enough to hold every view's content, so one aim serves all three");
   assert.match(css, /@media \(min-width: 1040px\) \{ \.hero-visual \.pane img \{ height: 420px; object-position: 23% 14%; \} \}/, "and it is unchanged on a desk");
+});
+
+/**
+ * The plate reserves one caption height for its three views, so that pressing a tab does not move the note, the proof
+ * or the rest of the page below it. The Events caption is the longest; at 360 it took five lines where the slot held
+ * four, so pressing Events grew the page by 19.5px (12,604 → 12,623), and at 1,040 and 1,100 it grew the frame the
+ * same amount. The caption says the same in 137 characters now; the test holds it under the slot's 140 and the
+ * stylesheet's heights (4 lines at 360, 5 at 320, 2 at 720 and 3 on a desk) and keeps the steps' bodies on one row.
+ */
+test("the plate's captions fit the height they share, and the three steps' words share a row", () => {
+  const css = fs.readFileSync(path.join(SITE, "assets", "site.css"), "utf8");
+  const home = page(pages, "index.html").html;
+  const events = /<figcaption><b>Events\.<\/b>([\s\S]*?)<a class="shot-open"/.exec(home)?.[1] ?? "";
+  assert.ok(events.replace(/<[^>]+>/g, "").trim().length <= 140, "the longest caption fits the four-line slot it shares at 360");
+  assert.match(events, /what the runtime refused or did not do, and why/, "and it still says what a red line is, and why");
+  // One caption height holds the three views at every width, so a tab press moves nothing below the plate.
+  assert.match(css, /\n\.hero-visual \.frame figcaption \{ min-height: calc\(2 \* 1\.5em \+ 29px\); \}/);
+  assert.match(css, /@media \(max-width: 719px\) \{ \.hero-visual \.frame figcaption \{ min-height: calc\(4 \* 1\.5em \+ 29px\); \} \}/);
+  assert.match(css, /@media \(max-width: 359px\) \{ \.hero-visual \.frame figcaption \{ min-height: calc\(5 \* 1\.5em \+ 29px\); \} \}/);
+  assert.match(css, /@media \(min-width: 1040px\) \{ \.hero-visual \.frame figcaption \{ min-height: calc\(3 \* 1\.5em \+ 29px\); \} \}/);
+  // The three steps are a row of three columns, and a heading that takes two lines must not push its own words down:
+  // at 1,440 the middle step's body began 24.69px below the other two. The step takes its rows from the row, as the
+  // plan cards and the places to start already do.
+  assert.match(css, /@media \(min-width: 860px\) \{\n  \/\* The three steps are one row of three columns[\s\S]*?\n  \.steps \{ grid-template-columns: var\(--c3\); grid-template-rows: auto auto 1fr; gap: 0 32px; \}\n  \.steps li \{ display: grid; grid-row: span 3; grid-template-rows: subgrid; padding: 52px 0 0; row-gap: 0; \}/);
+  assert.equal((home.match(/class="small muted mt-s measure"/g) ?? []).length, 2, "the note under the price is held to the prose measure in both Curule Cloud states");
+  const pricing = page(pages, "pricing/index.html").html;
+  assert.equal((pricing.match(/class="small muted mt-[sm] measure"/g) ?? []).length, 2, "and so are the two notes under the plans and the comparison (the model table's note is inside the generated run-costs block, and is the exporter's to move)");
 });
 
 /**
