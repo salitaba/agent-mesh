@@ -126,7 +126,7 @@ import type {
 } from "./ports";
 import type { ResolvedMeshConfig } from "../../config/src/index";
 import { interestMatches, loadRolePrompt } from "../../config/src/index";
-import { buildAgentContext, buildContextManifest, handoverBundle, renderContextInstructions, renderableMail } from "./context";
+import { buildAgentContext, buildContextManifest, handoverBundle, renderContextInstructions, renderableMail, splitContextInstructions } from "./context";
 import type { ContextLimits } from "./context";
 import { criteriaWouldComplete, criterionSatisfied, DeadlockDetector, liveClaims, TerminationManager, type DeadlockFinding } from "./termination";
 import { droppedVerdictsNotice, gateRoute } from "./gate-route";
@@ -8445,7 +8445,19 @@ export class Supervisor {
         fill: true,
       });
       const bundle = fitted.value;
-      const instructions = fitted.rendered;
+      /**
+       * A native seat gets the stable half of the brief in its SYSTEM prompt.
+       *
+       * Every token of the brief used to be appended to the conversation each
+       * turn, and re-sent on every model call: the ops contract, the role brief,
+       * the closing rules, the tool list and the handover were byte-identical
+       * every turn and cost ~4k tokens each time. The system prompt is built once
+       * per session and sits ahead of the messages, so the same text becomes a
+       * cached prefix that no later turn invalidates. Other runtimes keep the
+       * whole brief in `instructions`, unchanged.
+       */
+      const standing = rec.definition.runtime === "native" ? splitContextInstructions(fitted.rendered) : undefined;
+      const instructions = standing ? standing.turn : fitted.rendered;
       if (fitted.tier !== contextLimits || !fitted.landed) {
         contextLimits = fitted.tier;
         this.auditLine(
@@ -8473,7 +8485,7 @@ export class Supervisor {
        * top-up is that a CONCURRENT turn sees the headroom is gone; settlement
        * still charges the real figure either way.
        */
-      const promptTokens = estimateTokens(instructions.length);
+      const promptTokens = estimateTokens(fitted.rendered.length);
 
       /**
        * Record what this turn was actually given, slot by slot.
@@ -8544,6 +8556,7 @@ export class Supervisor {
         activation: reason,
         context: bundle,
         instructions,
+        ...(standing ? { standingBrief: standing.standing } : {}),
         // The whole point of a handover turn: it must run on the transcript it
         // is describing. See `AgentInput.suppressRotation`.
         suppressRotation: handover !== null,

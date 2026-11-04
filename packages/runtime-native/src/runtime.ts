@@ -201,6 +201,17 @@ interface LiveSession {
   gate: ToolGate;
   grantedTools: Set<string>;
   tools: ToolContext;
+  /**
+   * The bus's tool manifest, resolved once per session.
+   *
+   * A tool definition is part of the prompt prefix, and changing one invalidates
+   * the whole cache (tools, system and messages). The manifest is fetched per
+   * turn from the bus; if it ever came back re-ordered or re-worded, every seat
+   * would silently re-prefill its whole conversation. Freeze it for the life of
+   * the session: the gate still decides every call, and the set a seat is SHOWN
+   * only changes at a restart.
+   */
+  busToolSpecs?: ToolSpec[];
   capabilities: string[];
   requiresApproval: string[];
   contextTokens: number;
@@ -284,14 +295,14 @@ export class NativeRuntime implements AgentRuntime, DesignerRuntime {
    * saving. Doing it here keeps the working set for several more turns at the price
    * of the cold read the rotation would have paid anyway.
    */
-  private compact(live: LiveSession, policy: ResolvedContextPolicy, incomingBrief: boolean): CompactionResult | null {
+  private compact(live: LiveSession, policy: ResolvedContextPolicy, incomingBrief: boolean, system = live.system): CompactionResult | null {
     if (live.messages.length === 0) return null;
     const result = compactConversation(live.messages, policy, { dropAllBriefs: incomingBrief });
     // The provider's figure counts the system prompt and the tool schemas; the
     // estimate here must too, or a "compacted" conversation rotates on its next turn.
     // And it must leave headroom: a compaction that lands one brief under budget is
     // due again next turn, turning the saving into a cache miss per turn.
-    const after = estimateConversationTokens(live.messages, live.system);
+    const after = estimateConversationTokens(live.messages, system);
     if (result.freedChars <= 0 || after >= policy.fitTokens * COMPACT_HEADROOM_RATIO) return null;
     const before = result.estimateBefore;
     live.contextTokens = after;
@@ -575,13 +586,17 @@ export class NativeRuntime implements AgentRuntime, DesignerRuntime {
         for (const t of input.approvalGranted) live.grantedTools.add(t);
       }
       const policy = this.policyFor(live);
+      // The stable half of the brief rides in the system prompt: built once, cached,
+      // and untouched by the messages that change every turn. Absent for a caller
+      // that still sends the whole briefing in `instructions`.
+      const system = input.standingBrief ? `${live.system}\n\n${input.standingBrief}` : live.system;
       const cacheCold = this.staleDue(live);
       const overBudget = live.contextTokens >= policy.fitTokens;
       if (!input.suppressRotation && (overBudget || cacheCold)) {
         // Compaction first: it keeps the working set and costs no model call. A cold
         // cache is the one case where a fresh conversation is strictly cheaper than a
         // lighter one, because the next call pays for the prefix either way.
-        const compacted = cacheCold ? null : this.compact(live, policy, input.instructions.trim().length > 0);
+        const compacted = cacheCold ? null : this.compact(live, policy, input.instructions.trim().length > 0, system);
         if (!compacted) this.rotate(live, overBudget ? "rotation" : "stale");
       }
       const window = this.windowFor(live.agent, live.resolved);
@@ -592,7 +607,9 @@ export class NativeRuntime implements AgentRuntime, DesignerRuntime {
           message: `the context window of ${live.resolved.providerName}/${live.resolved.model} is not configured; assuming ${window.tokens} tokens. Set context_window on the seat, the model or the provider if it is different.`,
         });
       }
-      const busTools = await this.busTools(live, turn.signal);
+      // Frozen per session: a changed tool definition invalidates the whole
+      // prompt cache (tools, system and messages). See `LiveSession.busToolSpecs`.
+      const busTools = live.busToolSpecs ?? (live.busToolSpecs = await this.busTools(live, turn.signal));
       const specs: ToolSpec[] = [...toolsOffered(live.capabilities, live.requiresApproval).map((t) => t.spec), ...busTools];
       const instructions: ChatMessage = { role: "user", content: input.instructions };
       live.messages.push(instructions);
@@ -602,7 +619,7 @@ export class NativeRuntime implements AgentRuntime, DesignerRuntime {
       loop = new TurnLoop({
         provider: live.resolved.provider,
         model: live.resolved.model,
-        system: live.system,
+        system,
         messages: live.messages,
         persist: (added) => this.store.append(live.agent.id, live.transcriptId, added),
         tools: specs,

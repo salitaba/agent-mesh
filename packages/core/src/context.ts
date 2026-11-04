@@ -2207,6 +2207,59 @@ export function renderContextInstructions(bundle: AgentContextBundle): string {
   return lines.join("\n");
 }
 
+/**
+ * Split a rendered brief into the part that is stable for the life of a session
+ * and the part that changes every turn.
+ *
+ * Every token before the first changing one is a cached prefix; every token of
+ * the brief is paid again on every turn, and the stable text (the ops contract,
+ * the role brief, the closing rules, the tool list, policy, the handover) was
+ * being re-sent in full each turn. Moving it into the system prompt is the one
+ * context edit that costs nothing: the system prompt is built once per session
+ * and sits ahead of the messages, so it is cached and never invalidated by a
+ * later turn. The provider guidance is the same in one line — static content
+ * first, dynamic content last.
+ *
+ * Classification by heading rather than by restructuring the renderer keeps the
+ * two paths from drifting: `renderContextInstructions` still returns the whole
+ * brief, and this is a pure function over it.
+ */
+const STANDING_HEADINGS: ReadonlyArray<(h: string) => boolean> = [
+  (h) => h.startsWith("# Mesh Context (system-generated"),
+  (h) => h === "## Handover from your previous session",
+  (h) => h === "## Mission",
+  (h) => h === "## Relevant policy",
+  (h) => h.startsWith("## Ops contract"),
+  (h) => h.startsWith("## Closing out work"),
+  (h) => h === "## Other mesh tools",
+  (h) => h.startsWith("## Testing a patch"),
+  (h) => h.startsWith("## How you ask for things here"),
+  (h) => h.startsWith("## This mesh is LOW-CONTACT"),
+  (h) => h.startsWith("## Answering"),
+  (h) => h.startsWith("## What interrupting someone costs"),
+];
+
+export function splitContextInstructions(rendered: string): { standing: string; turn: string } {
+  const chunks: Array<{ heading: string; lines: string[] }> = [];
+  let current: { heading: string; lines: string[] } = { heading: "", lines: [] };
+  for (const line of rendered.split("\n")) {
+    // Level-1 and level-2 headings open a section; `###` stays inside one.
+    if (/^#{1,2} /.test(line)) {
+      if (current.heading !== "" || current.lines.length > 0) chunks.push(current);
+      current = { heading: line, lines: [line] };
+    } else {
+      current.lines.push(line);
+    }
+  }
+  chunks.push(current);
+
+  const standing: string[] = [];
+  const turn: string[] = [];
+  for (const chunk of chunks) {
+    (STANDING_HEADINGS.some((matches) => matches(chunk.heading)) ? standing : turn).push(chunk.lines.join("\n"));
+  }
+  return { standing: standing.join("\n").trim(), turn: turn.join("\n").trim() };
+}
 
 /**
  * Derive the audit record for a bundle that has already been assembled.

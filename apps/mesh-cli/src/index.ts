@@ -1175,30 +1175,42 @@ async function offlineEconomy(args: Args): Promise<number> {
   const short = (n: number) => (n >= 1_000_000 ? `${(n / 1_000_000).toFixed(1)}M` : n >= 1_000 ? `${Math.round(n / 1_000)}k` : String(Math.round(n)));
   const pct = (x: number) => `${(100 * x).toFixed(1)}%`;
 
-  console.log(`token economy — ${fmt(rep.turns)} turns, ${fmt(rep.billable)} billable tokens`);
+  console.log(`token economy — ${fmt(rep.turns)} turns, ${fmt(rep.billable)} billable / ${fmt(rep.weighted)} weighted units`);
   console.log(`  cache hit     ${rep.cacheHitRatio === null ? "unmeasured" : pct(rep.cacheHitRatio)} of all prompt tokens served from cache`);
+  const wsum = rep.weighted || 1;
+  console.log(
+    `  bill split    fresh ${pct(rep.units.fresh / wsum)}   cache ${pct(rep.units.cached / wsum)}   output ${pct(rep.units.output / wsum)}  ` +
+      `(1x / 0.1x / 5x, the same unit curule ledger prints)`,
+  );
   console.log(`  fresh input   ${fmt(rep.input).padStart(12)}`);
   console.log(`  output        ${fmt(rep.output).padStart(12)}`);
-  console.log(`  cache read    ${fmt(rep.cacheRead).padStart(12)}`);
+  console.log(`  cache read    ${fmt(rep.cacheRead).padStart(12)}  (= ${fmt(rep.units.cached)} units)`);
 
-  console.log("\n  tokens per outcome");
-  const row = (label: string, tokens: number | null, count: number) =>
-    console.log(`    ${label.padEnd(20)} ${(tokens === null ? "—" : fmt(tokens)).padStart(12)}  (${fmt(count)})`);
-  row("accepted criterion", rep.tokensPer.criterion, rep.outcomes.criterionAccepted);
-  row("recorded review", rep.tokensPer.review, rep.outcomes.reviews);
-  row("merged patch", rep.tokensPer.mergedPatch, rep.outcomes.patchesMerged);
-  row("completed task", rep.tokensPer.completedTask, rep.outcomes.tasksCompleted);
-  row("published artifact", rep.tokensPer.artifact, rep.outcomes.artifactsPublished);
+  console.log("\n  per outcome            billable     weighted  (count)");
+  const row = (label: string, billable: number | null, weighted: number | null, count: number) =>
+    console.log(
+      `    ${label.padEnd(20)} ${(billable === null ? "—" : fmt(billable)).padStart(12)} ${(weighted === null ? "—" : fmt(weighted)).padStart(12)}  (${fmt(count)})`,
+    );
+  row("accepted criterion", rep.tokensPer.criterion, rep.costPer.criterion, rep.outcomes.criterionAccepted);
+  row("recorded review", rep.tokensPer.review, rep.costPer.review, rep.outcomes.reviews);
+  row("merged patch", rep.tokensPer.mergedPatch, rep.costPer.mergedPatch, rep.outcomes.patchesMerged);
+  row("completed task", rep.tokensPer.completedTask, rep.costPer.completedTask, rep.outcomes.tasksCompleted);
+  row("published artifact", rep.tokensPer.artifact, rep.costPer.artifact, rep.outcomes.artifactsPublished);
 
-  console.log("\n  by seat");
+  console.log("\n  by seat (weighted)");
   for (const a of rep.byAgent) {
-    console.log(`    ${a.agentId.padEnd(20)} ${short(a.billable).padStart(8)}  ${pct(a.share).padStart(6)}  ${fmt(a.turns).padStart(6)} turns  ${pct(a.input + a.cacheRead ? a.cacheRead / (a.input + a.cacheRead) : 0).padStart(6)} cache`);
+    console.log(
+      `    ${a.agentId.padEnd(20)} ${short(a.weighted).padStart(8)}  ${pct(a.weightedShare).padStart(6)}  ${fmt(a.turns).padStart(6)} turns  ` +
+        `${pct(a.input + a.cacheRead ? a.cacheRead / (a.input + a.cacheRead) : 0).padStart(6)} cache  ${short(a.billable).padStart(8)} billable`,
+    );
   }
 
   if (rep.topTurns.length) {
-    console.log(`\n  most expensive turns (the top 5% of turns carried ${pct(rep.topShare)} of the bill)`);
+    console.log(`\n  most expensive turns by weighted cost (the top 5% carried ${pct(rep.topShare)})`);
     for (const t of rep.topTurns) {
-      console.log(`    ${t.at.slice(0, 19)}  ${t.agentId.padEnd(20)} ${fmt(t.billable).padStart(12)}  fresh ${fmt(t.input).padStart(11)}  cached ${fmt(t.cacheRead ?? 0).padStart(11)}`);
+      console.log(
+        `    ${t.at.slice(0, 19)}  ${t.agentId.padEnd(20)} ${fmt(t.weighted).padStart(12)} units  fresh ${fmt(t.input).padStart(11)}  cached ${fmt(t.cacheRead ?? 0).padStart(11)}`,
+      );
     }
   }
   console.log("");

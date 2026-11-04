@@ -1051,6 +1051,26 @@ test("a turn clears its own old tool traffic once the prompt has grown, and rewr
   }
 });
 
+test("the standing half of the brief rides in the system prompt, so it is paid once per session", async () => {
+  const bus = await fakeBus();
+  const r = rig();
+  try {
+    const provider = new ScriptedProvider([{ tools: [{ name: "mesh_send" }] }, { text: "one" }, { tools: [{ name: "mesh_send" }] }, { text: "two" }]);
+    const rt = runtimeFor(provider);
+    const session = await rt.start(agent(), context(r, bus));
+    await rt.send(session, turnInput("## Your runtime state\nlifecycle=IDLE", { standingBrief: "## Ops contract\ncall something" }));
+    assert.match(provider.requests[0]!.system ?? "", /## Ops contract/, "the contract is in the system prompt");
+    assert.doesNotMatch(provider.requests[0]!.messages[0]!.content, /Ops contract/, "and not in the turn");
+    assert.match(provider.requests[0]!.messages[0]!.content, /Your runtime state/, "the changing half stays in the turn");
+
+    await rt.send(session, turnInput("## Your runtime state\nlifecycle=IDLE", { standingBrief: "## Ops contract\ncall something" }));
+    assert.equal(provider.requests[2]!.system, provider.requests[0]!.system, "the system prompt is byte-identical across turns");
+  } finally {
+    r.cleanup();
+    await bus.close();
+  }
+});
+
 test("a conversation is kept on disk and resumed by a new process, from the id the supervisor recorded", async () => {
   const bus = await fakeBus();
   const r = rig();

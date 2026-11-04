@@ -103,7 +103,7 @@ test("a mission converges on the native runtime against a provider that is only 
       assert.equal(first.model, "m1");
       assert.equal(first.stream, true);
       assert.ok(String(first.messages[0]!.content).includes("You are the DEVELOPER seat."), "the role prompt is the system prompt");
-      assert.ok(String(first.messages[1]!.content).includes("Write hello.txt containing a greeting."), "the briefing carries the goal");
+      assert.ok(String(first.messages[1]!.content).includes("Write hello.txt containing a greeting.") || String(first.messages[0]!.content).includes("Write hello.txt containing a greeting."), "the briefing carries the goal (its standing half rides in the system prompt)");
     } finally {
       await handle.close();
     }

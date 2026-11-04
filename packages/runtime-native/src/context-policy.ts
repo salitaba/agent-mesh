@@ -105,14 +105,20 @@ export const DEFAULT_MAX_TOOL_RESULT_CHARS = 60_000;
 export const TURN_CEILING_PER_FIT = 10;
 export const DEFAULT_WARN_AT_RATIO = 0.75;
 /**
- * Mid-turn clearing defaults, in the shape Anthropic's context editing exposes:
- * start at 60% of the budget, keep the last three tool rounds, and only clear
- * when it frees at least 5,000 tokens (a clear invalidates the prompt cache
- * from the first cleared message, so a small one costs more than it saves).
+ * Mid-turn clearing defaults, in the shape Anthropic's context editing exposes.
+ *
+ * The trigger is deliberately late. Every clear re-writes the conversation from
+ * the first cleared message, and at a 0.1x cache-read price the arithmetic runs
+ * against routine clearing: freeing 40k saves ~4k units on each later call, while
+ * the clear itself re-reads the retained prompt at full price. Measured on the
+ * first live run (2026-11-04), a clear that freed 48k was paired with 128k of
+ * fresh input on that turn. So this is a safety valve for a turn about to overflow
+ * its budget, not per-turn hygiene: the published guidance is that a context
+ * which genuinely has to shrink should be replaced from a summary, not edited.
  */
-export const DEFAULT_CLEAR_TOOL_RESULTS_AT = 0.6;
+export const DEFAULT_CLEAR_TOOL_RESULTS_AT = 0.85;
 export const DEFAULT_KEEP_TOOL_USES = 3;
-export const DEFAULT_CLEAR_AT_LEAST_TOKENS = 5_000;
+export const DEFAULT_CLEAR_AT_LEAST_TOKENS = 20_000;
 /**
  * A compaction must leave this much of the budget free, or the conversation is
  * rotated instead.

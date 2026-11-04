@@ -216,6 +216,20 @@ Still open, and deliberately not built: a sleep-time memory curator and any lear
 Both need a model call to compress meaning rather than to move bytes, and the cheap deterministic
 half — dedupe by key, evict turn exhaust separately, cap the brief by tier — is already in place.
 
+**Second pass, 2026-11-04.** Measuring the mission in invoice terms (cache reads at 0.1x) rather
+than billable tokens moved the target: cache reads are 69% of the cost, so context *size* matters
+more than fresh-token outliers, and the tooling now reports both. Two later sources settled the
+remaining design question. *Cache Engineering for Agents* (arXiv 2610.28577, Oct 2026) shows that
+modifying a trajectory prefix invalidates the retained cache and pays a re-prefill, and that
+rolling tool-response eviction plus batched edits beats threshold-triggered summarization on both
+accuracy and cost. Unity Horizon's cache-pricing analysis works the arithmetic explicitly: a trim
+that frees 13k tokens can cost more than it saves for ~14 turns, tool-definition and system-prompt
+changes are the expensive ones, and "when the context genuinely has to shrink, open a new
+conversation from a summary instead of editing the old one". So the second pass did not blank the
+old brief or elide write payloads mid-conversation; it moved the static half of the brief into the
+system prompt (paid once, cached, never invalidated), froze the tool manifest per session, and
+demoted in-turn clearing to a late overflow valve.
+
 ## 9. Sources
 
 - Anthropic, *Effective context engineering for AI agents*, 2025-09-29 — compaction,
@@ -248,3 +262,9 @@ half — dedupe by key, evict turn exhaust separately, cap the brief by tier —
   Systems*, ICML 2025 workshop — the communication tax.
 - *AgentPrune* (ICLR 2025) — up to 8x token overhead by topology, pruning recovers most.
 - Oracle, *What is context engineering?*, 2026-09-28 — load / fetch / compact / delegate.
+- Fu et al., *Cache Engineering for Agents*, arXiv 2610.28577 (Oct 2026) — prefix edits invalidate
+  retained cache and pay a re-prefill; rolling tool-response drop and batched edits beat
+  threshold-triggered summarization (27.7% lower cost, +1.7 accuracy).
+- Unity Horizon, *Does trimming an AI agent's context save money?*, 2026-09-14 — worked break-even
+  arithmetic for cache invalidation; tool and system-prompt changes invalidate everything; prefer
+  a planned rotation from a summary over editing a warm prefix.

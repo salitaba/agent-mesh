@@ -7,6 +7,23 @@ sections 1 to 26) are described there, run by run.
 
 ## Unreleased
 
+### Changed: the stable half of the brief moves to the system prompt, and cost is counted as the invoice counts it
+
+Measuring the mission properly changed the target. Cache reads are **69%** of its weighted cost (102.7M fresh + 343.3M
+cache-read units + 49.2M output units = 495M units), while the billable figure `curule economy` printed is only 23% of that.
+`curule economy` now prints both — billable beside weighted units, per seat, per turn and per outcome — and ranks by the
+weighted one. The same pass follows the published guidance on caches: static content first, dynamic content last, and do not
+edit history to shrink it.
+
+- **The stable half of the brief is in the system prompt.** The ops contract, role brief, answering/closing rules, tool list,
+  policy and handover were byte-identical every turn and were re-sent on every call. They now ride in `AgentInput.standingBrief`
+  once per session; the turn's message carries only what changed. ~35% of the brief, paid once instead of 1,374 times.
+- **The bus tool manifest is frozen per session.** A tool definition is part of the prompt prefix; re-fetching the manifest
+  every turn meant a re-ordering or re-wording on the bus would silently re-prefill every seat's whole conversation.
+- **In-turn clearing is a safety valve again.** At a 0.1× cache price, a clear that frees 40k saves ~4k units per later call
+  but re-reads the retained prompt at full price — the first monitored run showed a 48k clear paired with 128k of fresh input.
+  The trigger moves from 60% to 85% of the budget, and the minimum freed from 5k to 20k.
+
 ### Added: a conversation budget for the native runtime, and a ceiling on a turn
 
 Every model call re-sends the whole conversation, so a seat's context size multiplies the price of every turn. A live

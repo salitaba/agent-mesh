@@ -2173,6 +2173,16 @@ export interface AgentInput {
   context: AgentContextBundle;
   instructions: string;
   /**
+   * The part of the brief that does not change between turns — the ops contract,
+   * the role brief, the closing rules, the tool list, policy, the handover.
+   *
+   * Sent separately so a runtime can put it in the SYSTEM prompt, where it is
+   * cached and never invalidated by a later turn, instead of re-appending it to
+   * the conversation every turn. Absent means the runtime is given the whole
+   * brief in `instructions`, as before.
+   */
+  standingBrief?: string;
+  /**
    * Run this turn on the CURRENT transcript even though it is over the
    * rotation threshold.
    *

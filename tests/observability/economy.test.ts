@@ -34,7 +34,7 @@ const EVENTS = [
   { type: "message.sent" },
 ];
 
-test("billable tokens divide by what the mission produced", () => {
+test("billable tokens divide by what the mission produced, and weighted units track the invoice", () => {
   const rows = [
     row("dev", 1000, 100, 9000, "t1"),
     row("dev", 2000, 200, 18000, "t2"),
@@ -50,6 +50,8 @@ test("billable tokens divide by what the mission produced", () => {
   assert.equal(rep.output, 1_500);
   assert.equal(rep.cacheRead, 135_000);
   assert.equal(rep.cacheHitRatio, 135_000 / 150_000);
+  assert.equal(rep.weighted, 36_000, "input 1x + cache 0.1x + output 5x");
+  assert.deepEqual(rep.units, { fresh: 15_000, cached: 13_500, output: 7_500 });
 
   assert.deepEqual(rep.outcomes, { criterionAccepted: 2, reviews: 1, patchesMerged: 1, tasksCompleted: 1, artifactsPublished: 2 });
   assert.equal(rep.tokensPer.criterion, 8_250);
@@ -57,20 +59,23 @@ test("billable tokens divide by what the mission produced", () => {
   assert.equal(rep.tokensPer.mergedPatch, 16_500);
   assert.equal(rep.tokensPer.completedTask, 16_500);
   assert.equal(rep.tokensPer.artifact, 8_250);
+  assert.equal(rep.costPer.criterion, 18_000, "weighted cost per outcome, not billable");
+  assert.equal(rep.costPer.mergedPatch, 36_000);
 
   // Newest-first by cost; the top 5% of five turns is one turn.
   assert.equal(rep.topTurns[0]!.turnId, "t5");
-  assert.equal(rep.topTurns[0]!.billable, 5_500);
-  assert.ok(Math.abs(rep.topShare - 5_500 / 16_500) < 1e-9);
+  assert.equal(rep.topTurns[0]!.weighted, 12_000);
+  assert.ok(Math.abs(rep.topShare - 12_000 / 36_000) < 1e-9);
 
   assert.deepEqual(
-    rep.byAgent.map((a) => [a.agentId, a.billable, a.turns]),
+    rep.byAgent.map((a) => [a.agentId, a.weighted, a.turns]),
     [
-      ["qa", 9_900, 2],
-      ["dev", 6_600, 3],
+      ["qa", 21_600, 2],
+      ["dev", 14_400, 3],
     ],
-    "seats ordered by what they cost",
+    "seats ordered by weighted cost",
   );
+  assert.ok(Math.abs(rep.byAgent.reduce((a, r) => a + r.weightedShare, 0) - 1) < 1e-9, "weighted shares cover the whole bill");
 });
 
 test("an outcome nobody produced has no ratio rather than a zero", () => {
@@ -78,5 +83,6 @@ test("an outcome nobody produced has no ratio rather than a zero", () => {
   assert.deepEqual(rep.outcomes, { criterionAccepted: 0, reviews: 0, patchesMerged: 0, tasksCompleted: 0, artifactsPublished: 0 });
   assert.equal(rep.tokensPer.criterion, null);
   assert.equal(rep.tokensPer.mergedPatch, null);
+  assert.equal(rep.costPer.criterion, null);
   assert.equal(rep.cacheHitRatio, null, "no turn reported cache reads: unmeasured, not cold");
 });

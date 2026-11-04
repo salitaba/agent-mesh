@@ -225,13 +225,21 @@ is not enough it rotates on the spot and goes on from the turn's briefing.
 A tool result is cut at `max_tool_result_chars` (default 60,000) before it joins the conversation, with a note saying so. The bus
 tools are what this bounds: the file tools bound themselves.
 
-Within a turn, once the prompt passes `clear_tool_results_at` (default 60% of the budget), the runtime replaces all but the
+Within a turn, once the prompt passes `clear_tool_results_at` (default 85% of the budget), the runtime replaces all but the
 last `keep_tool_uses` rounds of tool traffic — results and the call arguments that carried a written file — with a handle the
-model can re-fetch from. It only does so when that frees at least `clear_at_least_tokens`, because the edit invalidates the
-prompt cache from the first cleared message: a clear that frees less than the cache write costs is a loss. The conversation on
-disk is rewritten to match, so a restart resumes what the model was actually shown. This is the same shape as Anthropic's
-context editing (`trigger` / `keep` / `clear_at_least`), applied by the runtime that owns the conversation rather than by the
-provider.
+model can re-fetch from. It only does so when that frees at least `clear_at_least_tokens`. This is a **safety valve**, not
+per-turn hygiene: every clear re-writes the conversation from the first cleared message, and at a 0.1× cache-read price that
+re-read costs more than the freed tokens save unless the turn would otherwise overflow. The published guidance says the same:
+a context that genuinely has to shrink is replaced from a summary, not edited. The conversation on disk is rewritten to match,
+so a restart resumes what the model was actually shown.
+
+The **stable half of the brief lives in the system prompt**. The ops contract, the role brief, the closing and answering rules,
+the tool list, the seat's policy and the handover are byte-identical from one turn to the next; the supervisor now sends them
+once per session as `standingBrief` and the runtime prepends them to the system prompt, where they are cached and never
+invalidated by a later turn. Only the changing half — state, mail, artifacts, decisions, task board, plan — is appended to the
+conversation each turn. The bus tool manifest is likewise fetched once per session and frozen: a tool definition is part of
+the prompt prefix, and re-fetching it per turn meant any re-ordering or re-wording on the bus would silently re-prefill every
+seat's whole conversation.
 
 ```yaml
 mesh:
@@ -246,9 +254,9 @@ mesh:
         max_tool_result_chars: 60000
         max_turn_tokens: 2000000   # 0 = no ceiling; the default is 10x fit_tokens
         warn_at: 0.75              # fraction of the ceiling at which the seat is told to wrap up
-        clear_tool_results_at: 0.6 # fraction of the budget at which old tool traffic is cleared mid-turn; 0 = off
+        clear_tool_results_at: 0.85 # safety valve for a turn about to overflow; 0 = off
         keep_tool_uses: 3          # tool rounds kept whole when clearing
-        clear_at_least_tokens: 5000 # a clear must free at least this much to be worth the cache write
+        clear_at_least_tokens: 20000 # a clear must free at least this much to be worth the cache write
 ```
 
 A seat can name its own budget with `session.max_context_tokens`, which wins over `fit_tokens` — one seat may keep a long
