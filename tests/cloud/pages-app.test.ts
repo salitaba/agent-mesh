@@ -160,7 +160,6 @@ test("the account's bar does not offer the wrong door while the session is being
   assert.equal(v.shows(account), true, "and with the one that is theirs");
 });
 
-
 test("a front page for someone who is signed in marks their plan and points the others at their account", async () => {
   const w = world(paid);
   const v = await visit("home", { routes: w.routes });

@@ -521,7 +521,6 @@ test("a way-in page's tab names the heading it shows, and the account's password
   assert.ok(settings.attrs.has("hidden"), "Settings is drawn by the script: with no script it is not a password form whose submit would put both passwords in an address");
 });
 
-
 test("a phone's bar is part of the page, so no control is ever under it, and the section a contents link names opens at the edge", () => {
   const rules = cssRules(read(path.join(ASSETS, "app.css")));
   const value = (selector: string, property: string, within = ""): string | undefined => {

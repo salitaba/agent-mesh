@@ -1,3 +1,4 @@
+/* Icons: a 20-unit mask. */
 :root {
   color-scheme: light dark;
   --max: 1080px;
@@ -88,6 +89,7 @@
   }
 }
 /* @kit:tokens end */
+/* ---- base */
 *, *::before, *::after { box-sizing: border-box; }
 html {
   -webkit-text-size-adjust: 100%;
@@ -279,6 +281,7 @@ td, th, dd, .price, .num, .badge, .auth-points li::before { font-variant-numeric
 .field { display: grid; gap: 8px; margin-bottom: 20px; }
 .field label { font-size: .875rem; font-weight: 600; }
 .field .hint { color: var(--k-muted); font-size: .8125rem; }
+/* A refusal takes the field's gap. */
 .field > .note { margin: 0; }
 input:not([type="checkbox"]), select {
   width: 100%;
@@ -359,6 +362,7 @@ input[type="checkbox"]:checked::after { transform: scale(1); }
 input[type="checkbox"]:focus-visible { outline: 2px solid var(--k-accent); outline-offset: 2px; box-shadow: none; }
 .check input[type="checkbox"] { margin-top: 12px; }
 
+/* ---- meters */
 meter {
   appearance: none;
   display: block;
@@ -770,6 +774,7 @@ tfoot > tr > * { background: var(--k-surface-2); font-weight: 650; }
 .sk-card { height: 200px; margin-top: 40px; }
 .sk-plan { height: 360px; }
 
+/* ---- documents */
 .doc { display: grid; gap: 32px; padding-top: clamp(32px, 6vh, 64px); }
 .doc-end { margin-top: 48px; padding-top: 24px; border-top: 1px solid var(--k-line); }
 .doc-end p { margin-bottom: 12px; }
@@ -880,6 +885,7 @@ tfoot > tr > * { background: var(--k-surface-2); font-weight: 650; }
   input[type="checkbox"]::after { display: none; }
 }
 
+/* ---- motion */
 @keyframes spin {
   to { transform: rotate(360deg); }
 }
