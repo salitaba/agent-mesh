@@ -1366,8 +1366,12 @@ ul.errs { margin: var(--s1-5) 0; padding-left: 18px; font-size: 14px; color: var
   padding: 1px 6px; border-radius: 20px; background: color-mix(in srgb, var(--warn) 14%, transparent); color: var(--warn); }
 
 @media (max-width: 620px) {
-  .tabs { overflow-x: auto; scrollbar-width: none; }
-  .tabs::-webkit-scrollbar { display: none; }
+  /* A tab strip wraps rather than hiding its last tab behind a scrollbar no thumb can see: the agent drawer's five tabs
+     were 388 px in a 328 px strip at 360, and "Config" began at x = 334, wholly off screen. The sliding ink is a desk
+     drawing (one row); a phone underlines the chosen tab itself, so a wrapped strip still says which one is open. */
+  .tabs { flex-wrap: wrap; overflow-x: visible; }
+  .tabs-ink { display: none; }
+  .tabs .tab-btn.on { box-shadow: inset 0 -2px 0 var(--k-accent); }
 }
 
 /* ---------------------------------------------------------------------- *
@@ -1471,7 +1475,9 @@ ul.errs { margin: var(--s1-5) 0; padding-left: 18px; font-size: 14px; color: var
     box-shadow: 0 -12px 26px -20px color-mix(in srgb, var(--text) 30%, transparent); }
   .dock-tab { position: relative; flex: 1 1 0; min-width: 0; min-height: 52px;
     display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--s0);
-    padding: var(--s1) var(--s0); border: 0; background: none; color: var(--muted);
+    /* No side padding: at 320 a tab is 64 px and "Needs you" is 63, so the 2 px inset each side turned the name into
+       "Needs …". The tab's box is the target, not the label's inset. */
+    padding: var(--s1) 0; border: 0; background: none; color: var(--muted);
     font: 500 12px/1.1 var(--sans); cursor: pointer;
     transition: color var(--k-dur-1), background var(--k-dur-1); }
   .dock-tab .icon { color: var(--muted); transition: color var(--k-dur-1); }

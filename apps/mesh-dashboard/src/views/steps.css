@@ -12,7 +12,7 @@
 
 .st-pulse { padding: 0; margin-bottom: var(--s3); }
 .st-pulse.hot { border-color: color-mix(in srgb, var(--ok) 34%, var(--line)); }
-.st-pulse-top { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: var(--s3) var(--s6); padding: var(--s4) var(--s5); }
+.st-pulse-top { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: var(--s3) var(--s6); padding: var(--s4) var(--s5); container-type: inline-size; container-name: steps-pulse; }
 .st-live { display: flex; align-items: center; flex-wrap: wrap; gap: var(--s2-5) var(--s3); min-width: 0; }
 .st-live-text { display: flex; flex-direction: column; gap: var(--s0); min-width: 0; }
 .st-live-text b { font: 650 16px/1.25 var(--sans); letter-spacing: var(--k-track-title); }
@@ -33,6 +33,13 @@
 .st-kpis { display: flex; align-items: center; gap: var(--s5); margin-left: auto; }
 .st-kpis > * + * { padding-left: var(--s5); border-left: 1px solid var(--line); }
 .st-kpis .stat-v, .st-kpis .stat-k { white-space: nowrap; }
+/* At 320 the pulse card's content is 262 px, so its three columns are 79.3 px and "Turns done" needs 98: the caption ran
+   6.7 px into "Tokens" and the two read as "TURNS DONETOKENS". A two-line caption, with the second line reserved on all
+   three, keeps the values aligned and the words whole. At 360 the same words are 5 px into the 12 px gap between columns,
+   where nothing collides, so the query stops at the card width that needs it. */
+@container steps-pulse (max-width: 280px) {
+  .st-kpis .stat-k { white-space: normal; min-height: 2.6em; }
+}
 .st-noout { display: flex; align-items: center; gap: var(--s3); }
 .st-noout-k { display: flex; flex-direction: column; gap: var(--s0); }
 /* The same figure written out, for the width where the ring does not fit (below 620). One of the two is always drawn. */

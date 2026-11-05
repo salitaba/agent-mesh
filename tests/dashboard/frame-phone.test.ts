@@ -148,3 +148,14 @@ test("a notice can be taken down without waiting out its timer", () => {
 test("a touch screen shows a tab's close control without a hovering pointer", () => {
   assert.match(touch(), /\.ptab-x \{ opacity: 1; \}/, "inside the coarse/760 block, where there is no hover");
 });
+
+test("a phone's tab strip wraps instead of hiding a tab, and the dock's fifth name is whole at 320", () => {
+  // Measured at 360: the agent drawer's tab strip was 328 px wide with 388 px of tabs; "Config" began at x = 334 and was wholly
+  // off screen behind a scrollbar no thumb can see. At 320 the dock's fifth tab is 64 px and "Needs you" is 63, so the 2 px inset
+  // on each side ellipsized the page's name to "Needs …".
+  const css = phone();
+  assert.match(css, /\.tabs \{[^}]*flex-wrap: wrap;[^}]*overflow-x: visible;/, "the strip takes a second row rather than a hidden scroll");
+  assert.match(css, /\.tabs-ink \{ display: none; \}/, "the desk's sliding line is not drawn across a wrapped strip");
+  assert.match(css, /\.tabs \.tab-btn\.on \{[^}]*box-shadow: inset 0 -2px 0 var\(--k-accent\)/, "the chosen tab keeps its own underline");
+  assert.match(narrow(), /\.dock-tab \{[^}]*padding: var\(--s1\) 0;/, "the tab's 64 px is the label's box, not 60");
+});

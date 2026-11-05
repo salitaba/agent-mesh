@@ -18,6 +18,7 @@ import { baselineOf, vitalsOf, type TurnPhases } from "./vitals";
 import { BaselineChip, CausalRail, ErrorPanel, LiveOps, OpLatency, PhaseRail, VitalsStrip, causalLinks } from "./observability";
 import { ClampedProse, EventRows, Inspector, JsonBlock, OpLedger, Prose, STEP_NARROW, StepJump, ToolRows, useStepMedia, type Section, type Sel } from "./stepview";
 import { placeLabel, placeStep } from "./stepwalk";
+import { pendingLine, pendingRecipients } from "./inbox-model";
 import { ageText, deadlineOf, deadlineText, firstDeadline, hardStopText, liveWorkOf, mergeLiveTools, tokenText, type DeadlineInput } from "./livework";
 import { DeadlineBar, LiveWork, NowLine } from "./liveview";
 import { EventSummary, serverRow, useNameOf } from "./events";
@@ -499,7 +500,7 @@ export function AgentDrawer({ id }: { id: string }): React.JSX.Element {
             <>
               <h3>Signals</h3>
               {escalations.length ? <div className="sig bad">{latest(escalations.length, "escalation")} {escalationWhat(escalations[0].reason)} ({escState(escalations[0].status)})</div> : null}
-              {pending.length ? <div className="sig warn">{pending.length} open request{pending.length > 1 ? "s" : ""} waiting on an answer</div> : null}
+              {pending.length ? <div className="sig warn">{pendingLine(pending.length, pendingRecipients(pending))}</div> : null}
               {approvals.length ? <div className="sig">{latest(approvals.length, "verdict")} {verdictDone(approvals[0].kind)} {verdictSubject(approvals[0], nameOf)}</div> : null}
               {decisions.length ? <div className="sig">{latest(decisions.length, "decision proposed", "decisions proposed")} “{(String(decisions[0].topic ?? "").slice(0, 60))}”</div> : null}
               {held.length ? <div className="sig">{plural(held.length, "file lock")} held{lockedWhat ? `, on ${lockedWhat}` : ""}</div> : null}
