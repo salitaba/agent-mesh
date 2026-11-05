@@ -3401,3 +3401,94 @@ front of the trial, so the two halves are the same browser and the same answers.
 - The 320 plan-less rail: three rows for four stops is 82px, and the first plan's button is 806–850 at 320 and 776–820 at
   360.
 - A real usage table with a model key behind it, to see the empty sentence's hiding with a bill that has rows.
+
+## 2026-11-05: the plan record's next entry, and the amount's own refusal
+
+Same harness: Chromium 156.0.8078.4 through `playwright-core` (the headless shell) against this worktree's
+trial (`trial --port 7521`, whose plans are the trial's own fixtures), 320 / 360 / 390 / 768 / 1440 at 900
+tall, light, 390 in dark, 360 in forced colours, `prefers-reduced-motion: reduce`, a touch pointer below
+721, and axe-core 4.14 over the states below. "Before" is the base commit's own page files, stashed and
+served by the same trial on the same fixture, measured in the same session as the after, not a figure
+copied from an earlier record. The fixture is a Team account at $149.00 a month with one running workspace
+named Research, $10.00 available, and a four-day usage answer (Oct 26–29, 96 calls, 3 failed, $7.14) held
+by request interception in both halves, because the trial's own workspaces make no model call. Heights are
+`document.documentElement.scrollHeight`; positions are `getBoundingClientRect` plus `scrollY`.
+
+- **A plan to move to is the plan record's next entry, not a card drawn inside the current one.** At 1440
+  the "Change plan" list put a **448px** Business card at **x = 201 inside** the 1080px Team card, which
+  grew to **573.5px** and wrapped the second card in its own border — a card in a card, with half the row
+  empty. The list is the panel's next child now, outside the row: the Team card is **238.4px**, the
+  Business card begins at **x = 180** on the same left edge (not 201), and the page is **2,758 → 2,746**.
+  On a phone the row is already borderless and nothing moved. A refusal of the list's own Switch button
+  still lands in that plan's card, because `attachStatus` finds it by plan id.
+- **The amount's own refusal is at the amount.** Typing 4 and pressing Pay wrote "The smallest amount is
+  $5.00." into `#topup-status` at **y = 2,233.6**, **47px above the input it names** (2,330) and above
+  the trough; the input described "topup-hint topup-status". It is `#topup-amount-error` in the field
+  now: **8px under the input** (2,264–2,308 → the note at 2,316), the note **74px** (two lines in the
+  field's 256px measure, where the full-width status was 50), the input no longer pushed down
+  (**2,330 → 2,264**), and Pay takes the field's foot (**2,330 → 2,346**) as the create form's button does when its
+  note is up. The page is **2,638 → 2,654** with the refusal shown; the resting page, **2,383**, is
+  unchanged. The field describes **"topup-hint topup-amount-error"**, and typing one character clears the
+  sentence, the mark and the description. The status keeps the service's own answers ("That amount cannot
+  be bought.", a payment page that will not open).
+- **The question a deletion asks is under the control that asks it.** With More open and Delete pressed,
+  the confirmation sat at **y = 572.9**, below the "Plan Team Change plan" row at 516.9, so the plan
+  record came between the delete and its question. The card's parts now put `ws-confirm` directly after
+  `ws-actions`: the question is at **516.9**, **12px under Delete** (460.9–504.9), and the plan row moves
+  below it (**516.9 → 796.1**). The page is **2,710** either way; the closed confirmation still takes no
+  line.
+- **On a phone the bill is ruled entries, not two cards.** The 2026-10-28 record said the table wrap's
+  fill, the sticky name's background and the total's fill were off below 721 "so the rows are ruled
+  entries on the page's paper", but the wrap kept its 1px side borders and 14px radius: with the four-day
+  answer at 360 the bill was two rounded boxes (`border: 1px solid`, `border-radius: 14px`). It is
+  `border-width: 1px 0; border-radius: 0` below 721: the caption begins at **x = 16** (was 17), the rules
+  run the page's width, the top and bottom close the table, and the height is **371** either way. What a
+  phone reads now matches the plan, balance and workspace records on the same page.
+- **Widths, schemes and the floor.** 320 / 360 / 390 / 768 / 1440: no sideways page scroll (320: 320; 360:
+  360; 390: 390; 768: 768; 1440: 1440), nothing computes below **12px**, no control under 44 × 44 below
+  721, and no console error. **Eight axe-core runs** (the plan list open at 1440, the refused amount at 390
+  in both schemes, the open deletion at 360, the four-day bill at 360 and 768, and the resting account at
+  320 and 1440) find **no violation**. Forced colours at 360 draws the refusal's note, the bill's rules and
+  the plan cards as the system's; dark at 390 is the same page height as light. With scripts off the account is
+  the same **900px** page, its empty note is not drawn, and the noscript sentence and settings form are as
+  before.
+- **The budget.** `app.css` is **40,955 → 40,951 bytes of 40,960** (a net **−4**, 9 left). The bill's two
+  declarations cost 40 bytes; two section comments that only named the block under them
+  (`/* ---- notes */` and `/* ---- forced colours */`) paid for them and left the 4. The stylesheet is
+  still one rule per line.
+
+| measured | before | after |
+| --- | --- | --- |
+| The plan list at 1440 | a 448px card at x = 201 inside the 1080px row (573.5px) | **x = 180, the row 238.4px**; page 2,758 → **2,746** |
+| The amount's refusal at 360 | 50px at y = 2,233.6, **47px above the input** (2,330), `topup-status` | **74px in the field, 8px under the input** (2,316), `topup-amount-error` |
+| … the input / Pay | 2,330 / 2,330 | **2,264 / 2,346** |
+| … the page | 2,638px | **2,654** (the resting page, 2,383, is unchanged) |
+| A deletion's confirmation at 360 | y = 572.9, below the plan row at 516.9 | **y = 516.9, 12px under Delete**; the plan row 796.1 |
+| The phone's bill wrap | 1px on all sides, 14px radius, caption x = 17 | **1px top and bottom, 0 radius, caption x = 16** |
+| `app.css` | 40,955 bytes | **40,951** |
+
+### What this pass leaves
+
+- **The plan to move to is still 448px wide at 1440.** That is the plan card's own single-plan cap from the
+  marketing page (`max-width: 28rem`), and the 632px of paper to its right is empty; the card now begins on
+  the record's edge rather than inset inside it, and a full-width Switch button would be a worse line.
+- **The amount's note is two lines where the full-width status was one.** The field's 256px measure costs
+  the sentence a line and the page 16px while the refusal is shown, and Pay takes the field's foot rather
+  than sitting level with the input. It is the pattern the create form's field has had since 2026-11-04;
+  a second, wider note for one sentence was judged worse.
+- **The phone's bill still names a token column by its first word** ("Input 180,000"), and the
+  by-workspace name still takes the date's 7rem column. They are the 2026-10-30 and 2026-11-04 entries.
+- **The identity still breaks through the domain on a 320 phone** ("…@exampl" / "e.com"). The fix is not
+  `overflow-wrap: anywhere`: measured at a 32px root it made the identity **three** lines (125px) where
+  `break-all` fills two (83.2), and the 200% head is the block the 2026-11-01 pass paid to shorten.
+- **The cancelled checkout's 98px notice, the skeleton's shape, the usage read's rate limit, the key
+  form's height and the prose-only 18–19px links are unchanged.** They are the earlier entries.
+
+### Next pass
+
+- The cancelled checkout: a sentence in the plan section instead of 98px above it, and the plan-less first
+  screen's button at 360.
+- The plan card's lone alternative at a wide width: a ruled row beside the current plan, with the price and
+  the button on one line, rather than a 448px card under a 1080px one.
+- A real usage table with a model key behind it, to see the ruled phone bill with more than a fixture's
+  four days.

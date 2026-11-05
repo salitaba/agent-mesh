@@ -375,7 +375,6 @@ meter::-moz-meter-bar { border-radius: var(--k-r-pill); background: currentColor
 .len { height: 4px; mask: repeating-linear-gradient(to right, black 0 calc(10% - 2px), transparent calc(10% - 2px) 10%); }
 .len[data-done] { color: var(--k-ok); }
 
-/* ---- notes */
 .note, .confirm, .stage-warn, .stage-bad {
   border: 1px solid color-mix(in srgb, var(--tone) 30%, transparent);
   background: color-mix(in srgb, var(--tone) 8%, transparent);
@@ -843,7 +842,7 @@ tfoot > tr > * { background: var(--k-surface-2); font-weight: 650; }
   .ws-address-l { flex: 1 0 100%; font-size: .75rem; }
   .ws .ws-address code { flex: 1 1 8rem; min-width: 0; }
   .ws .ws-address { margin: 0; padding: 10px 0; background: none; }
-  .table-wrap { overflow: visible; background: none; }
+  .table-wrap { overflow: visible; border-width: 1px 0; border-radius: 0; background: none; }
   .table-wrap table, .table-wrap tbody, .table-wrap tfoot { display: block; }
   .table-wrap thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
   .table-wrap tr { display: flex; flex-wrap: wrap; gap: 2px 10px; padding: 10px 0; border-top: 1px solid var(--k-line); }
@@ -876,7 +875,6 @@ tfoot > tr > * { background: var(--k-surface-2); font-weight: 650; }
 @media (max-width: 389px) { .subnav a { padding: 0 4px; font-size: max(12px, min(.75rem, 3.8vw)); } }
 @media (max-width: 359px) { .subnav { gap: 0 } .subnav a { padding: 0; justify-content: center } .subnav a + a { border-left: 1px solid var(--k-line-strong) } .row .btn-row { gap: 4px } }
 
-/* ---- forced colours */
 @media (forced-colors: active) {
   input[type="checkbox"] { appearance: auto; }
   input[type="checkbox"]::after { display: none; }

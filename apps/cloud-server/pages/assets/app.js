@@ -29,7 +29,7 @@
     verify: ["bar-say", "status", "title", "again", "resend-form", "resend", "resend-wait", "resend-status", "email"],
     forgot: ["bar-say", "form", "status", "email", "email-error"],
     reset: ["bar-say", "card", "form", "status", "title", "lede", "ask", "password", "password-error"],
-    account: ["bar-say", "who", "notice", "retry-row", "skeleton", "glance", "glance-list", "subnav", "settings-panel", "stage", "stage-steps", "stage-title", "stage-text", "stage-status", "stage-actions", "stage-live", "workspaces-panel", "workspaces", "create-slot", "create-box", "create", "workspace-name", "create-name-error", "create-plan-field", "workspace-plan", "create-note", "plan-panel", "plan-h", "plan-steps", "plan-lede", "plan-status", "plan", "balance-panel", "usage-panel", "usage-h", "usage-lede", "usage-say", "figures", "topup-fail", "topup-details", "topup", "topup-amount", "topup-unit", "topup-hint", "topup-status", "topup-add", "topup-options", "usage", "password-form", "password-status", "current", "current-error", "next", "next-error"],
+    account: ["bar-say", "who", "notice", "retry-row", "skeleton", "glance", "glance-list", "subnav", "settings-panel", "stage", "stage-steps", "stage-title", "stage-text", "stage-status", "stage-actions", "stage-live", "workspaces-panel", "workspaces", "create-slot", "create-box", "create", "workspace-name", "create-name-error", "create-plan-field", "workspace-plan", "create-note", "plan-panel", "plan-h", "plan-steps", "plan-lede", "plan-status", "plan", "balance-panel", "usage-panel", "usage-h", "usage-lede", "usage-say", "figures", "topup-fail", "topup-details", "topup", "topup-amount", "topup-amount-error", "topup-unit", "topup-hint", "topup-status", "topup-add", "topup-options", "usage", "password-form", "password-status", "current", "current-error", "next", "next-error"],
     terms: ["bar-say"],
     privacy: ["bar-say"],
     notfound: ["bar-say"],
@@ -1547,7 +1547,7 @@
       key: ["div", "ws-key"],
       confirm: ["div", "ws-confirm"],
     };
-    const CARD_ORDER = { keyless: ["head", "says", "key", "auto", "actions", "plan", "confirm"], kept: ["head", "says", "auto", "actions", "plan", "key", "confirm"] };
+    const CARD_ORDER = { keyless: ["head", "says", "key", "auto", "actions", "confirm", "plan"], kept: ["head", "says", "auto", "actions", "confirm", "plan", "key"] };
 
     function cardFor(id, keyFirst) {
       let card = cards.get(id);
@@ -2202,6 +2202,7 @@
       $("plan-h").textContent = live ? "Plan" : "Plans";
       const checkout = (p) => (event) => leaveFor(event.currentTarget, () => call("POST", "/api/checkout", { purpose: "subscription", plan: p.id }), (r) => failedHere(r, p.id), rememberBefore);
       const parts = [];
+      let change = null;
       if (sub) {
         const label = planState(sub);
         const others = live ? state.plans.filter((p) => p.id !== sub.plan) : [];
@@ -2233,12 +2234,13 @@
                     : null,
                 )
               : null,
-            live && others.length > 0
-              ? el("div", { id: "plan-change", class: "disclosed", hidden: !state.changing }, el("div", { class: "plans" }, others.map((p) => planCard(p, state.currency, { subscription: sub, picked: state.picked === p.id, action: (x) => button(`Switch to ${x.title}`, { onclick: checkout(x) }) }))))
-              : null,
           ),
         );
+        // The plans to move to are the record's next entry, not a card drawn inside it: one plan is never a card within
+        // another. A refusal of one of their Switch buttons still lands in that card, because attachStatus finds it by plan id.
+        if (live && others.length > 0) change = el("div", { id: "plan-change", class: "disclosed", hidden: !state.changing }, el("div", { class: "plans" }, others.map((p) => planCard(p, state.currency, { subscription: sub, picked: state.picked === p.id, action: (x) => button(`Switch to ${x.title}`, { onclick: checkout(x) }) }))));
       }
+      if (change) parts.push(change);
       if (!state.plansKnown) {
         parts.push(
           el(
@@ -2494,10 +2496,12 @@
       // The form is drawn only with the amounts to check an entry against, so this is the guard for a submit that had none; it says what
       // is true of the service, and does not mark the field wrong for it.
       if (!t) return say(status, "bad", "Credit cannot be bought just now.");
+      // The amount's own refusal is said in the field it names, as every other form on the pages says one, so a sentence about
+      // the field is 8px under it rather than 47px above it; the card's status stays for what happened to the request.
       const minor = parseAmount(input.value, digitsOf(state.currency));
-      if (minor === null) return invalid(input, status, `Enter an amount such as ${money(t.optionsMinor[0] || t.minimumMinor, state.currency)}.`);
-      if (minor < t.minimumMinor) return invalid(input, status, `The smallest amount is ${money(t.minimumMinor, state.currency)}.`);
-      if (minor > t.maximumMinor) return invalid(input, status, `The largest amount is ${money(t.maximumMinor, state.currency)}.`);
+      if (minor === null) return invalid(input, $("topup-amount-error"), `Enter an amount such as ${money(t.optionsMinor[0] || t.minimumMinor, state.currency)}.`);
+      if (minor < t.minimumMinor) return invalid(input, $("topup-amount-error"), `The smallest amount is ${money(t.minimumMinor, state.currency)}.`);
+      if (minor > t.maximumMinor) return invalid(input, $("topup-amount-error"), `The largest amount is ${money(t.maximumMinor, state.currency)}.`);
       rememberBefore();
       const r = await call("POST", "/api/checkout", { purpose: "topup", amountMinor: minor });
       const url = r.ok ? outsideUrl(r.data && r.data.url) : null;

@@ -1015,6 +1015,7 @@ test("an account on a plan shows it once, with what it costs and includes and wh
   const others = v.$("plan-change").querySelectorAll("article");
   assert.deepEqual(others.map((a) => v.text(a)), ["Business $599.00 per month For a team that runs several projects. $100.00 of model usage each month 3 workspaces Switch to Business"], "the plan the account is on is not in the list of plans to change to: it is shown above, once");
   assert.equal(v.doc.activeElement, v.$("plan-change-toggle"), "the cursor stays on the button that was pressed");
+  assert.deepEqual(v.$("plan").children.filter((n) => !n.isText).map((n) => n.getAttribute("id") || n.className), ["row", "plan-change"], "the plans to move to are the record's next entry, not a card drawn inside the current plan's");
   v.click(v.$("plan-change-toggle"));
   assert.deepEqual(v.labels("plan"), ["Manage billing", "Change plan"]);
 
@@ -1577,8 +1578,8 @@ test("a quick amount goes straight to its payment page, and what the account loo
   again.click(again.button("topup-options", "$10.00"));
   await again.idle();
   assert.equal(again.text("topup-status"), "That amount cannot be bought.");
-  // The answer sits between the amounts and the amount field: the sentence that a press of an amount brings does not push that
-  // amount down the card, and the field's own refusal is above the field it is about, not at the top of the card.
+  // The answer sits between the amounts and the amount field, so the sentence a press of an amount brings does not push that
+  // amount down the card. A refusal about the field itself is in the field's own block, as every other form says one.
   const ids = again.$("topup").parent!.children.filter((n) => !n.isText).map((n) => n.getAttribute("id"));
   assert.deepEqual(ids.slice(-4), ["topup-options", "topup-status", "topup", "topup-hint"], "the amounts, their answer, the field's form, and the line under it");
 });
@@ -1599,12 +1600,16 @@ test("an amount typed by hand is checked against what can be bought before anyth
   for (const [typed, said] of tries) {
     v.type("topup-amount", typed);
     await v.send(v.$("topup"));
-    assert.equal(v.text("topup-status"), said, JSON.stringify(typed));
+    assert.equal(v.text("topup-amount-error"), said, JSON.stringify(typed));
     assert.equal(v.$("topup-amount").getAttribute("aria-invalid"), "true");
+    assert.equal(v.$("topup-amount-error").parent, v.$("topup-amount")?.parent, "the sentence is in the field it names");
+    assert.equal(v.$("topup-amount").getAttribute("aria-describedby"), "topup-hint topup-amount-error", "the hint and the reason are read together");
   }
   assert.deepEqual(v.to("POST", "/api/checkout"), []);
   v.type("topup-amount", "12.50");
   assert.equal(v.$("topup-amount").getAttribute("aria-invalid"), null);
+  assert.equal(v.text("topup-amount-error"), "", "typing clears the sentence with the mark");
+  assert.equal(v.$("topup-amount").getAttribute("aria-describedby"), "topup-hint");
   await v.send(v.$("topup"));
   assert.deepEqual(v.to("POST", "/api/checkout"), [{ method: "POST", path: "/api/checkout", body: { purpose: "topup", amountMinor: 1_250 } }]);
   assert.deepEqual(v.navigations, ["assign https://pay.example/c/other"]);
@@ -1627,7 +1632,7 @@ test("what is typed for credit is read in the currency's own places: a currency 
   assert.equal(v.text("topup-hint"), "From ¥500 to ¥100,000. Each ¥1 adds ¥1 of usage, and credit does not expire.");
   v.type("topup-amount", "1500.5");
   await v.send(v.$("topup"));
-  assert.equal(v.text("topup-status"), "Enter an amount such as ¥1,000.");
+  assert.equal(v.text("topup-amount-error"), "Enter an amount such as ¥1,000.");
   v.type("topup-amount", "1500");
   await v.send(v.$("topup"));
   assert.deepEqual(v.to("POST", "/api/checkout")[0]!.body, { purpose: "topup", amountMinor: 1_500 });

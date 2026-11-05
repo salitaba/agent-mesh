@@ -70,10 +70,10 @@ test("a workspace that is stopped for a payment that is missing offers no Resume
 
 // ---- the card itself ----
 
-test("a card is a name and state, a sentence, what can be done, the plan it is on, and the address as a quiet detail at the end", async () => {
+test("a card is a name and state, a sentence, what can be done and the question a deletion asks, then the plan it is on, and the address as a quiet detail at the end", async () => {
   const v = await visit("account", { routes: world((x) => { paid(x); x.workspaces = [ws("suspended", { statusReason: "paused by its owner" })]; }).routes });
   const card = v.$("workspaces").querySelectorAll("li")[0]!;
-  assert.deepEqual(card.children.map((n) => n.className), ["row-head", "ws-says", "ws-auto", "ws-actions", "ws-plan", "ws-key", "ws-confirm", "ws-note sr", "muted small ws-address"]);
+  assert.deepEqual(card.children.map((n) => n.className), ["row-head", "ws-says", "ws-auto", "ws-actions", "ws-confirm", "ws-plan", "ws-key", "ws-note sr", "muted small ws-address"]);
   assert.equal(v.text(card.querySelector(".row-head")!), "Research Stopped");
   assert.equal(v.text(card.querySelector(".ws-says")!), "Paused by you. Its files are kept. Resume it to open it.");
   assert.equal(v.text(card.querySelector(".ws-plan")!), "Plan Team Change plan", "which plan this workspace alone is on, and the way to another");
