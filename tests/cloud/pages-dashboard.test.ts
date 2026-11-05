@@ -244,10 +244,11 @@ test("the address of a workspace can be copied where the browser will copy, and 
   await v.idle();
   assert.deepEqual(v.copied, ["research-1a2b3c.ws.example.com"]);
   assert.equal(copy.textContent, "Copied");
+  assert.equal(copy.getAttribute("aria-label"), "Copied the address of Research", "and the word on the button is in its name: a person who says what they see is understood, and axe's label-content-name-mismatch is not raised");
   const line = v.$("workspaces").querySelector(".ws-note")!;
   assert.equal(v.text(line), "Copied the address.", "and said where the card says what became of what was asked, which is read out");
   await v.advance(2000);
-  assert.deepEqual([copy.textContent, v.text(line)], ["Copy", ""]);
+  assert.deepEqual([copy.textContent, copy.getAttribute("aria-label"), v.text(line)], ["Copy", "Copy the address of Research", ""]);
 
   const refused = await running({ clipboard: "refuses" });
   refused.click(refused.button("workspaces", "Copy"));
