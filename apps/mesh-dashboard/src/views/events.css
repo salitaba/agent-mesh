@@ -232,3 +232,12 @@
   .evd { --evd-x: var(--s3-5); --evd-y: var(--s3-5); padding: var(--evd-y) var(--evd-x); }
   .evd-id .k { min-width: 92px; }
 }
+
+/* A touch tablet is a thumb's width too: at 768 the seven facets took 112 px of an 836 px view and left the log 491 px.
+   The phone's fold is the same answer above the phone break, and a fine pointer keeps the chips in plain sight. */
+@media (max-width: 900px) and (pointer: coarse) {
+  .ev-tools .ev-filters-toggle { display: inline-flex; flex: none; }
+  .ev-facets { display: none; }
+  .ev-facets.open { display: flex; }
+  .ev-facets .sel { flex: 1 1 100%; }
+}

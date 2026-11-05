@@ -41,6 +41,10 @@ i.sev-mark.routine { box-sizing: border-box; border: 1.5px solid var(--muted); }
 .srch-clear:is(:hover, .is-hover) { background: var(--wash); color: var(--text); }
 .srch-clear:active { background: var(--wash-2); }
 @media (pointer: coarse), (max-width: 620px) {
+  /* The basis decides whether the folded Filters button shares the search's row. At 320 the 200 px basis plus the
+     105 px button and the 8–12 px gap is 313–317 in 296, so the button took a second 44 px row on Events and Files.
+     170 still grows to 219 at 360 and 249 at 390, where the row has the room, and at 320 it shares the row at 179–183. */
+  .srch { flex-basis: 170px; }
   .srch > input.search { min-height: 44px; }
   /* The clear control is the one thing in the field a thumb presses. It was 40 px, the last compact target on the page. */
   .srch-clear { width: 44px; height: 44px; }

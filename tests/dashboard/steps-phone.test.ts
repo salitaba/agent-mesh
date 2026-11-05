@@ -35,6 +35,16 @@ test("the outcome chips fold behind one button that names the choice and its cou
   assert.match(desktop, /\.st-filters-toggle \{ display: none; \}/, "a desk keeps the chips in plain sight, with no button");
 });
 
+test("a thumb's tablet folds the chips too, and the timeline zone fits the caption row", () => {
+  // At 768 a touch tablet had 166 px of toolbar (chips in two rows and the switch in a third) where a phone had 60.
+  assert.match(sheet, /@media \(max-width: 900px\) and \(pointer: coarse\) \{[\s\S]*?\.st-filters-toggle \{ display: inline-flex/, "the same fold is drawn above the phone break on a thumb");
+  assert.match(sheet, /@media \(max-width: 900px\) and \(pointer: coarse\) \{[\s\S]*?\.st-facetbox \{ display: none;/, "and the chips are hidden until it is pressed");
+  const tsx = read("views/Steps.tsx");
+  // At 320/360 "Who was busy, when" (179.2) + 12 + "Times in GMT+3:30" (118) needed 309 in 302 and wrapped the 44 px
+  // caption row to 69.4. The zone's own words are 58 and the screen reader keeps the sentence.
+  assert.match(tsx, /className="st-axis-note" title=\{`Times in \$\{zoneLabel\(\)\}`\}><span className="sr-only">Times in <\/span>\{zoneLabel\(\)\}/, "the visible note is the zone, the accessible name is the sentence");
+});
+
 test("the quiet-run choice travels with the chips it belongs to", () => {
   const tsx = read("views/Steps.tsx");
   const facetbox = tsx.slice(tsx.indexOf('className={`st-facetbox'), tsx.indexOf('<div className="st-toolbar-right">'));

@@ -28,8 +28,8 @@ import {
   type FileFilter,
 } from "../files";
 
-/** The console's phone break (styles.css collapses the page at 620px). */
-const PHONE = "(max-width: 620px)";
+/** The console's phone break, plus a thumb's tablet: at 768 the open filters were 104 px of the bar. */
+const FOLD = "(max-width: 620px), (max-width: 900px) and (pointer: coarse)";
 
 /* What the team made. A list grouped by where each file stands (approved and merged first, then what is in review, then what
  * went back, then drafts), and beside it, on a wide screen, the reader: the file, its versions, what changed, its path.
@@ -100,7 +100,7 @@ export default function Artifacts(): React.JSX.Element {
   const { facts, state } = useMission();
   const actions = useMissionActions();
   const split = useMedia(WIDE);
-  const phone = useMedia(PHONE);
+  const folded = useMedia(FOLD);
 
   const [arts, setArts] = useState<Art[]>([]);
   const [loaded, setLoaded] = useState(false);
@@ -109,7 +109,7 @@ export default function Artifacts(): React.JSX.Element {
   const [stale, setStale] = useState<{ at: string; why: string } | null>(null);
   const [attempt, setAttempt] = useState(0);
   const [filter, setFilter] = useState<FileFilter>(NO_FILTER);
-  // On a phone the type, status and "latest" filters fold behind one button (Events does the same with its chips): three rows of
+  // On a phone or a thumb's tablet the type, status and "latest" filters fold behind one button (Events does the same with its chips): three rows of
   // controls before the first file is a third of the screen. Search stays out, because finding a file is the common move.
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [selected, setSelected] = useState<string | null>(null);
@@ -248,7 +248,7 @@ export default function Artifacts(): React.JSX.Element {
               onChange={(e) => setFilter({ ...filter, query: e.target.value })}
               onClear={() => setFilter({ ...filter, query: "" })}
             />
-            {phone ? (
+            {folded ? (
               <>
                 <Button
                   variant="soft" icon="sliders" extra="files-filters-toggle"

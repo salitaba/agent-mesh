@@ -278,7 +278,7 @@ export default function Events(): React.JSX.Element {
         title="Events"
         status={<FeedStatus />}
         actions={<PauseButton paused={hold.paused} onToggle={() => hold.setPaused(!hold.paused)} noun="events" compact={phone} />}
-        lede={`Everything the mesh does, newest first. Times are in ${zone}.`}
+        lede={`The newest events first. Times are in ${zone}.`}
       />
 
       <div className="ev-tools" role="search">
