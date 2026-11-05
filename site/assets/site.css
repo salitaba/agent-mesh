@@ -969,12 +969,15 @@ body:has(#billing-monthly:checked) .head-price-monthly { display: inline; }
   body:has(#billing-monthly:checked) .choice-annual { display: none; }
   body:has(#billing-monthly:checked) .choice-monthly { display: inline; }
   .plans { grid-template-columns: minmax(0, 1fr); gap: 0; }
-  .plans > .plan { display: none; margin-bottom: 0; }
-  .plans > .plan:first-of-type { display: grid; }
-  body:has(.choice-input:not(#choose-community):checked) #plan-community { display: none; }
+  /* The four cards share one cell, as the six console views do, and take its height as the four do in a row at 720: the
+     cell is the tallest plan's (Business, 749.4px at 360), so choosing a plan no longer pulls the section below it up by
+     up to 106.1px (Team's own card is 624.5). The chosen card's action sits at its bottom, where a plan's action sits when
+     the cards share a row; the others are hidden but still size the cell. */
+  .plans > .plan { grid-area: 1 / 1 / auto / auto; grid-template-rows: none; align-self: stretch; visibility: hidden; margin-bottom: 0; }
+  body:has(#choose-community:checked) #plan-community,
   body:has(#choose-team:checked) #plan-team,
   body:has(#choose-business:checked) #plan-business,
-  body:has(#choose-enterprise:checked) #plan-enterprise { display: grid; }
+  body:has(#choose-enterprise:checked) #plan-enterprise { visibility: visible; }
 }
 .plan { display: grid; grid-row: span 6; grid-template-rows: subgrid; margin-bottom: 16px; padding: 24px; }
 .plan-head h3 { font-size: 1.375rem; }
@@ -1064,6 +1067,10 @@ body:has(#billing-monthly:checked) .head-price-monthly { display: inline; }
 .field input[type=number], .field select, .doc-filter input { width: 100%; min-height: 44px; padding: 0 14px; border: 1px solid var(--k-line-control); border-radius: var(--k-r-md); background: var(--panel); color: var(--ink); font: 1rem var(--font); }
 .field input[type=number]:hover, .field select:hover, .doc-filter input:hover { border-color: var(--muted); }
 .field input[type=number]:focus, .field select:focus, .doc-filter input:focus { outline: none; border-color: var(--accent); box-shadow: var(--k-ring); }
+/* A field's ring is a box-shadow, and a forced-colour mode drops shadows: the only cue left was the border, black at rest
+   and a very dark blue when focused (1.76:1 between the two, 1px wide), which is not a focus indicator. The keyboard's
+   focus takes the page's outline as well, so the ring is 2px in every mode; a mouse keeps the border and the shadow. */
+.field input[type=number]:focus-visible, .field select:focus-visible, .doc-filter input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .field .hint { margin-top: 6px; color: var(--muted); font-size: .875rem; }
 /* A number the estimate could not use is said under its field, in the site's refusal colour, at the hint's size: the
    field is marked aria-invalid and its description names the figure the estimate used instead. */

@@ -514,11 +514,13 @@ test("nothing is hidden by the stylesheet to be shown later: what arrives as the
   assert.ok(!/\.rv\b/.test(outside), "no rule hides anything outside the block for a visitor who allows motion");
   // The only things the stylesheet makes invisible on its own: the radio buttons behind the two segmented controls and the
   // six views' chooser (they are used, not seen), the view cards the chooser is not showing (one is always visible, and the
-  // first is chosen in the markup, so a page with no script shows a view), and the back-to-top button, which only the script makes.
+  // first is chosen in the markup, so a page with no script shows a view), the four plan cards that share one cell on a
+  // phone (the chosen one is visible, the others only size the cell, and the first is chosen in the markup), and the
+  // back-to-top button, which only the script makes.
   const invisible = [...outside.replace(/\/\*[\s\S]*?\*\//g, "").matchAll(/([^{}]+)\{([^{}]*)\}/g)]
     .filter((m) => /\bopacity: 0;|\bvisibility: hidden;/.test(m[2]!))
     .map((m) => m[1]!.trim().replace(/\s+/g, " "));
-  assert.deepEqual(invisible, [".tab-input, .billing-input, .choice-input", ".view-input", ".tiles > .tile", ".to-top:not(.is-shown)"], "nothing else is made invisible by the stylesheet alone");
+  assert.deepEqual(invisible, [".tab-input, .billing-input, .choice-input", ".view-input", ".tiles > .tile", ".plans > .plan", ".to-top:not(.is-shown)"], "nothing else is made invisible by the stylesheet alone");
   assert.match(/@media print \{[\s\S]*?\n\}/.exec(css)![0], /\.rv \{ opacity: 1 !important; transform: none !important; \}/, "and a page printed half-way down is printed whole");
   // A browser does not print backgrounds unless it is told to: the primary button's white label and the closing band's light one would
   // be white on white. On paper a button is black text in a black line, and the band is black text on the paper.
@@ -908,8 +910,11 @@ test("the plate's captions fit the height they share, and the three steps' words
 /**
  * Measured at 360 on the site of 2026-10-31: a plan card is 978px tall — a screen and a quarter — and the four stood in one
  * sideways snap row, so a reader swiped at four different heights to compare two figures. The four names and their figures
- * are one 2 × 2 chooser now, with all four prices on one screen, and only the chosen plan's card is shown. The comparison
- * below still lists every line of all four, and from 720 the four cards are a grid as they were.
+ * are one 2 × 2 chooser now, with all four prices on one screen, and only the chosen plan's card is shown. The four cards
+ * share one cell, as the six console views do: at 360 Team's card is 624.5px and Community's 730.6, so choosing Team pulled
+ * everything below the section up by 106.1px; the cell is the tallest plan's (Business, 749.4px) and the chosen card takes
+ * its height with the action at its bottom, as a plan's card does when four share a row at 720, so a choice moves nothing.
+ * The comparison below still lists every line of all four, and from 720 the four cards are a grid as they were.
  */
 test("on a phone the four plans are read one at a time, chosen by name and figure, and nothing widens the page", () => {
   const pricing = page(pages, "pricing/index.html").html;
@@ -917,10 +922,9 @@ test("on a phone the four plans are read one at a time, chosen by name and figur
   const css = fs.readFileSync(path.join(SITE, "assets", "site.css"), "utf8");
   assert.match(css, /@media \(max-width: 719px\) \{\n  \.plans-hint \{ display: block; margin: 0 0 12px; \}\n  \.plan-choice \{ display: grid; grid-template-columns: repeat\(2, minmax\(0, 1fr\)\);/, "the four names and figures are a 2 x 2 chooser");
   assert.match(css, /\.plans \{ grid-template-columns: minmax\(0, 1fr\); gap: 0; \}/, "the cards are a column, not a row to swipe");
-  assert.match(css, /\.plans > \.plan \{ display: none; margin-bottom: 0; \}/, "one card at a time");
-  assert.match(css, /\.plans > \.plan:first-of-type \{ display: grid; \}/, "Community is the card a reader meets");
-  for (const id of ["team", "business", "enterprise"]) assert.ok(css.includes(`#choose-${id}:checked) #plan-${id}`), `${id}: its chip shows its card`);
-  assert.match(css, /body:has\(\.choice-input:not\(#choose-community\):checked\) #plan-community \{ display: none; \}/, "and chooses it away from the first");
+  assert.match(css, /\.plans > \.plan \{ grid-area: 1 \/ 1 \/ auto \/ auto; grid-template-rows: none; align-self: stretch; visibility: hidden; margin-bottom: 0; \}/, "the four cards share one cell, a hidden card still sizes it, and the chosen one takes its height");
+  for (const id of ["community", "team", "business", "enterprise"]) assert.ok(css.includes(`body:has(#choose-${id}:checked) #plan-${id}`), `${id}: its chip shows its card`);
+  assert.ok(!/\.plans > \.plan:first-of-type/.test(css), "no card is shown by its place in the list");
   assert.ok(!/\.plans \{ position: relative;/.test(css), "no sideways row is left to contain");
   // Every chip and every card name comes from the plan table, and the figure follows the billing switch.
   const choice = /<fieldset class="plan-choice">([\s\S]*?)<\/fieldset>/.exec(pricing)?.[1] ?? "";
@@ -1176,4 +1180,16 @@ test("a command a keyboard can scroll draws its ring inside the box that would c
   assert.match(css, /\n\.code pre:focus-visible \{ outline-offset: -2px; \}/, "the ring is drawn inside the pre, where the code box cannot cut it");
   assert.match(css, /\n\.code \{ position: relative;[^}]*overflow: hidden;/, "the box that clips it is still the framed terminal");
   assert.match(home, /<div class="code"><pre tabindex="0"><code>/, "a command is a tab stop, which is why its ring matters");
+});
+
+/**
+ * A field's focus ring was a box-shadow, and a forced-colour mode drops shadows. Measured at 360 with forcedColors: active,
+ * with the documentation page's filter and the estimate's fields focused by a real Tab: outline none, box-shadow none, and
+ * the border the only change — rgb(0, 0, 0) at rest to rgba(5, 0, 73, 0.8) focused, 1.76:1 between them and 1px wide. The
+ * keyboard's focus takes the page's outline as well, so the ring is 2px in every mode; a mouse keeps the border and shadow.
+ */
+test("a field's focus ring is an outline, so a forced-colour mode keeps it", () => {
+  const css = fs.readFileSync(path.join(SITE, "assets", "site.css"), "utf8");
+  assert.match(css, /\.field input\[type=number\]:focus, \.field select:focus, \.doc-filter input:focus \{ outline: none; border-color: var\(--accent\); box-shadow: var\(--k-ring\); \}/, "a pointer keeps the border and the shadow");
+  assert.match(css, /\.field input\[type=number\]:focus-visible, \.field select:focus-visible, \.doc-filter input:focus-visible \{ outline: 2px solid var\(--accent\); outline-offset: 2px; \}/, "the keyboard's focus is an outline, which a forced-colour mode paints");
 });

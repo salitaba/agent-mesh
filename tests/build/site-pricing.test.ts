@@ -158,6 +158,12 @@ test("the estimate is announced in one sentence, and each field's hint is its de
   assert.match(PAGE, /<p class="field-error" id="c-projects-error" role="alert" hidden><\/p>/);
   assert.match(PAGE, /<p class="field-error" id="c-seats-error" role="alert" hidden><\/p>/);
   assert.match(PAGE, /<p class="field-error" id="c-missions-error" role="alert" hidden><\/p>/);
+  // A refusal stands at the field it names, not under the hint that describes it: at 360 the projects error was 79.2px
+  // below the input, after a 67.2px hint, so the refusal was the third thing under the field. It is the input's next
+  // sibling now (6px under it) and the hint follows; the description is still read hint first, error last.
+  for (const id of ["c-projects", "c-missions"]) {
+    assert.match(PAGE, new RegExp(`<input id="${id}"[^>]*><p class="field-error" id="${id}-error" role="alert" hidden></p><div class="hint" id="${id}-hint">`), `${id}: the refusal is under the field, before the hint`);
+  }
   assert.match(PAGE, /<p class="sr" id="calc-said" role="status"><\/p>/);
   assert.ok(!/<div class="result" id="result" aria-live=/.test(PAGE), "the ledger is not read out row by row on every keystroke");
   assert.match(CSS, /\.field-error \{[^}]*color: var\(--k-bad\);[^}]*font-size: \.875rem;/, "the refusal is the site's refusal colour, at the hint's size");
