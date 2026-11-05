@@ -3632,3 +3632,103 @@ limit tripped during the pass and drew its warning), and the plan-less states ar
   hears the second name after the first.
 - **The skeleton's plan-less shape, the usage read's rate limit, the key form's height and the prose-only 19px links are
   unchanged.** They are the earlier entries.
+
+## 2026-11-05: the failed workspace is one record, and the payment is not sold twice
+
+Same harness: Chromium 1248 through `playwright-core` against this worktree's trial (`localhost:8212`, whose plans are the
+trial's own fixtures), 320 / 360 / 390 / 768 / 1024 / 1440 in light and dark, forced colours at 360,
+`prefers-reduced-motion: reduce`, a touch pointer below 721, and axe-core 4.14 over the states below. "Before" is the base
+commit's own page files served by the same trial through request interception in the same browser session; no figure is
+copied from an earlier record. `/api/usage` is held to one answer in both halves (the trial's 60-reads-an-hour limit had
+already turned the panel into its warning). Fixtures: a Team account with one running workspace named Research, the same
+workspace held to `failed` (`the host did not start`), a plan-less account returning from the payment page with the payment
+not yet applied, the same page with a four-day bill, and the account's plan list open. Heights are
+`document.documentElement.scrollHeight`; positions are `getBoundingClientRect` plus `scrollY`.
+
+- **A workspace that could not start is one record, and its help is a button.** The card at the top (**234.3px** at
+  y = 184.2 at 360, 186.2 at 1440) and the record under it (283.2 / 241) said the same sentence — "The host did not start.
+  Delete it and make a new one. If it fails again, tell the operator." — twice on one screen, and the card's only control
+  was a **167 × 19** link at (96, 367): the one help a failed workspace offers was the smallest target on the page. The
+  state is a record now, as ready, paused and missing-key have been since 2026-10-31: the card is not drawn, the record
+  begins at **y = 306.7** and carries both controls — **Contact the operator 202 × 44** at (16, 434.5) and **Delete this
+  workspace 212 × 44** at (16, 486.5) — and the sentence names the action its button carries ("contact the operator"). The
+  sentence is said once on the page (twice in the DOM with the live region; it was three times), the record is 283.2 →
+  **335.2** (+52, the second row of controls) and the page 2,275 → **2,092** at 360 (**2,448 → 2,179** at 320, 2,226 →
+  2,069 at 390, 2,318 → 2,135 at 768, 2,310 → 2,125 at 1,024 and 2,311 → 2,125 at 1,440). `01 Workspaces` moves 502.6 →
+  **268.2** and the plan panel 1,328.3 → **1,145.9**. Controls under 44 × 44 below 721: **2 → 0** at 360 and 390 (the
+  card's title and the link); at 1,440 the two controls are one 40px row at (201, 403.2) and (411, 403.2). With no
+  operator address the link is not drawn, and the sentence still says what to do (pinned in `pages-stage.test.ts`).
+- **A return from the payment page does not offer the plan again while it is being confirmed.** `?paid=1` with the payment
+  not yet applied said "Thank you. The payment provider confirms a payment a few moments after checkout…" in a **146px**
+  notice at 360, and under it the list still carried **Choose Team** and **Choose Business**: a customer who had just paid
+  could start a second checkout and be charged twice. The list is drawn without its buttons until the answer arrives (or
+  until the page gives up waiting, when they come back): **2 → 0** Choose buttons at every width, and the page 1,546 →
+  **1,430** at 360 (1,705 → 1,589 at 320, 1,474 → 1,358 at 390, 1,047 → 989 at 768, 1,010 → 952 at 1,440). A payment that
+  arrives is still said at once, and the plan row replaces the list (measured: "Your payment has arrived.", Manage billing /
+  Change plan); the notice itself is unchanged.
+- **A phone's token figures are named as tokens.** The header row is clipped on a phone, so each cell draws its column's
+  first word: the bill read **Input 320,000** and **Output 21,000**, the only two figures on the page whose unit was on
+  another screen. The section's own line says it once, at every width: "Every call your agents made, by day and by
+  workspace, what it was charged to your balance, **and its tokens**. The text of the calls is not kept." The line is the
+  height it was (**89.6** at 320 and 360, 67.2 at 390, 44.8 at 768), and the table (371.3) and the page (2,363 at 360) did
+  not move. Naming the unit in the cells instead was measured and not taken: "Input tokens" costs **21.2px a row** — +63.6
+  on the table at 360 and +106 at 320.
+- **The plan to change to says what its button does.** The workspace's own list has explained its switch since it had one;
+  the account's opened a Business card with a **Switch to Business** button and nothing about the charge. It now says, above
+  the card: "Switching takes you to the payment page, and the new plan starts when it is paid." The list is 617.4 →
+  **674.2** at 360 and 600 → **634.4** at 1,440; the page is 2,145 → 2,202 and 2,251 → 2,286 while it is open, and the
+  resting page is unchanged (1,798 / 1,928) because the list is behind its own button.
+- **Widths, schemes and the floor.** 320 / 360 / 390 / 768 / 1,024 / 1,440 in light and dark, forced colours at 360, on the
+  failed state, the confirming return, the open plan list and the four-day bill: no sideways page scroll (320: 320; 360:
+  360; 390: 390; 768: 768; 1,024: 1,024; 1,440: 1,440), nothing computes below **12px**, no control under 44 × 44 below
+  721, no console error, and **19 axe-core runs** find **no violation**. Every state this pass did not name is the same
+  height to the pixel: the paid account **1,890 / 1,798 / 1,776 / 1,913 / 1,928 / 1,928**, the plan-less one **1,535 /
+  1,400 / 1,352 / 973 / 936 / 936**, and the plans-failed, usage-failed, missing-key, starting, paused and no-workspace
+  states are the heights the base gives them.
+- **The budget.** `app.css` is untouched at **40,948 bytes of 40,960**. The sentence reuses `.plan-line`, the help is the
+  `.btn` beside the Delete, and the confirming state is a flag the script already had the fingerprint for.
+- **Tests.** `dist/tests/cloud/pages*.test.js` — **192 pass, 0 fail**; the cloud suite — **887 pass, 0 fail**; the build
+  tests — **231 pass, 0 fail**; the whole suite — **6,542 tests, 6,540 pass, 0 fail**, 2 skipped; typecheck clean; lint 0
+  errors. `pages-stage.test.ts` holds the failed state to the record (the card not drawn, the sentence and both controls in
+  the record, the link's address, and no link with no address); `pages-app.test.ts` holds the two Choose buttons absent
+  while the payment is confirmed and back after the minute, the plan list's sentence, and the usage line's "tokens".
+
+| measured | before | after |
+| --- | --- | --- |
+| The failed state's card / record at 360 | 234.3px at 184.2 / 283.2 | **not drawn / 335.2 at 306.7** |
+| … its sentence, visible / in the DOM | 2 / 3 | **1 / 2** |
+| … `Contact the operator` at 360 | **167 × 19** at (96, 367) | **202 × 44** at (16, 434.5) |
+| … at 1,440 | 167 × 19 at (260, 318.6) | **202 × 40** at (201, 403.2) |
+| … controls under 44 below 721, 360 / 390 | 2 / 2 | **0 / 0** |
+| The failed page, 320 / 360 / 390 | 2,448 / 2,275 / 2,226 | **2,179 / 2,092 / 2,069** |
+| … 768 / 1,024 / 1,440 | 2,318 / 2,310 / 2,311 | **2,135 / 2,125 / 2,125** |
+| `?paid=1`, the Choose buttons | **2** | **0** |
+| … the page, 320 / 360 / 390 | 1,705 / 1,546 / 1,474 | **1,589 / 1,430 / 1,358** |
+| … 768 / 1,440 | 1,047 / 1,010 | **989 / 952** |
+| The bill's line at 360 | "…and what each one was charged to your balance." | **"…what it was charged to your balance, and its tokens."** |
+| … its height at 320 / 360 / 390 / 768 | 89.6 / 89.6 / 67.2 / 44.8 | **the same** |
+| The account's plan list, 360 / 1,440 | 617.4 / 600, no sentence | **674.2 / 634.4**, the sentence |
+| … the page while open, 360 / 1,440 | 2,145 / 2,251 | **2,202 / 2,286** |
+| `app.css` | 40,948 bytes | **40,948** |
+
+### What this pass leaves
+
+- **The failed record's two controls take two rows below 400.** 202 + 212 and an 8px gap need 422px; the phone has 328
+  and 288. The record is 52px taller than it was, and the page is 183px shorter, because the whole card and its gap are
+  gone. A single row would need a shorter name for one of them.
+- **The help is a `.btn`, not the state's primary.** The state's action is Delete (the page cannot make its host start
+  again); the operator is written to, beside it, and the sentence says so.
+- **The sentence names the operator when no address is set.** The control is not drawn then, because a made-up address is
+  worse than a sentence; the footer's Contact link is absent for the same reason.
+- **The plan list's sentence costs 56.8px on a phone while it is open.** The list is behind its button, so the resting page
+  does not change; a customer who opens it has asked what the switch does.
+- **A top-up's return still offers the form it was paid by.** `?paid=1` on a paid account draws the balance's `Add credit`
+  row while the balance is being confirmed: the page knows the fingerprint changed but not whether it was the plan or the
+  balance, and a second top-up is the smaller harm than a second plan. The narrowed case is the plan-less one, which has
+  no balance panel to offer.
+- **The payment return's notice is still 146px at 360**, the longest notice on the page (five lines). It is the payment's
+  own sentence and its "a few moments" is the part the page cannot promise; it was not this pass's.
+- **The token cells still draw "Input" and "Output".** The unit is the section's line, one line above the table, at every
+  width; the cells' own labels would cost 21.2px a row at 360 and a third line at 320.
+- **The checkout stand-in, the prose-only 19px links and the usage read's rate limit are unchanged.** They are the earlier
+  entries.

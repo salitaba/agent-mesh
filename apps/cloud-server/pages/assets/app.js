@@ -200,12 +200,12 @@
   }
 
   /**
-   * The stages whose work is the workspace list's own: a workspace that can be opened, one that can be resumed, and one that is
-   * running without the model key its plan asks for, are records with the sentence and the button the card would have said. The card
-   * is not drawn for them, so the first screen says one thing about the account instead of the same workspace twice. Every other stage
-   * keeps the card: it is the only place its action is.
+   * The stages whose work is the workspace list's own: a workspace that can be opened, one that can be resumed, one that is
+   * running without the model key its plan asks for, and one that could not start, are records with the sentence and the buttons
+   * the card would have said. The card is not drawn for them, so the first screen says one thing about the account instead of the
+   * same workspace twice. Every other stage keeps the card: it is the only place its action is.
    */
-  const ON_RECORD = new Set(["ready", "needs-key", "stopped"]);
+  const ON_RECORD = new Set(["ready", "needs-key", "stopped", "failed"]);
 
   /**
    * Whether the step of choosing a plan is the plan section's own: a customer with no plan, whose subscription has not ended (that card
@@ -300,7 +300,7 @@
         return { tone: "", title: own ? `${name} is paused` : `${name} is stopped`, text: own ? "Its files are kept. Resume it to open it." : `${reasonText(w.statusReason) || "It is not running."} Resume it to open it.`, action: { kind: "resume", label: "Resume" } };
       }
       case "failed":
-        return { tone: "bad", title: `${name} could not start`, text: `${reasonText(w.statusReason) || "The workspace could not be started."} Delete it and make a new one. If it fails again, tell the operator.`, action: null, contact: true };
+        return { tone: "bad", title: `${name} could not start`, text: `${reasonText(w.statusReason) || "The workspace could not be started."} Delete it and make a new one. If it fails again, contact the operator.`, action: null };
       default: {
         const several = view.workspaces.filter((x) => x.status === "running" && !lacksKey(x)).length > 1;
         if (several) return { tone: "", title: "Your workspaces are running", text: "Open the one you want to work in.", action: null };
@@ -402,7 +402,7 @@
         return `${why} ${holdsPlan(view.subscription) ? "A payment starts it again." : "Choose a plan again and it starts again."}`;
       }
       case "failed":
-        return `${w.statusReason ? reasonText(w.statusReason) : "The workspace could not be started."} Delete it and make a new one. If it fails again, tell the operator.`;
+        return `${w.statusReason ? reasonText(w.statusReason) : "The workspace could not be started."} Delete it and make a new one. If it fails again, contact the operator.`;
       default:
         return "";
     }
@@ -819,7 +819,7 @@
       el("div", { class: "price" }, money(plan.priceMinor, currency), el("small", null, ` per ${plan.period}`)),
       plan.summary ? el("p", { class: "muted" }, plan.summary) : null,
       el("ul", null, planFacts(plan, currency).map((fact) => el("li", null, fact))),
-      current ? null : o.action(plan),
+      current || !o.action ? null : o.action(plan),
     );
   }
 
@@ -1263,6 +1263,8 @@
       usageLoaded: false,
       /** Whether a cancelled checkout is said in the plan section, which is the step it is about, rather than in the notice above it. */
       cancelled: false,
+      /** Whether a return from the payment page is still waiting for the provider's confirmation: the plan list offers no button until it is. */
+      confirming: false,
     };
 
     await readPlans();
@@ -1615,6 +1617,9 @@
         buttons.push(button("Pause", { id: `pause-${id}`, onclick: () => act(w, "Pausing it.", () => call("POST", path(w, "suspend"))), attrs: { "aria-label": `Pause ${w.name}` } }));
       }
       if (resumable(w, view)) buttons.push(button("Resume", { id: `resume-${id}`, kind: cardOffers(id, "resume") ? "" : "primary", onclick: () => act(w, "Starting it.", () => call("POST", path(w, "resume"))), attrs: { "aria-label": `Resume ${w.name}` } }));
+      // A workspace that could not start is the one state whose help is not in the list otherwise: the card used to carry this link in its
+      // sentence, at 19px of a phone. It is a control beside the Delete it shares the state with, and it is named as the sentence names it.
+      if (w.status === "failed" && /^(mailto:|https:)/.test(CONTACT)) buttons.push(el("a", { class: "btn", href: CONTACT }, "Contact the operator"));
       const remove = button("Delete this workspace", {
         id: `delete-${id}`,
         kind: "danger",
@@ -1914,7 +1919,6 @@
       text.replaceChildren(card.text);
       // A refusal from the card's own button goes with the card that offered it: what the card says now is the news.
       say($("stage-status"), "", "");
-      if (card.contact && /^(mailto:|https:)/.test(CONTACT)) text.append(" ", el("a", { href: CONTACT }, "Contact the operator"), ".");
       const actions = $("stage-actions");
       const form = $("create-box");
       if (onRecord) {
@@ -2274,8 +2278,9 @@
           ),
         );
         // The plans to move to are the record's next entry, not a card drawn inside it: one plan is never a card within
-        // another. A refusal of one of their Switch buttons still lands in that card, because attachStatus finds it by plan id.
-        if (live && others.length > 0) change = el("div", { id: "plan-change", class: "disclosed", hidden: !state.changing }, el("div", { class: "plans" }, others.map((p) => planCard(p, state.currency, { subscription: sub, picked: state.picked === p.id, action: (x) => button(`Switch to ${x.title}`, { onclick: checkout(x) }) }))));
+        // another. A refusal of one of their Switch buttons still lands in that card, because attachStatus finds it by plan id. The
+        // sentence above them says what the button does, which the workspace's own list has said since it had one.
+        if (live && others.length > 0) change = el("div", { id: "plan-change", class: "disclosed", hidden: !state.changing }, el("p", { class: "muted small plan-line" }, "Switching takes you to the payment page, and the new plan starts when it is paid."), el("div", { class: "plans" }, others.map((p) => planCard(p, state.currency, { subscription: sub, picked: state.picked === p.id, action: (x) => button(`Switch to ${x.title}`, { onclick: checkout(x) }) }))));
       }
       if (change) parts.push(change);
       if (!state.plansKnown) {
@@ -2287,7 +2292,7 @@
             button("Try again", { onclick: retryPlans }),
           ),
         );
-      } else if (!live && state.plans.length > 0) parts.push(el("div", { class: "plans" }, state.plans.map((p) => planCard(p, state.currency, { subscription: sub, picked: state.picked === p.id, action: (x) => button(`Choose ${x.title}`, { kind: "primary", onclick: checkout(x) }) }))));
+      } else if (!live && state.plans.length > 0) parts.push(el("div", { class: "plans" }, state.plans.map((p) => planCard(p, state.currency, { subscription: sub, picked: state.picked === p.id, action: state.confirming ? null : (x) => button(`Choose ${x.title}`, { kind: "primary", onclick: checkout(x) }) }))));
       // A service that offers nothing this moment leaves the section with something to read rather than a heading over an empty box. The
       // step's own sentence is the one to say while the section is the step; a subscription that ended said its sentence in the card above.
       else if (!live) parts.push(el("p", { class: "muted" }, onList ? card.text : "No plan is on offer just now, so no price is shown."));
@@ -2585,6 +2590,14 @@
     // A cancelled checkout is said in the plan section, where the choice it is about is, when there is a list under it: as a notice above
     // the page it pushed the first plan's button below a 360 phone's screen. A customer who already has a plan keeps the notice.
     state.cancelled = cancelled && !holdsPlan(subscription()) && state.plans.length > 0;
+    // What the account looked like before the person left is kept in the tab, so that a payment that was applied while they were away is
+    // seen as one. It is read before the first draw because a return whose payment the provider has not confirmed yet must not offer to sell
+    // the plan again: the list is drawn without its buttons until the answer arrives, or until the page gives up waiting.
+    const remembered = paid ? store.get(BEFORE_PAYMENT) : null;
+    const knownBefore = paid && remembered !== null;
+    const then = knownBefore ? remembered : paid ? fingerprint(state.me) : "";
+    const arrived = paid && knownBefore && fingerprint(state.me) !== then;
+    state.confirming = paid && !arrived;
     renderAll();
     if (state.picked) landOnPlan(state.picked);
     // A workspace that became ready while the tab was behind another is opened when the person comes back to it.
@@ -2603,13 +2616,9 @@
       flash("", `Checkout was cancelled. Nothing was charged${said}`);
     }
     if (paid) {
-      // What the account looked like before the person left is kept in the tab, so that a payment that was applied while they were
-      // away is seen as one. Without it (another tab, a browser that keeps nothing) the page can only watch for a change.
-      const before = store.get(BEFORE_PAYMENT);
       store.remove(BEFORE_PAYMENT);
-      const known = before !== null;
-      const then = known ? before : fingerprint(state.me);
-      if (known && fingerprint(state.me) !== then) {
+      const known = knownBefore;
+      if (arrived) {
         flash("ok", "Your payment has arrived.");
       } else {
         flash("", known ? "Thank you. The payment provider confirms a payment a few moments after checkout, and this page updates when yours is confirmed." : "Thank you. The payment provider confirms a payment a few moments after checkout, and your plan and balance below update when it does.");
@@ -2617,12 +2626,17 @@
           await delay(3000);
           if (doc.visibilityState === "hidden") continue;
           if ((await refresh()) && fingerprint(state.me) !== then) {
+            // The answer is the page's now: a plan that sells usage has some to show, and the list is no longer waiting for one.
+            state.confirming = false;
             flash("ok", "Your payment has arrived.");
             // A plan that sells usage has some to show now; one that sells hosting only has none, and none is asked for.
             if (sectionsOf(viewOf()).balance) await loadUsage();
             return;
           }
         }
+        // The page has stopped waiting, so the list is a list again: a person whose payment never arrived can choose one.
+        state.confirming = false;
+        renderPlan();
         if (known) flash("warn", "Your payment has not shown up yet. It can take a few minutes, and nothing more is needed from you. Reload this page later to see it.");
         else flash("", "If your payment is not in the figures below yet, it can take a few minutes. Nothing more is needed from you. Reload this page later to see it.");
       }
