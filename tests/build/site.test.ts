@@ -1137,6 +1137,34 @@ test("a row list that stands in the page's column holds its sentences to the pro
 });
 
 /**
+ * A reader's own text size is not only the page's width: at a 24px root the demo's first step heading was 222.9px in a
+ * 232px column, and the Copy button beside it (82px, where the heading reserved 48) covered the last 14.9px of the line
+ * and its comma; at 32px the button was 99px. A plan's figure label had the same fault: at a 24px root "projects open"
+ * was 18px and needed 96px in a 79px cell, so the frame clipped it to "project:". The button keeps one 64px width and
+ * the heading reserves its 72px (the button, the bar's 6px inset and a 2px gap); the figure's caption keeps the ramp's
+ * 12px, as the plan chooser's name and the six-view chooser's do. The figures themselves still grow with the root.
+ */
+test("a reader's larger text keeps a step's Copy button off its heading, and a plan's figure label whole", () => {
+  const css = fs.readFileSync(path.join(SITE, "assets", "site.css"), "utf8");
+  assert.match(css, /\n\.try \.copy \{ width: 64px; justify-content: center;/, "the step's Copy button keeps one width, so its word wraps instead of growing over the heading");
+  assert.match(css, /\n\.try > li:has\(\.code-bar\) h3 \{ padding-right: 72px; \}/, "the heading reserves the button's 64px, its 6px inset and a 2px gap");
+  assert.match(css, /\n\.plan-limits dt \{[^}]*font-size: 12px;/, "a plan's figure label keeps the ramp's 12px caption size at every root");
+  assert.ok(!/\.plan-limits dt \{[^}]*font-size: \.75rem;/.test(css), "so a 24px root cannot make it 18px and clip it in its 79px cell");
+});
+
+/**
+ * A note and an answer are prose, so they take the page's 68ch measure rather than the column they stand in or the 46rem
+ * a section head uses. At 1,440 the map's note ran 1,063px (about 152 characters) on one line, and the FAQ's answers were
+ * 734px (about 91); the page's notes take 68ch. Neither is a panel or a footer, which keep their own width.
+ */
+test("a note and an answer hold the prose measure", () => {
+  const css = fs.readFileSync(path.join(SITE, "assets", "site.css"), "utf8");
+  assert.match(css, /\n\.doc-note \{ max-width: 68ch;/, "the map's note takes the 68ch measure");
+  assert.match(css, /\n\.faq \.answer \{ max-width: 68ch;/, "and so does an answer");
+  assert.ok(!/\.faq \.answer \{ max-width: 46rem;/.test(css), "an answer is prose, not a section head");
+});
+
+/**
  * The licence command is a scroll region a keyboard can reach (`pre tabindex="0"`), and its code box clips everything
  * outside its own 1px border. The ring was drawn 2px outside the pre's box with a 2px offset, so at 360 and at 1,440 every
  * side of it fell outside the clip: under a real Tab the pre matched `:focus-visible`, its computed outline was 2px solid in

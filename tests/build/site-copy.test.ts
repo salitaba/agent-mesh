@@ -102,6 +102,13 @@ test("every price in the prose is a price in the plan table or a cost of the mea
   for (const plan of Object.values(PLANS)) assert.ok(home.copy.includes(plan.name), `the home page's plan line names ${plan.name}`);
 });
 
+test("a plan's figure label is singular when its figure is one, as the home page's rate card is", () => {
+  const pricing = page(pages, "pricing/index.html").html;
+  assert.match(pricing, /<div><dt>project open<\/dt><dd>1<\/dd><\/div>/, "the Community card says one project open, not one projects open");
+  assert.ok(!/<div><dt>projects open<\/dt><dd>1<\/dd><\/div>/.test(pricing), "and no card puts a plural label over a figure of one");
+  assert.match(page(pages, "index.html").html, /1 project open, 10 agents per mesh/, "the home page's rate card already says it in the singular");
+});
+
 test("the roadmap is stated once, under the cards, and is never sold as included", () => {
   const pricing = page(pages, "pricing/index.html");
   const cardsStart = pricing.html.indexOf("<!-- generated:plan-cards:start");
