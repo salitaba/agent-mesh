@@ -3492,3 +3492,62 @@ by request interception in both halves, because the trial's own workspaces make 
   the button on one line, rather than a 448px card under a 1080px one.
 - A real usage table with a model key behind it, to see the ruled phone bill with more than a fixture's
   four days.
+
+## 2026-11-05: the row on a 320 phone, the balance's way out, and the state's own word
+
+Same harness: Chromium 1248 through `playwright-core` against this worktree's trial (`localhost:8142`, whose plans are the
+trial's own fixtures), 320 / 360 / 390 / 768 / 1440 in light, 360 in dark and forced colours, `prefers-reduced-motion:
+reduce`, a touch pointer below 721, and axe-core 4.14 over 28 views. "Before" is the base commit's own `app.js` and
+`app.css` served by the same trial, measured in the same session as the after: a Team account with one running workspace
+named Research and an empty usage table, the same account with a balance of `$0.00`, and the same account with its
+workspace paused by its owner and with no plan at all, held by request interception where the trial cannot reach the
+state. Heights are `document.documentElement.scrollHeight`; positions are `getBoundingClientRect` plus `scrollY`.
+
+- **The plan's two actions are one row on a 320 phone again.** The 2026-11-04 pass gave a 320 phone's button rows a
+  4px gap, measured on a renderer whose labels were 130.1 and 137.3. This browser draws `Manage billing` at 143 and
+  `Change plan` at 148, so the row was **295px in the 288 the page has** and the two buttons stacked: `Manage billing`
+  at y = 1,168 and `Change plan` at 1,216, the row **303.8px**, the page **1,959**. Below 360 a `.row .btn-small` now
+  gives up 4px of side padding (12 → 8, the step under 12): the buttons are **135 and 140**, one 44px row at x = 16 and
+  155, the row **255.8px** and the page **1,959 → 1,911**. The workspace's own `Open / Pause / More`
+  (97 + 81 + 99 + 8) and every other 320 row are untouched.
+- **A balance that is gone has its one action in the sentence that says so.** The notice said calls are refused until
+the reader adds credit or the plan renews — **170px at y = 184** with **no control at all**, while the
+  `Add credit` row was at **1,713** — 1,529px below the Balance heading at 360, and 1,397 below the notice's new
+  button at 1440. The notice
+  now carries the balance's own action on its last line: **117 × 44** at 360 (`117 × 40` for a pointer), the notice
+  **170 → 190**, the page **1,984 → 2,004**. Pressing it opens the credit row and puts the cursor on the first amount:
+  focused **BUTTON "$10.00"** at 1,788 with the page at scrollY 1,393. At 1440 the notice is **74 → 90** and the page
+  **2,018 → 2,034**. With `/api/plans` down there is nothing to open, so the notice offers nothing and the Balance
+  panel's own **Try again** is the way, as before.
+- **A control that is working keeps the cursor on the account too.** `leaveFor` disabled the button it sent — Manage
+  billing, Choose Team, Switch to Business, the quick amounts — and disabling a control takes the cursor off it: with
+  the portal answer held 1.5s, `document.activeElement` was **BODY** and the button was `disabled` with no
+  `aria-disabled`, so a Tab during the wait began again at the skip link above the page. It is **held** now, the idiom
+  every form and the sign-out already use: during the same answer the cursor is on **BUTTON "One moment"** at 1,077.8,
+  `aria-disabled="true"`, `disabled` false, and a second press sends **no second request** (`2 → 1` POSTs).
+- **A workspace its owner paused says Paused.** The record's badge said **Stopped** beside a sentence beginning
+  **"Paused by you"**, while the stage and the button said paused/resume: one state under two names in one card. A
+  suspension whose reason is `paused by its owner` now says **Paused**; every other suspension keeps **Stopped** and
+  its reason. The sentence no longer names the state again: **"Its files are kept. Resume it to open it."** At 360 the
+  record is **283.2 → 257.6px** and the page **1,798 → 1,772**; at 390 the record is **283.2 → 257.6** and the page
+  **1,776 → 1,750**. The stage's own words ("Research is paused…") and the `Resume` button are unchanged.
+- **Widths, schemes and the floor.** 320 / 360 / 390 / 768 / 1440 in light, 360 in dark and in forced colours, on the
+  plain account, the used-up account, the paused one and a plan-less one: no sideways page scroll (320: 320; 360:
+  360; 390: 390; 768: 768; 1440: 1440), nothing computes below **12px**, no control under 44 × 44 below 721 except the
+  sign-up consent tick (20px, its label 108px), as before, **28 axe-core runs find no violation**, and no console error. The way-in
+  pages are the same heights as before (sign-up 1,410 / 1,582, sign-in 1,255 / 1,381, forgot 1,161 / 1,185, reset 973
+  / 997, verify 1,199 / 1,249 at 360 / 320).
+- **The budget.** `app.css` is **40,951 → 40,956 bytes of 40,960** (4 left). The 320 rule costs 40 bytes; seven section
+  comments that only named the block under them (the `----` separator and its six neighbours) gave back 35.
+
+### What this pass leaves
+
+- **The 320 rule is a renderer's arithmetic, not a design break.** The labels are 143 and 148 here and were 130 and
+  137 when the last pass measured; 8px of padding is what makes one row in both. A third renderer with wider labels
+  would wrap again, and the test pins the padding, not the outcome.
+- **The notice's Add credit is a button inside a live region.** The sentence and its action are announced together
+  when the notice fills; it is the shape the plan section's failed read already has.
+- **Only an owner's pause says Paused.** A workspace the service stopped for a payment still says Stopped and its
+  reason, which is the distinction the card needs.
+- **The cancelled checkout's 98px notice, the skeleton's plan-less shape, the usage read's rate limit and the
+  prose-only inline links are unchanged.** They are the earlier entries.

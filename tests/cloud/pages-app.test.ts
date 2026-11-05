@@ -1028,9 +1028,17 @@ test("billing on an account is managed on the provider's page, and a provider th
   const w = world(paid);
   w.answers.set("POST /api/portal", { json: { url: "https://pay.example/portal" } });
   const v = await visit("account", { routes: w.routes });
-  v.click(v.button("plan", "Manage billing"));
+  const first = v.button("plan", "Manage billing");
+  v.click(first);
+  // Held, not disabled: the button keeps the cursor while the answer is out, so a Tab pressed during the wait goes on from here
+  // rather than starting again at the skip link above the whole page.
+  assert.equal(first.disabled, false, "the button that is working is not disabled");
+  assert.equal(first.getAttribute("aria-disabled"), "true", "it is held");
+  assert.equal(v.doc.activeElement, first, "and the cursor is still on it");
+  v.click(first);
   await v.idle();
   assert.deepEqual(v.navigations, ["assign https://pay.example/portal"]);
+  assert.equal(v.to("POST", "/api/portal").length, 1, "a second press while the first is out is not a second request");
   assert.equal(v.storage.size, 0, "nothing is expected back from the provider's page, so nothing is remembered");
 
   const manual = world(paid);
@@ -1088,7 +1096,11 @@ test("a payment that has failed is said at the top with the day the workspaces s
     x.balance = balance({ included: 0, available: 0 });
   });
   const s = await visit("account", { routes: spent.routes });
-  assert.equal(s.text("notice"), "Your balance is used up. Calls to models are refused until you add credit or your plan renews, and a workspace that needs them pauses with a notice that says why.");
+  assert.equal(s.text("notice"), "Your balance is used up. Calls to models are refused until you add credit or your plan renews, and a workspace that needs them pauses with a notice that says why. Add credit", "and the way to add it is in the notice with the sentence");
+  s.click(s.button("notice", "Add credit"));
+  assert.equal((s.$("topup-details") as unknown as { open: boolean }).open, true, "which opens the balance's own credit row, 1,529px down a 360 phone");
+  assert.equal(s.doc.activeElement, s.$("topup-options").querySelector("button"), "and gives the cursor to the first amount it holds");
+  assert.deepEqual(v.labels("notice"), [], "a balance that is not used up says nothing and offers nothing");
 });
 
 test("the balance is what the gateway says, rounded down; when it cannot be read the page says so, and everything else still works", async () => {
@@ -1143,7 +1155,7 @@ test("the plans being unavailable leaves the rest of the account usable, says wh
   assert.deepEqual(v.labels("topup-options"), []);
   assert.equal(v.$("topup-add").hidden, true, "the amounts' caption goes with the amounts");
   assert.deepEqual(v.labels("workspaces"), ["Resume", "More"]);
-  assert.match(v.text("workspaces"), /Paused by you\. Its files are kept\. Resume it to open it\./);
+  assert.match(v.text("workspaces"), /Paused Its files are kept\. Resume it to open it\./);
   // The sentence is an action now: the same read, again, and the page takes the answer.
   const retry = v.button("plan", "Try again");
   w.plans = { json: PLANS };
@@ -1305,7 +1317,7 @@ test("a change that went through and a read back that did not says so in the car
   w.answers.delete("GET /api/me");
   v.click(v.button(note, "Try again"));
   await v.idle();
-  assert.match(v.text("workspaces"), /^Research Stopped /, "what the change did is drawn from the answer");
+  assert.match(v.text("workspaces"), /^Research Paused /, "what the change did is drawn from the answer");
   assert.equal(v.text(note), "", "and the sentence and its button go with it");
   assert.equal(note.className, "ws-note sr", "the note is out of the page again, as an empty one is");
   assert.equal(v.doc.activeElement, v.button("workspaces", "Resume"), "the cursor goes to what the card says now: the next thing to do");
@@ -1334,7 +1346,7 @@ test("a new workspace whose read back failed is not a form that emptied itself f
   w.answers.delete("GET /api/me");
   v.click(v.button("create-note", "Try again"));
   await v.idle();
-  assert.match(v.text("workspaces"), /^Second Stopped /, "the workspace the answer carries is drawn");
+  assert.match(v.text("workspaces"), /^Second Paused /, "the workspace the answer carries is drawn");
   assert.doesNotMatch(v.text("create-note"), /could not be read again/, "and the sentence about the read that failed is gone");
   assert.equal(v.text("create-note"), "Your plan includes 1 workspace. To make another, delete this one or change your plan.", "the form says what is true of the plan it filled");
   assert.deepEqual(v.consoleErrors, []);
@@ -1441,7 +1453,7 @@ test("pausing and resuming are one request each, with the row saying what is und
   assert.ok(v.buttons("workspaces").every((b) => b.held), "and its buttons are held");
   assert.ok(v.$("pause-ws_1") === pause && v.doc.activeElement === pause, "the button that was pressed is the one with the cursor, and was not drawn again");
   await v.idle();
-  assert.equal(v.text("workspaces"), "Research Stopped Paused by you. Its files are kept. Resume it to open it. Resume More Plan Team Change plan Address research-1a2b3c.ws.example.com");
+  assert.equal(v.text("workspaces"), "Research Paused Its files are kept. Resume it to open it. Resume More Plan Team Change plan Address research-1a2b3c.ws.example.com");
   v.click(v.button("workspaces", "Resume"));
   await v.idle();
   assert.match(v.text("workspaces"), /^Research Running Open it to describe your team and start a mission\. Open Pause More Plan Team Change plan Address /);

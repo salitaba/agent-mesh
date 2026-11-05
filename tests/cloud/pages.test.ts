@@ -505,12 +505,16 @@ test("a button's edge is a control's edge, and the contents line is one row on a
 test("the account's two rows of actions fit one line on a 320 phone", () => {
   // At 320 the record's line is 278px: Open 92.8 + Pause 75.7 + More 94.2 and two 8px gaps are 278.7, so More fell to a second row and
   // the record was 100px; the plan's Manage billing 130.1 + Change plan 137.3 and a 12px gap are 279.4. The 4px the row can give up
-  // puts both on one line, in the same space scale as every other row, and the page 108px shorter.
+  // puts both on one line, in the same space scale as every other row, and the page 108px shorter. A renderer whose labels are wider
+  // still needs 7px more (143 + 148 + 4 in a 288px line), so the small button's side padding is 8 there, the step under 12.
   const rules = cssRules(read(path.join(ASSETS, "app.css")));
   const narrow = rules.filter((r) => r.at.includes("max-width: 359px"));
   const row = narrow.find((r) => r.selectors.includes(".row .btn-row") && declared(r, "gap") !== undefined);
   assert.ok(row, "a 320 phone's rows have a gap of their own");
   assert.equal(declared(row!, "gap"), "4px", "which is the smallest step the space scale has");
+  const small = narrow.find((r) => r.selectors.includes(".row .btn-small") && declared(r, "padding-inline") !== undefined);
+  assert.ok(small, "and a small button in one of those rows gives up its side padding");
+  assert.equal(declared(small!, "padding-inline"), "8px", "so Manage billing and Change plan share the 288px the plan row has");
   assert.ok(!rules.some((r) => !r.at.includes("max-width: 359px") && r.selectors.includes(".row .btn-row") && declared(r, "gap") !== undefined), "and only a 320 phone takes it: 360 keeps the 8 and 12 the rows are drawn with");
 });
 
