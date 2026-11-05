@@ -3161,3 +3161,83 @@ The absolute heights are this container's; both halves are one browser in one ru
 
 The next pass's first job is still the page's length: 13,356 at 320 and 12,160 at 390 are where the words and the
 figures are, and the plans section's pair and the wide notes above are the candidates this pass measured and left.
+
+## 2026-11-05, second pass: the plan's name at a larger text, the command's ring, and a row's measure
+
+Measured with the same probe (Chrome 156 in the pass container, where `system-ui` resolves to Noto Sans; reduced motion;
+light unless said; touch at 320/360/390, a mouse at 768 and 1,440; a 24px and a 32px root at 320/360/390; dark at 360;
+print at 794). The before column is the site at `f484811`, exported with `git archive` and served on a second port (8,151) and
+measured in the same run; no number is copied from an earlier pass. The absolute heights are this container's; both halves are
+one browser in one run, so the differences stand.
+
+### What changed
+
+- **The four plans' names fit their chips at a reader's own text size.** The chooser's name was `.75rem`, so at a 32px root it
+  computed 24px: "COMMUNITY" needed **184px in a 134px chip** and "ENTERPRISE" 183, and the pricing page was **380px wide on a
+  360 screen** (40px over at 320, 5 at 390); at a 24px root the label's content was **151px in its 138px chip** at 320 and painted
+  13px under the chip beside it. It is a control's label and keeps the **12px** the six-view chooser's name and the billing
+  sub-label keep, and may break as a last resort, so no font widens the page. At 32px the four chips are **138/138 at 320 and
+  158/158 at 360** (were 138/196 and 158/196) and every page is **0px over** at 320/360/390.
+- **A command's focus ring is drawn inside the box that clips it.** The licence command is a scroll region a keyboard reaches
+  (`pre tabindex="0"`), and its code box clips everything outside its 1px border. The ring was drawn 2px outside the pre with a
+  2px offset — 4px of ring where the box left 1px — so under a real Tab at 360 and 1,440 the pre matched `:focus-visible`, its
+  computed outline was **2px solid in the accent**, and **no pixel of it was on the screen**. It is drawn **inside** the pre's
+  edge now (`outline-offset: -2px`) and is the whole 328 × 51 box at 360, 468 × 51 at 1,440.
+- **"What you are not paying for" takes the page's measure.** The list stands in the pricing page's own column, so at 1,440 its
+  sentences ran **1,120px and 1,103px a line** — about 140 and 138 characters — while the page's notes take the 68ch measure
+  (612px at 14px). They are **663px and 676px** now (the 68ch cap is 680), the third row's one 680px line is unchanged, and both
+  long rows keep two lines, so **no page changes height** at any width. The security page's and the contact page's lists stand in
+  a split and a column, are narrower than 68ch already, and are untouched.
+
+### Measurements after this pass
+
+| Page, height at 320 / 360 / 390 / 768 / 1,440 (coarse pointer) | Before | After |
+|---|---|---|
+| Home | 13,356 / 12,604 / 12,160 / 12,113 / 11,282 | unchanged |
+| Pricing | 14,440 / 13,488 / 12,841 / 10,164 / 9,317 | unchanged |
+| Documentation | 8,975 / 8,382 / 8,065 / 5,288 / 4,477 | unchanged |
+| Security | 12,527 / 11,600 / 10,883 / 7,888 / 7,690 | unchanged |
+| Contact | 4,755 / 4,381 / 4,215 / 3,413 / 2,905 | unchanged |
+| Legal | 5,513 / 5,037 / 4,741 / 3,419 / 3,361 | unchanged |
+| 404 | 2,266 / 2,089 / 2,045 / 1,441 / 1,568 | unchanged |
+
+| The pricing page at a reader's root | Before | After |
+|---|---|---|
+| 24px root: 320 / 360 / 390 | 24,210 / 21,971 / 20,407 | **24,162 / 21,923 / 20,359** |
+| 32px root: 320 / 360 / 390 | 37,855 / 33,435 / 31,366 | **37,778 / 33,358 / 31,289** |
+| 32px root: px over the screen | **40 / 20 / 5** | **0 / 0 / 0** |
+| The chooser's label at 32px: 320 / 360 | 138/196, 158/196 | **138/138, 158/158** |
+
+- The two heights that move are the chips' names taking one line instead of spilling: −48px at a 24px root and −77 at 32px, on
+  the one page whose chips are wider than their names. At 16px every page is the height it was, to the pixel, at 320/360/390/768
+  and 1,440, in light and in dark (360).
+- No page scrolls sideways at 320, 360, 390, 768 or 1,440 in light or dark (**0** on all 70 page/width/theme pairs), the probe
+  reports **0** console errors, **0 axe-core WCAG 2.0–2.2 A and AA violations** on the pricing page at 320 light, 360 light,
+  360 dark and 1,440 light, and the smallest computed text is still **12px**.
+- The ring fix is colour only: no box moves, and the command's own `.code` border is unchanged.
+- The rows' cap is a `max-width` on the sentence, so the row's rule and its bold lead keep the column's width; the 68ch is the
+  same measure the notes on the page already take.
+- Print at 794 is **11,840** on the home page and **10,017** on pricing, 0px over, as before: `.rows` prints at the measure it
+  has on screen, and the ring is not printed.
+- `tests/build/site.test.ts` holds the chooser's name (12px and `overflow-wrap: anywhere`, next to the six-view chooser's 13px),
+  the rows' cap (and that the security and contact lists are not that shape), and the ring's `-2px` offset with the reason the
+  box clips it. The build suites are **228** tests, all passing; `site-chrome --check` is clean.
+
+### What this pass deliberately left
+
+- **A plan's figure label is still cut at a 2× text size.** "projects open" needed **96px in the 79px cell** at 360 (71 in 66 at
+  320 with a 24px root) and the figure's frame clips it: it reads "project:". Letting the word break reads "project" / "s open"
+  at 24px and "projec" / "ts" at 32px, which is worse than the cut; fixing the label at 12px takes the reader's text size off a
+  figure's caption; and the three cells cannot reflow to one column without leaving a hole of the card's line colour, because no
+  single rem value keeps three cells at 16px (78px) and gives one at 24px (118px).
+- **The notice panels still run past 68ch** (1,045px on the home page's security caveat, 1,047 on the pricing page's licence
+  note, 999 on the security page's Cloud caveat) and the footer's legal block is 879px. This pass took the one list that is plain
+  prose in the page's column; a panel's own width is a change to what the panel is.
+- **The plan chooser still changes the page's height when another plan is chosen** (Community 682.6, Team 604.3, Business 705.1,
+  Enterprise 658.6 at 360), as the 2026-11-04 pass recorded.
+- **The security page's On this page row still cuts 64px of "Reporting a problem" at 1,440**, and the phone's two actions under the
+  plans still stack at 320–410; neither changed.
+- **No capture was retaken**, Curule Cloud's prices are still in the app, and `site/ux/` was not edited. `npm run site:check` still
+  exits 1 on the owner's `TODO(owner)` at `site/legal/index.html:134`.
+
+The next pass's first job is still the page's length and the two wide notes; after them, the figure labels at a 2× text size.
