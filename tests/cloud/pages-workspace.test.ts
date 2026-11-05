@@ -26,13 +26,13 @@ test("a workspace says in a sentence why it is as it is and what can be done, an
   assert.equal(says(ws("running", { models: own(null) })), "Its team has no model yet. Give it your model key to put it to work.");
   for (const status of ["requested", "provisioning"]) assert.equal(says(ws(status)), "It starts in the background, and this page updates when it is ready.");
 
-  assert.equal(says(ws("suspended", { statusReason: "paused by its owner" })), "Paused by you. Its files are kept. Resume it to open it.");
+  assert.equal(says(ws("suspended", { statusReason: "paused by its owner" })), "Its files are kept. Resume it to open it.");
   assert.equal(says(ws("suspended", { statusReason: "payment is overdue" })), "Stopped because the last payment did not go through. Resume it to open it.", "once the plan is paid up it can be started");
   assert.equal(says(ws("suspended", { statusReason: "the account was stopped: abuse report 12" })), "The account was stopped: abuse report 12. Resume it to open it.");
   assert.equal(says(ws("suspended")), "It is not running. Resume it to open it.");
 
   assert.equal(says(ws("suspended", { statusReason: "payment is overdue" }), LATE), "Stopped because the last payment did not go through. A payment starts it again.", "while the payment is missing the service starts none, and starts them all when it comes");
-  assert.equal(says(ws("suspended", { statusReason: "paused by its owner" }), LATE), "Paused by you. Its files are kept. A payment starts it again.");
+  assert.equal(says(ws("suspended", { statusReason: "paused by its owner" }), LATE), "Its files are kept. A payment starts it again.");
   assert.equal(says(ws("suspended", { statusReason: "the subscription ended" }), ENDED), "Stopped because the subscription ended. Choose a plan again and it starts again.");
   assert.equal(says(ws("suspended", { statusReason: "the subscription ended" }), null), "Stopped because the subscription ended. Choose a plan again and it starts again.");
 
@@ -74,13 +74,13 @@ test("a card is a name and state, a sentence, what can be done and the question 
   const v = await visit("account", { routes: world((x) => { paid(x); x.workspaces = [ws("suspended", { statusReason: "paused by its owner" })]; }).routes });
   const card = v.$("workspaces").querySelectorAll("li")[0]!;
   assert.deepEqual(card.children.map((n) => n.className), ["row-head", "ws-says", "ws-auto", "ws-actions", "ws-confirm", "ws-plan", "ws-key", "ws-note sr", "muted small ws-address"]);
-  assert.equal(v.text(card.querySelector(".row-head")!), "Research Stopped");
-  assert.equal(v.text(card.querySelector(".ws-says")!), "Paused by you. Its files are kept. Resume it to open it.");
+  assert.equal(v.text(card.querySelector(".row-head")!), "Research Paused");
+  assert.equal(v.text(card.querySelector(".ws-says")!), "Its files are kept. Resume it to open it.");
   assert.equal(v.text(card.querySelector(".ws-plan")!), "Plan Team Change plan", "which plan this workspace alone is on, and the way to another");
   assert.equal(v.text(card.querySelector(".ws-address")!), "Address research-1a2b3c.ws.example.com");
   assert.equal(card.querySelector(".ws-address code")!.textContent, "research-1a2b3c.ws.example.com");
   const state = card.querySelector(".row-head .badge")!;
-  assert.ok(state.textContent === "Stopped", "the state is a word as well as a colour");
+  assert.ok(state.textContent === "Paused", "the state is a word as well as a colour, and it is the word the button says");
 });
 
 test("the status line of a card stays where it is and says what is under way and what came of it, so that a change in it is read out", async () => {
@@ -327,7 +327,7 @@ test("a workspace that stopped while it was waited for is not waited for any mor
   const v = await visit("account", { routes: w.routes });
   v.check(v.$("auto-ws_1"));
   w.workspaces = [ws("suspended", { statusReason: "paused by its owner" })];
-  await v.until("the workspace to be seen stopped", () => /^Research Stopped /.test(v.text("workspaces")));
+  await v.until("the workspace to be seen stopped", () => /^Research Paused /.test(v.text("workspaces")));
   assert.equal(v.doc.getElementById("auto-ws_1"), null, "a workspace that is stopped is not on its way to being ready");
   v.click(v.button("workspaces", "Resume"));
   await v.idle();

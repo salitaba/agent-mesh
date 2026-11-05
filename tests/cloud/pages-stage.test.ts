@@ -247,7 +247,7 @@ test("each stage is said on the page: its title and sentence, the steps while a 
   s = await stage(world((x) => { paid(x); x.workspaces = [workspace({ status: "suspended", statusReason: "paused by its owner" })]; }));
   assert.deepEqual([s.title, s.actions], ["", []], "a paused workspace is a record too: the card would say the same thing");
   assert.equal(s.v.shows(s.v.$("stage")), false);
-  assert.match(s.v.text("workspaces"), /^Research Stopped Paused by you\. Its files are kept\. Resume it to open it\. Resume /);
+  assert.match(s.v.text("workspaces"), /^Research Paused Its files are kept\. Resume it to open it\. Resume /);
   assert.equal(s.v.button("workspaces", "Resume").className, "btn btn-primary");
 
   s = await stage(world((x) => { paid(x); x.workspaces = [workspace({ status: "failed", statusReason: "the container did not start" })]; }));

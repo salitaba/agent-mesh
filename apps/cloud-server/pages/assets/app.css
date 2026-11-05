@@ -174,7 +174,7 @@ td, th, dd, .price, .num, .badge, .auth-points li::before { font-variant-numeric
 .card, .row, .plan { box-shadow: var(--k-hl), var(--k-shadow-1); }
 .stage, .row, .confirm { overflow-wrap: anywhere; }
 
-/* ---- header */
+/* header */
 .site-header {
   position: sticky;
   top: 0;
@@ -219,7 +219,7 @@ td, th, dd, .price, .num, .badge, .auth-points li::before { font-variant-numeric
 }
 .site-footer a:hover { color: var(--k-ink); text-decoration: underline; }
 
-/* ---- buttons */
+/* buttons */
 .btn {
   position: relative;
   display: inline-flex;
@@ -275,7 +275,7 @@ td, th, dd, .price, .num, .badge, .auth-points li::before { font-variant-numeric
 .btn-quiet[aria-expanded]::after, summary::after { transition: transform var(--k-dur-1) var(--k-ease); }
 .btn-quiet[aria-expanded="true"]::after, details[open] > summary::after { transform: rotate(180deg); }
 
-/* ---- fields */
+/* fields */
 .field { display: grid; gap: 8px; margin-bottom: 20px; }
 .field label { font-size: .875rem; font-weight: 600; }
 .field .hint { color: var(--k-muted); font-size: .8125rem; }
@@ -429,7 +429,7 @@ meter::-moz-meter-bar { border-radius: var(--k-r-pill); background: currentColor
 .tile::before { --s: 24px; }
 .tile-mail::before { --n: 8; }
 
-/* ---- sign-in */
+/* sign-in */
 .auth { padding-block: clamp(24px, 4vh, 56px); }
 .auth-main, .auth-side { width: 100%; max-width: 28rem; margin-inline: auto; }
 .auth-main h1 { margin-bottom: 8px; }
@@ -476,7 +476,7 @@ meter::-moz-meter-bar { border-radius: var(--k-r-pill); background: currentColor
   .auth-side { margin-top: 0; }
 }
 
-/* ---- home */
+/* home */
 body[data-page="home"] main { background: var(--k-glow) top / 100% 520px no-repeat; }
 .home { padding-top: clamp(24px, 5vw, 56px); }
 .hero { display: grid; gap: 40px; }
@@ -530,7 +530,7 @@ body[data-page="home"] main { background: var(--k-glow) top / 100% 520px no-repe
   .section .how { grid-template-columns: 1fr 1fr; column-gap: 40px; max-width: none; }
 }
 
-/* ---- account */
+/* account */
 .account-head {
   display: flex;
   flex-wrap: wrap;
@@ -811,7 +811,7 @@ tfoot > tr > * { background: var(--k-surface-2); font-weight: 650; }
 .lost .lede { max-width: 28rem; margin-bottom: 28px; color: var(--k-muted); }
 .lost .btn-row { justify-content: center; }
 
-/* ---- phones */
+/* phones */
 @media (max-width: 720px) {
   .site-header { position: static; }
   .panel, .panel > h2, .prose h2 { scroll-margin-top: 24px; }
@@ -873,7 +873,7 @@ tfoot > tr > * { background: var(--k-surface-2); font-weight: 650; }
   .logo { height: 20px; }
 }
 @media (max-width: 389px) { .subnav a { padding: 0 4px; font-size: max(12px, min(.75rem, 3.8vw)); } }
-@media (max-width: 359px) { .subnav { gap: 0 } .subnav a { padding: 0; justify-content: center } .subnav a + a { border-left: 1px solid var(--k-line-strong) } .row .btn-row { gap: 4px } }
+@media (max-width: 359px) { .subnav { gap: 0 } .subnav a { padding: 0; justify-content: center } .subnav a + a { border-left: 1px solid var(--k-line-strong) } .row .btn-row { gap: 4px } .row .btn-small { padding-inline: 8px } }
 
 @media (forced-colors: active) {
   input[type="checkbox"] { appearance: auto; }

@@ -392,7 +392,9 @@
       case "provisioning":
         return "It starts in the background, and this page updates when it is ready.";
       case "suspended": {
-        const why = w.statusReason === "paused by its owner" ? "Paused by you. Its files are kept." : w.statusReason ? reasonText(w.statusReason) : "It is not running.";
+        // The state's word is the one the button and the stage use: a workspace its owner paused is Paused, and one the service
+        // stopped for a reason says Stopped and the reason. Saying "Stopped" beside "Paused by you" named one state two ways.
+        const why = w.statusReason === "paused by its owner" ? "Its files are kept." : w.statusReason ? reasonText(w.statusReason) : "It is not running.";
         if (resumable(w, view)) return `${why} Resume it to open it.`;
         return `${why} ${holdsPlan(view.subscription) ? "A payment starts it again." : "Choose a plan again and it starts again."}`;
       }
@@ -723,7 +725,10 @@
   /** Leave for an address the API returns (a payment page, a workspace), or put the button back and say why not. `before` runs just ahead of the request. */
   async function leaveFor(trigger, request, failed, before) {
     const label = trigger.textContent;
-    trigger.disabled = true;
+    // Held, not disabled: a disabled control loses the cursor in most browsers, and a person who presses Tab while the answer is
+    // out would start again at the skip link above the page. Held, the cursor stays where it was, and the button's own guard
+    // (see `button`) is what stops a second press.
+    hold(trigger, true);
     trigger.textContent = "One moment";
     trigger.setAttribute("aria-busy", "true");
     if (before) before();
@@ -733,10 +738,10 @@
       location.assign(url);
       return;
     }
-    trigger.disabled = false;
+    hold(trigger, false);
     trigger.textContent = label;
     trigger.removeAttribute("aria-busy");
-    // Disabling a button takes the cursor off it in most browsers: it comes back, so the next Tab starts where the person was.
+    // A browser that did take the cursor off it still gets it back, so the next Tab starts where the person was.
     if (!doc.activeElement || doc.activeElement === doc.body) trigger.focus();
     // An answer that is fine but names no address this page will follow is a failure like any other, and is said as one.
     failed(r.ok ? { ok: false, status: r.status, data: r.data, error: { code: "bad_address", message: "The page we were meant to send you to could not be opened. Try again in a moment." } } : r);
@@ -1221,6 +1226,8 @@
       confirming: null,
       typed: "",
       flash: null,
+      /** What the notice at the top last said, so that a look at the account does not draw it — and its action — again. */
+      noticeShape: "",
       planNote: null,
       timer: 0,
       watched: 0,
@@ -1288,16 +1295,30 @@
 
     function renderNotice() {
       const node = $("notice");
-      if (state.flash) {
-        say(node, state.flash.kind, state.flash.text);
-        return;
-      }
       const b = state.me.balance;
-      if (sectionsOf(viewOf()).balance && b && b.balance.available <= 0) {
-        say(node, "warn", "Your balance is used up. Calls to models are refused until you add credit or your plan renews, and a workspace that needs them pauses with a notice that says why.");
-      } else {
-        say(node, "", "");
-      }
+      // A balance that is gone is a refusal with one way out, and the way out is 1,500px down the page on a phone: the notice carries
+      // the balance's own row as its action. The action is offered only when the credit row exists; with the plans unread there is
+      // nothing to open, and the balance panel's own Try again is the way.
+      const used = !state.flash && sectionsOf(viewOf()).balance && b && b.balance.available <= 0;
+      const kind = state.flash ? state.flash.kind : used ? "warn" : "";
+      const text = state.flash ? state.flash.text : used ? "Your balance is used up. Calls to models are refused until you add credit or your plan renews, and a workspace that needs them pauses with a notice that says why." : "";
+      const offer = Boolean(used) && Boolean(state.topups);
+      // Drawn only when what it says changes, so a look at the account does not take the cursor from the action it is on.
+      const shape = `${kind}|${text}|${offer}`;
+      if (shape === state.noticeShape) return;
+      state.noticeShape = shape;
+      say(node, kind, text);
+      if (offer) node.append(" ", button("Add credit", { onclick: addCredit }));
+    }
+
+    /** The notice's Add credit goes to the credit the balance panel holds, opening the row a phone keeps closed and giving the
+     * cursor to the first amount, as the balance's own failed read does when its Try again answers. */
+    function addCredit() {
+      const row = $("topup-details");
+      if (!row || row.hidden) return;
+      row.open = true;
+      const first = $("topup-options").querySelector("button") || row.querySelector("summary");
+      if (first) first.focus();
     }
 
     function flash(kind, text) {
@@ -1662,7 +1683,9 @@
     function drawCard(w, view) {
       const id = w.workspaceId;
       const card = cardFor(id, lacksKey(w));
-      const [label, kind] = STATES[w.status] || [w.status, ""];
+      // A workspace its owner paused says Paused, which is the button that paused it and the word the stage uses; every other
+      // suspension is the service stopping it, and says Stopped. The sentence no longer names the state a second time.
+      const [label, kind] = w.status === "suspended" && w.statusReason === "paused by its owner" ? ["Paused", ""] : STATES[w.status] || [w.status, ""];
       const says = recordSays(w, view) || workspaceSays(w, view);
       // Ready is not running only: on a plan that sells hosting only a workspace with no key is up, and has nothing to open for.
       const waiting = isStarting(w) || (w.status === "running" && lacksKey(w));
