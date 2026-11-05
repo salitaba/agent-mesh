@@ -66,6 +66,10 @@ test("the row is fixed at the thumb, above the page and below every layer", () =
   assert.match(narrow, /\.dock-tab \{ position: relative; flex: 1 1 0; min-width: 0; min-height: 52px;/, "each tab is a fifth of the width and 52 px tall");
   assert.match(narrow, /\.dock-tab\.active::before \{ content: ""; position: absolute; left: 18%; right: 18%; top: -1px; height: 2px;/, "the chosen place wears a rule on the frame's own edge");
   assert.match(narrow, /#app\.dock #view \{ padding-bottom: calc\(52px \+ var\(--s3\) \+ env\(safe-area-inset-bottom\)\); \}/, "the page keeps its last row clear of the layer: a control under a bottom bar is a bug");
+  // The padding keeps the *page* clear at rest; a box the browser scrolls into view aligns to the scrollport's bottom edge,
+  // which the fixed dock covers. Measured at 360: Tab left "Just happened: Show" at 800–844 in the 747 px view, wholly behind
+  // the 52 px row (elementFromPoint at its centre answered .dock-label). The scroll padding is the same height as the reserve.
+  assert.match(narrow, /#app\.dock #view \{ scroll-padding-bottom: calc\(52px \+ var\(--s3\) \+ env\(safe-area-inset-bottom\)\); \}/, "a focused control is scrolled clear of the layer, not under it");
 });
 
 test("the Designer keeps its own bottom, and forced colours keep the chosen tab", () => {

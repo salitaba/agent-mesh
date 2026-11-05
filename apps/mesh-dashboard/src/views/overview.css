@@ -506,3 +506,26 @@ details.ov-note { display: block; }
   .ov-jump { position: sticky; top: 0; z-index: var(--z-toolbar); margin-top: 0; padding-block: var(--s2); background: var(--bg); border-bottom: 1px solid var(--line); box-shadow: 0 calc(var(--s5) * -1) 0 var(--bg); }
   .ov .card { scroll-margin-top: calc(var(--s5) + var(--ov-bar-h) + var(--s2)); }
 }
+
+/* ============ Replay: four columns at a desk, one ruled row per agent on a phone ============
+   The replay drawer is the page's own width at 620 and below (360 at 360, 320 at 320), and this table's four columns need
+   **353 px**: at 320 the drawer scrolled 49 px sideways and the Tokens column sat off the screen, and at 360 it was 9 px — the
+   one number in the table's last column needed a sideways drag to read. A phone draws one agent per row instead: the name and
+   its tokens on the first line, the state and its turns on the second. The head is not drawn but is still in the accessibility
+   tree (the sr-only pattern, as the Agents ledger's stacked head), and each figure says its unit where the head does not.
+   A desk keeps the table and its 4-column head, and the units are display: none there. */
+.replay .rp-u { display: none; }
+@media (max-width: 620px) {
+  .replay .tbl, .replay .tbl tbody { display: block; }
+  .replay .tbl thead { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+  .replay .tbl tr { display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "agent tok" "state turns"; align-items: baseline; gap: var(--s1) var(--s3); padding: var(--s3) 0; border-top: 1px solid var(--line); }
+  .replay .tbl tr:first-child { border-top: 0; }
+  /* The drawer's own table rule (`#drawer table.tbl td`) draws a 1 px rule on every cell; on a stacked row that rule
+     appeared at the middle of each row and split by the column gap. The row is the rule here, so the cells carry none. */
+  #drawer .replay .tbl td { display: block; padding: 0; border: 0; }
+  .replay .tbl .rp-agent { grid-area: agent; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 600 14px var(--mono); color: var(--text); }
+  .replay .tbl .rp-state { grid-area: state; font: var(--tx-meta); color: var(--muted); }
+  .replay .tbl .rp-turns { grid-area: turns; justify-self: end; font: 13px var(--sans); color: var(--text-dim); }
+  .replay .tbl .rp-tok { grid-area: tok; justify-self: end; font: 650 14px var(--sans); color: var(--text); }
+  .replay .rp-u { display: inline; }
+}

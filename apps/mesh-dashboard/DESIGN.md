@@ -376,6 +376,87 @@ Breakpoints: **1280 1100 900 800 760 620 560**. 800 is the sidebar drawer (JS
 
 ## Pass log
 
+### 2026-11-05 — a focused control is scrolled clear of the dock, and a closed file says so inside its reader
+
+Surface: `src/styles.css` (the dock block's scroll padding), `src/files.ts` (`versionStateWords`, and `trailWords`' second
+argument), `src/artifactreader.tsx` (the reader reads the mission's own fact), `src/views/ReplayDrawer.tsx` and
+`src/views/overview.css` (the Replay table's phone shape), with one rule added to `tests/dashboard/dock-phone.test.ts` and
+two new files, `tests/dashboard/reader-words.test.ts` and `tests/dashboard/replay-phone.test.ts`.
+
+Measured on the scripted demo at **Delivered** (481 events, 49.3k of 2.0M tokens, 7 checks, 9 files: 3 delivered and 6 never
+given a verdict, 7 seats, 17 messages, ran 17s) in the production build served by `curule console`, Chromium 1248 at
+320/360/390/768/820/900/1,440 in light and 360/1,440 in dark, a touch pointer at 900 and below, reduced motion, axe-core 4.14
+(`qa:console` on each side: 52 page reads at 1,440/390 × both themes, and 52 at 320/768/820/900 light). Both halves are the
+**same delivered log**: the before bundle was rebuilt from `git stash` and swapped under the running console for each pair.
+
+**Tab left the last evidence row behind the dock.** `#view` reserved 64 px at its foot for the 52 px row, so a page's last
+row was clear of it at rest — but a box the browser scrolls into view is aligned to the scrollport's bottom edge, and the dock
+is a layer over that edge. At 360, thirteen Tabs from the top landed on **Just happened: Show** at **800–844** with the dock
+at 791–844: the whole 44 px control was behind it, `elementFromPoint` at its centre answered **`.dock-label` "Needs you"**,
+and the one thing the keyboard had just selected was invisible. The third row was 2 px clear. The dock's block gives `#view`
+the same 64 px as `scroll-padding-bottom` now: the fourth row lands at **732–776**, 15 px above the dock, `elementFromPoint`
+answers the button itself, and the third is 736–780. A walk of Overview, Files and Steps at 320/390/768/820/900 finds no
+focused control under the row. `scroll-padding-bottom` moves the bottom edge only, so the index's jumps to a section head and
+the Files bar's sticky top are untouched.
+
+**The reader called a closed file "ready for review".** The 2026-11-05 pass taught the Files list and the Overview's result
+that a file a delivered mission never decided is closed without a verdict, but the reader those rows open still printed the
+raw lifecycle word: on the demo's `release-test-report` the list said **closed without verdict**, and pressing the row showed
+the same file as **ready for review**, with the trail reading "draft › ready for review". One state, two views, and the one a
+person pressed said the work was still waiting after the mission had closed. The reader reads the mission's own fact now
+(`facts.goalStatus === "COMPLETED"`, the predicate the Files page reads) and takes its words from `files.ts`
+(`versionStateWords`): the pill is **closed without verdict**, the version picker says it for the latest version, and the
+trail ends in it (**draft › closed without verdict**). Older versions keep their historical words — a v1 that was ready for
+review when v2 landed is a step, not the state now — and a decided file is untouched (`merged`, `approved` …). The words are
+the same in the Files pane at 1,440 and in the drawer at 320/360, where they cost no height: the reader head is **112.8** at
+320 and **74.4** at 360/390 in both halves.
+
+**The Replay drawer's table was 353 px in a 288 px phone.** The drawer is the page's own width at 620 and below, and the
+Agents table's four columns need 353 px: at **320** the layer scrolled **49 px sideways** and the Tokens column sat off the
+screen (the head read "TOK", and 14.4k was cut); at **360** it was **9 px**. It draws one ruled row per agent on a phone now,
+as the Agents ledger does — the name and its tokens on the first line, the state and its turns under them, each figure saying
+its unit (**7.2k tokens**, **4 turns**) because the head is not drawn — while the head stays in the accessibility tree through
+the sr-only pattern (axe: 0 violations in the drawer at 320/360 in both themes). The drawer's overflow is **0 at 320, 360 and
+390**; the table is 288 in 288 at 320; a desk keeps the four-column table and its head (768: 515 px, unchanged). The
+drawer's own `#drawer table.tbl td` rule drew a 1 px line on every cell, which on a stacked row appeared as two short rules
+inside the row; the row is the only rule there now.
+
+| | Before | After |
+|---|---|---|
+| Tab 13, Overview 360: the focused control's box | 800–844, wholly under the 791 dock | **732–776, 15 px above it** |
+| `elementFromPoint` at its centre | `.dock-label` "Needs you" | **the button ("Show")** |
+| Tab 13's scroll (`#view.scrollTop`) | 10 | **78** |
+| Tab 12: Goal checks: Show | 745–789 (2 px clear) | **736–780** |
+| Focused controls under the dock, Overview/Files/Steps × 320/390/768/820/900 | 1 on Overview at 360 | **0** |
+| The reader's pill, `release-test-report` (list said "closed without verdict") | ready for review | **closed without verdict** |
+| Its trail | draft › ready for review | **draft › closed without verdict** |
+| A merged file's trail (unchanged) | draft … merged | draft … merged |
+| The reader head, 320 / 360 / 390 | 112.8 / 74.4 / 74.4 | 112.8 / 74.4 / 74.4 |
+| The Replay drawer's sideways scroll, 320 / 360 / 390 | 49 / 9 / 0 px | **0 / 0 / 0** |
+| Its table's width in the drawer, 320 | 353 in 288 | **288 in 288** |
+| The last cell at 320 | "7.2k", right edge 369 (49 px off screen) | **"7.2k tokens", right edge 304** |
+| The Replay table at 768 | 515, four columns | 515, four columns (unchanged) |
+| Axe, the Replay drawer 320/360 × light/dark | — | **0 violations** |
+| Horizontal page scroll, 320–1,440 × both themes | 0 | **0** |
+
+Floors: `npm run typecheck`, `npm run build` clean; `dist/tests/dashboard` **1,249 pass, 0 fail** (ten new tests in two
+files, one assertion added to `dock-phone`); eslint **0 errors** on the touched files; `npm run qa:console` at 1,440/390 in
+both themes — **52 screenshots, 52 axe runs, 0 violations, 0 px of page scroll** — and again at 320/768/820/900 light (**52
+screenshots, 26 axe runs, 0**); the only console error in every read is the one-mesh `/api/projects` 404. No colour moved, so
+both themes read the same geometry; the 44 px floor is untouched (the stacked rows are text, not controls, and the reader's
+pill is a label).
+
+**Left.** The reader drawer still trips `heading-order` (one node, the document's `h4` after the drawer's `h2`) — pre-existing,
+and the reader's own layer, not this pass's three fixes. The Events, Steps and Agents chip still says **"Live"** on a delivered
+mission beside the bar's "Delivered": the open question from the last pass was measured here, and it is a question of words
+rather than a missing fact — "Up to date" (108 px) grows the Events head **110 → 147.1** at 360 and re-breaks the one-line
+head the 2026-10-30 pass won, while "Final" (69 px) fits but is false the moment a message adds an event. The reader rewrites
+only the *latest* version of an undecided file: an older version's trail is history and keeps its word. The scroll padding
+exists only where the dock is drawn (800 and below); above 800 the sidebar is in the flow and there is nothing over the page
+foot. The Replay drawer's `Raw replay` block still scrolls inside itself, which is a `pre` of JSON and deliberate. And the
+reader's closed words are read from the goal's own status, so a *failed* mission keeps saying "ready for review" as the Files
+page does — one rule, one word, and the failure state is a separate decision.
+
 ### 2026-11-05 — a delivered receipt sets its verdict at the display step, and a closed file says so
 
 Surface: `src/mission.ts` (the delivered headline), `src/files.ts` (`CLOSED_REVIEW`), `src/views/Shipped.tsx` (the result's

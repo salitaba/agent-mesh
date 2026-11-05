@@ -8,7 +8,7 @@
  * say `version: 2`. Drawn as a chip each they read as "v2 v2 v2 v2 v2". `distinctVersions` folds them back into versions
  * and keeps the status trail each one walked, which is the thing the records were really recording.
  */
-import { plainArtifact } from "./format";
+import { artifactCls, plainArtifact } from "./format";
 
 export interface Art {
   id: string;
@@ -246,7 +246,18 @@ export function previousVersion(versions: readonly Pick<ArtVersion, "version">[]
 }
 
 /** The status trail as words: "draft, ready for review, merged". */
-export const trailWords = (trail: readonly string[]): string[] => trail.map((s) => plainArtifact(s));
+export const trailWords = (trail: readonly string[], closed = false): string[] =>
+  trail.map((s, i) => (closed && i === trail.length - 1 && artifactCls(s) === "waiting" ? CLOSED_REVIEW.row : plainArtifact(s)));
+
+/**
+ * One version's state as the reader says it. On a delivered mission the latest version of a file nobody decided is closed
+ * without a verdict — not still "ready for review", which reads as a review that will never come. The Files list and the
+ * Overview's result already say so; the reader drew the same file with `plainArtifact`, so pressing the row contradicted
+ * both. Older versions keep their own words: a v1 that was "ready for review" when v2 landed is a step, not the state now.
+ */
+export function versionStateWords(status: string, opts: { latest: boolean; delivered: boolean }): string {
+  return opts.latest && opts.delivered && artifactCls(status) === "waiting" ? CLOSED_REVIEW.row : plainArtifact(status);
+}
 
 /**
  * Which row takes focus after an arrow key in the list. The list has one tab stop, so the arrows are how a keyboard reaches
