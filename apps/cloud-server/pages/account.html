@@ -119,6 +119,7 @@
           <div class="field">
             <label for="topup-amount">Another amount <span class="muted" id="topup-unit"></span></label>
             <input id="topup-amount" name="amount" type="number" inputmode="decimal" min="0" step="any" autocomplete="off" aria-describedby="topup-hint">
+            <p class="note" id="topup-amount-error" role="status" aria-live="polite"></p>
           </div>
           <button class="btn" type="submit" data-busy="One moment">Pay</button>
         </form>
