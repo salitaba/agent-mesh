@@ -91,3 +91,10 @@ test("a phone's step drawer is the whole screen, and its head meets its edges", 
   assert.ok(desk, "the base head rule is still there");
   assert.match(desk![1]!, /-22px/, "a desk keeps its 22 px bleed");
 });
+
+test("an agent's open request names the seat it waits on", () => {
+  // Measured on the delivered demo: pm's drawer said "1 open request waiting on an answer" while "Needs you" was empty, because
+  // the request was pm -> security for the release-plan review. The drawer and the inbox now agree on who is being waited on.
+  assert.match(drawers, /pendingLine\(pending\.length, pendingRecipients\(pending\)\)/, "the drawer asks the model for the sentence");
+  assert.doesNotMatch(drawers, /waiting on an answer<\/div>/, "the vague sentence is gone");
+});

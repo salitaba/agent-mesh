@@ -377,6 +377,78 @@ Breakpoints: **1280 1100 900 800 760 620 560**. 800 is the sidebar drawer (JS
 
 ## Pass log
 
+### 2026-11-05 — a phone's drawer tabs wrap, and its open request names the seat
+
+Surface: `src/styles.css` (the phone tab strip and the dock tab's inset), `src/views/steps.css` (the pulse row as a
+container and its 320 caption), `src/inbox-model.ts` (`pendingLine`, `pendingRecipients`), `src/drawers.tsx` (the Signals
+line), with one rule in each of `tests/dashboard/frame-phone.test.ts`, `phone-head.test.ts`, `drawer-phone.test.ts` and
+`inbox-model.test.ts`.
+
+Measured on the scripted demo at **Delivered** (481 events, 49.3k of 2.0M tokens, 7 checks, 9 files, 7 seats, 28 turns, ran
+2m 14s) in the production build served by `curule console`, Chromium 1248 at 320/360/390/768/1,024/1,440 in light and
+360/1,440 in dark, a touch pointer at 800 and below, reduced motion, axe-core 4.14. Both halves are the **same delivered
+log**: the before bundle is the same worktree at `1db915e`, built and served in the same session. The phone pair is pm's
+drawer at 360 (`#/p/demo-stub/agents`, then the first `.agent-open`) and the desk pair the same drawer at 1,440; the 320 pair
+is `#/p/demo-stub/steps` and `#/p/demo-stub/overview` at `#view.scrollTop` 0.
+
+- **The drawer's last tab was off the phone.** At 360 the tab strip was **328 px client and 388 px of tabs** (Now 82, Work 60,
+  Comms 78, Memory 82, Config 70): Config began at **x = 334**, wholly past the 360 edge, behind `overflow-x: auto` with the
+  scrollbar hidden. At 320 two tabs were off (Memory right **330**, Config **404**); at 390 Config alone (**404**). It wraps
+  now: the strip is **328/328** at 360 (**93 px** tall, two rows), Config at **x = 16** on the second row; at 320 Now/Work/Comms
+  then Memory/Config; at 390 four then Config. The desk's sliding ink gives way on a phone to the chosen tab's own 2 px
+  underline, so a wrapped strip still says which one is open; 768 and 1,440 keep one row (**515/515**) and the ink. The
+  drawer's own content grows **48 px** (1,178 → 1,226 at 360); the page behind does not move.
+- **The pulse's three captions ran together at 320.** The card's content is **262 px**, so its three columns are **79.3**;
+  "Turns done" needs **98** and its right edge was **127** against "Tokens" at **120.3** — **6.7 px of one caption over the
+  next**, read as "TURNS DONETOKENS" — and "No output" was **88** in **79.3**, 8.7 px past the content edge. The pulse row is
+  a container now: at **280 px or narrower** the captions wrap and reserve their second line. At 320 each label is **79.3 ×
+  31.2** with scrollWidth **79** in clientWidth **79** (no overflow), the figures stay **28 / 49.3k / 44%** and their values
+  align; the strip **57.6 → 73.2**, the page **3,305 → 3,320**. At 360 the strip stays **57.6** and the 5.3 px overflow sits in
+  the **12 px** gap between columns (nothing touches); 390/768/1,024/1,440 do not move.
+- **The fifth dock tab said "Needs …".** At 320 a tab is **64 px** and "Needs you" is **63**; the tab's **2 px inset each
+  side** left the label **60**, so `text-overflow: ellipsis` drew "Needs …". The tab has no side padding now: the label's box
+  is **63 in 64** and the name is whole, while the target stays **64 × 52**. At 360 ("63 in 63"), 390 and 768 nothing
+  changes; the dock's height and every page's height are unchanged.
+- **The drawer's open request did not name the seat it waited on.** On the delivered demo pm's drawer said "**1 open request
+  waiting on an answer**" while the person's own inbox was correctly empty (`/escalations` `[]`, `/tool-approvals`
+  `{"seats":[]}`); the request is pm → **security** for the release-plan review. The sentence is built from the request's
+  `to` now — "**1 open request waiting on security**" — in the same **37.5 px** line at 360 and 1,440, so the drawer and Needs
+  you no longer look like they disagree about who is waiting.
+
+| | Before | After |
+|---|---|---|
+| The drawer tab strip at 360: client / scroll | 328 / 388 | **328 / 328** |
+| Its last tab, x → right | 334 → 404 (off screen) | **16 → 86** (second row) |
+| Tabs off screen: 320 / 360 / 390 | 2 / 1 / 1 | **0 / 0 / 0** |
+| The strip's height at 360 | 44 | **93** (two rows) |
+| The drawer's scroll height at 360 | 1,178 | **1,226** |
+| The Steps strip at 320 / 360 | 57.6 / 57.6 | **73.2 / 57.6** |
+| "Turns done" at 320: box / text | 79.3 / 98 (6.7 px into Tokens) | **79.3 / 79** (wrapped) |
+| "No output" at 320: box / text | 79.3 / 88 | **79.3 / 79** |
+| The Steps page at 320 | 3,305 | **3,320** |
+| The dock label at 320: box / text | 60 / 63 ("Needs …") | **63 / 63** ("Needs you") |
+| The dock tab at 320 | 64 × 52 | 64 × 52 (unchanged) |
+| The Signals line | 1 open request waiting on an answer | **1 open request waiting on security** |
+| Its line height at 360 / 1,440 | 37.5 / 37.5 | 37.5 / 37.5 |
+| Axe, 13 views × 320/360/390/1,440 light and 360/1,440 dark | — | **0 violations (78 reads)** |
+| Horizontal page scroll, 320–1,440 × both themes | 0 | **0** |
+
+Floors: `npm run typecheck` and `npm run build` clean; `dist/tests/dashboard` **1,256 pass, 0 fail** (four new rules, one in each of
+`inbox-model`, `frame-phone`, `phone-head` and `drawer-phone`); `dist/tests/build/console-palette.test.js` **7 pass**; eslint **0 errors** on the touched TypeScript
+(the two CSS files are outside its configuration); axe **0** in 78 reads; no page scrolls sideways at 320/360/390/768/1,024/1,440
+in light or 360/1,440 in dark; no control under 44 × 44 at 320/360/390 beyond the 1 × 1 skip link (the two raw switch inputs
+still sit inside 44 px labels); the smallest text stays 11 (the avatar initials), and the 320 caption is 12, the ramp's phone
+step.
+
+**Left.** The tab strip is **93 px** at 320/360/390, one 44 px row more than the desk's; that is the price of a Config a thumb
+can reach, and at 390 the second row holds Config alone. The 360 pulse caption still runs **5.3 px** into the **12 px** gap
+between its column and Tokens; it does not touch the next word, so the container query stops at the card width that collides, and
+a longer caption would need the same treatment. The `Live` chip on a delivered mission is still the open question from the last
+pass (a word about the stream, beside "Delivered"). The open request names its seat but is not a door to the thread, and with
+more than two recipients the third is counted rather than named. The 320 dock label fits by **1 px** (63 in 64); a translation
+or a wider font ellipsizes it again. None of this is read on hardware; the 320/360/390 figures are Chromium with touch emulation
+in CSS.
+
 ### 2026-11-05 — a phone row shares its width at 320, and a thumb's tablet folds its filters
 
 Surface: `src/live.css` (the search's phone basis), `src/views/files.css` (the Files basis and the coarse fold),

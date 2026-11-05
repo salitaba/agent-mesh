@@ -6,6 +6,8 @@ import {
   inboxSummary,
   inboxTabs,
   orderDecisions,
+  pendingLine,
+  pendingRecipients,
   tabOfView,
   toolRequestRows,
   toolRequestsBySeat,
@@ -142,4 +144,15 @@ test("tool requests become one row per tool, and a per-seat summary for the Over
   assert.deepEqual(toolRequestRows(seats), [{ agentId: "dev", tool: "Edit" }, { agentId: "dev", tool: "Write" }, { agentId: "sec", tool: "Bash" }]);
   assert.deepEqual(toolRequestsBySeat(seats), [{ agentId: "dev", tools: ["Edit", "Write"] }, { agentId: "sec", tools: ["Bash"] }]);
   assert.deepEqual(toolRequestRows([]), []);
+});
+
+test("an agent's open request names the seat it waits on, so it cannot read as the person's own inbox", () => {
+  // Measured on the delivered demo at 360 and 1,440: the pm drawer said "1 open request waiting on an answer" while "Needs you"
+  // was correctly empty; the request was pm -> security for the release-plan review. The drawer now says the recipient.
+  const pending = [{ to: ["security"] }, { to: ["security", "qa"] }, { to: [] }, {}];
+  assert.deepEqual(pendingRecipients(pending), ["security", "qa"], "one entry per seat, in request order, with no duplicates");
+  assert.equal(pendingLine(1, ["security"]), "1 open request waiting on security");
+  assert.equal(pendingLine(1, []), "1 open request waiting on an answer", "a request with no recipient keeps the old sentence");
+  assert.equal(pendingLine(2, ["security", "qa"]), "2 open requests waiting on security and qa");
+  assert.equal(pendingLine(3, ["security", "qa", "pm"]), "3 open requests waiting on security, qa and 1 more");
 });

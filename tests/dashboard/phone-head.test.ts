@@ -92,3 +92,10 @@ test("a phone's page head uses one 8 px gap, so a short title row keeps its acti
   assert.match(phoneBlocks(styles), /\.view-title \{ column-gap: var\(--s2\); \}/,
     "the phone block takes the row's 8 px for the columns as well");
 });
+
+test("a 320 phone's three figures do not run their captions together", () => {
+  // Measured at 320: the pulse card's content is 262 px, so its three columns are 79.3 px while "Turns done" needs 98. The caption
+  // ran 6.7 px into "Tokens" and the two read as "TURNS DONETOKENS"; "No output" ran 8.7 px past the card's content edge.
+  assert.match(css, /\.st-pulse-top \{[^}]*container-type: inline-size;[^}]*container-name: steps-pulse;/, "the pulse row is the container");
+  assert.match(css, /@container steps-pulse \(max-width: 280px\) \{\s*\.st-kpis \.stat-k \{[^}]*white-space: normal;[^}]*min-height: 2\.6em;/, "the caption wraps and reserves its second line");
+});

@@ -60,6 +60,35 @@ export interface InboxSummary {
 
 const plural = (n: number, one: string, many = `${one}s`): string => `${n} ${n === 1 ? one : many}`;
 
+/** A request one seat sent another (`pendingRequests` on an agent's detail). */
+export interface PendingRequest {
+  to?: unknown;
+}
+
+/**
+ * The seats a set of open requests is waiting on. The agent drawer used to say "1 open request waiting on an answer" with
+ * no recipient: on the delivered demo that request was pm asking security to review the release plan, so the person's own
+ * "Needs you" page was rightly empty while the drawer looked like it wanted them. Naming the seat makes the two pages agree.
+ */
+export function pendingRecipients(pending: readonly PendingRequest[]): string[] {
+  const out = new Set<string>();
+  for (const p of pending) {
+    if (!Array.isArray(p.to)) continue;
+    for (const t of p.to) if (typeof t === "string" && t) out.add(t);
+  }
+  return [...out];
+}
+
+/** The one sentence the drawer's Signals line says: the count and who it is waiting on, or "an answer" when nobody is named. */
+export function pendingLine(count: number, recipients: readonly string[]): string {
+  const who = recipients.length === 0
+    ? "an answer"
+    : recipients.length <= 2
+      ? recipients.join(" and ")
+      : `${recipients.slice(0, 2).join(", ")} and ${recipients.length - 2} more`;
+  return `${plural(count, "open request")} waiting on ${who}`;
+}
+
 /**
  * The header. "All clear" is a verdict, so it may only be said once everything that can wait has been read: before the lists
  * arrive it must not appear, when one of them failed to load the page says so instead of reporting a quiet queue, and when
