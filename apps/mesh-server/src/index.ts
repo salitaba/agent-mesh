@@ -2170,6 +2170,19 @@ if (parts[0] === LIVE_UI_PREFIX && parts.length >= 2 && req.method === "OPTIONS"
       }
 
       // --------------------------------------------------------- artifacts
+      if (parts[0] === "artifacts" && parts[1] === "archive-stale" && req.method === "POST") {
+        // The deterministic remedy behind `policies.resilience.review_debt`:
+        // close uncited, undecided, non-code artifacts so a strict completion
+        // policy is left holding only what the delivery actually rests on.
+        // Reversible (`artifact.transition` to ARCHIVED), and `dryRun` writes
+        // nothing.
+        const b = await body();
+        const r = await supervisor.archiveStaleReviews({
+          dryRun: b?.dryRun === true,
+          reason: typeof b?.reason === "string" && b.reason.trim() ? b.reason.trim() : undefined,
+        });
+        return json(r.ok ? 200 : 400, r);
+      }
       if (parts[0] === "artifacts" && parts[1]) {
         const id = decodeURIComponent(parts[1]);
         const a = kernel.state.artifacts.get(id);
@@ -2242,19 +2255,6 @@ if (parts[0] === LIVE_UI_PREFIX && parts.length >= 2 && req.method === "OPTIONS"
           });
         }
         return json(200, a);
-      }
-      if (parts[0] === "artifacts" && parts[1] === "archive-stale" && req.method === "POST") {
-        // The deterministic remedy behind `policies.resilience.review_debt`:
-        // close uncited, undecided, non-code artifacts so a strict completion
-        // policy is left holding only what the delivery actually rests on.
-        // Reversible (`artifact.transition` to ARCHIVED), and `dryRun` writes
-        // nothing.
-        const b = await body();
-        const r = await supervisor.archiveStaleReviews({
-          dryRun: b?.dryRun === true,
-          reason: typeof b?.reason === "string" && b.reason.trim() ? b.reason.trim() : undefined,
-        });
-        return json(r.ok ? 200 : 400, r);
       }
       if (parts[0] === "artifacts" && req.method === "GET") {
         // A file the mission put forward and never had decided reads as "in
