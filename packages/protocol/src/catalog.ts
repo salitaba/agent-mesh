@@ -717,7 +717,12 @@ export const RELEASE_ARTIFACT_TRANSITIONS: Partial<Record<ArtifactStatus, Artifa
 
 export const DOCUMENT_ARTIFACT_TRANSITIONS: Partial<Record<ArtifactStatus, ArtifactStatus[]>> = {
   DRAFT: ["READY_FOR_REVIEW", "FINAL", "ARCHIVED"],
-  READY_FOR_REVIEW: ["UNDER_REVIEW", "DRAFT", "FINAL"],
+  // A document put forward and then superseded can be withdrawn: without this a
+  // report whose fourth version is the current one could never be closed, and the
+  // strict completion gate (`policies.completion.require_reviews`) had no legal
+  // way out for the ones nobody decided. The curator archives only READY, never
+  // UNDER_REVIEW — an artifact a reviewer has picked up is still someone's.
+  READY_FOR_REVIEW: ["UNDER_REVIEW", "DRAFT", "FINAL", "ARCHIVED"],
   UNDER_REVIEW: ["APPROVED", "REJECTED", "READY_FOR_REVIEW"],
   REJECTED: ["DRAFT"],
   APPROVED: ["FINAL"],

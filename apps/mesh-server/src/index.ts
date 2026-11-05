@@ -46,6 +46,7 @@ import {
   buildSchedulerView,
   eventTimeline,
   buildMetrics,
+  buildHealth,
   SseHub,
 } from "../../../packages/observability/src/index";
 import { createMcpToolset } from "./mcp";
@@ -2242,6 +2243,19 @@ if (parts[0] === LIVE_UI_PREFIX && parts.length >= 2 && req.method === "OPTIONS"
         }
         return json(200, a);
       }
+      if (parts[0] === "artifacts" && parts[1] === "archive-stale" && req.method === "POST") {
+        // The deterministic remedy behind `policies.resilience.review_debt`:
+        // close uncited, undecided, non-code artifacts so a strict completion
+        // policy is left holding only what the delivery actually rests on.
+        // Reversible (`artifact.transition` to ARCHIVED), and `dryRun` writes
+        // nothing.
+        const b = await body();
+        const r = await supervisor.archiveStaleReviews({
+          dryRun: b?.dryRun === true,
+          reason: typeof b?.reason === "string" && b.reason.trim() ? b.reason.trim() : undefined,
+        });
+        return json(r.ok ? 200 : 400, r);
+      }
       if (parts[0] === "artifacts" && req.method === "GET") {
         // A file the mission put forward and never had decided reads as "in
         // review" forever; once the goal is COMPLETED, say what it is instead.
@@ -2609,6 +2623,10 @@ if (parts[0] === LIVE_UI_PREFIX && parts.length >= 2 && req.method === "OPTIONS"
           openReviews: [...kernel.state.artifacts.values()].filter(
             (a) => (a.status === "READY_FOR_REVIEW" || a.status === "UNDER_REVIEW") && (!kernel.state.activeGoalId || a.goalId === kernel.state.activeGoalId),
           ).length,
+          // Why the mission is not moving, from projections: the criterion
+          // nobody is proving, the queue the gate is held by, the rejected patch
+          // nobody reworked. The console shows the first sentence.
+          health: buildHealth(kernel.state),
           mode: instance.mode,
           uiOnly: instance.uiOnly,
           // The state that hides itself, said out loud: parked, with an ACTIVE

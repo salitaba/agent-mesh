@@ -233,6 +233,19 @@ export interface RawMeshFile {
      * new project's "Done" means its review queue is empty.
      */
     completion?: { require_reviews?: boolean };
+    /**
+     * What the mesh may do for itself when it is stuck. Deterministic remedies
+     * only: they emit reversible events (an archive, a re-ask) and never a
+     * verdict, an acceptance or a deletion.
+     */
+    resilience?: {
+      review_debt?: {
+        /** `archive`: close uncited, undecided non-code artifacts once the completion gate has been held this long. `off`: report only. */
+        action?: "archive" | "off";
+        /** How long the completion gate may be held by reviews before the curator acts. */
+        after_ms?: number;
+      };
+    };
     escalation?: {
       thread?: { max_depth?: number };
       repeated_conflict?: { threshold?: number };
@@ -832,6 +845,10 @@ export interface ResolvedMeshConfig {
    * forward for review have no verdict. See `RawMeshFile.policies.completion`.
    */
   requireReviewsAtCompletion: boolean;
+  /** What the mesh does for itself when stuck. See `raw.policies.resilience`. */
+  resilience: {
+    reviewDebt: { action: "archive" | "off"; afterMs: number };
+  };
   escalation: {
     threadMaxDepth: number;
     repeatedConflictThreshold: number;
@@ -1852,6 +1869,12 @@ function buildResolved(raw: RawMeshFile, dir: string): ResolvedMeshConfig {
     communication,
     transitionGates: mapValues(raw.policies?.transitions ?? {}, (t) => t.requires ?? []),
     requireReviewsAtCompletion: raw.policies?.completion?.require_reviews === true,
+    resilience: {
+      reviewDebt: {
+        action: raw.policies?.resilience?.review_debt?.action === "archive" ? "archive" : "off",
+        afterMs: raw.policies?.resilience?.review_debt?.after_ms ?? 15 * 60_000,
+      },
+    },
     escalation: {
       threadMaxDepth: raw.policies?.escalation?.thread?.max_depth ?? 8,
       repeatedConflictThreshold: raw.policies?.escalation?.repeated_conflict?.threshold ?? 3,
@@ -3317,6 +3340,15 @@ policies:
   # nobody reviews and the gate would deadlock it.
   completion:
     require_reviews: true
+  # What the mesh may do for itself when the review queue holds it. Deterministic
+  # and reversible: uncited reports (not cited by any criterion, not code) are
+  # archived with a reason after the gate has waited 15 minutes, so a strict
+  # completion policy cannot deadlock on a queue nobody reads. The cited ones stay
+  # and still need a verdict.
+  resilience:
+    review_debt:
+      action: archive
+      after_ms: 900000
   communication:
     # Who may cold-approach whom. A seat absent from this list can still be reached by an ask it owes an
     # answer to; the matrix bounds the approach, which is what keeps ten seats from talking past each

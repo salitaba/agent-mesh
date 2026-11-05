@@ -128,6 +128,11 @@ export interface MissionFacts {
    */
   openReviews?: number;
   /**
+   * The mission's own diagnosis, from `/status`: what it is waiting on when it
+   * is not moving. Absent on an older server that does not send it.
+   */
+  health?: { status: string; completionHold?: string };
+  /**
    * The same cards `blockingDecisions` counts, as the server dates each one (`status.needsOperator`), longest waiting first:
    * who raised it, what it asks and how long it has waited. `needsOperator` also lists notices, which hold nothing and are
    * counted by `advisoryDecisions`, so they are not read here — a notice is not something the operator owes. Empty when the
@@ -221,6 +226,7 @@ export function factsFromStatus(
     }),
     advisoryDecisions: decisions.filter((e) => e?.advisory === true).length,
     openReviews: Number(status?.openReviews ?? status?.goal?.completion?.openReviews ?? 0) || 0,
+    ...(status?.health ? { health: { status: String(status.health.status ?? ""), ...(status.health.completionHold ? { completionHold: String(status.health.completionHold) } : {}) } } : {}),
     owedCards: owedOf(status),
     hostCeilingTripped: extra.hostCeilingTripped === true,
     working: agents.filter((a) => RUNNING.has(a.lifecycle)).length,
@@ -315,6 +321,20 @@ function describePhase(f: MissionFacts): Omit<MissionState, "next"> & { next?: N
       ...base, phase: "needs-you", tone: "warn", label: "Needs you",
       headline: `${plural(n, "decision")} waiting on you. ${n === 1 ? "It holds" : "They hold"} ${listOf(seats)} only, and the rest of the mesh keeps working.`,
       primary: { action: "review", label: "Review decisions", hint: "Open the inbox: the mission keeps running without these seats until each decision is answered" },
+    };
+  }
+  if (f.goalStatus === "ACTIVE" && f.health?.status === "blocked" && f.health.completionHold) {
+    // Every mandatory check is evidenced and the completion gate is held by a
+    // review queue. "Running" alone would read as work in progress; the queue is
+    // the thing standing between the mission and COMPLETED, so it leads.
+    return {
+      ...base,
+      phase: "running",
+      tone: "warn",
+      label: "Closing",
+      pulse: f.working > 0,
+      headline: `Every mandatory check is evidenced. Close is held by ${f.health.completionHold}.`,
+      primary: f.working > 0 ? PAUSE : null,
     };
   }
   if (f.goalStatus === "FAILED") {

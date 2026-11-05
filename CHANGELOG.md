@@ -7,6 +7,26 @@ sections 1 to 26) are described there, run by run.
 
 ## Unreleased
 
+### Added: the mesh fixes its own stuck states — review debt, lost streams, and a health line
+
+Three failures this mission needed an operator for are now handled by the runtime itself.
+
+- **Review debt.** `policies.resilience.review_debt` lets the review curator close what the completion gate should never
+  have been holding: artifacts that are `READY_FOR_REVIEW`, **not cited by any acceptance criterion**, and **not CodePatch**.
+  They are archived (not deleted) with a reason on the transition, at most twice per goal, after the policy's wait. The
+  default team template sets `archive` at 15 minutes, so `require_reviews` cannot deadlock on a queue nobody reads — the
+  live mission closed with 99 undecided reports of which 5 were cited. A document put forward can now legally transition to
+  `ARCHIVED` (`DOCUMENT_ARTIFACT_TRANSITIONS`); the curator never touches `UNDER_REVIEW`.
+  By hand: `curule reviews archive-stale [--dry-run]`, or `POST /artifacts/archive-stale`.
+- **Lost streams.** The OpenAI-compatible adapter re-issues a call whose stream died **before any text, reasoning or tool
+  call was emitted** (up to two attempts). No assistant message was persisted and no tool ran, so the retry is safe, and on
+  a warm prompt it costs one cached prefix read instead of a failed turn. A stream that died after content reached the
+  consumer is not retried.
+- **A health line.** `/status` now carries a `health` report computed from projections: unsatisfied criteria, review debt
+  (open/cited/uncited), rejected patches, open cards, seats that can take a turn. When every mandatory check is evidenced and
+  only the review queue holds the close, the report says so in one sentence and the console's hero reads “Every mandatory
+  check is evidenced. Close is held by N files still awaiting a verdict …” instead of a plain “Running”.
+
 ### Changed: a delivered mission says what it left in review, and a new project gates completion on it
 
 A live mission closed COMPLETED with **95 files still READY_FOR_REVIEW** — 46 TestReports, 31 SecurityReports, 11

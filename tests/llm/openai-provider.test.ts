@@ -585,3 +585,42 @@ test("effort and an extra body field are sent where the provider takes them", as
     },
   );
 });
+
+test("a stream lost before the model emitted anything is re-issued, and the consumer sees one answer", async () => {
+  await withServer(
+    (_req, res, n) => {
+      if (n === 0) {
+        // Headers and one empty role chunk, then the socket closes: undici
+        // surfaces a transport error, or the body ends before a finish.
+        sseHead(res);
+        frame(res, chunk({ role: "assistant", content: "" }));
+        res.end();
+        return;
+      }
+      sseHead(res);
+      frame(res, chunk({ content: "ok" }));
+      frame(res, chunk({}, "stop"));
+      frame(res, "[DONE]");
+      res.end();
+    },
+    async (s) => {
+      const events = await collect(provider(s).stream(ASK));
+      assert.equal(s.seen.length, 2, "the lost stream was re-issued");
+      assert.equal(endOf(events).text, "ok");
+    },
+  );
+});
+
+test("a stream lost after content reached the consumer is not re-issued", async () => {
+  await withServer(
+    (_req, res) => {
+      sseHead(res);
+      frame(res, chunk({ content: "partial" }));
+      res.end();
+    },
+    async (s) => {
+      await assert.rejects(collect(provider(s).stream(ASK)), /ended before the model finished/);
+      assert.equal(s.seen.length, 1, "re-issuing would show the consumer the beginning twice");
+    },
+  );
+});

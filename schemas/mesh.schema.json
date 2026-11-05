@@ -641,6 +641,31 @@
           },
           "additionalProperties": false
         },
+        "resilience": {
+          "type": "object",
+          "description": "What the mesh may do for itself when stuck. Deterministic, reversible remedies only: an archive with a reason, never a verdict or an acceptance.",
+          "properties": {
+            "review_debt": {
+              "type": "object",
+              "properties": {
+                "action": {
+                  "type": "string",
+                  "enum": [
+                    "archive",
+                    "off"
+                  ]
+                },
+                "after_ms": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 86400000
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
+        },
         "communication": {
           "type": "object",
           "additionalProperties": {

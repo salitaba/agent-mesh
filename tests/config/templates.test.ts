@@ -137,6 +137,7 @@ test("a new project is written with review-gated completion, and the flag resolv
     const file = writeDefaultMeshYaml(dir, "acme");
     const cfg = resolveConfig(file);
     assert.equal(cfg.requireReviewsAtCompletion, true, "a new project's Done means an empty review queue");
+    assert.deepEqual(cfg.resilience.reviewDebt, { action: "archive", afterMs: 900_000 }, "and the mesh may close uncited residue by itself");
 
     // The same file with the flag off is the schema's default behaviour, and it must load.
     fs.writeFileSync(file, fs.readFileSync(file, "utf8").replace("require_reviews: true", "require_reviews: false"), "utf8");

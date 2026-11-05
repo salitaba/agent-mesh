@@ -13,7 +13,7 @@
  * - a server may refuse a parameter another one needs: `stream_options`, `max_tokens` against `max_completion_tokens`,
  *   `temperature`, `reasoning_effort`. A refusal that names the parameter is answered once, without it, and remembered.
  */
-import { ProviderError, classifyHttpFailure, describeErrorBody } from "./errors";
+import { ProviderError, classifyHttpFailure, describeErrorBody, isAbortError } from "./errors";
 import { openResponse, resolveTransport, type OpenedResponse, type ResolvedTransport, type TransportOptions } from "./transport";
 import { parseSse } from "./sse";
 import { estimateTokens } from "./types";
@@ -36,6 +36,18 @@ export interface OpenAiCompatibleOptions {
   defaultMaxOutputTokens?: number;
   /** A name for error messages; defaults to the base URL's host. */
   name?: string;
+  /**
+   * Times a stream that dies after the response opened — but before the model emitted
+   * anything — is re-issued. Zero disables it.
+   *
+   * A provider that drops the connection mid-stream surfaces as an `undici` socket
+   * error or a truncated SSE body, and a turn whose *first* stream was lost has run
+   * no tools and persisted no assistant message: re-issuing is safe, and on a warm
+   * prompt it costs one cached prefix read instead of a whole failed turn. Once any
+   * text, reasoning or tool call has been yielded the retry is refused — a consumer
+   * would see the beginning twice.
+   */
+  streamRetries?: number;
   transport?: TransportOptions;
 }
 
@@ -96,13 +108,26 @@ export class OpenAiCompatibleProvider implements LlmProvider {
   }
 
   async *stream(request: ModelRequest): AsyncGenerator<ModelEvent, void> {
-    const opened = await this.open(request);
-    try {
-      const type = opened.response.headers.get("content-type") ?? "";
-      const events = type.includes("application/json") ? this.fromCompletion(opened, request) : this.fromStream(opened, request);
-      yield* events;
-    } finally {
-      opened.close();
+    const retries = Math.max(0, this.options.streamRetries ?? 2);
+    for (let attempt = 0; ; attempt++) {
+      const opened = await this.open(request);
+      let emitted = false;
+      try {
+        const type = opened.response.headers.get("content-type") ?? "";
+        const events = type.includes("application/json") ? this.fromCompletion(opened, request) : this.fromStream(opened, request);
+        for await (const ev of events) {
+          if (ev.kind !== "end") emitted = true;
+          yield ev;
+        }
+        return;
+      } catch (err) {
+        // Safe only while the consumer has seen nothing: no assistant message was
+        // persisted, no tool ran, and the prompt is unchanged and warm.
+        if (emitted || request.signal?.aborted || isAbortError(err) || attempt >= retries || !retryableStreamError(err)) throw err;
+        await new Promise<void>((resolve) => setTimeout(resolve, 400 * (attempt + 1)));
+      } finally {
+        opened.close();
+      }
     }
   }
 
@@ -213,6 +238,19 @@ function hostOf(url: string): string {
   } catch {
     return url;
   }
+}
+
+/**
+ * A stream lost to the transport, as opposed to a refusal the provider sent on
+ * purpose. `ProviderError` kinds are the ones `describeErrorBody` classifies;
+ * the rest are what `undici` raises when the socket under the stream dies.
+ */
+function retryableStreamError(err: unknown): boolean {
+  if (err instanceof ProviderError) return err.kind === "unreachable" || err.kind === "unavailable";
+  const code = (err as { code?: unknown } | null)?.code;
+  if (typeof code === "string" && /ECONNRESET|ERR_HTTP2|UND_ERR_SOCKET|UND_ERR_HEADERS_TIMEOUT|UND_ERR_BODY_TIMEOUT|EPIPE/i.test(code)) return true;
+  const message = (err as Error | null)?.message ?? "";
+  return /socket hang up|premature close|other side closed|connection lost|terminated/i.test(message);
 }
 
 async function collectText(chunks: AsyncIterable<Uint8Array>): Promise<string> {

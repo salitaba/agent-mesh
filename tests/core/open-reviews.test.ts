@@ -214,3 +214,71 @@ test("draftArtifacts: this goal's working copies, and only those", () => {
   assert.deepEqual(draftArtifacts(state, "g").map((a) => a.id), ["draft"]);
   assert.deepEqual(draftArtifacts({ artifacts: new Map() } as never, "g"), [], "a partial state has none");
 });
+
+// ------------------------------------------------------- the curator's remedy
+
+/** Cite an artifact by name on the fixture's only criterion, the way an acceptance records evidence. */
+function cite(m: Mesh, name: string): void {
+  const goal = m.kernel.state.goals.get(m.kernel.state.activeGoalId ?? "")!;
+  goal.acceptanceCriteria[0]!.evidence.push({
+    kind: "criteria-acceptance",
+    artifactRef: { uri: `artifact://TestReport/${encodeURIComponent(name)}/1` },
+    recordedAt: new Date().toISOString(),
+  } as never);
+}
+
+test("archiveStaleReviews closes uncited, undecided reports and keeps the cited one — dry run writes nothing", async () => {
+  const m = await fixture();
+  try {
+    const cited = await artifact(m, "accepted-row");
+    await m.supervisor.transitionArtifact("dev", cited, { to: "READY_FOR_REVIEW" });
+    cite(m, "accepted-row");
+    const residue = await artifact(m, "fourth-version-of-a-report");
+    await m.supervisor.transitionArtifact("dev", residue, { to: "READY_FOR_REVIEW" });
+    const patchArt = await patch(m, "unmerged-code");
+    await m.supervisor.transitionArtifact("dev", patchArt, { to: "READY_FOR_REVIEW" });
+
+    const dry = await m.supervisor.archiveStaleReviews({ dryRun: true });
+    assert.equal(dry.ok, true);
+    assert.deepEqual(dry.archived.map((a) => a.id), [residue], "only the uncited report");
+    assert.deepEqual(dry.kept.map((a) => a.id), [cited], "the cited report is kept");
+    assert.equal(status(m, residue), "READY_FOR_REVIEW", "a dry run writes nothing");
+
+    const real = await m.supervisor.archiveStaleReviews();
+    assert.deepEqual(real.archived.map((a) => a.id), [residue]);
+    assert.equal(status(m, residue), "ARCHIVED", "closed, with a reason on the transition");
+    assert.equal(status(m, cited), "READY_FOR_REVIEW", "cited evidence is never closed by the system");
+    assert.equal(status(m, patchArt), "READY_FOR_REVIEW", "and never a CodePatch");
+    const transition = (await events(m, "artifact.transition")).filter((e) => (e.payload as { artifactId?: string }).artifactId === residue).at(-1) as unknown as {
+      payload?: { to?: string; reason?: string };
+    };
+    assert.equal(transition.payload?.to, "ARCHIVED");
+    assert.match(String(transition.payload?.reason), /uncited/);
+  } finally {
+    await m.cleanup();
+  }
+});
+
+test("with the archive remedy on, a strict gate closes the uncited queue by itself and keeps the cited one", async () => {
+  const m = await fixture();
+  try {
+    (m.config as unknown as { requireReviewsAtCompletion: boolean }).requireReviewsAtCompletion = true;
+    (m.config as unknown as { resilience: { reviewDebt: { action: string; afterMs: number } } }).resilience = {
+      reviewDebt: { action: "archive", afterMs: 0 },
+    };
+    const cited = await artifact(m, "accepted-row");
+    await m.supervisor.transitionArtifact("dev", cited, { to: "READY_FOR_REVIEW" });
+    cite(m, "accepted-row");
+    const residue = await artifact(m, "uncited-report");
+    await m.supervisor.transitionArtifact("dev", residue, { to: "READY_FOR_REVIEW" });
+
+    const library = await mergeable(m, "library");
+    assert.equal((await op(m, "lead", { op: "merge", artifactId: library })).ok, true);
+    await settle(m);
+    assert.equal(status(m, residue), "ARCHIVED", "the curator closed the uncited report after the wait");
+    assert.equal(status(m, cited), "READY_FOR_REVIEW", "the cited report still owes a verdict");
+    assert.notEqual(goalStatus(m), "COMPLETED", "so the strict gate still holds the mission");
+  } finally {
+    await m.cleanup();
+  }
+});

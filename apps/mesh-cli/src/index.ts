@@ -367,6 +367,7 @@ usage:
   curule reject --subject s [--artifact id] [--comment text]
   curule respond <escalationId> <text>       human escalation response
   curule artifacts [--bus url] [--settled] [--status S]  artifact ledger, grouped: delivered / in progress / rejected
+  curule reviews archive-stale [--bus url] [--dry-run] [--reason text]  close uncited, undecided reports: the deterministic remedy a strict completion gate leaves holding only the files the delivery rests on
   curule budgets [--bus url]                 budget keys with consumed/limit and an EXCEEDED mark
   curule ledger [mesh.yaml] [--top n] [--json]  per-turn token ledger from the audit file: fresh vs cached vs written, which turns hold the uncached bill, and fresh input by gap since a seat last finished.
     Offline: reads logs/turn-audit.jsonl, needs no running mesh. Ratios are published Anthropic
@@ -890,6 +891,31 @@ export async function main(argv: string[]): Promise<number> {
           return 1;
         }
         for (const e of body) console.log(`  ${e.status.padEnd(10)} ${e.id}  [${e.reason}] by ${e.raisedBy}`);
+        return 0;
+      }
+      case "reviews": {
+        if (args.positional[0] !== "archive-stale") {
+          console.error("curule reviews: the only subcommand is `archive-stale` (try --help)");
+          return 1;
+        }
+        const dryRun = args.flags["dry-run"] === true;
+        const { status, body } = await httpJson(
+          "POST",
+          `${bus}/artifacts/archive-stale`,
+          { dryRun, reason: typeof args.flags.reason === "string" ? args.flags.reason : undefined },
+          args.flags,
+        );
+        if (status !== 200) {
+          console.error(`curule reviews: the mesh refused: ${JSON.stringify(body).slice(0, 300)}`);
+          return 1;
+        }
+        const r = body as { open: number; cited: number; archived: Array<{ id: string; name: string; type: string }>; kept: Array<{ id: string; name: string; type: string }> };
+        console.log(
+          `review queue: ${r.open} open, ${r.cited} cited by a criterion, ${r.archived.length} uncited` +
+            (dryRun ? " (dry run — nothing written)" : " — archived"),
+        );
+        for (const a of r.archived) console.log(`  ${dryRun ? "would close" : "closed"}  ${a.id}  ${a.type.padEnd(20)} ${a.name}`);
+        for (const a of r.kept) console.log(`  kept         ${a.id}  ${a.type.padEnd(20)} ${a.name}`);
         return 0;
       }
       case "artifacts": {

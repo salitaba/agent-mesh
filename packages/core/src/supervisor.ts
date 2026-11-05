@@ -89,7 +89,7 @@ import { MAX_CONTINUITY_BELIEFS, MAX_CONTINUITY_COMMITMENTS, MAX_CONTINUITY_REJE
 import { artifactKey, approvalKey, ensureBudget, INFERRED_DISCHARGE_REASONS, MAX_PENDING_REQUESTS, outstandingDebtors, overdueCommitments, PER_DEBTOR_DISCHARGE_REASONS, readableMailDepth, stillOwes, UNANSWERED_DISCHARGE_REASONS } from "./state";
 import type { DischargeReason, Projections } from "./state";
 import { applyEvent, approverMayAdvance, artifactForRef, capabilityForReview, checkApprovals, domainOfSubject, givesPassForApprove, hasPeerReviewerFor, holdsAuthority, draftArtifacts, mayAcceptCriteria, mayReviewArtifact, openRejections, openReviews, projectionConfigFor, settlersOf, standingBlocks, transitionLifecycle, unqualifiedAuthor, type StandingBlock } from "./projections";
-import { missionStatus, type MissionStatus } from "./status";
+import { reviewDebt } from "./artifact-hygiene";import { missionStatus, type MissionStatus } from "./status";
 import { pageCut } from "./text-page";
 import { extractPatchFiles, safeProductPath, type PatchFile } from "./patch-files";
 import { mintSeatToken } from "./seat-token";
@@ -349,6 +349,12 @@ export const RECOVERY_ACTOR_ID = "recovery-manager";
  * verdict, `reopenGoal` and the escalation answer, still says `human`.
  */
 export const TERMINATION_ACTOR_ID = "termination-manager";
+/**
+ * Actor for the review curator's own decisions: closing an artifact nobody
+ * decided. A distinct id so the audit trail says "the mesh closed this because it
+ * was uncited residue", never "a reviewer approved it".
+ */
+export const REVIEW_CURATOR_ACTOR_ID = "review-curator";
 
 // Moved to `protocol/src/catalog.ts`, next to `AUTO_EVIDENCED_CRITERIA`, which
 // it has to be read against: `packages/config` warns when a mandatory criterion
@@ -4581,6 +4587,10 @@ export class Supervisor {
   private staleNoticesSent = new Set<string>();
   /** Goals whose completion has already been audited as held by undecided reviews. */
   private reviewsHoldNoted = new Set<string>();
+  /** When the completion gate first reported undecided reviews, per goal. */
+  private reviewHoldSince = new Map<string, number>();
+  /** How many times the curator has swept a goal's review queue, capped so a stuck gate cannot loop. */
+  private reviewSweeps = new Map<string, number>();
   /**
    * Review asks superseded while the new version was not yet reviewable, per
    * artifact. Re-issued the moment the artifact becomes reviewable through a
@@ -13363,6 +13373,25 @@ export class Supervisor {
           `completion held by policies.completion.require_reviews: ${verdict.blockedBy.reviews} artifact(s) still await a verdict — review or archive them, and the mission can close`,
         );
       }
+      // The deterministic remedy: after the policy's wait, close the uncited
+      // residue so the gate is left holding only what the delivery rests on.
+      // Capped at two sweeps per goal, because a queue that keeps reappearing is
+      // a question for a person, not a loop for the curator.
+      const policy = this.config.resilience.reviewDebt;
+      if (policy.action === "archive") {
+        if (!this.reviewHoldSince.has(goalId)) this.reviewHoldSince.set(goalId, nowMs);
+        const since = this.reviewHoldSince.get(goalId) ?? nowMs;
+        const sweeps = this.reviewSweeps.get(goalId) ?? 0;
+        if (sweeps < 2 && nowMs - since >= policy.afterMs) {
+          this.reviewSweeps.set(goalId, sweeps + 1);
+          const swept = await this.archiveStaleReviews({
+            reason: `uncited and undecided for ${Math.round((nowMs - since) / 60_000)} min while the completion gate waited`,
+          });
+          this.auditLine(
+            `review curator swept the queue: ${swept.archived.length} uncited artifact(s) archived, ${swept.cited} cited kept, ${swept.open - swept.archived.length} still undecided`,
+          );
+        }
+      }
     } else if (verdict.kind === "escalate" && goal.status !== "ESCALATED") {
       await this.escalate({
         reason: verdict.reason,
@@ -13374,6 +13403,9 @@ export class Supervisor {
     } else if (verdict.kind === "fail" && goal.status !== "FAILED") {
       await this.deps.kernel.emit("goal.failed", { goalId, reason: verdict.reason }, { actorId: TERMINATION_ACTOR_ID });
     }
+    // A fresh hold gets a fresh clock: the policy waits from the moment the gate
+    // starts reporting reviews, not from the first one it ever saw.
+    if (!(verdict.kind === "continue" && verdict.blockedBy?.reviews)) this.reviewHoldSince.delete(goalId);
   }
 
   /**
@@ -13736,6 +13768,54 @@ export class Supervisor {
   private missionOver(): boolean {
     const goal = this.state.activeGoalId ? this.state.goals.get(this.state.activeGoalId) : undefined;
     return goal?.status === "COMPLETED" || goal?.status === "FAILED";
+  }
+
+  /**
+   * Close undecided artifacts that the mission's contract does not cite.
+   *
+   * The strict completion policy (`policies.completion.require_reviews`) cannot
+   * tell a report the delivery rests on from the fourth version of a report
+   * nobody read, so it blocks on both. This is the deterministic remedy: an
+   * artifact is closed only when it has **no verdict**, is **not cited by any
+   * acceptance criterion** (or named in a rejected-evidence list), and is **not a
+   * CodePatch**. It is archived, never deleted, with the reason recorded on an
+   * `artifact.transition` by `review-curator`, so reopening the goal turns it
+   * back into an undecided review.
+   *
+   * `dryRun` returns the same split without writing anything, for the console and
+   * for `curule reviews archive-stale --dry-run`.
+   */
+  async archiveStaleReviews(opts: { dryRun?: boolean; reason?: string } = {}): Promise<{
+    ok: boolean;
+    dryRun: boolean;
+    open: number;
+    cited: number;
+    archived: Array<{ id: string; name: string; type: string }>;
+    kept: Array<{ id: string; name: string; type: string }>;
+    error?: string;
+  }> {
+    const goalId = this.state.activeGoalId;
+    const dryRun = opts.dryRun === true;
+    if (!goalId) return { ok: false, dryRun, open: 0, cited: 0, archived: [], kept: [], error: "no active goal" };
+    const debt = reviewDebt(this.state, goalId);
+    const keep = debt.cited.map((a) => ({ id: a.id, name: a.name, type: a.type }));
+    const archivable = debt.uncited.map((a) => ({ id: a.id, name: a.name, type: a.type }));
+    if (dryRun) return { ok: true, dryRun, open: debt.open.length, cited: debt.cited.length, archived: archivable, kept: keep };
+    const reason = opts.reason?.trim() || "uncited by any acceptance criterion and never decided: closed by the review curator";
+    for (const a of debt.uncited) {
+      await this.deps.kernel.emit(
+        "artifact.transition",
+        { artifactId: a.id, to: "ARCHIVED", reason },
+        { actorId: REVIEW_CURATOR_ACTOR_ID },
+      );
+    }
+    if (debt.uncited.length > 0) {
+      this.auditLine(
+        `review curator archived ${debt.uncited.length} uncited artifact(s) from a queue of ${debt.open.length}; ` +
+          `kept ${debt.cited.length} cited by a criterion (${keep.map((a) => a.name).join("; ") || "none"})`,
+      );
+    }
+    return { ok: true, dryRun, open: debt.open.length, cited: debt.cited.length, archived: archivable, kept: keep };
   }
 
   private async completeMission(): Promise<void> {

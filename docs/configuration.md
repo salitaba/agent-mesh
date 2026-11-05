@@ -353,6 +353,10 @@ policies:
     artifact_review_rounds: { max: 5 }
   completion:                          # what "done" means (see below)
     require_reviews: true              # hold completion until every put-forward file has a verdict
+  resilience:                          # what the mesh may do for itself when stuck (see below)
+    review_debt:
+      action: archive                  # close uncited, undecided reports after the wait
+      after_ms: 900000
   rules:                               # optional extra deny/escalate rules (§19)
     - id: explorer-read-only
       when: { actor_role: explorer }
@@ -384,6 +388,34 @@ carries `openReviews`, the goal projection carries their count
 on the table: N files were never given a verdict" rather than a clean "Delivered".
 Those files also stop reading as "in review" once the mission is closed — the
 artifact page labels them *closed without verdict*.
+
+### resilience
+
+What the mesh may do **for itself** when it is stuck. Every remedy here is
+deterministic and reversible: it writes an event with a reason, never a verdict,
+an acceptance or a deletion.
+
+`review_debt.action: archive` — when the completion gate is held by reviews for
+longer than `after_ms`, the review curator closes artifacts that are
+`READY_FOR_REVIEW`, **not cited by any acceptance criterion** (or named in a
+rejected-evidence list), and **not CodePatch**. They are archived, not deleted,
+by an `artifact.transition` whose reason names the sweep; reopening the goal turns
+them back into undecided reviews. Artifacts `UNDER_REVIEW` are never closed this
+way — a reviewer has picked them up. `action: off` reports the debt in the health
+view and does nothing. The default team template sets `archive` at 15 minutes, so
+a strict completion policy cannot deadlock on a queue nobody reads.
+
+The curator sweeps at most twice per goal; a queue that keeps reappearing is a
+question for a person, not a loop for the machine. Every sweep is named in the
+audit log and in `GET /status` (`health.reviewDebt` / `health.completionHold`).
+
+The same remedy is available by hand, without waiting:
+
+```
+curule reviews archive-stale [--bus url] [--dry-run] [--reason text]
+```
+
+`--dry-run` prints what it would close and the cited files it would keep.
 
 ### transitions
 

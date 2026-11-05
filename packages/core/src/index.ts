@@ -19,4 +19,5 @@ export {
   haltReasonText,
   isBookkeepingEvent,
 } from "./mission-guards";
+export * from "./artifact-hygiene";
 export * from "./supervisor";
