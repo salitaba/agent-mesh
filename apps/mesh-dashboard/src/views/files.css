@@ -28,12 +28,13 @@
 .files-latest { display: inline-flex; align-items: center; }
 
 /* On a phone the three filters sit behind one button that counts the ones that are on, and that button shares the search's row
-   while the two fit. Without the fold the filter block was 202 px tall at 360 px: search, type and two rows of status chips before
-   the first file. With the search on a row of its own the button still took a second 44 px row and the first group began at 281.6;
-   at 360 the search takes 220.5 px, the 103.5 px button and their 12 px gap are 336 px exactly, and the first group begins at 229.6
-   (the first file 52 px higher, one more row of it on the screen). At 320 the search keeps its line whole and the button takes the next: the two do not fit. */
+   at every phone width. Without the fold the filter block was 202 px tall at 360 px: search, type and two rows of status chips before
+   the first file. At 360 the search grows to 219 px, the 105 px button and their 12 px gap are 336 px, and the first group begins at
+   229.6 (the first file 52 px higher, one more row of it on the screen). At 320 the 170 px search basis (live.css) plus the button
+   and gap is 287 in 296, so the two share the row there too; the search grows to 179 and the first group begins at 229.6 instead of
+   281.6. */
 @media (max-width: 620px) {
-  .files-bar .srch { max-width: none; }
+  .files-bar .srch { max-width: none; min-width: 0; flex-basis: 170px; }
   .files-bar .files-filters-toggle { flex: none; }
   .files-filters { display: grid; flex: 1 1 100%; gap: var(--s2); }
   .files-bar .files-filters select.sel { flex: none; width: 100%; max-width: 100%; }
@@ -51,6 +52,17 @@
     z-index: var(--z-toolbar);
     background: var(--bg);
   }
+}
+
+/* A touch tablet is a thumb's width too: at 768 the three filters took 104 px of the bar and left the first file
+   60 px lower. The phone's fold is the same answer above the phone break, and a fine pointer keeps them in plain sight. */
+@media (max-width: 900px) and (pointer: coarse) {
+  .files-bar .srch { max-width: none; }
+  .files-bar .files-filters-toggle { flex: none; }
+  .files-filters { display: grid; flex: 1 1 100%; gap: var(--s2); }
+  .files-bar .files-filters select.sel { flex: none; width: 100%; max-width: 100%; }
+  .files-bar .files-filters .seg { flex-wrap: wrap; max-width: 100%; }
+  .files-bar .files-filters .files-latest { min-height: 44px; }
 }
 .seg-n { margin-left: var(--s1-5); font-weight: 500; font-variant-numeric: tabular-nums; color: var(--muted); }
 .seg button[aria-pressed="true"] .seg-n { color: inherit; }

@@ -329,19 +329,20 @@ Breakpoints: **1280 1100 900 800 760 620 560**. 800 is the sidebar drawer (JS
   not change it.
 - The registry's failure state is honest but not a console: while `/api/projects` does not answer, no view can be drawn, because
   the shell cannot tell a host from a one-mesh server. The page says that and offers Try again; it does not guess.
-- The Steps filter is one button at 620 and below and 166 px of chips and switch from 621 to 768. The phone's 44 px fold may be
-  the right shape for a touch-class tablet, but that is the same open question as the tablet's 32 px `NextLinks`.
+- The Steps filter is one button at 620 and below and, since 2026-11-05, on a coarse pointer to 900: a 768 touch tablet's
+  166 px of chips and switch is a 60 px toolbar. A fine pointer at 768 keeps 114 px of chips and switch; whether a fine-pointer
+  tablet should also fold is the same open question as its `NextLinks`.
 - The Playground now leads with its terminal and puts the product card after the output. That is a deliberate reversal of the
   2026-10-22 "product first" reading for this one page: the page's own action was at the foot of the first screen. If real use
   says the product should lead there too, the card costs 487 px above the command box and the measurement is in this entry.
 - The thumb's row is 53 px of chrome and 36 px of page on every project page from 800 px down (2026-10-31). It buys one press
   instead of two for five places, and the pages opened once pay it too. Whether it should hide on scroll, or be shorter than 52,
   is a use question; the measurement is in this pass's entry.
-- The Files bar is 44 px at 360 and 390 and 96 at 320: the search's **200 px** basis plus the 105 px button and the 12 px gap is 317, so
-  the two share the row at 360 (the search grows to 219) and the button keeps its own line at 320 (296). The search's hint reads
-  "Name, owner,..." at 360; the next words decision is whether the 320 edge should shorten the hint rather than give the button a row,
-  or whether the button should be a 44 px glyph (which would keep the hint at 360 and 390). The 220 px basis this replaced was 0.94 px
-  over at 360: a wrapped flex container breaks its line before it shrinks, so the bar took two rows (2026-11-04).
+- The Files bar is 44 px at 320, 360 and 390 since 2026-11-05: the search's **170 px** phone basis and Files' 200 px `min-width`
+  giving way leave 287 in 296 at 320, so the button shares the row and the search grows to 179.1 (219.1 at 360, 249.1 at 390). The
+  hint truncates at 320 ("Name, o…"); that is the deliberate trade, and the next question is whether the 320 edge should shorten the
+  hint further or give the button a 44 px glyph. The 220 px basis this replaced was 0.94 px over at 360: a wrapped flex container
+  breaks its line before it shrinks, so the bar took two rows (2026-11-04).
 
 ## What the next pass should take
 
@@ -356,9 +357,9 @@ Breakpoints: **1280 1100 900 800 760 620 560**. 800 is the sidebar drawer (JS
 5. The Designer's 320 header is two rows now (168.59 px with its lede; 89.6 on the first-run guide, which has no lede). The save bar's
    blocked state is the next block there: its 44 px inline action inflates the line from 17.4 to 36, and that 18.6 px is the last thing
    the bar could give back — it needs either a glyph button (a name lost) or a target overlap (a target collision).
-6. Decide whether the Steps filter fold belongs above 620: at 621–768 the chips take two rows and the switch a third (166 px),
-   though the page's own reading is one button there. The tablet's `NextLinks` now take the 44 px floor on a coarse pointer, so the
-   chips are the last of that family.
+6. Decide whether the Steps filter fold belongs above 620 on a **fine** pointer: a coarse pointer now folds to 900 (a 768 touch
+   tablet's 166 px toolbar is 60), but a fine pointer at 768 still draws 114 px of chips and switch. The tablet's `NextLinks` take
+   the 44 px floor on a coarse pointer, so the chips are the last of that family.
 7. Decide whether What shipped opens by default on a fresh delivery, and whether the fold remembers a section (the page
    resets to all closed on every visit). It is now the second thing on the phone's first screen (609.5, its head 88.5 px above the dock);
    the tablet (768) shows the same four rows and has the same question.
@@ -375,6 +376,78 @@ Breakpoints: **1280 1100 900 800 760 620 560**. 800 is the sidebar drawer (JS
     card's primary opens host settings, so the note is written on the way back, not on the way out.
 
 ## Pass log
+
+### 2026-11-05 — a phone row shares its width at 320, and a thumb's tablet folds its filters
+
+Surface: `src/live.css` (the search's phone basis), `src/views/files.css` (the Files basis and the coarse fold),
+`src/views/events.css` and `src/views/steps.css` (the coarse fold), `src/views/Artifacts.tsx` (`FOLD`), `src/views/Events.tsx`
+(the lede) and `src/views/Steps.tsx` (the zone's words), with `tests/dashboard/files-phone.test.ts`,
+`events-phone.test.ts` and `steps-phone.test.ts`.
+
+Measured on the scripted demo at **Delivered** (481 events, 49.3k of 2.0M tokens, 7 checks, 9 files, 7 seats, 28 turns) in the
+production build served by `curule console`, Chromium 1248 at 320/360/390/768/820/900/1,024/1,440 in light and 360/768/1,440 in
+dark, a touch pointer at 900 and below, reduced motion, axe-core 4.14. Both halves are the **same delivered log**: the before
+bundle was rebuilt from `git stash` and swapped under the running console for each pair.
+
+**At 320 the search and the folded Filters button were two rows.** The search's 200 px basis plus the 105 px button and the
+8–12 px gap is 313–317 in 296, so on Events and Files the button took a second 44 px row: the Files bar was **96 px**, its first
+group at **281.6**, the page **1,295**; Events' tools were **96** and its log **448.9**. A 170 px basis at a phone width — the
+search still grows to **219.1 at 360** and **249.1 at 390** — and Files' 200 px `min-width` giving way share the row: Files
+**44 px**, first group **229.6**, page **1,243**, search **179.1**; Events tools **44**, log **500.9**, search **183.1**. The
+placeholder clips at 320 (the Files screenshot reads "Name, o…"), which is the trade the previous pass named; 360/390/768/1,440
+do not move.
+
+**A touch tablet kept the filters in plain sight.** At 768 on a coarse pointer the Events facets took **112 px** and left the
+log **491**; the Steps chips and switch took **166 px** of toolbar, the first turn at **934.8** and the page **2,686**; the Files
+filters took **104 px**, the first file at **268.6** and the page **1,002**. The phone folds all three behind one 44 px button,
+and now so does a thumb above the phone break: Events facets **0**, toggle **44**, log **615**; Steps toolbar **60**, first turn
+**828.8**, page **2,580**; Files bar **44**, first file **208.6**, page **942**. A fine pointer at 768 keeps its chips (Events
+80, Steps 114, Files 68) because the query is `(pointer: coarse)`.
+
+**The Steps timeline caption wrapped at 320/360.** "Who was busy, when" (179.2) + 12 + "Times in GMT+3:30" (118) is **309.2**
+in 302 at 360 and 262 at 320, so the 44 px caption row was **69.4 px**. The visible note is the zone's own words, **"GMT+3:30"**
+(64), with "Times in " sr-only and the full phrase in its title: the row is **44** at 320/360/390, the page **3,253 → 3,227** at
+360, and the screen reader still hears "Times in GMT+3:30".
+
+**The Events lede claimed every event.** The page holds the newest 400 of 481 and says so at its end — "81 older ones are not
+loaded" — while the lede said "Everything the mesh does". It says **"The newest events first."** now; the page is 836 either way,
+and the end note is unchanged.
+
+| | Before | After |
+|---|---|---|
+| The Files bar, 320 | 96 | **44** |
+| The Files first group, 320 | 281.6 | **229.6** |
+| The Files page, 320 | 1,295 | **1,243** |
+| The Files search, 320 | 296 | **179.1** |
+| The Events tools, 320 | 96 | **44** |
+| The Events log, 320 | 448.9 | **500.9** |
+| The Events search, 320 | 296 | **183.1** |
+| The Events facets, 768 touch | 112 | **0** (toggle 44) |
+| The Events log, 768 touch | 491 | **615** |
+| The Steps toolbar, 768 touch | 166 | **60** |
+| The Steps first turn, 768 touch | 934.8 | **828.8** |
+| The Steps page, 768 touch | 2,686 | **2,580** |
+| The Files bar, 768 touch | 104 | **44** |
+| The Files first file, 768 touch | 268.6 | **208.6** |
+| The Files page, 768 touch | 1,002 | **942** |
+| The Steps caption row, 320 / 360 | 69.4 / 69.4 | **44 / 44** |
+| Its zone note, 320 / 360 | 118 | **64** |
+| The Steps page, 360 | 3,253 | **3,227** |
+| The Events lede, 1,440 | "Everything the mesh does, newest first." | **"The newest events first."** |
+| Fine pointer 768: Events facets / Steps toolbar / Files bar | 80 / 114 / 68 | 80 / 114 / 68 |
+| Axe, the three views × 320/360/768/1,440 × both themes | — | **0 violations** |
+| Horizontal page scroll, 320–1,440 × both themes | 0 | **0** |
+
+Floors: `npm run typecheck`, `npm run build` clean; `dist/tests/dashboard` **1,252 pass, 0 fail** (three new tests, one
+rewritten); `dist/tests/build/console-*.test.js` **7 pass**; eslint **0 errors** on the touched TypeScript (the four CSS files
+are outside its configuration and report only the ignored-file warning); axe **0** in 20 reads; no page scrolls sideways at
+320/360/390/768/1,024/1,440; the smallest text is still 11 (avatar initials and micro-labels).
+
+**Left.** The 320 search is 179–183 px and its placeholder clips (the Files field reads "Name, o…"); that is the price of the shared row. The fold stops at 900, so a
+1,024 coarse pointer keeps the Files bar's 104 px and the open facets — a touch laptop is the next measurement. The Files bar at
+768 coarse folds but is not sticky (the sticky rule remains the phone's), so its tools still scroll away on a tablet. The Steps
+caption's second note ("N older turns outside this window") can still wrap the row if both notes appear at 320; the delivered
+state does not draw it. The Events "Live" chip on a delivered mission is still the open question it was.
 
 ### 2026-11-05 — a focused control is scrolled clear of the dock, and a closed file says so inside its reader
 

@@ -307,6 +307,18 @@
   .st-fold-who { order: 4; flex: 1 1 100%; overflow: visible; white-space: normal; text-overflow: clip; }
 }
 
+/* A touch tablet is a thumb's width too: at 768 the chips took two rows and the switch a third (166 px of toolbar)
+   where a phone folds them into one 44 px button. A fine pointer keeps the chips in plain sight. */
+@media (max-width: 900px) and (pointer: coarse) {
+  .st-filters-toggle { display: inline-flex; flex: 0 1 auto; }
+  .st-facetbox { display: none; flex: 1 1 100%; order: 3; flex-direction: column; align-items: stretch; gap: var(--s2); }
+  .st-facetbox.open { display: flex; }
+  .st-facetbox .st-foldchoice { min-height: 44px; }
+  .st-toolbar-right { order: 2; margin-left: auto; }
+  .st-count { display: none; }
+  .st-count.on { display: inline; }
+}
+
 /* ---- Windows High Contrast ----
  * It swaps every background for the system's and drops shadows, so a bar, a segment, a dot or a hairline that is a background is gone and the chart is
  * an empty well. Each is drawn again here in system colours. With colour gone the outcome is told by how a mark is filled: solid for a turn that

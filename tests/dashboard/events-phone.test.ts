@@ -43,6 +43,16 @@ test("while an event is open the log's search and filters step aside, and only t
   assert.match(tsx, /className=\{`ev-facets/, "the filter fold is still the page's");
 });
 
+test("a thumb's tablet folds the facets, and the lede does not claim every event", () => {
+  // At 768 a touch tablet had 112 px of facets and a 491 px log; the phone's fold gives the log 603. A fine pointer
+  // at 768 keeps the chips in plain sight.
+  assert.match(css, /@media \(max-width: 900px\) and \(pointer: coarse\) \{[\s\S]*?\.ev-tools \.ev-filters-toggle \{ display: inline-flex/, "the counted Filters button is drawn above the phone break on a thumb");
+  assert.match(css, /@media \(max-width: 900px\) and \(pointer: coarse\) \{[\s\S]*?\.ev-facets \{ display: none;/, "and the facets are hidden until it is pressed");
+  // The page holds the newest 400 of 481 events and says so at its end; the lede used to say "Everything the mesh does".
+  assert.match(tsx, /lede=\{`The newest events first\. Times are in \$\{zone\}\.`\}/, "the lede describes the window it shows");
+  assert.doesNotMatch(tsx, /Everything the mesh does/, "the old claim is gone");
+});
+
 test("the event's title row stays at the top of the pane, bleeding by the pane's own gutter", () => {
   assert.match(split, /\.evc-detail \.evd-title \{[^}]*position: sticky; top: 0;/, "the row sticks to the pane's top");
   assert.match(split, /\.evc-detail \.evd-title \{[^}]*margin-top: calc\(var\(--evd-y\) \* -1\);/, "it starts where the pane's padding started");

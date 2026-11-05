@@ -179,7 +179,9 @@ function Strip({ steps, loaded, failed, onPick, filter, counts, missionTokens, h
               </button>
               {/* Beside the caption, not on the axis: there it sat on top of the "now" tick, which is always at the right edge. */}
               {tl.hidden ? <span className="st-axis-note">{tl.hidden} older turn{tl.hidden > 1 ? "s" : ""} outside this window</span> : null}
-              {tl.fit ? <span className="st-axis-note">Times in {zoneLabel()}</span> : null}
+              {/* "Times in" took 60 px the caption row did not have at 320/360: the zone's own words fit on the row,
+                  and the screen reader still hears the sentence. */}
+              {tl.fit ? <span className="st-axis-note" title={`Times in ${zoneLabel()}`}><span className="sr-only">Times in </span>{zoneLabel()}</span> : null}
               {open ? <Segmented options={WINDOW_OPTIONS} value={winId} onChange={setWin} label="Timeline window" /> : null}
             </div>
             {open ? (
