@@ -3241,3 +3241,73 @@ one browser in one run, so the differences stand.
   exits 1 on the owner's `TODO(owner)` at `site/legal/index.html:134`.
 
 The next pass's first job is still the page's length and the two wide notes; after them, the figure labels at a 2× text size.
+
+## 2026-11-05, third pass: a step's Copy button keeps off its heading, a figure's caption stays whole, and the prose keeps its measure
+
+Measured with the same probe (Chrome 156 over CDP; reduced motion; light unless said; touch at 320/360/390, a mouse at 768 and
+1,440; dark at 360 and 1,440; print at 794; a 24px and a 32px root at 320/360). The before column is the site at `259ee31`,
+exported with `git archive` and served on a second port and measured in the same run; no number is copied from an earlier pass.
+The absolute heights are this container's; both halves are one browser in one run, so the differences stand.
+
+### What changed
+
+- **A step's Copy button no longer grows over its heading.** At a 24px root the demo's first heading line was **222.9px** in a
+  232px column and the Copy button began at **262** and was **82px** wide, so the last **14.9px** of the line — its comma — was
+  under the button; at 32px the button was **99px** at 245 and the second line reached **273.6**, **28.6px** under it. The button
+  keeps one **64px** width (its word wraps inside it) and the heading reserves **72px** (the button, the bar's 6px inset and a 2px
+  gap). The heading's lines now end at **223.7** at 24 and **184** at 32, well left of the button at **280**; the heading takes
+  three lines at 24 (74.1 → **111.1**) and four at 32 (148.2 → **197.6**) because it is narrower, and the page is **19,816 →
+  19,853** at 24 and **29,773 → 29,822** at 32, 0px over. The licence list uses the same step component: its heading is two lines
+  at 360 now (25 → **49**) and the pricing page is **13,488 → 13,509** there; that 21px is the cost of the same reserve.
+- **A plan's figure label keeps the 12px caption floor.** At a 32px root "projects open" was **24px** and needed **96px** in the
+  79px cell of the Community card, so the figure's frame clipped it to "project" and the missing "s"; at a 24px root the same
+  label was 18px and needed **96px in 77px** at 320. It is **12px** at every root, as the plan chooser's name and the six-view
+  chooser's are: **79 / 79** at 360 and **77 / 77** at 320 at 32px, and the figures beside it still grow (the amount 36px, the
+  value 44px). The card is **1,805.7 → 1,743.3** at 32px/360 and the page **33,435 → 33,296**; at 24px it is **21,971 →
+  21,884**. No page overflows at either root.
+- **The Community card says "1 project open", not "1 projects open".** The home page's rate card already said "1 project open";
+  the pricing page's generated card put a plural label over a figure of one. The exporter writes the singular when the plan's
+  figure is one (the row labels of the comparison table keep their plural). The card and its figure row are the same height
+  (730.6 and 81.8 at 360) and no page changes height for it.
+- **A note and an answer take the prose measure.** At 1,440 the documentation map's note ran **1,063px** on one line (its
+  1,120px box, about 152 characters) and the FAQ's answers were **736px** wide (the longest line **727**, about 91). The note is
+  **612px** and two lines (56.4px high, was 34.7), the first document card **1,690.7 → 1,712.4** and the page **4,429 → 4,451**;
+  an answer is **680px** and its longest line **676** (about 85), still five lines and the same 128px high, so the home page is
+  the height it was. Both take the site's **68ch**, as the notes under the plans and the row list already did.
+
+### Measurements after this pass
+
+| Page, height at 320 / 360 / 390 / 768 / 1,440 | Before | After |
+|---|---|---|
+| Home | 13,356 / 12,604 / 12,160 / 12,113 / 11,282 | unchanged |
+| Pricing | 14,440 / 13,488 / 12,841 / 10,164 / 9,317 | **14,440 / 13,509 / 12,841 / 10,164 / 9,317** |
+| Documentation | 8,975 / 8,382 / 8,065 / 5,288 / 4,477 | **8,975 / 8,382 / 8,065 / 5,288 / 4,499** |
+| Security / contact / legal / 404 | unchanged | unchanged |
+
+- The step's heading and button at 360: at a 24px root the button is **82 × 44 at 262 → 64 × 44 at 280**, the line
+  **222.9 → 223.7** (no overlap), and at 32px the button **99 at 245 → 64 at 280**, the second line **273.6 → 184**.
+- The plan's label at 32px: **96 in 79 → 79 in 79** at 360, **96 in 77 → 77 in 77** at 320; at 24px/320 it was 71 in 66 and is
+  66 in 66 (its text 48). The limits **172.8 → 110.4** at 32px/360, **110.4** at 32px/320 (was 172.8).
+- The documentation note at 1,440: **1,120 × 34.7, one line 1,063 → 612 × 56.4, two lines**; the FAQ answer **736 → 680**
+  wide, longest line **727 → 676**, five lines and 128px in both.
+- No page scrolls sideways at 320, 360, 390, 768 or 1,440 in light or dark (**0** on all 70 pairs), the probe reports **0**
+  console errors and **0 axe-core WCAG 2.0–2.2 A and AA violations** on the home, pricing and documentation pages at 360 and
+  1,440 in both schemes, and the smallest computed text is **12px**. At a 24px and a 32px root every page is **0px over** at
+  320 and 360. Without a script the home page is 12,581 and pricing 12,249 at 360, 0px over; print at 794 is 0px over on all
+  seven pages (docs 4,671; home 11,840; pricing 10,017); with `forcedColors: active` at 360 every page is 0px over.
+- The site's own suites are **154** tests, all passing; `pricing:check`, `site-chrome --check`, `npm run typecheck` and
+  `npx eslint` on the touched files are clean. `npm run site:check` still exits 1 on the owner's `TODO(owner)` for the terms at
+  `site/legal/index.html:134`.
+
+### What this pass deliberately left
+
+- **The plan's figure label is 12px at a reader's 24px or 32px root.** A caption at 12px is the ramp's floor, and the figure it
+  names still grows; the alternative was the 18/24px label that clipped "projects open" to "project" in its 79px cell.
+- **The licence step's heading wraps to two lines at 360** (25 → 49) and the pricing page is 21px taller there. The same 72px
+  reserve is what keeps the heading off the 64px button at a reader's larger text; the demo's heading is unchanged at 360.
+- **The documentation note is 22px lower at 1,440** (the first card 1,690.7 → 1,712.4), and the FAQ's answers are 56px narrower
+  at a desk; at 360 both are already narrower than 68ch and do not move.
+- **The page's length is still the next pass's first job**: the home page is 12,604 at 360, and the demo (1,600), the two ways
+  (849) and the nine argument sections are where the words are. The security page's On this page row still cuts 64px of
+  "Reporting a problem" at 1,440, and the plan chooser still changes the page's height when another plan is chosen.
+- **The console captures were not retaken**, Curule Cloud's prices are still in the app, and `site/ux/` was not edited.

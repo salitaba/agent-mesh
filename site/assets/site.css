@@ -642,6 +642,13 @@ main:has(.hero) .section-head .eyebrow::before { counter-increment: sec; content
 #try .code pre { white-space: pre-wrap; overflow-wrap: anywhere; }
 .code-bar { position: absolute; top: 0; right: 6px; z-index: 1; display: flex; align-items: center; height: 48px; }
 .copy { min-height: 36px; padding: 0 12px; border-radius: var(--k-r-sm); color: var(--ink2); font: 600 .8125rem/1 var(--font); }
+/* A step's Copy button is a word that grows with the reader's text, and the heading beside it grows too. At a 24px
+   root the button was 82px and the heading reserved 48, so the heading's first line (222.9px in a 232px column) ran
+   14.9px under the button and its comma was hidden; at 32px the reserve was 48 against a 99px button, and at 1,440
+   with a 24px root the one-line heading ran 24px under it. The button keeps one 64px width and the heading reserves
+   that width, the bar's 6px inset and a 2px gap (72px), so a larger root wraps the button's word inside it and the
+   heading stops before it at every width; the licence list's heading takes a second line at 360 (25 → 49). */
+.try .copy { width: 64px; justify-content: center; text-align: center; line-height: 1.15; white-space: normal; }
 .copy:hover { background-color: var(--panel2); color: var(--ink); }
 .copy:active { background-color: var(--k-sunken); box-shadow: none; }
 .copy.is-done { border-color: color-mix(in srgb, var(--k-ok) 40%, transparent); color: var(--k-ok); }
@@ -654,8 +661,8 @@ main:has(.hero) .section-head .eyebrow::before { counter-increment: sec; content
 .try > li:last-child::after { display: none; }
 .try h3 { margin-bottom: 6px; }
 /* The Copy button stands on the heading line; the heading stops short of it, and only when the script
-   has put the button there. */
-.try > li:has(.code-bar) h3 { padding-right: 48px; }
+   has put the button there. The 72px is the button's 64px, its 6px inset and a 2px gap. */
+.try > li:has(.code-bar) h3 { padding-right: 72px; }
 /* The Copy button is the step's, and stands on its heading line: the first paragraph starts below
    its 44px target at every width, not under it. */
 .try > li > p:first-of-type { margin-top: 20px; }
@@ -702,7 +709,9 @@ main:has(.hero) .section-head .eyebrow::before { counter-increment: sec; content
 .faq details[open] summary::after { margin-top: 4px; transform: rotate(-135deg); }
 .faq summary:hover { color: var(--link); }
 .faq summary:hover::after { border-color: var(--link); }
-.faq .answer { max-width: 46rem; padding: 0 0 24px; color: var(--muted); }
+/* An answer is prose, so it takes the page's 68ch measure, not the 46rem a section head uses: at 1,440 the first
+   line of an answer was 734px (about 91 characters), and the page's notes take 68ch. */
+.faq .answer { max-width: 68ch; padding: 0 0 24px; color: var(--muted); }
 .faq .answer p { margin-bottom: .8em; }
 
 /* the closing band: deep, with the glow */
@@ -976,7 +985,10 @@ body:has(#billing-monthly:checked) .head-price-monthly { display: inline; }
 .price .per { display: block; margin-top: 6px; color: var(--muted); font-size: .875rem; line-height: 1.45; }
 .plan-limits { display: grid; grid-template-columns: var(--c3); gap: 1px; margin: 20px 0 0; align-self: start; overflow: hidden; border: 1px solid var(--line); border-radius: var(--k-r-md); background: var(--line); }
 .plan-limits div { display: flex; flex-direction: column-reverse; justify-content: flex-end; padding: 10px 6px; background: var(--k-sunken); text-align: center; }
-.plan-limits dt { color: var(--muted); font-size: .75rem; line-height: 1.3; }
+/* A figure's caption keeps the ramp's 12px at a reader's own text size, as the plan chooser's name and the
+   six-view chooser's do: at a 24px root "projects open" was 18px and needed 96px in a 79px cell, so the frame
+   clipped it to "project:"; at 32px "agents per mesh" did the same. The figure beside it still grows. */
+.plan-limits dt { color: var(--muted); font-size: 12px; line-height: 1.3; }
 .plan-limits dd { margin: 0; font-size: 1.375rem; font-weight: 650; line-height: 1.3; font-variant-numeric: tabular-nums; }
 .plan-includes { margin: 20px 0 0; }
 .plan-meta { margin: 8px 0 0; font-size: .875rem; }
@@ -1150,7 +1162,9 @@ body:has(#billing-monthly:checked) .head-price-monthly { display: inline; }
 /* What the map's titles and paths are is an explanation, not a warning: a ruled line of muted words, as rule 1 says prose
    is, rather than a notice panel with an icon. At 360 the panel was 150px between the field and the first card and the note
    is 78; the card is 72px closer to the field it was filtered by. */
-.doc-note { margin: 24px 0 0; padding-top: 12px; border-top: 1px solid var(--line2); color: var(--muted); font-size: .875rem; line-height: 1.55; }
+/* A note is prose, so it takes the page's 68ch measure, not the section's 1,120px column: the map's note ran
+   1,063px (about 152 characters) on one line at 1,440, and the FAQ's answers were 734px (about 91). */
+.doc-note { max-width: 68ch; margin: 24px 0 0; padding-top: 12px; border-top: 1px solid var(--line2); color: var(--muted); font-size: .875rem; line-height: 1.55; }
 .doc-note b { color: var(--ink); font-weight: 600; }
 .doc-none { padding: 32px 24px; border: 1px dashed var(--k-line-control); border-radius: var(--k-r-lg); background: var(--panel2); text-align: center; }
 .doc-none q { overflow-wrap: anywhere; }

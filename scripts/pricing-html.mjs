@@ -85,7 +85,7 @@ export function renderPlanCards(out) {
       ${priceBlocks(p)}
       </div>
       <dl class="plan-limits">
-        <div><dt>projects open</dt><dd>${shown(p.limits.maxProjects)}</dd></div>
+        <div><dt>${p.limits.maxProjects === 1 ? "project open" : "projects open"}</dt><dd>${shown(p.limits.maxProjects)}</dd></div>
         <div><dt>agents per mesh</dt><dd>${shown(p.limits.maxSeatsPerMesh)}</dd></div>
         <div><dt>turns at once</dt><dd>${shown(p.limits.maxConcurrentTurns)}</dd></div>
       </dl>
