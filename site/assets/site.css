@@ -302,6 +302,16 @@ main:has(.hero) .section-head .eyebrow::before { counter-increment: sec; content
   .hero-cta > p { order: 7; margin-top: 12px; }
   .proof { order: 8; }
 }
+/* The narrowest phone keeps the two ways in on one line. At 320 the pair was 155 + 20 + 138 in a 288 wrap, so the
+   secondary fell to a second row and the pair was 97.6px tall; the capture began at 789.9 and the first 800px of
+   the page held 10px of it. The primary takes the bar's 12px side padding, the secondary the ramp's 15px (its target
+   is still 44px) and the gap the bar's 8, and the pair is 268 in 288: 48px tall, the capture at 740.3, and 59.7px of
+   it on the first screen. At 360 the 16px, 24px-padded pair already fits and nothing changes. */
+@media (max-width: 359px) {
+  .hero-cta .actions { gap: 4px 8px; }
+  .hero-cta .btn-lg { padding-inline: 12px; }
+  .hero-cta .arrow-link { font-size: 15px; }
+}
 @media (min-width: 1040px) {
   .hero-grid { grid-template-columns: repeat(12, minmax(0, 1fr)); column-gap: 24px; }
   .hero .eyebrow, .hero h1 { grid-column: 1 / -1; }
@@ -344,6 +354,12 @@ main:has(.hero) .section-head .eyebrow::before { counter-increment: sec; content
 .frame-bar .tabs { flex: 1; height: 44px; }
 .frame img { display: block; width: 100%; height: auto; }
 .frame figcaption { margin: 0; padding: 14px 18px; border-top: 1px solid var(--line); background: var(--panel); color: var(--muted); font-size: .8125rem; line-height: 1.5; }
+/* A caption is prose under a picture, and it holds a measure like the lede. The graph's caption is the widest at a
+   desk: at 1,440 it was 1,118 wide (the plate's own caption is 450), its first line about 1,070 (about 150
+   characters), and the plate's caption at 900–1,039 was 834–973. The band keeps the frame's width; the words are
+   held to the lede's 40rem, and the caption stays the two lines it was, so no page moves. The 18px floor is the
+   caption's own padding. */
+.frame figcaption { padding-right: max(18px, calc(100% - 40rem - 18px)); }
 .frame figcaption b { color: var(--ink); font-weight: 600; }
 /* The generic code rule shrinks inline code to .875em; a caption is already 13px, so it would land at 11.375px. */
 .frame figcaption code { font-size: 1em; }
@@ -594,6 +610,21 @@ main:has(.hero) .section-head .eyebrow::before { counter-increment: sec; content
 /* On a desk the plate is 453 wide, where the Events caption takes three lines: one caption height for the three
    views, so switching one moves nothing below it. */
 @media (min-width: 1040px) { .hero-visual .frame figcaption { min-height: calc(3 * 1.5em + 29px); } }
+/* A surface that is one press draws the focus ring round the surface, as the 404's way out already does (its <a> is
+   the card): the Start here card's ring was its 173.4 × 25.6 line inside a 268 × 482.4 card, the view card's its
+   498 × 44 row inside a 548 × 541.2 card, and the plate's and the graph's their 74.5 × 19.5 caption line inside a
+   450.7 × 507.5 figure and a 1,120 × 664.8 frame. The inner link is still the tab stop and the name; it keeps no
+   second ring. The plate's bar is its own control, so its ring is the pane's, under the bar; the graph has no bar. */
+.start:has(.start-doc .arrow-link:focus-visible),
+.tile:has(.shot-open:focus-visible),
+#how .frame:has(.shot-open:focus-visible) { outline: 2px solid var(--accent); outline-offset: 2px; }
+.start:has(.start-doc .arrow-link:focus-visible) .start-doc .arrow-link,
+.frame:has(.shot-open:focus-visible) .shot-open,
+.tile:has(.shot-open:focus-visible) .shot-open { outline: none; }
+.hero-visual .frame:has(.shot-open:focus-visible) .pane { outline: 2px solid var(--accent); outline-offset: -2px; }
+/* The Start here card is one press, but it did not answer the pointer: the view card lifts and the 404's way out
+   lifts with the second step of elevation. It takes the same second step, and the lift only where motion is allowed. */
+.start:hover, .tile:hover { box-shadow: var(--k-hl), var(--k-shadow-2); }
 
 /* code, and the steps of the demo */
 .code { position: relative; margin: 14px 0; padding-top: 48px; overflow: hidden; border: 1px solid var(--line); border-radius: var(--k-r-md); background: var(--code); }
@@ -803,6 +834,14 @@ body:has(#billing-monthly:checked) .head-price-monthly { display: inline; }
    share the first row and the words run under both. */
 .glance-list p { grid-column: 1 / -1; margin: 0; }
 @media (min-width: 900px) { .glance-list { grid-template-columns: var(--c3); gap: 28px; } .glance-list li + li { padding-left: 28px; border-left: 1px solid var(--line); } }
+/* The three answers share their first row where they stand side by side. The middle title wraps to four lines at
+   900 and three at 1,200 and 1,440, so its paragraph began 44.1 and 22.1px below its neighbours' (at 1440 the p
+   tops were 687.8 / 709.9 / 687.8). The cards take the same rows as the steps and the plans: all three paragraphs
+   start on one line, and the box is the height it was. */
+@media (min-width: 900px) {
+  .glance-list { grid-template-rows: auto 1fr; }
+  .glance-list li { grid-row: span 2; grid-template-rows: subgrid; }
+}
 .split { gap: 20px 56px; padding-block: clamp(40px, 6vw, 72px); border-bottom: 1px solid var(--line); }
 .split:last-child { border-bottom: 0; }
 /* A section head takes the page's rank wherever it stands: the same clamp as .section > .wrap > h2.legend-title below (28 at
@@ -1121,8 +1160,8 @@ body:has(#billing-monthly:checked) .head-price-monthly { display: inline; }
 @media (prefers-reduced-motion: no-preference) {
   html { scroll-behavior: smooth; }
   :root { interpolate-size: allow-keywords; }
-  .btn, .copy, .signin, .nav-main a, .menu summary, .toc a, .faq summary, .tile, .nf-list a, .to-top { transition: all var(--k-dur-1) var(--k-ease); }
-  .tile:hover, .nf-list a:hover { transform: translateY(-1px); }
+  .btn, .copy, .signin, .nav-main a, .menu summary, .toc a, .faq summary, .tile, .start, .nf-list a, .to-top { transition: all var(--k-dur-1) var(--k-ease); }
+  .start:hover, .tile:hover, .nf-list a:hover { transform: translateY(-1px); }
   .arrow-link::after, .nf-list a::after, .faq summary::after { transition: transform var(--k-dur-1) var(--k-ease), border-color var(--k-dur-1); }
   .tabs::before, .billing::before { transition: transform var(--k-dur-2) var(--k-ease); }
   .site-header { transition: background-color var(--k-dur-2), border-color var(--k-dur-2); }

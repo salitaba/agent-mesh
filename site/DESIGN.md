@@ -3042,3 +3042,122 @@ the record's is 12,602.66); both halves are one browser in one run, so the diffe
 - **The 32px-root pricing debt is unchanged** (40px over at 320, 20 at 360); this pass adds no overflow, and the 24px case
   is 0.
 - **No capture was retaken**, `site/ux/` was not edited, and Curule Cloud's prices are still in the app.
+
+## 2026-11-05: the 320 phone's first screen, a card's focus ring, and the answers' row
+
+Measured with the same probe (Chrome over CDP in the pass container; reduced motion; light unless said; touch at
+320/340/359/360/390, a mouse at 768/900/1,024/1,200/1,440; dark at 360 and 1,440; print at 794; forced colours at 360;
+no script at 360; a 24px and a 32px root at 320/360/720). The before column is the site at `fc5cecf`, the commit this pass
+started from, copied and served on a second port and measured in the same run; no number is copied from an earlier pass.
+The absolute heights are this container's; both halves are one browser in one run, so the differences stand.
+
+### What changed
+
+- **The narrowest phone keeps its two ways in on one line.** At 320 the pair needed **155 + 20 + 138.4 in a 288 wrap**, so
+  the secondary fell to a second row and the pair was **97.6px** tall: the price began at **601.3**, the capture at
+  **789.9**, and the first 800px of the page held **10.1px** of it. The primary takes the bar's 12px side padding
+  (**155 → 131**), the secondary the ramp's 15px (**138.4 × 45.6 → 129 × 44**) and the gap the bar's 8, and the pair is
+  **268 in 288**: **48px** tall, the price at **551.7**, the capture at **740.3**, and **59.7px** of the capture — the
+  Delivered line — on the first screen. The page is **13,405 → 13,356**. At 340 the capture moves **767.8 → 718.2**
+  (32.2 → 81.8px on screen) and the page **13,164 → 13,114**; from 346 the pair already fit one row and only the widths
+  change; at 360 and above nothing moves.
+- **A surface that is one press draws its focus ring round the surface.** The 404's way out already did — its `<a>` is the
+  card — but the Start here card's ring was its **173.4 × 25.6** line inside a **268 × 482.4** card, the view card's its
+  **498 × 44** row inside a **548 × 541.2** card, and the plate's and the graph's their **74.5 × 19.5** caption line
+  inside a **450.7 × 507.5** figure and a **1,120 × 664.8** frame. The inner link is still the tab stop and the name; it
+  keeps no second ring. At 390 the Start here card's ring is **358 × 312.1** (was the 173.4 × 25.6 line) and the view
+  card's **358 × 446.4** (was the 308 × 44 row). The Start here card also takes the hover the view card and the 404's way
+  had: the second step of elevation (shadow 1 → 2) and, where motion is allowed, a 1px lift.
+- **The security page's three answers share their first row.** The middle title wraps to four lines at 900 and three at
+  1,200 and 1,440, so its paragraph began **44.1 / 22.1px** below its neighbours': at 900 the three paragraphs started
+  **649.8 / 693.9 / 671.8**, at 1,440 **687.8 / 709.9 / 687.8**. The list takes two shared rows now, as the steps and the
+  plans do: all three start at **693.9** at 900, **688.6** at 1,024, **705.9** at 1,200 and **709.9** at 1,440. The
+  answers' cards are the height they were (260.3 / 214.2 / 190.2 / 190.2), and the page is **8,341 / 7,854 / 7,630 /
+  7,638** at those widths, unchanged.
+- **A figure's caption holds the lede's measure.** The graph's caption is the widest line under a picture: at 1,440 its
+  band is 1,118 and its first line ran **1,070px (about 150 characters)**, with 59px on the second. The band keeps the
+  frame's width and the words take the lede's **40rem**: the first line **639 (about 88)**, the second **490**, still two
+  lines, the page **11,226** and the Full size link at **8,224.6**, both unchanged. At 1,200 the page is 10,941; at
+  1,024 the plate's caption goes **872 → 613** (108 → 76 characters), at 900 **760 → 613**, at 768 **648 → 613**, and
+  every page is the height it was. The rule is `padding-right: max(18px, calc(100% - 40rem - 18px))`, so a caption
+  narrower than 640 is untouched.
+
+### Measurements after this pass
+
+| The home page, height at 320 / 360 / 390 / 768 / 1,440 | Before | After |
+|---|---|---|
+| | 13,405 / 12,604 / 12,160 / 12,105 / 11,226 | **13,356 / 12,604 / 12,160 / 12,105 / 11,226** |
+
+| The 320 first screen | Before | After |
+|---|---|---|
+| The two ways in | 155 + 20 + 138.4, 97.6px tall | **131 + 8 + 129, 48px** |
+| The price's top | 601.3 | **551.7** |
+| The capture's top | 789.9 | **740.3** |
+| The capture on an 800px screen | 10.1px | **59.7px** |
+| The contents / `#pricing` / the first plan | 1,662.7 / 1,723.7 / 2,059.7 | **1,613.1 / 1,674.1 / 2,010.1** |
+| The page | 13,405 | **13,356** |
+
+| The security glance at 900 / 1,024 / 1,200 / 1,440 | Before | After |
+|---|---|---|
+| The three paragraphs' tops | 649.8 / 693.9 / 671.8; 666.5 / 688.6 / 666.5; 683.8 / 705.9 / 683.8; 687.8 / 709.9 / 687.8 | **693.9 / 688.6 / 705.9 / 709.9, all three** |
+| The title row | 46.1 / 90.3 / 68.2; 46.1 / 68.2 / 46.1 | **90.3; 68.2, all three** |
+| The page | 8,341 / 7,854 / 7,630 / 7,638 | **unchanged** |
+
+| The captions | Before | After |
+|---|---|---|
+| The graph at 1,440 and 1,200, first / second line | 1,070 / 59 (about 150 characters) | **639 / 490 (about 88)** |
+| The plate at 1,024 / 900 / 768, first line | 872 / 760 / 648 | **613 / 613 / 613** |
+| The caption's height at each width | 126.5 at 320, 107 at 360/390, 68 at 768–1,039, 87.5 for the plate at 1,040+; the graph 68 at 1,440 | **unchanged** |
+| The home page at 1,440 / 1,200 / 1,024 / 900 / 768 | 11,226 / 10,941 / 11,760 / 11,532 / 12,105 | **unchanged** |
+
+| The focus ring, at 1,440 / 390 | The link | The surface |
+|---|---|---|
+| A Start here card | 173.4 × 25.6 | **268 × 482.4 / 358 × 312.1** |
+| A view card | 498 × 44 / 308 × 44 | **548 × 541.2 / 358 × 446.4** |
+| The plate | 74.5 × 19.5 | **450.7 × 507.5 / 356 × 367** (the pane, under its bar) |
+| The graph | 74.5 × 19.5 | **1,120 × 664.8 / 358 × 298.4** |
+
+- The six other pages are the height they were at every width: pricing **14,440 / 13,488 / 12,841 / 10,144 / 9,253**;
+  documentation **8,975 / 8,382 / 8,065 / 5,284 / 4,429**; security **12,527 / 11,600 / 10,883 / 7,884 / 7,638**; contact
+  **4,755 / 4,381 / 4,215 / 3,413 / 2,857**; legal **5,513 / 5,037 / 4,741 / 3,419 / 3,313**; 404 **2,266 / 2,089 / 2,045
+  / 1,437 / 1,516** at 320 / 360 / 390 / 768 / 1,440.
+- No page scrolls sideways at 320, 360, 390, 768 or 1,440 in light, or at 360 and 1,440 in dark; the probe reports **0**
+  console errors and **0 axe-core WCAG 2.0–2.2 A and AA violations** on all seven pages at 360 light, 360 dark and 1,440
+  light. The smallest computed text is still **12px**; the worst text pair is the recorded **5.61:1** in light.
+- The targets are the same plus the hero's secondary, now **129 × 44**; the only controls under 44 × 44 are the hidden
+  1 × 1 radios, the 24 × 24 usage-reports checkbox whose label is 44, and the inline links in sentences. The plate's and
+  the graph's Full size links are lines of their captions; their figures are the targets.
+- Print at 794 is **11,840** on the home page (the caption prints its 640px measure), **10,017** on pricing and **7,518**
+  on security, all 0px over. Without a script the home page is **12,581** at 360; with `forcedColors: active` it is
+  **12,604** and the focused card's ring is **rgb(0, 0, 0)** (CanvasText); dark is the light height. At a 24px root the
+  home page is **22,009** at 320 (was 22,011), **19,816** at 360 and **16,090** at 720; at 32px **33,744** (was 33,746),
+  **29,773** and **20,839**; every one 0px over.
+- The site's own suites are **164** tests, all passing; `npm run typecheck` passes; `npm run lint` has 0 errors (the same
+  211 warnings); `site-chrome --check` and `brand:check` are clean. `npm run site:check` still exits 1 on the owner's
+  `TODO(owner)` for the terms at `site/legal/index.html:134`, as before.
+
+### What this pass deliberately leaves
+
+- **The 320 first screen holds 59.7px of the capture, not the whole picture.** The Delivered line is on the screen; the
+  320 head, the three-line price and the rest of the frame are below it. The page is still 13,356 at 320 and 12,160 at
+  390; the length is the next pass's job, not a smaller first screen's.
+- **The hero's secondary keeps its 15px layout size at a reader's root**, as the bar's controls do. At a 24px or 32px
+  root the primary (1rem) grows and the pair wraps again: the pages are 22,009 / 33,744 at 320, both 0px over and 2px
+  shorter than before. A 15px link in a 24px reader's text is a control's size, not prose's.
+- **The two actions under the plans still stack at 320–410** (184 and 182px in a 288–377 row). They cannot share a 320
+  row, and a full-width pair below 411 would be a change to what the section does on every phone narrow enough to wrap,
+  not just the narrowest; left.
+- **The documentation map's note (1,120px, 149 characters), the home page's security notice (1,120px wide, its first
+  line 1,045px and about 111 characters), the FAQ's answers (736px) and the footer's legal block (960px)** still run past
+  68ch. This pass took the
+  figures' captions, which are the widest lines under a picture; the other four are the same kind of prose on other
+  surfaces, not this one.
+- **The security page's On this page row still runs 1,504px in 1,440 at a desk** — 64px of "Reporting a problem" is cut
+  — and the documentation map's cards still stretch to the tallest in their row (the Deploy card is 580px with 296.9px
+  blank at 1,440). The row's edge shadow and the script's chip reveal are the first's cue; a masonry or a stack would
+  change what the map is.
+- **No capture was retaken**, Curule Cloud's prices are still in the app, and the /ux page itself was not edited; this
+  pass's six frames are the `20261105-site-*` files in `site/ux/shots/`.
+
+The next pass's first job is still the page's length: 13,356 at 320 and 12,160 at 390 are where the words and the
+figures are, and the plans section's pair and the wide notes above are the candidates this pass measured and left.
