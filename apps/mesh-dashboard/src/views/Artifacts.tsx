@@ -10,6 +10,7 @@ import { Banner, Button, EmptyState, ErrorState, NextLinks, PageHeader, SearchFi
 import { ArtifactReader } from "../artifactreader";
 import { FileTile } from "../fileview";
 import {
+  CLOSED_REVIEW,
   FILE_GROUPS,
   NO_FILTER,
   activeFilterCount,
@@ -71,7 +72,7 @@ function FileRow({ a, current, tabbable, onOpen, onKey, hold, closed }: {
           </span>
           {path ? <span className="file-path mono" title={path}><bdi>{path}</bdi></span> : null}
         </span>
-        <span className="file-state" data-tone={artifactCls(a.status)}>{closed ? "closed without verdict" : plainArtifact(a.status)}</span>
+        <span className="file-state" data-tone={artifactCls(a.status)}>{closed ? CLOSED_REVIEW.row : plainArtifact(a.status)}</span>
       </button>
     </li>
   );
@@ -157,7 +158,7 @@ export default function Artifacts(): React.JSX.Element {
   const delivered = facts.goalStatus === "COMPLETED";
   const groupText = (g: { id: string; label: string; short?: string }, kind: "label" | "short"): string =>
     delivered && g.id === "review"
-      ? kind === "label" ? "Closed without a verdict" : "No verdict"
+      ? kind === "label" ? CLOSED_REVIEW.label : CLOSED_REVIEW.short
       : kind === "label" ? g.label : (g.short ?? g.label);
   const flat = useMemo(() => groups.flatMap((g) => g.items), [groups]);
   const types = useMemo(() => typeCounts(arts), [arts]);

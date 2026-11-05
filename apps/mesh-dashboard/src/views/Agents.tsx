@@ -202,6 +202,9 @@ function AgentRows(p: RowsProps): React.JSX.Element {
               </td>
               <td className="num ag-t-tok">
                 <b>{fmt(a.tokens ?? 0)}</b>
+                {/* The table's head names this column on a desk, but a phone stacks the row and hides the head: the figure
+                    would be a bare "7.2k". The word is drawn only where the head is not. */}
+                <span className="ag-t-tok-u">tokens</span>
                 {budget ? <Progress value={budget.used} max={budget.limit} label={`${a.id}'s own token budget`} tone={tone === "ok" ? undefined : tone} valueText={`${fmt(budget.used)} of ${fmt(budget.limit)} tokens`} /> : null}
               </td>
               {p.finished ? null : (

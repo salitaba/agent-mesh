@@ -301,7 +301,7 @@ details.ov-note { display: block; }
   /* A folded section is one row: its name, one figure, Show. The figure may not wrap the row into two lines, so it truncates. */
   .ov .card-fold-sum { flex: 1 1 auto; min-width: 0; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   /* An open section's head is its title and its one control on the first row, and the count under them. Measured at 360 on the
-     delivered demo, "What shipped" with its split ("9 files · 3 delivered · 6 awaiting review") put the meta on two lines and
+     delivered demo, "What shipped" with its split ("9 files · 3 delivered · 6 without a verdict") put the meta on two lines and
      Show on a third: the head was 103 px of a phone's first screen. The title and Show share the row, the meta takes the next. */
   .ov #ov-shipped:not(.closed) .card-head > .card-meta { order: 3; flex: 1 1 100%; }
   .ov #ov-shipped:not(.closed) .card-head > .card-acts { order: 2; margin-left: auto; }

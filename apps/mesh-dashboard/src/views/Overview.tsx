@@ -403,7 +403,7 @@ export default function Overview(): React.JSX.Element {
           onOpen={jumpTo}
         />
       )}
-      {delivered ? <Shipped arts={goalArts} state={artsState} fold={foldOf("ov-shipped", artsFold)} onRetry={() => setAttempt((n) => n + 1)} openArt={openArt} onOpenFiles={() => setView("artifacts")} /> : null}
+      {delivered ? <Shipped arts={goalArts} state={artsState} fold={foldOf("ov-shipped", artsFold)} onRetry={() => setAttempt((n) => n + 1)} openArt={openArt} onOpenFiles={() => setView("artifacts")} delivered /> : null}
       {/* Renders nothing unless a collaboration is actually open, and owns its own hooks so this component's hook count does not move. */}
       <CollabCard />
       <div className="ov-grid">

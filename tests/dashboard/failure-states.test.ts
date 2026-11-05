@@ -21,6 +21,7 @@ const events = fs.readFileSync(path.join(SRC, "views", "Events.tsx"), "utf8");
 const overview = fs.readFileSync(path.join(SRC, "views", "Overview.tsx"), "utf8");
 const yourProduct = fs.readFileSync(path.join(SRC, "views", "YourProduct.tsx"), "utf8");
 const stepsView = fs.readFileSync(path.join(SRC, "views", "Steps.tsx"), "utf8");
+const toolAccess = fs.readFileSync(path.join(SRC, "views", "ToolAccess.tsx"), "utf8");
 
 test("a failed status poll is not stored as a status", () => {
   assert.match(store, /const \{ json, status: code, timeout \} = await clientRef\.current\.api\("GET", "\/status"\)/, "the poll reads the HTTP status as well as the body");
@@ -80,6 +81,13 @@ test("a failed read of the step history is said, whether or not a list is alread
   assert.match(stepsView, /Showing the \{plural\(visible\.length, "turn"\)\} already loaded/, "and how much of the history it is");
   assert.match(stepsView, /onClick=\{\(\) => \{ setRetrying\(true\); void refreshSteps\(true\); \}\}/, "with the read offered again");
   assert.match(stepsView, /if \(!retrying \|\| stepsStale \|\| !stepsLoaded\) return;\s*\n\s*setRetrying\(false\);\s*\n\s*const row = ledgerRef\.current\?\.querySelector<HTMLElement>\("\.st-row"\)/, "and the answer puts the cursor on the newest turn, not <body>");
+});
+
+test("an empty tool-gate page offers the Designer it names", () => {
+  // "No gated seats" named `mesh.yaml` as the place to hold a tool but had no way there: 0 controls in the empty state.
+  // The Designer is where the seat's tools are edited, so it is one 44 px press from the sentence.
+  assert.match(toolAccess, /title="No gated seats"\s+action=\{<Button variant="soft" icon="designer" onClick=\{\(\) => setView\("designer"\)\}>Open the Designer<\/Button>\}/, "the empty state's next move is a control");
+  assert.match(toolAccess, /const \{[^}]*setView[^}]*\} = useMesh\(\)/, "and the page can go there");
 });
 
 test("a registry that never answers is a failure with a retry, not the loading placeholder for ever", () => {

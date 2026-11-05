@@ -16,7 +16,7 @@ import "./gates.css";
  * the Wake button for exactly that reason.
  */
 export function ToolAccess({ seats, state, reload }: { seats: ToolSeat[]; state: LoadState; reload: () => Promise<void> }): React.JSX.Element {
-  const { client, toast, refreshStatus } = useMesh();
+  const { client, toast, refreshStatus, setView } = useMesh();
   const [busy, setBusy] = useState<string | null>(null);
   const [draft, setDraft] = useState<Record<string, string>>({});
 
@@ -74,7 +74,10 @@ export function ToolAccess({ seats, state, reload }: { seats: ToolSeat[]; state:
 
   if (seats.length === 0) {
     return (
-      <EmptyState icon="lock" title="No gated seats">
+      <EmptyState
+        icon="lock" title="No gated seats"
+        action={<Button variant="soft" icon="designer" onClick={() => setView("designer")}>Open the Designer</Button>}
+      >
         No agent in this mesh sets <code>requires_approval</code>, so no tool is being held. To hold one, set it on a seat in <code>mesh.yaml</code>.
       </EmptyState>
     );
