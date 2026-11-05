@@ -59,6 +59,21 @@ export interface FileGroupDef {
 }
 
 /**
+ * The words for a file a delivered mission put forward and never decided. The Files page and the Overview's result read the
+ * same ones: one page used to call the state "closed without a verdict" and the other "awaiting review", so a reader who
+ * followed the result to the files was told the work was still in progress after the mission had closed.
+ */
+export const CLOSED_REVIEW = {
+  label: "Closed without a verdict",
+  short: "No verdict",
+  many: "without a verdict",
+  /** The whole state, in the Files list's single column. */
+  row: "closed without verdict",
+  /** The same state in the Overview result's two-column ledger, where the group's heading above already says the rest. */
+  resultRow: "no verdict",
+} as const;
+
+/**
  * Work state, not colour: the groups answer "is this file finished?". A release artifact that QA has passed and security has
  * not is still waiting on someone, so it sits in review beside the documents that are; it is not "approved and merged".
  * The order is the order a person reads the page in: the result first, then what is waiting, then what went back.

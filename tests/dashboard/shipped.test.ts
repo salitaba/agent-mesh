@@ -24,3 +24,14 @@ test("the What shipped cards show the repository path and never the store's", ()
   assert.match(shipped, /repoPathOf\(a\)/);
   assert.doesNotMatch(shipped, /contentRef|shortRef/, "the store path is not read for a card");
 });
+
+test("a delivered mission's undecided files say what the Files page says: closed without a verdict", () => {
+  // The Overview used to say "Awaiting review" and "ready for review" beside "Delivered", while the Files page, one press
+  // away, said "Closed without a verdict". A delivered mission is not waiting on a reviewer; `CLOSED_REVIEW` is the one set
+  // of words both pages read (files.ts).
+  assert.match(shipped, /delivered && g\.key === "review"/, "the result knows the mission is delivered");
+  assert.match(shipped, /CLOSED_REVIEW\.label/, "the group heading is the shared label");
+  assert.match(shipped, /CLOSED_REVIEW\.many/, "and so is the count's phrase");
+  assert.match(shipped, /closed=\{delivered && g\.key === "review"\}/, "the row is told the same thing");
+  assert.match(shipped, /CLOSED_REVIEW\.resultRow/, "and draws the short shared state the group heading completes");
+});

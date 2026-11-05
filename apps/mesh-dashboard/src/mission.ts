@@ -341,8 +341,10 @@ function describePhase(f: MissionFacts): Omit<MissionState, "next"> & { next?: N
       tone: left.length > 0 ? "warn" : "ok",
       label: "Delivered",
       primary: null,
+      // The verdict is its own sentence, so the hero can set "Delivered." at the display step and the work left under it at
+      // the sentence step: as one long sentence the whole line stepped down to 20 px and the phone's receipt grew by 37 px.
       headline: left.length > 0
-        ? `Delivered, with work left on the table: ${left.join(" and ")}.`
+        ? `Delivered. ${left.join(" and ")}.`
         : "Delivered. Every mandatory check is evidenced.",
       secondary: [REOPEN],
       next: DELIVERED_NEXT,

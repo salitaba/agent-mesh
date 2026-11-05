@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import {
+  CLOSED_REVIEW,
   FILE_GROUPS,
   FILE_KIND_LABEL,
   LINE_WINDOW,
@@ -346,6 +347,11 @@ test("a patch is told from a document that has a list in it, by the headers a di
   assert.equal(looksLikePatch("+1\n-1\nplain"), false, "lines that start with a sign are not enough");
   assert.equal(looksLikePatch(""), false);
   assert.equal(looksLikePatch(`${"x\n".repeat(200)}@@ -1 +1 @@`), false, "a hunk header far down is not looked for: the headers of a diff are at its start");
+});
+
+test("a file a delivered mission left undecided has one set of words, shared by Files and the Overview's result", () => {
+  assert.deepEqual(CLOSED_REVIEW, { label: "Closed without a verdict", short: "No verdict", many: "without a verdict", row: "closed without verdict", resultRow: "no verdict" });
+  assert.notEqual(CLOSED_REVIEW.label, FILE_GROUPS.find((g) => g.id === "review")!.label, "a closed mission's file is not still 'in review'");
 });
 
 test("each line of a patch is a header, a hunk, an addition, a removal or context, and a removed line that begins with dashes is still a removal", () => {

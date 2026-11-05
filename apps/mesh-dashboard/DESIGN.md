@@ -376,6 +376,91 @@ Breakpoints: **1280 1100 900 800 760 620 560**. 800 is the sidebar drawer (JS
 
 ## Pass log
 
+### 2026-11-05 — a delivered receipt sets its verdict at the display step, and a closed file says so
+
+Surface: `src/mission.ts` (the delivered headline), `src/files.ts` (`CLOSED_REVIEW`), `src/views/Shipped.tsx` (the result's
+words), `src/views/Artifacts.tsx` (the shared words), `src/views/Agents.tsx` and `src/views/agents.css` (the token column on a
+stacked row), `src/views/ToolAccess.tsx` (the empty gate's next move), and six tests (`mission`, `files`, `shipped`,
+`failure-states`, and the new `agents-phone`).
+
+Measured on the scripted demo at **Delivered** (481 events, 49.3k of 2.0M tokens, 7 checks, 9 files: 3 delivered and 6 never
+given a verdict; 17 messages; 7 seats; ran 2m 0s) in the production build served by `curule console`, Chromium 1248 at
+320/360/390/768/1,440 in light, a touch pointer at 768 and below, reduced motion, axe-core 4.14 at 360 and 1,440 in both
+themes. Both halves are the **same delivered log**: the before is the base at `fc5cecf`, and the after bundle was swapped
+under the same running console without restarting the mission. The 320 receipt before was read by putting the base build's
+exact headline markup back into the same live DOM, because the first captures did not include 320.
+
+**The delivered verdict was a paragraph, not a verdict.** The completion change of 4 Nov made a delivered mission with work
+left say `Delivered, with work left on the table: 6 files were never given a verdict.` as one sentence. `splitHeadline` only
+splits at a full stop, so the whole sentence took the `.long` step: **20 px at 320/360/390 and 24 px at 768/1,440**, with no
+`Delivered.` at 30; at 360 it was four lines of **96 px** and the receipt was **516.6**, 36.6 px past the 480 the 4 Nov entry
+records. It is two sentences now: **`Delivered.` at 30** and the facts at 16 on a phone / 18 on a desk. The receipt is **480 at
+360 and 489.1 at 390** (the 4 Nov numbers) and **498.1 at 320**; the second evidence row's 44 px head is whole above the 747 px
+dock at all three (5.3 / 23.5 / 14.3 px clear, where it was 50.3 / 13.2 px under and 1.7 above). At 768 and 1,440 the receipt
+is **4.6 px taller** (463.4 / 267.8 against 458.8 / 263.2): the state at 30 and its sentence on its own line is one line more
+than the long-sentence step, and that is the display step's price.
+
+**What shipped called a closed file "awaiting review".** The same completion change taught the Files page that a file put
+forward and never decided is "closed without a verdict" once the goal is COMPLETED, but the Overview's result kept its fixed
+words: the group heading **Awaiting review**, its count **6 awaiting review**, and every row **ready for review**, one press
+from Files' "Closed without a verdict". The result reads the same `CLOSED_REVIEW` words (`files.ts`) now: **Closed without a
+verdict** (6), the meta **9 files · 3 delivered · 6 without a verdict**, and a row state **no verdict** — short in the desk's
+two-column ledger, where the heading above already says the rest. The card is **497 → 495.1 px** at 1,440 (the shorter row
+state pays for the longer heading); the language is one answer on both pages, and the warning tone the completion change gave
+the hero stays.
+
+**A finished agent row's token figure was bare on a phone.** At 900 and below the Agents table stacks a row into four bands and
+hid the `<thead>` with `display: none`; the token cell drew **7.2k** with no label on screen and no header in the accessibility
+tree. The cell says **7.2k tokens** now (the word is drawn only where the head is not; a desk keeps its head and its 54 px
+rows), and the head is visually hidden with the sr-only pattern instead of `display: none`, so `getByRole("columnheader")`
+reads **Agent, State, What it did, Tokens** (**0 → 4**). The cell is **114 × 21 → 169 × 21** at 360, the state cell **176 →
+121**, the row **141.4** and the page **1,234** unchanged.
+
+**An empty tool gate named the Designer and could not take you there.** `No gated seats` said to set `requires_approval` on a
+seat in `mesh.yaml` and offered no control (**0** in the empty state; the card was **237 px**). It is one **202.4 × 44**
+`Open the Designer` press now and the card is **296.8**; the page still fits its 736 px view at 360, so the next move costs no
+reach. The button opens the Designer's roster, not a seat's Tools section (see Left).
+
+| | Before | After |
+|---|---|---|
+| The Overview, 320 / 360 / 390 | 936 / 894 / 879 | **876 / 858 / 867** |
+| The Overview, 768 / 1,440 | 836 / 1,784 | **841 / 1,787** |
+| The receipt, 320 / 360 / 390 | 558.8 / 516.6 / 501.8 | **498.1 / 480 / 489.1** |
+| The receipt, 768 / 1,440 | 458.8 / 263.2 | **463.4 / 267.8** |
+| The verdict's step | the whole sentence at 20 (phone) / 24 (768, desk) | **`Delivered.` at 30; its sentence at 16 / 18** |
+| The headline's box, 360 / 1,440 | 96 / 57.6 | **59.4 / 62.2** |
+| Second evidence row's 44 px head, 320 / 360 / 390 | 753.3–797.3 / 716.2–760.2 / 701.3–745.3 | **697.7–741.7 / 679.5–723.5 / 688.7–732.7** |
+| The head's bottom against the 747 px dock, 320 / 360 / 390 | 50.3 under / 13.2 under / 1.7 above | **5.3 / 23.5 / 14.3 above** |
+| What shipped heading and meta, 1,440 | Awaiting review; 9 files · 3 delivered · 6 awaiting review | **Closed without a verdict; 9 files · 3 delivered · 6 without a verdict** |
+| Its row state, 1,440 | ready for review | **no verdict** |
+| The result card, 1,440 | 497 | **495.1** |
+| The Agents token cell, 360 | 114 × 21, "7.2k" | **169 × 21, "7.2k tokens"** |
+| The Agents state cell and row, 360 | 176 × 23; 141.4 | **121 × 23; 141.4** |
+| Column headers exposed at 360 | 0 (`thead` was `display: none`) | **4** (`Agent, State, What it did, Tokens`) |
+| The Tool gates empty state, 360 | 0 controls; card 237 | **1 control, 202.4 × 44; card 296.8** |
+| Axe, the ten single-mesh views × 1,440/390 × both themes | 0 violations | **0** |
+| Axe, the same views × 360/1,440 × both themes | 0 | **0** |
+| Horizontal page scroll, 320–1,440 | 0 | **0** |
+
+**Floors.** `npm run typecheck` and `npm run build` clean; `dist/tests/dashboard` plus `console-palette` and `ui-kit-tokens`
+**1,252 pass, 0 fail** (the full suite is the coordinator's); eslint **0 errors** (211 pre-existing warnings); `npm run
+qa:console` over the ten single-mesh views at 1,440 and 390 in both themes: **44 screenshots, 44 axe runs, 0 violations**, the
+one-mesh `/api/projects` 404 in each, **0 px** of horizontal page scroll; a second 40-read pass (10 views × 360/1,440 × both
+themes) also found 0. No token moved, so both themes read the same geometry; the 44 px floor is untouched (the new Designer
+button is 202.4 × 44, and the Agents token cell is not a control).
+
+**Left.** The third evidence row at 360 begins at 744.5 — 2.5 px above the dock and 41.5 px under it: this pass restored the
+second row, not the third; the next 44 px is the goal's third line or the row gap. At 768 and 1,440 the receipt is 4.6 px
+taller than the long-sentence step was, which is the display step's price rather than a wrap. The phrase "with work left on the
+table" is not in the receipt now: the facts, the warning tone and "What shipped 3 of 9" say it, and the phrase was what took
+the receipt past the first screen at 320/360/390. The Steps timeline's closed caption still wraps at 320/360 on a reader in
+GMT+3:30: `Who was busy, when` (179 px) and `Times in GMT+3:30` (118) need 305 in 302, so the row is 69 px where the 44 px
+caption row was designed; closing it needs the zone's words or a 3 px gap, and was not this pass. The empty tool-gate button
+opens the Designer's roster, not the first seat's Tools section; a deep link would need the Designer's arrival mechanism. The
+Files page's row state stays `closed without verdict` (the single-column list has the room) while the Overview's two-column
+ledger says `no verdict`; both are the same `CLOSED_REVIEW` state. The Events page's "Live" chip still describes the stream on
+a delivered mission, the known open question.
+
 ### 2026-11-04 — a waiting condition is read across the card, and a touch tablet's `…` is a full target
 
 Surface: `views/AttentionList.tsx` (the `single` class), `views/overview.css` (the attention row's container query and the phone

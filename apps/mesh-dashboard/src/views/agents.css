@@ -93,6 +93,8 @@
 .ag-table .agent-record { font-size: 13px; line-height: 1.4; color: var(--text-dim); }
 .ag-table td.num { padding-right: var(--s4); }
 .ag-table td.num b { display: block; font-weight: 600; }
+/* The desk's column head says "Tokens"; a phone's stacked row hides it and reads this word instead (agents.css's 900 block). */
+.ag-t-tok-u { display: none; }
 .ag-table td.num .prog { margin-top: var(--s1); min-width: 72px; }
 .ag-table .agent-controls { justify-content: flex-end; flex-wrap: nowrap; gap: var(--s1); }
 
@@ -110,7 +112,9 @@
    its figure and its controls. */
 @media (max-width: 900px) {
   .ag-table.tbl.dense, .ag-table.tbl.dense tbody { display: block; }
-  .ag-table.tbl.dense thead { display: none; }
+  /* The head is not drawn, but it is not gone: `display: none` also took the headers out of the accessibility tree, so a
+     screen reader reading a stacked "7.2k" had no column to name it. The sr-only pattern keeps the names for AT. */
+  .ag-table.tbl.dense thead { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
   /* Two columns, four lines: the name gets the whole width (it measured 77 px and read "dev…" when the 213 px control
      cell shared its line), then the state and its tokens, then what it is doing, then its controls full width. */
   .ag-table.tbl.dense tr {
@@ -128,6 +132,7 @@
   .ag-table.tbl.dense .ag-t-now { display: block; grid-area: now; }
   .ag-table.tbl.dense .ag-t-tok { grid-area: tok; display: flex; align-items: baseline; justify-content: flex-end; gap: var(--s2); text-align: right; }
   .ag-table.tbl.dense .ag-t-tok b { display: inline; }
+  .ag-table.tbl.dense .ag-t-tok-u { display: inline; }
   .ag-table.tbl.dense .ag-t-tok .prog { flex: 1 1 auto; min-width: 72px; margin-top: 0; }
   .ag-table.tbl.dense .ag-t-act { grid-area: act; }
   .ag-table .agent-controls { flex-wrap: wrap; justify-content: flex-start; }

@@ -244,12 +244,12 @@ test("a delivered mission that still owes cards is not the clean green done: not
   assert.equal(one.phase, "done", "a card stopped gating completion: the mission is delivered, not held");
   assert.equal(one.tone, "warn", "the tone says a person is still needed before any word is read");
   assert.equal(one.label, "Delivered");
-  assert.equal(one.headline, "Delivered, with work left on the table: 1 decision is still waiting on you.");
+  assert.equal(one.headline, "Delivered. 1 decision is still waiting on you.");
   assert.equal(one.primary, null, "the way to answer is the attention list and the inbox, not a new button");
   assert.deepEqual(one.secondary.map((c) => c.action), ["reopen"]);
   assert.deepEqual(one.next, describeMission(facts({ goalStatus: "COMPLETED", working: 0 })).next, "what a person does with the result is unchanged");
   const three = describeMission(facts({ goalStatus: "COMPLETED", working: 0, blockingDecisions: 3, owedCards: [card, card, card] }));
-  assert.equal(three.headline, "Delivered, with work left on the table: 3 decisions are still waiting on you.");
+  assert.equal(three.headline, "Delivered. 3 decisions are still waiting on you.");
   assert.equal(three.tone, "warn");
 });
 
@@ -352,6 +352,7 @@ test("a delivered mission that left files unverdicted says so instead of a clean
   assert.equal(s.phase, "done");
   assert.equal(s.tone, "warn", "a review queue left open is not the clean green state");
   assert.match(s.headline, /3 files were never given a verdict/);
+  assert.match(s.headline, /^Delivered\. /, "the verdict is its own sentence, so the hero sets it at the display step");
 });
 
 test("a delivered mission with an empty review queue reads exactly as it did before", () => {

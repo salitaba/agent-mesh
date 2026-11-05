@@ -1,7 +1,7 @@
 import { useMemo } from "react";
 import { artifactCls, plainArtifact } from "../format";
 import { Button, IconTile, Pill, Skeleton, type PillTone } from "../components";
-import { repoPathOf } from "../files";
+import { CLOSED_REVIEW, repoPathOf } from "../files";
 import type { LoadState } from "../inbox-model";
 import { fileIcon, sortFiles, workspaceOf } from "../overview-model";
 import { WIDE, useMedia } from "../useMedia";
@@ -72,14 +72,14 @@ function Card({ a, openArt }: { a: any; openArt: (a: any) => void }): React.JSX.
  * card is the shape for a thing that is the answer. The name, what it is, where it lives when it is in the product, and its
  * state — beside the name on a desk, under it on a phone, so neither the name nor the type is squeezed by a pill.
  */
-function Row({ a, openArt }: { a: any; openArt: (a: any) => void }): React.JSX.Element {
+function Row({ a, openArt, closed }: { a: any; openArt: (a: any) => void; closed: boolean }): React.JSX.Element {
   const path = repoPathOf(a);
   return (
     <li>
       <button type="button" className="ship-row" onClick={() => openArt(a)} title={`Read ${a.name}`}>
         <IconTile icon={fileIcon(a.type)} size="sm" />
         <b className="ship-name">{a.name}</b>
-        <span className={`ship-state ${artifactCls(a.status)}`}>{plainArtifact(a.status)}</span>
+        <span className={`ship-state ${artifactCls(a.status)}`}>{closed ? CLOSED_REVIEW.resultRow : plainArtifact(a.status)}</span>
         <span className="ship-meta">
           {a.type} · v{a.version} · by {a.owner}
           {path ? <span className="ship-path" title={path}>{path}</span> : null}
@@ -89,8 +89,8 @@ function Row({ a, openArt }: { a: any; openArt: (a: any) => void }): React.JSX.E
   );
 }
 
-export function Shipped({ arts, state, onRetry, openArt, onOpenFiles, fold }: {
-  arts: any[]; state: LoadState; onRetry: () => void; openArt: (a: any) => void; onOpenFiles: () => void; fold?: Fold;
+export function Shipped({ arts, state, onRetry, openArt, onOpenFiles, fold, delivered }: {
+  arts: any[]; state: LoadState; onRetry: () => void; openArt: (a: any) => void; onOpenFiles: () => void; fold?: Fold; delivered: boolean;
 }): React.JSX.Element {
   const files = useMemo(() => sortFiles(arts), [arts]);
   const ws = useMemo(() => workspaceOf(arts), [arts]);
@@ -98,11 +98,17 @@ export function Shipped({ arts, state, onRetry, openArt, onOpenFiles, fold }: {
   // the delivered and open files are one ruled ledger under their two captions: three cards in two columns left the third alone
   // under an empty cell, and a card narrower than 280 px wraps a name to three lines to say less than a row does.
   const cards = useMedia(WIDE);
+  // A delivered mission cannot still be awaiting a reviewer: the undecided files are closed without a verdict, and the Files
+  // page already says so. The result uses its words (`CLOSED_REVIEW`) rather than calling the same file "ready for review"
+  // here and "closed without verdict" one press away.
   const groups = useMemo(
-    () => SHIP.map((g) => ({ ...g, files: files.filter((a) => groupOf(a.status) === g.key) })).filter((g) => g.files.length > 0),
-    [files],
+    () => SHIP.map((g) => {
+      const closed = delivered && g.key === "review";
+      return { ...g, label: closed ? CLOSED_REVIEW.label : g.label, many: closed ? CLOSED_REVIEW.many : g.many, files: files.filter((a) => groupOf(a.status) === g.key) };
+    }).filter((g) => g.files.length > 0),
+    [files, delivered],
   );
-  // "9 files · 3 delivered · 6 awaiting review": the count first, then the split in the order the page draws it.
+  // "9 files · 3 delivered · 6 without a verdict": the count first, then the split in the order the page draws it.
   const meta = files.length ? (
     <>
       <b>{files.length} {files.length === 1 ? "file" : "files"}</b>
@@ -147,7 +153,7 @@ export function Shipped({ arts, state, onRetry, openArt, onOpenFiles, fold }: {
                 {g.key === "delivered" && cards ? (
                   <ul className="ov-files ship-cards">{shown.map((a) => <Card key={a.id} a={a} openArt={openArt} />)}</ul>
                 ) : (
-                  <ul className="ship-list">{shown.map((a) => <Row key={a.id} a={a} openArt={openArt} />)}</ul>
+                  <ul className="ship-list">{shown.map((a) => <Row key={a.id} a={a} openArt={openArt} closed={delivered && g.key === "review"} />)}</ul>
                 )}
                 {hidden > 0 ? (
                   <p className="ov-foot">and {hidden} more {g.many}. <Button variant="linklike" onClick={onOpenFiles}>Open the files</Button></p>
