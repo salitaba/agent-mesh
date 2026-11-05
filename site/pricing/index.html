@@ -10,7 +10,7 @@
 <link rel="apple-touch-icon" href="../assets/apple-touch-icon.png">
 <meta name="theme-color" content="#fbfaf8" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#131211" media="(prefers-color-scheme: dark)">
-<link rel="stylesheet" href="../assets/site.css?v=1051333c67">
+<link rel="stylesheet" href="../assets/site.css?v=7d06054db2">
 <meta property="og:type" content="website">
 <link rel="canonical" href="https://curule.dev/pricing/">
 <meta property="og:url" content="https://curule.dev/pricing/">
@@ -352,9 +352,9 @@
       <form id="calc" autocomplete="off" hidden data-needs-script>
         <p class="calc-total" id="calc-total" aria-hidden="true"><span class="calc-total-plan" id="calc-total-plan"></span><span class="calc-total-figure" id="calc-total-figure"></span></p>
         <p class="sr" id="calc-said" role="status"></p>
-        <div class="field"><label for="c-projects">Projects open at the same time</label><input id="c-projects" type="number" min="1" max="1000" step="1" value="1" inputmode="numeric" aria-describedby="c-projects-hint c-projects-error"><div class="hint" id="c-projects-hint">A project is one team&rsquo;s mesh. Registering more is free: the limit is how many are open at once.</div><p class="field-error" id="c-projects-error" role="alert" hidden></p></div>
+        <div class="field"><label for="c-projects">Projects open at the same time</label><input id="c-projects" type="number" min="1" max="1000" step="1" value="1" inputmode="numeric" aria-describedby="c-projects-hint c-projects-error"><p class="field-error" id="c-projects-error" role="alert" hidden></p><div class="hint" id="c-projects-hint">A project is one team&rsquo;s mesh. Registering more is free: the limit is how many are open at once.</div></div>
         <div class="field"><label for="c-seats">Agents in your biggest team</label><input id="c-seats" type="number" min="1" max="1000" step="1" value="7" inputmode="numeric" aria-describedby="c-seats-error"><p class="field-error" id="c-seats-error" role="alert" hidden></p></div>
-        <div class="field"><label for="c-missions">Missions a month, across all projects</label><input id="c-missions" type="number" min="0" max="100000" step="1" value="25" inputmode="numeric" aria-describedby="c-missions-hint c-missions-error"><div class="hint" id="c-missions-hint">A mission like the one we measured: a small library built by five agents.</div><p class="field-error" id="c-missions-error" role="alert" hidden></p></div>
+        <div class="field"><label for="c-missions">Missions a month, across all projects</label><input id="c-missions" type="number" min="0" max="100000" step="1" value="25" inputmode="numeric" aria-describedby="c-missions-hint c-missions-error"><p class="field-error" id="c-missions-error" role="alert" hidden></p><div class="hint" id="c-missions-hint">A mission like the one we measured: a small library built by five agents.</div></div>
         <div class="field"><label for="c-model">Model your agents run on</label><select id="c-model"></select></div>
         <div class="field field-check"><input id="c-reports" type="checkbox"><label for="c-reports">I need usage reports and Prometheus metrics</label></div>
       </form>

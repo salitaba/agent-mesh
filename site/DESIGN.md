@@ -3311,3 +3311,84 @@ The absolute heights are this container's; both halves are one browser in one ru
   (849) and the nine argument sections are where the words are. The security page's On this page row still cuts 64px of
   "Reporting a problem" at 1,440, and the plan chooser still changes the page's height when another plan is chosen.
 - **The console captures were not retaken**, Curule Cloud's prices are still in the app, and `site/ux/` was not edited.
+
+## 2026-11-05, fourth pass: a field's ring in High Contrast, the refusal at its field, and the plan that no longer moves the page
+
+Measured with the same probe (Chrome 156 over CDP; reduced motion; light unless said; touch at 320/360/390, a mouse at
+768/1,024/1,440; dark at all six; print at 794; forced colours at 320/360/768/1,440; no script at 320/360; a 24px and a
+32px root at 320/360). The before column is the site at `1db915e`, served from this worktree before any edit, measured in
+the same run; no number is copied from an earlier pass. The absolute heights are this container's; both halves are one
+browser in one run, so the differences stand.
+
+### What changed
+
+- **A field's focus ring is an outline, so a forced-colour mode keeps it.** The filter's and the estimate's focus ring was
+  `box-shadow: var(--k-ring)` with `outline: none`, and a forced-colour mode drops shadows. Measured at 360 with
+  `forcedColors: active`, under a real focus: `outline: none 3px`, `box-shadow: none`, and the border the only change —
+  `rgb(0, 0, 0)` at rest, `rgba(5, 0, 73, 0.8)` focused (a composite of 55, 51, 109), **1.86:1 between the two and 1px
+  wide**. The three number fields, the model select and the docs filter take the page's outline on `:focus-visible`: **2px
+  at a 2px offset, 11.31:1 against the field's white**, at 320, 360, 768 and 1,440. A pointer keeps the border and the
+  shadow; no box moves.
+- **A refusal stands at the field it names.** The projects hint is 67.2px at 360 (67.2 at 320, 44.8 at 390 and 1,440,
+  22.4 at 768) and the error stood **6px under the hint**, so the projects refusal was **79.2px below the input** at 360
+  and 320, 56.8 at 390 and 1,440 and 34.4 at 768 — the third thing under the field. It is the input's next sibling now,
+  **6px under it at every width**, and the hint follows; `aria-describedby` still reads the hint first and the error last.
+  The missions field, which also has a hint, is the same. The error state is the height it was and the default page does
+  not move.
+- **Choosing a plan moves nothing below it.** At 360 the four cards were 730.6 / 624.5 / 749.4 / 658.6px, and the one
+  chosen set the section's height: choosing Team pulled "Do you run it, or do we?" from **2,199.0 to 2,092.9** (−106.1px)
+  and the page from 13,509 to 13,403. The four cards share one cell now, as the six console views do; the cell is the
+  tallest plan's (Business, 749.4px) and the chosen card takes its height with its action at the bottom, the shape a plan's
+  card already has when four share a row at 720. `#ways` is **2,217.8 for all four at 360** (2,444.2 at 320, 2,102.3 at
+  390) and the page 13,528 / 14,506 / 12,864 for every choice. The default view grows **18.8px at 360, 65.3 at 320 and
+  22.5 at 390**; a choice's movement is 0, where it was up to **125.1 / 137.3 / 100.8**.
+
+### Measurements after this pass
+
+| The field's ring, forced colours at 320/360/768/1,440 | Before | After |
+|---|---|---|
+| The outline | `none 3px` | **`solid 2px`, `offset 2px`** |
+| The shadow | none | none |
+| The border, rest → focus | rgb(0, 0, 0) → rgba(5, 0, 73, 0.8), **1.86:1** | unchanged (the outline is the ring) |
+| The ring against the field's white | — | **11.31:1** |
+
+| The projects refusal, input → error | 320 | 360 | 390 | 768 | 1,440 |
+|---|---|---|---|---|---|
+| Before | 79.2 | 79.2 | 56.8 | 34.4 | 56.8 |
+| After | **6** | **6** | **6** | **6** | **6** |
+
+| The plans at 320 / 360 / 390 | Before: `#ways` for Community / Team / Business / Enterprise | After |
+|---|---|---|
+| 320 | 2,378.9 / 2,319.2 / 2,444.2 / 2,306.9 (137.3 apart) | **2,444.2 ×4** |
+| 360 | 2,199.0 / 2,092.9 / 2,217.8 / 2,127.0 (125.1 apart) | **2,217.8 ×4** |
+| 390 | 2,079.8 / 2,001.5 / 2,102.3 / 2,055.8 (100.8 apart) | **2,102.3 ×4** |
+| The page, 320 / 360 / 390 | 14,440 / 14,381 / 14,506 / 14,368; 13,509 / 13,403 / 13,528 / 13,437; 12,841 / 12,763 / 12,864 / 12,817 | **14,506 / 13,528 / 12,864, one height for every choice** |
+
+- The default view grows 65.3px at 320, 18.8 at 360 and 22.5 at 390; the pricing page at 768 / 1,024 / 1,440 (a mouse) is
+  **10,144 / 9,346 / 9,253**, unchanged, and so is print at 794 (**10,017**, four cards). Without a script the page is
+  **12,268** at 360 (was 12,249), the chosen card is visible and the other three size the cell.
+- No page scrolls sideways at 320, 360, 390, 768, 1,024 or 1,440 in light or dark (0 on all 84 page/width/theme pairs),
+  the probe reports 0 console errors, the smallest computed text is **12px**, and axe-core WCAG 2.0–2.2 A and AA is **0**
+  on the default pages, the estimate with all three errors shown, and each of the four plans chosen. At a 24px root the
+  pricing page is 21,951 at 360 and 24,258 at 320; at 32px 33,472 and 38,033, all 0px over, with the cell the tallest plan's.
+- `tests/build/site.test.ts` holds the shared cell (and the stylesheet's list of what it hides), the four chips, and the
+  field's outline beside the shadow; `tests/build/site-pricing.test.ts` holds the error between the input and the hint.
+  The build suites are **232** tests, all passing; typecheck and eslint on the touched files are clean, `site-chrome
+  --check` and `pricing:check` pass, and `npm run site:check` still exits 1 on the owner's `TODO(owner)` at
+  `site/legal/index.html:134`.
+
+### What this pass deliberately leaves
+
+- **The default view pays the tallest plan's height.** Community's card is 730.6px at 360 and now stands in a 749.4px cell
+  with its action at the bottom (65.3px of room at 320, where Business is 819.9 against Community's 754.6). That is the
+  price of a choice that moves nothing, and the same blank a plan's card has beside a taller one at 720 and up.
+- **The card's action is 125px lower for Team, Business and Enterprise.** It sits at the cell's bottom now, where the card
+  at 720 puts it; the section below does not move with it.
+- **A refusal still adds its line while it is shown** (26.3px at 360, 40.6 for the missions error at 320/360), as before;
+  the hint moves down by it and the page grows by it. The order is what changed, not the height.
+- **The estimate's quoted plan still has no way to ask for the quote in the result**; the Enterprise card above has "Talk
+  to us". A line in the ledger is the next pass's, if the owner wants the estimate to carry it.
+- **The security page's On this page row still cuts 32px of "Reporting a problem" at 1,440** (64px of scroll, 32 of the
+  chip) and the page is still 13,528 at 360; the row of seven chips cannot fit the 1,120px column at 14px, and the edge
+  shadow is its cue. The console captures were not retaken, Curule Cloud's prices are still in the app, and `site/ux/` was
+  not edited. This pass's frames are handed over with the report.
