@@ -527,7 +527,7 @@ test("the loading skeleton has the shape of the account it stands in for: the tw
   assert.equal(declared(grid, "grid-template-columns"), "repeat(2, 1fr)", "two tiles on a wide screen, as the two facts are");
 });
 
-test("a way-in page's tab names the heading it shows, and the account's password form is not offered before the script has an account", () => {
+test("a way-in page's tab names the heading it shows, and no form a script must send is offered to a browser with none", () => {
   const titles = Object.fromEntries(pages().map((p) => [p.name, p.all.find((n) => n.tag === "title")!.textContent]));
   for (const [name, h1] of [["signup", "Create your account"], ["login", "Back to your account"], ["forgot", "Forgot your password?"], ["reset", "Choose a new password"], ["verify", "Confirming your address"]] as const) {
     assert.equal(titles[name], `${h1} – Curule Cloud`, `${name}: the tab is the page's own action, not a description of the form`);
@@ -535,6 +535,14 @@ test("a way-in page's tab names the heading it shows, and the account's password
   const account = pages().find((p) => p.name === "account")!;
   const settings = account.all.find((n) => attr(n, "id") === "settings-panel")!;
   assert.ok(settings.attrs.has("hidden"), "Settings is drawn by the script: with no script it is not a password form whose submit would put both passwords in an address");
+  // The way-in pages' forms are the same case, and were the same defect: a form with no action is a GET, so a browser with no script wrote
+  // the password into the address bar, the history and the server's log (measured: /login?email=…&password=secret-password-1). The card is
+  // held hidden in the markup and drawn by the script, as Settings is; reset and the confirmation page already held theirs hidden.
+  for (const name of ["signup", "login", "forgot"]) {
+    const card = pages().find((p) => p.name === name)!.all.find((n) => attr(n, "id") === "card");
+    assert.ok(card, `${name}: the card that holds the form`);
+    assert.ok(card!.attrs.has("hidden"), `${name}: with no script it is not drawn, so its submit cannot write a password into an address`);
+  }
 });
 
 test("a phone's bar is part of the page, so no control is ever under it, and the section a contents link names opens at the edge", () => {
@@ -572,6 +580,13 @@ test("a name a person typed cannot widen the page: the cards that show one break
   assert.equal(own(".bar nav a", "padding", "max-width: 380px"), "0 7px");
   assert.equal(own(".bar nav a", "font-size", "max-width: 380px"), ".875rem");
   assert.equal(own(".logo", "height", "max-width: 380px"), "20px");
+  // At 320 the caption's line has 189px left for a 238px address, so it broke through the domain ("…@exampl" / "e.com"). The identity is a
+  // wrapping line there: the address moves to a line of its own whole (238px), and a short one still shares the caption's. Measured 41.6px
+  // for both addresses, before and after, and 124.8px at a 32px root.
+  assert.equal(own("#who", "display", "max-width: 359px"), "flex", "the identity is a line that wraps, not a word that breaks");
+  assert.equal(own("#who", "flex-wrap", "max-width: 359px"), "wrap");
+  assert.equal(own("#who", "gap", "max-width: 359px"), "0 4px", "with the space the sentence had between its two parts");
+  assert.equal(own("#who", "display"), undefined, "and only a 320 phone: at 360 the address fits beside its caption");
 });
 
 test("a long table keeps the name of its row at the edge while its figures scroll, and the account's sections carry the ledger's numbers without changing their names", () => {

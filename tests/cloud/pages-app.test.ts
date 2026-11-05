@@ -710,6 +710,14 @@ test("a password field has Show and Hide that only a script can give, and a pass
   }
 });
 
+test("a way-in page's card is drawn by its script, and a browser with none is not offered a form whose submit would write a password into an address", async () => {
+  for (const name of ["signup", "login", "forgot"] as const) {
+    const v = await visit(name, { routes: world((x) => (x.signedIn = false)).routes });
+    assert.equal(v.$("card").hidden, false, `${name}: the script draws the card, before it reads the session`);
+    assert.equal(v.$("form").hidden, false, `${name}: and the form in it is the one it sends`);
+  }
+});
+
 test("a new password shows how far it is towards the length asked for, in steps, and says nothing of how good it is", async () => {
   const h = helpers();
   assert.deepEqual(h.lengthProgress(0, 10), { value: 0, done: false });

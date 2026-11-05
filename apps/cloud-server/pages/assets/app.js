@@ -265,6 +265,9 @@
         if (!view.plansKnown) {
           return { tone: "warn", title: "The plans could not be loaded", text: "No plan or price is shown just now, and nothing was changed.", action: { kind: "retry", label: "Try again" } };
         }
+        // A checkout that was cancelled says what happened where the choice it is about is: as a notice above the page it pushed the first
+        // plan's button below a 360 phone's screen. The cards under it name the prices and limits the step's sentence used to introduce.
+        if (view.cancelled) return { tone: "", title: "Choose a plan", text: "Checkout was cancelled, so nothing was charged.", action };
         // The step's sentence is the plan section's own lede (the card is not drawn for this state), so it says what a plan is and stops:
         // the cards under it name what each one includes and carry the button that chooses it.
         const what = "A plan is one flat price for its own period, and it says how many workspaces you may run at once.";
@@ -1210,6 +1213,9 @@
     // A plan picked on the front page: the account it was picked for is this one, and the choice is read once.
     const params = new URLSearchParams(location.search);
     const wanted = params.get("plan") || store.get(PICKED_PLAN) || "";
+    const paid = params.get("paid") === "1";
+    const cancelled = params.get("cancelled") === "1";
+    const confirmed = params.get("confirmed") === "1";
     store.remove(PICKED_PLAN);
     const state = {
       me: first.data,
@@ -1255,6 +1261,8 @@
       stageTarget: null,
       usageCalls: 0,
       usageLoaded: false,
+      /** Whether a cancelled checkout is said in the plan section, which is the step it is about, rather than in the notice above it. */
+      cancelled: false,
     };
 
     await readPlans();
@@ -1262,7 +1270,7 @@
     const account = () => state.me.account;
     const subscription = () => account().subscription;
     /** What the pure parts decide from: the account, the plans on offer and what the service says its periods are. */
-    const viewOf = () => ({ subscription: subscription(), workspaces: account().workspaces, plans: state.plans, plansKnown: state.plansKnown, topups: state.topups, policy: state.policy, stale: state.watched >= WATCH_LIMIT, usageCalls: state.usageCalls });
+    const viewOf = () => ({ subscription: subscription(), workspaces: account().workspaces, plans: state.plans, plansKnown: state.plansKnown, topups: state.topups, policy: state.policy, stale: state.watched >= WATCH_LIMIT, usageCalls: state.usageCalls, cancelled: state.cancelled });
     const standing = () => {
       const sub = subscription();
       return !sub || sub.status === "ended" ? "none" : sub.status;
@@ -1648,7 +1656,10 @@
     const canCopy = () => typeof navigator !== "undefined" && Boolean(navigator.clipboard) && typeof navigator.clipboard.writeText === "function";
 
     function copyButton(w, card) {
-      const press = el("button", { type: "button", class: "btn btn-quiet btn-small copy", "aria-label": `Copy the address of ${w.name}` }, "Copy");
+      // The word on the button is the word in its name, in both states: a person who says what they see ("Copied") is understood, and a
+      // name that stayed "Copy the address of …" while the button read "Copied" was the one WCAG 2.5.3 failure on the account.
+      const named = (word) => `${word} the address of ${w.name}`;
+      const press = el("button", { type: "button", class: "btn btn-quiet btn-small copy", "aria-label": named("Copy") }, "Copy");
       press.addEventListener("click", async () => {
         let said = "Copied the address.";
         try {
@@ -1656,12 +1667,15 @@
         } catch {
           said = "The address could not be copied.";
         }
-        press.textContent = said === "Copied the address." ? "Copied" : "Copy";
+        const copied = said === "Copied the address.";
+        press.textContent = copied ? "Copied" : "Copy";
+        press.setAttribute("aria-label", named(press.textContent));
         // Said where the card says what became of what was asked, unless that line is in use for something else.
         const free = card.note.className.split(/\s+/).includes("sr");
         if (free) card.note.textContent = said;
         setTimeout(() => {
           press.textContent = "Copy";
+          press.setAttribute("aria-label", named("Copy"));
           if (free && card.note.textContent === said) card.note.textContent = "";
         }, 1800);
       });
@@ -2568,6 +2582,9 @@
     }
     if (wide && wide.addEventListener) wide.addEventListener("change", fitTopup);
 
+    // A cancelled checkout is said in the plan section, where the choice it is about is, when there is a list under it: as a notice above
+    // the page it pushed the first plan's button below a 360 phone's screen. A customer who already has a plan keeps the notice.
+    state.cancelled = cancelled && !holdsPlan(subscription()) && state.plans.length > 0;
     renderAll();
     if (state.picked) landOnPlan(state.picked);
     // A workspace that became ready while the tab was behind another is opened when the person comes back to it.
@@ -2577,13 +2594,10 @@
       if (event.persisted) location.reload();
     });
 
-    const paid = params.get("paid") === "1";
-    const cancelled = params.get("cancelled") === "1";
-    const confirmed = params.get("confirmed") === "1";
     if (paid || cancelled || confirmed) history.replaceState(null, "", "/account");
     // A link that has just been opened is confirmed here, where the person can read it, rather than on a page that is already gone.
     if (confirmed) flash("ok", "Your address is confirmed.");
-    if (cancelled) {
+    if (cancelled && !state.cancelled) {
       // Nothing is known of what was being bought, so what is said is true of every case: nothing was charged, and what there was is as it was.
       const said = !holdsPlan(subscription()) ? ". Choose a plan below when you are ready." : sectionsOf(viewOf()).balance ? ", and your plan and balance are as they were." : ", and your plan is as it was.";
       flash("", `Checkout was cancelled. Nothing was charged${said}`);
@@ -2634,6 +2648,9 @@
       console.error(`This page lacks what its script needs: ${missing.join(", ")}`);
       return;
     }
+    // A form only the script can send is not offered to a browser that cannot run it: with no script its submit is a GET, and a
+    // password typed into it is written into the address bar and the history. Settings is drawn this way for the same reason.
+    if (page === "signup" || page === "login" || page === "forgot") $("card").hidden = false;
     if (page === "account") {
       skeleton(true);
       // Settings is the account's own form. It is not drawn while the account is being read, or when the read failed: a password form

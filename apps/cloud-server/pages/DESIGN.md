@@ -3551,3 +3551,84 @@ the reader adds credit or the plan renews — **170px at y = 184** with **no con
   reason, which is the distinction the card needs.
 - **The cancelled checkout's 98px notice, the skeleton's plan-less shape, the usage read's rate limit and the
   prose-only inline links are unchanged.** They are the earlier entries.
+
+## 2026-11-05: the form a browser without a script cannot send, the cancellation at the choice, and the address whole
+
+Same harness: Chromium 1248 through `playwright-core` against this worktree's trial (`localhost:8142`), 320 / 360 / 390 /
+768 / 1024 / 1440 in light and dark, `prefers-reduced-motion: reduce`, a touch pointer below 721, and axe-core 4.14.
+"Before" is the base commit's own page files, stashed and served by the same trial in the same browser session; no figure
+is copied from an earlier record. `/api/usage` is held to one empty answer in both halves (the trial's 60-reads-an-hour
+limit tripped during the pass and drew its warning), and the plan-less states are one `/api/me` answer. Heights are
+`document.documentElement.scrollHeight`; positions are `getBoundingClientRect` plus `scrollY`.
+
+- **A browser with no script is not offered a form whose submit is a GET.** The way-in forms have no `action`, so with
+  scripts off the browser submits them to their own address: measured at 360, `/login` went to
+  **`/login?email=someone%40example.com&password=secret-password-1`** and `/signup` to
+  **`/signup?email=…&password=…&agree=on`**, writing the password into the address bar, the history and the server's log,
+  while the page's own `noscript` line said it needs JavaScript. The card is now `hidden` in the markup and drawn by the
+  script, the way Settings has been since 2026-11-04: with no script there is **no card (0 × 0), no field and nothing to
+  press**, and the address stays `/login`, `/signup`, `/forgot`. The login card was 328 × 327 with two fields and the page
+  **1,373**; it is not drawn and the page is **1,026** (sign-up 328 × 456, three fields, **1,552 → 1,076**; forgot
+  328 × 180, one field, **1,279 → 1,079**). Reset and the confirmation page already held their forms hidden.
+- **A cancelled checkout is said where the choice is.** At 360 the notice was **328 × 98 at y = 184.2** and pushed the
+  first plan's `Choose Team` to **851.2–895.2** — 51px below an 800px screen — for a sentence that is about the list under
+  it (page **1,498**). It is the plan section's own sentence now, above the list and in place of the step's other line:
+  the first button is **727.6–771.6**, wholly inside the screen, and the page **1,375**. At 320 the button is **965.6 →
+  818** (page 1,678 → **1,530**), at 768 **759.1 → 659.5** (1,047 → **948**) and at 1440 **697.9 → 622.3** (986 → **910**).
+  A customer who already has a plan keeps the notice, because there is no list under it to push: measured **328 × 98** at
+  360, page 1,912. The resting plan-less page is **753.2 / 1,400** before and after.
+- **A 320 phone keeps the address whole.** The identity broke through the domain: the address's two line boxes were
+  **198px** ("…@exampl") and **40px** ("e.com"), because the caption's line had 189px left for a 238px address. The
+  identity is a wrapping line at 359 and narrower, so the address is one **238px** line of its own; the block is the same
+  **41.6px**, and a short address (118px) still shares the caption's line (**20.8px**, unchanged). At a 32px root the
+  address is two line boxes (**284 + 201**) instead of three (114 + 285 + 86) and the identity is **124.8px** either way.
+- **Copy's name is the word on it.** Pressing `Copy` set the button's word to "Copied" while its name stayed "Copy the
+  address of Research": axe-core reported **`label-content-name-mismatch`** (serious, 1 node) on every press for the 1.8s
+  the word was up, so a person who says what they see was not understood. The name follows the word — "Copied the address
+  of Research" and back — and the account's axe run after the press is **0**.
+- **Widths, schemes and the floor.** 320 / 360 / 390 / 768 / 1024 / 1440 in light and dark: no sideways page scroll
+  (320: 320; 360: 360; 390: 390; 768: 768; 1,024: 1,024; 1,440: 1,440), nothing computes below **12px**, no control under
+  44 × 44 below 721, and no console error. The account is **1,911 / 1,798 / 1,776 / 1,913 / 1,928 / 1,928** in both halves,
+  and every other page is the same height before and after: login **1,381 / 1,255 / 900**, sign-up **1,582 / 1,410 / 917**,
+  forgot **1,185 / 1,161 / 900**, reset **1,021 / 973 / 900**, verify **1,249 / 1,199 / 900**, terms **4,173 / 3,818 /
+  2,608**, privacy **3,154 / 2,855 / 1,889** and the 404 **800 / 800 / 900** at 320 / 360 / 1440. **Nine axe-core runs**
+  (the seven way-in and legal pages at 360, the cancelled plan-less page at 320 and 1440) find **no violation** in either
+  half; the tenth is the account after `Copy` is pressed, above.
+- **The budget.** `app.css` is **40,956 → 40,948 bytes of 40,960** (12 left, a net −8): the identity's 52-byte phone
+  rule was paid for by writing the identical `.ws .btn-primary` declaration block once, in `.hero .btn, .stage .btn`
+  (−60 bytes); the stylesheet is still one rule per line.
+- **Tests.** `dist/tests/cloud/*.test.js` — **887 pass, 0 fail**; `dist/tests/build/*.test.js` — **228 pass, 0 fail**;
+  typecheck and build clean, lint 0 errors. `pages.test.ts` holds the three way-in cards `hidden` in the markup, and the
+  identity's flex rule to `max-width: 359px` only; `pages-app.test.ts` holds that the script draws the card, and
+  `pages-stage.test.ts` holds the cancelled sentence in the plan section and the announcement with it; `pages-dashboard.test.ts`
+  holds Copy's name in both states.
+
+| measured | before | after |
+| --- | --- | --- |
+| A password in the address, scripts off, 360 | `/login?email=…&password=secret-password-1`, a 328 × 327 card, page 1,373 | **no card, no field, `/login`**, page **1,026** |
+| … sign-up / forgot | `…&password=…&agree=on` / `?email=…`; 1,552 / 1,279 | **`/signup` / `/forgot`; 1,076 / 1,079** |
+| A cancelled checkout, 360 | notice 328 × 98, first button 851.2–895.2, page 1,498 | **the plan's sentence; 727.6–771.6; 1,375** |
+| … 320 / 768 / 1440 | 965.6 / 759.1 / 697.9; 1,678 / 1,047 / 986 | **818 / 659.5 / 622.3; 1,530 / 948 / 910** |
+| … a customer who has a plan | notice 328 × 98 | **the same** |
+| The identity at 320 | 41.6px, the address 198 + 40 (broken through the domain) | **41.6px, the address one 238px line** |
+| … at 320 and a 32px root | 124.8px, three line boxes (114 + 285 + 86) | **124.8px, two (284 + 201)** |
+| … a short address at 320 | 20.8px, beside the caption | **20.8px, beside it** |
+| `Copy`, pressed | name "Copy the address of Research" over the word "Copied"; axe 1 serious | **"Copied the address of Research"; axe 0** |
+| The account, 320 … 1440 | 1,911 / 1,798 / 1,776 / 1,913 / 1,928 / 1,928 | **the same** |
+| `app.css` | 40,956 bytes | **40,948** |
+
+### What this pass leaves
+
+- **The plan-less first screen is still short at 320.** The first `Choose Team` is 818–862 with a cancelled checkout and
+  843.6–887.6 without one: the rail's third row (46px) and the step's three lines are the rest of it. The cancelled
+  sentence costs the page 51.2px there instead of the notice's 122 (1,678 → **1,530**).
+- **A cancellation that arrives with the plans down keeps the notice.** There is no list to say it above, and the section's
+  own "No plan is on offer just now" would be a second answer to the same moment. Measured only through the flag's
+  condition; the state itself was not drawn.
+- **A browser with no script now sees no form on the way-in pages.** It never had one that worked — the submit was a GET
+  that reloaded the page with the password in the address — so the `noscript` sentence is now the whole of what those pages
+  say, as it already was on the account.
+- **`Copy` still changes its word back after 1.8s.** The name changes with it, so the two never disagree; a screen reader
+  hears the second name after the first.
+- **The skeleton's plan-less shape, the usage read's rate limit, the key form's height and the prose-only 19px links are
+  unchanged.** They are the earlier entries.

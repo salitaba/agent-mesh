@@ -483,7 +483,7 @@ body[data-page="home"] main { background: var(--k-glow) top / 100% 520px no-repe
 .eyebrow { margin: 0 0 12px; color: var(--k-accent-ink); font-size: .75rem; font-weight: 650; letter-spacing: var(--k-track-caps); text-transform: uppercase; }
 .hero h1 { max-width: 17ch; font-size: clamp(2.25rem, 1.4rem + 3.4vw, 3.75rem); line-height: 1.04; }
 .hero .lede { max-width: 36rem; margin: 16px 0 24px; color: var(--k-ink-2); font-size: clamp(1rem, .95rem + .3vw, 1.1875rem); }
-.hero .btn, .stage .btn { min-height: 48px; padding-inline: 24px; font-size: 1rem; }
+.hero .btn, .stage .btn, .ws .btn-primary { min-height: 48px; padding-inline: 24px; font-size: 1rem; }
 .price-line { margin: 16px 0 0; color: var(--k-ink); font-size: .9375rem; font-weight: 600; }
 .price-line:has([data-from-price]:empty) { display: none; }
 .byline { margin: 8px 0 0; color: var(--k-muted); font-size: .9375rem; }
@@ -640,7 +640,6 @@ body[data-page="home"] main { background: var(--k-glow) top / 100% 520px no-repe
 .ws > div:empty, .ws > .ws-says:empty { display: none; }
 .ws .ws-says, .ws .ws-note { margin: 0; }
 .ws .ws-says { color: var(--k-ink-2); }
-.ws .btn-primary { min-height: 48px; padding-inline: 24px; font-size: 1rem; }
 .ws .btn-row { gap: 8px; }
 .ws .ws-auto .check { align-items: center; min-height: 44px; margin: 0; }
 .ws .ws-address {
@@ -873,7 +872,7 @@ tfoot > tr > * { background: var(--k-surface-2); font-weight: 650; }
   .logo { height: 20px; }
 }
 @media (max-width: 389px) { .subnav a { padding: 0 4px; font-size: max(12px, min(.75rem, 3.8vw)); } }
-@media (max-width: 359px) { .subnav { gap: 0 } .subnav a { padding: 0; justify-content: center } .subnav a + a { border-left: 1px solid var(--k-line-strong) } .row .btn-row { gap: 4px } .row .btn-small { padding-inline: 8px } }
+@media (max-width: 359px) { .subnav { gap: 0 } .subnav a { padding: 0; justify-content: center } .subnav a + a { border-left: 1px solid var(--k-line-strong) } .row .btn-row { gap: 4px } .row .btn-small { padding-inline: 8px } #who { display: flex; flex-wrap: wrap; gap: 0 4px } }
 
 @media (forced-colors: active) {
   input[type="checkbox"] { appearance: auto; }

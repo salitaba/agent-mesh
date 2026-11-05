@@ -532,8 +532,9 @@ test("a plan that is chosen, a payment that was cancelled and a payment that is 
   assert.deepEqual(v.navigations, ["assign https://pay.example/c/abc"]);
 
   const back = await visit("account", { routes: world().routes, search: "?cancelled=1" });
-  assert.equal(back.text("notice"), "Checkout was cancelled. Nothing was charged. Choose a plan below when you are ready.");
-  assert.equal(back.text("plan-lede"), "A plan is one flat price for its own period, and it says how many workspaces you may run at once.", "and the way to try again is where it was: the list, with its step above it");
+  assert.equal(back.text("notice"), "", "a cancelled checkout is said in the plan section, where the choice it is about is: as a notice above the page it pushed the first plan's button below a 360 phone's screen");
+  assert.equal(back.text("plan-lede"), "Checkout was cancelled, so nothing was charged.", "and it is the step's own sentence, above the list whose cards name the prices and limits it used to introduce");
+  assert.equal(back.text("stage-live"), "Choose a plan. Checkout was cancelled, so nothing was charged.", "and what arrived is announced as the section says it");
   const late = await visit("account", { routes: world((x) => { x.subscription = LATE; x.workspaces = [workspace({ status: "suspended", statusReason: "payment is overdue" })]; }).routes, search: "?cancelled=1" });
   assert.equal(late.text("notice"), "Checkout was cancelled. Nothing was charged, and your plan and balance are as they were.", "a payment that was late is still late, and the card says what to do about it");
   assert.equal(late.text("stage-title"), "Your last payment did not go through");
