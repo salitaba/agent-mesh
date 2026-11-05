@@ -13,8 +13,9 @@ import "./views/files.css";
 import { ago, artifactCls, localDateTime, plainArtifact } from "./format";
 import { Button, CopyButton, ErrorState, IconButton, Pill, Segmented, Select, type PillTone } from "./components";
 import { FileTile, FileView, type DiffPayload, type FileViewMode } from "./fileview";
-import { distinctVersions, downloadName, previousVersion, readAs, readerPaths, trailWords, type Art, type ArtRecord, type ArtVersion } from "./files";
+import { distinctVersions, downloadName, previousVersion, readAs, readerPaths, trailWords, versionStateWords, type Art, type ArtRecord, type ArtVersion } from "./files";
 import { useMesh } from "./store";
+import { useMission } from "./useMission";
 
 type Meta =
   | { kind: "loading" }
@@ -36,6 +37,9 @@ export function ArtifactReader({ id, as, stamp }: {
   stamp?: string;
 }): React.JSX.Element {
   const { client, closeDrawer } = useMesh();
+  // A delivered mission cannot still be waiting for a reviewer: the reader reads the same fact the Files list and the
+  // Overview's result read, so a file opened from either page says one thing in all three places.
+  const { facts } = useMission();
   const [meta, setMeta] = useState<Meta>({ kind: "loading" });
   const [metaTry, setMetaTry] = useState(0);
   const [pick, setPick] = useState<number | null>(null);
@@ -194,6 +198,10 @@ export function ArtifactReader({ id, as, stamp }: {
   }
 
   const status = viewed?.status ?? art.status;
+  // The version on screen is the file's state only when it is the last one; an older version is a step in its history.
+  const delivered = facts.goalStatus === "COMPLETED";
+  const closed = delivered && latest !== null && shown === latest;
+  const stateWords = (s: string, latestVersion: boolean): string => versionStateWords(s, { latest: latestVersion, delivered });
   const { product: repoPath, stored: storedAt } = readerPaths(art, viewed?.contentRef ?? art.contentRef);
   const readable = body && body.version === shown ? body : null;
   const kind = readAs(art);
@@ -226,7 +234,7 @@ export function ArtifactReader({ id, as, stamp }: {
               <span title={viewed ? localDateTime(viewed.createdAt) : undefined}>{ago(viewed?.createdAt ?? art.createdAt)}</span>
             </p>
           </div>
-          <Pill tone={artifactCls(status) as PillTone}>{plainArtifact(status)}</Pill>
+          <Pill tone={artifactCls(status) as PillTone}>{stateWords(status, shown === latest)}</Pill>
           {closer}
         </div>
         {repoPath ? (
@@ -243,7 +251,7 @@ export function ArtifactReader({ id, as, stamp }: {
                 <span>Version</span>
                 <Segmented
                   label="Version to read" value={String(shown)} onChange={(id) => setPick(Number(id))}
-                  options={versions.map((v) => ({ id: String(v.version), label: `v${v.version}`, hint: `v${v.version} · ${plainArtifact(v.status)}${v.version === latest ? " (latest)" : ""}` }))}
+                  options={versions.map((v) => ({ id: String(v.version), label: `v${v.version}`, hint: `v${v.version} · ${stateWords(v.status, v.version === latest)}${v.version === latest ? " (latest)" : ""}` }))}
                 />
                 <span className="muted">of {versions.length}</span>
               </div>
@@ -252,7 +260,7 @@ export function ArtifactReader({ id, as, stamp }: {
                 <span>Version</span>
                 <Select value={String(shown)} aria-label="Version to read" onChange={(e) => setPick(Number(e.target.value))}>
                   {[...versions].reverse().map((v) => (
-                    <option key={v.version} value={v.version}>v{v.version} · {plainArtifact(v.status)}{v.version === latest ? " (latest)" : ""}</option>
+                    <option key={v.version} value={v.version}>v{v.version} · {stateWords(v.status, v.version === latest)}{v.version === latest ? " (latest)" : ""}</option>
                   ))}
                 </Select>
                 <span className="muted">of {versions.length}</span>
@@ -264,8 +272,8 @@ export function ArtifactReader({ id, as, stamp }: {
           {older ? <Button variant="linklike" onClick={() => setPick(null)}>Show the latest (v{latest})</Button> : null}
         </div>
         {viewed && viewed.trail.length > 1 ? (
-          <ol className="trail" aria-label={`How version ${viewed.version} got to ${plainArtifact(viewed.status)}`}>
-            {trailWords(viewed.trail).map((w, i, all) => (
+          <ol className="trail" aria-label={`How version ${viewed.version} got to ${stateWords(viewed.status, closed)}`}>
+            {trailWords(viewed.trail, closed).map((w, i, all) => (
               <li key={`${w}-${i}`} aria-current={i === all.length - 1 ? "step" : undefined}>{w}</li>
             ))}
           </ol>
