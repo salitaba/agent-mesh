@@ -631,6 +631,10 @@ main:has(.hero) .section-head .eyebrow::before { counter-increment: sec; content
 .code::before { content: "Terminal"; position: absolute; top: 0; left: 0; right: 0; display: flex; align-items: center; height: 48px; padding: 0 16px; border-bottom: 1px solid var(--line); background: var(--panel2); color: var(--muted); }
 /* A long line shows a shadow at the edge until scrolled to its end: the cover scrolls with the text, the shadow stays. */
 .code pre { margin: 0; padding: 14px 18px 16px; overflow-x: auto; font: 13px/1.6 var(--mono); tab-size: 2; background: linear-gradient(to left, var(--code) 30%, transparent) right / 48px 100% no-repeat local, linear-gradient(to left, var(--edge), transparent) right / 12px 100% no-repeat scroll; }
+/* A command is a scroll region a keyboard can reach, and the code box clips everything outside its 1px border: the ring was
+   drawn 2px outside the pre's own box, so at 360 and 1,440 every side of it fell outside the clip and no pixel of it was on
+   the screen (measured on the licence command, at rest and under a real Tab). It is drawn inside the pre's edge instead. */
+.code pre:focus-visible { outline-offset: -2px; }
 .code pre code { font-size: 1em; }
 /* The demo's commands are a recipe, not a log: a command that does not fit wraps instead of hiding its end, and the copy
    button still copies the text exactly as written. Measured before: 134, 228 and 228px of the three commands lay behind a
@@ -857,6 +861,11 @@ body:has(#billing-monthly:checked) .head-price-monthly { display: inline; }
 .rows, .plain, .doc-list { display: grid; border-top: 1px solid var(--line); }
 .rows > li { display: grid; gap: 4px; padding: 16px 0; border-bottom: 1px solid var(--line); }
 .rows b { font-size: 1rem; }
+/* A row list that stands in the page's own column has no measure of its own: at 1,440 the pricing page's "What you are not
+   paying for" ran 1,120px a line — about 140 characters, against the 68ch the page's own notes take. Its sentences take the
+   measure. The same list inside a split or a column (the security and contact pages) is narrower than 68ch already, so the
+   cap does nothing there. */
+.wrap > .rows > li > span { max-width: 68ch; }
 .group { display: flex; align-items: center; gap: 12px; margin: 40px 0 12px; color: var(--muted); }
 .group::after { content: ""; flex: 1; height: 1px; background: var(--line); }
 .group:first-child { margin-top: 0; }
@@ -936,7 +945,11 @@ body:has(#billing-monthly:checked) .head-price-monthly { display: inline; }
   .plans-hint { display: block; margin: 0 0 12px; }
   .plan-choice { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin: 0 0 16px; }
   .plan-choice label { display: flex; flex-direction: column; justify-content: center; gap: 1px; min-height: 58px; padding: 8px 12px; border: 1px solid var(--line2); border-radius: var(--k-r-md); background: var(--panel); box-shadow: var(--lift); cursor: pointer; }
-  .choice-name { color: var(--muted); font-size: .75rem; font-weight: 600; letter-spacing: var(--k-track-caps); text-transform: uppercase; }
+  /* A plan's name is a control's label, and it keeps its layout size at a reader's own text size, as the six-view chooser's
+     13px name and the billing sub-label's 12px do: at a 32px user default it computed 24px, "COMMUNITY" needed 184px in a
+     134px chip and "ENTERPRISE" 183 in 134, so the pricing page was 380px wide on a 360 screen (40px over at 320) and the
+     name ran under the chip beside it at 24px; the name may break as a last resort, so no font can widen the page. */
+  .choice-name { color: var(--muted); font-size: 12px; font-weight: 600; letter-spacing: var(--k-track-caps); text-transform: uppercase; overflow-wrap: anywhere; }
   .choice-amount { color: var(--ink); font-size: 1.125rem; font-weight: 650; line-height: 1.3; font-variant-numeric: tabular-nums; }
   /* The chosen plan is a dot and a rule as well as a tint: never colour alone, and the dot survives High Contrast. */
   .choice-input:checked + label { border-color: var(--accent); background: var(--soft); box-shadow: inset 0 0 0 1px var(--accent); }

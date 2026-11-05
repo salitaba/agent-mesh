@@ -1081,6 +1081,10 @@ test("the plate's bar is its view switcher, and the capture is 60px higher on th
  * and the card clipped 83px of it at 320, 43 at 360 and 13 at 390. Every one is a child whose automatic minimum is its
  * longest word; each may now shrink and break, wrap, or take a second line, and at 16px none of them moves (all seven
  * pages are the same height, to the pixel, at 320/360/390/768/1440 in both schemes).
+ *
+ * The plan chooser was still outside this: at a 32px root its name computed 24px, "COMMUNITY" needed 184px in a 134px chip
+ * and "ENTERPRISE" 183, so the pricing page was 380px wide on a 360 screen (40px over at 320, 5 at 390) and at 24px the
+ * name ran under the chip beside it. The name keeps the 12px a control's label keeps here, and may break as a last resort.
  */
 test("at a reader's 200% text a phone's page keeps its width and the Enterprise figure is whole", () => {
   const css = fs.readFileSync(path.join(SITE, "assets", "site.css"), "utf8");
@@ -1098,6 +1102,9 @@ test("at a reader's 200% text a phone's page keeps its width and the Enterprise 
   assert.match(css, /\n  \.view-choice label \{[^}]*font-size: 13px;/, "a view's name keeps its layout size");
   assert.match(css, /\n  \.view-n \{[^}]*font-size: 12px;/, "and its number the bar's 12px figure");
   assert.match(css, /\n  \.tiles > \.tile \{ grid-area: 1 \/ 1; visibility: hidden; \}/, "and the six cards share one cell");
+  // The four plans' chooser is the same kind of control: its name keeps its layout size, and may break rather than widen the page.
+  assert.match(css, /\n  \.choice-name \{[^}]*font-size: 12px;[^}]*overflow-wrap: anywhere;/, "a plan's name keeps its layout size and may break");
+  assert.ok(!/\.choice-name \{[^}]*font-size: \.75rem;/.test(css), "so it does not grow with the reader's root");
   // The closing band's grid children may be narrower than their content, as .cols > * already are.
   assert.match(css, /\n\.cta \.wrap > \* \{ min-width: 0; \}/, "the band's h2 may be narrower than its longest word");
   // A control's sub-label keeps its layout size, and the footer's address breaks like the contact page's.
@@ -1108,4 +1115,37 @@ test("at a reader's 200% text a phone's page keeps its width and the Enterprise 
   assert.match(css, /\n\.teaser \.amount \{ max-width: 100%; font-size: 2\.25rem;/, "the teaser's amount may be no wider than its card");
   assert.match(pricing, /<span class="amount">Let&rsquo;s talk<\/span>/, "and the Enterprise figure is still the plan's own words");
   assert.match(home, /<p class="limits">No limit on projects, agents or concurrent turns<\/p>/, "the teaser still states the Enterprise allowance");
+});
+
+/**
+ * A sentence in a row list on the pricing page, measured at 1,440: "What you are not paying for" ran 1,120px a line —
+ * about 140 characters — while the page's own notes under the plans take the 68ch measure (612px at 14px), so one list on
+ * the page read at twice the width of the prose beside it. The list stands in the page's column with no column of its own;
+ * the same list inside a split (the security page) or beside a heading (the contact page) is narrower than 68ch already
+ * and does not move. The cap is on the sentence, so the row's rule and its bold lead keep the column's width.
+ */
+test("a row list that stands in the page's column holds its sentences to the prose measure", () => {
+  const css = fs.readFileSync(path.join(SITE, "assets", "site.css"), "utf8");
+  assert.match(css, /\n\.wrap > \.rows > li > span \{ max-width: 68ch; \}/, "the row's sentence takes the page's 68ch measure");
+  const pricing = page(pages, "pricing/index.html").markup;
+  assert.match(pricing, /<ul class="rows mt-s">\n      <li><b>Model usage\.<\/b><span>/, "the pricing list is the page-column shape the rule names");
+  // The lists that are already narrow are not this shape: the security page's stand in a split, the contact page's in a column.
+  const security = page(pages, "security/index.html").markup;
+  assert.match(security, /<section class="split" id="protects">[\s\S]*?<ul class="rows">/, "the security page's rows are a split's");
+  const contact = page(pages, "contact/index.html").markup;
+  assert.match(contact, /<div class="wrap cols">[\s\S]*?<ul class="rows">/, "the contact page's rows are a column's");
+});
+
+/**
+ * The licence command is a scroll region a keyboard can reach (`pre tabindex="0"`), and its code box clips everything
+ * outside its own 1px border. The ring was drawn 2px outside the pre's box with a 2px offset, so at 360 and at 1,440 every
+ * side of it fell outside the clip: under a real Tab the pre matched `:focus-visible`, its computed outline was 2px solid in
+ * the accent, and no pixel of it was on the screen. It is drawn inside the pre's edge now.
+ */
+test("a command a keyboard can scroll draws its ring inside the box that would clip it", () => {
+  const css = fs.readFileSync(path.join(SITE, "assets", "site.css"), "utf8");
+  const home = page(pages, "index.html").markup;
+  assert.match(css, /\n\.code pre:focus-visible \{ outline-offset: -2px; \}/, "the ring is drawn inside the pre, where the code box cannot cut it");
+  assert.match(css, /\n\.code \{ position: relative;[^}]*overflow: hidden;/, "the box that clips it is still the framed terminal");
+  assert.match(home, /<div class="code"><pre tabindex="0"><code>/, "a command is a tab stop, which is why its ring matters");
 });
