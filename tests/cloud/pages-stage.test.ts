@@ -137,11 +137,10 @@ test("the card says one thing for each stage, in a sentence, with the one action
   assert.deepEqual(card(view({ workspaces: [ws("Alpha", "failed", { statusReason: "the workspace did not become ready: no answer yet" })] })), {
     tone: "bad",
     title: "Alpha could not start",
-    text: "The workspace did not become ready: no answer yet. Delete it and make a new one. If it fails again, tell the operator.",
+    text: "The workspace did not become ready: no answer yet. Delete it and make a new one. If it fails again, contact the operator.",
     action: null,
-    contact: true,
   });
-  assert.equal(card(view({ workspaces: [ws("Alpha", "failed")] })).text, "The workspace could not be started. Delete it and make a new one. If it fails again, tell the operator.");
+  assert.equal(card(view({ workspaces: [ws("Alpha", "failed")] })).text, "The workspace could not be started. Delete it and make a new one. If it fails again, contact the operator.");
 });
 
 test("a late payment says when the workspaces stop, or that they are stopped, and the one thing to do is to update the payment details", () => {
@@ -251,9 +250,10 @@ test("each stage is said on the page: its title and sentence, the steps while a 
   assert.equal(s.v.button("workspaces", "Resume").className, "btn btn-primary");
 
   s = await stage(world((x) => { paid(x); x.workspaces = [workspace({ status: "failed", statusReason: "the container did not start" })]; }));
-  assert.deepEqual([s.title, s.tone, s.actions], ["Research could not start", "stage stage-bad", []]);
-  assert.equal(s.v.text("stage-text"), "The container did not start. Delete it and make a new one. If it fails again, tell the operator. Contact the operator.");
-  assert.equal(s.v.link("stage-text", "Contact the operator").getAttribute("href"), "mailto:ali79taba@gmail.com", "and says whom: the operator's own address, which they gave");
+  assert.deepEqual([s.title, s.tone, s.actions], ["", "stage stage-bad", []], "a workspace that could not start is a record too: the card said the same sentence a card-length above it");
+  assert.equal(s.v.shows(s.v.$("stage")), false);
+  assert.match(s.v.text("workspaces"), /^Research Could not start The container did not start\. Delete it and make a new one\. If it fails again, contact the operator\. Contact the operator Delete this workspace /, "the record carries the sentence and the two things there are to do");
+  assert.equal(s.v.link("workspaces", "Contact the operator").getAttribute("href"), "mailto:ali79taba@gmail.com", "and says whom: the operator's own address, which they gave");
   const none = await visit("account", { routes: world((x) => { paid(x); x.workspaces = [workspace({ status: "failed" })]; }).routes, script: (src) => src.replace(/const CONTACT = "[^"]*";/, 'const CONTACT = "";') });
   assert.equal(none.doc.querySelectorAll("a").filter((a) => a.textContent === "Contact the operator").length, 0, "with no address given none is made up");
 

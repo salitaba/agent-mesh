@@ -36,8 +36,8 @@ test("a workspace says in a sentence why it is as it is and what can be done, an
   assert.equal(says(ws("suspended", { statusReason: "the subscription ended" }), ENDED), "Stopped because the subscription ended. Choose a plan again and it starts again.");
   assert.equal(says(ws("suspended", { statusReason: "the subscription ended" }), null), "Stopped because the subscription ended. Choose a plan again and it starts again.");
 
-  assert.equal(says(ws("failed", { statusReason: "the container did not start" })), "The container did not start. Delete it and make a new one. If it fails again, tell the operator.");
-  assert.equal(says(ws("failed")), "The workspace could not be started. Delete it and make a new one. If it fails again, tell the operator.");
+  assert.equal(says(ws("failed", { statusReason: "the container did not start" })), "The container did not start. Delete it and make a new one. If it fails again, contact the operator.");
+  assert.equal(says(ws("failed")), "The workspace could not be started. Delete it and make a new one. If it fails again, contact the operator.");
 });
 
 test("a person can start a stopped workspace only while the plan is paid up, which is when the service starts one", () => {

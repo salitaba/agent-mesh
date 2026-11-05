@@ -1020,6 +1020,7 @@ test("an account on a plan shows it once, with what it costs and includes and wh
   v.click(toggle);
   assert.equal(v.$("plan-change-toggle").getAttribute("aria-expanded"), "true");
   assert.deepEqual(v.labels("plan"), ["Manage billing", "Change plan", "Switch to Business"]);
+  assert.equal(v.text(v.$("plan-change").querySelector("p")!), "Switching takes you to the payment page, and the new plan starts when it is paid.", "the list says what its Switch button does, as the workspace's own list does");
   const others = v.$("plan-change").querySelectorAll("article");
   assert.deepEqual(others.map((a) => v.text(a)), ["Business $599.00 per month For a team that runs several projects. $100.00 of model usage each month 3 workspaces Switch to Business"], "the plan the account is on is not in the list of plans to change to: it is shown above, once");
   assert.equal(v.doc.activeElement, v.$("plan-change-toggle"), "the cursor stays on the button that was pressed");
@@ -1228,7 +1229,7 @@ test("each workspace shows its state in words, with only what can be done to it 
   assert.equal(v.text(rows[0]!), "Alpha Running Open it to describe your team and start a mission. Open Pause More Plan Team Change plan Address alpha.ws.example.com", "a workspace that is ready says what the card used to say, and offers what can be done");
   assert.equal(v.text(rows[1]!), "Beta Stopped Stopped because the last payment did not go through. Resume it to open it. Resume More Plan Team Change plan Address beta.ws.example.com", "the plan is paid up, so it can be started");
   assert.equal(v.text(rows[2]!), "Gamma Starting It starts in the background, and this page updates when it is ready. Open it when it is ready Plan Team Address gamma.ws.example.com", "a workspace that is starting cannot be moved to another plan yet: there is no host to make again");
-  assert.equal(v.text(rows[3]!), "Delta Could not start The container did not start. Delete it and make a new one. If it fails again, tell the operator. Delete this workspace Plan Team Address delta.ws.example.com");
+  assert.equal(v.text(rows[3]!), "Delta Could not start The container did not start. Delete it and make a new one. If it fails again, contact the operator. Contact the operator Delete this workspace Plan Team Address delta.ws.example.com");
   const boxes = (row: FakeNode) => row.querySelectorAll("input").filter((i) => i.getAttribute("type") === "checkbox");
   assert.deepEqual(rows.map((r) => boxes(r).length), [0, 0, 1, 0], "only a workspace that is starting offers to be opened when it is ready");
   assert.equal(boxes(rows[2]!)[0]!.checked, false, "and it is off until the person asks");
@@ -1682,6 +1683,7 @@ test("coming back from a payment that has not been applied yet: the page says it
   const v = new Visit("account", { routes: w.routes, search: "?paid=1", storage: { [BEFORE]: NOTHING_YET } });
   const started = v.start();
   await v.until("the notice that the payment is being confirmed", () => v.text("notice") === THANKS_KNOWN);
+  assert.deepEqual(v.labels("plan"), [], "the list offers no Choose button while the payment it is waiting for may already have bought one");
   // The provider's message arrives while the page is waiting.
   w.subscription = ACTIVE;
   w.balance = balance({ included: 20_000_000 });
@@ -1696,6 +1698,7 @@ test("a payment that does not show up in a minute is said to be on its way, and 
   const v = await visit("account", { routes: w.routes, search: "?paid=1", storage: { [BEFORE]: NOTHING_YET } });
   await v.until("the page to give up waiting", () => /has not shown up yet/.test(v.text("notice")), 5_000);
   assert.equal(v.text("notice"), "Your payment has not shown up yet. It can take a few minutes, and nothing more is needed from you. Reload this page later to see it.");
+  assert.deepEqual(v.labels("plan"), ["Choose Team", "Choose Business"], "the page has stopped waiting, so the list is a list again: a person whose payment never arrived can choose one");
   assert.equal(v.$("notice").className, "note note-warn");
   assert.equal(v.to("GET", "/api/me").length, 21, "one look on arrival and twenty more while it waited");
 });
@@ -1799,6 +1802,7 @@ test("usage shows only the last fourteen days, newest first, and a Failed column
   assert.match(v.text(rows[0]!), /^Sep 20, 2026 /);
   assert.match(v.text(rows[13]!), /^Sep 7, 2026 /);
   assert.equal(v.text(first.querySelector("thead tr")!), "Day Charged Calls Failed Input tokens Output tokens");
+  assert.match(v.text("usage-lede"), /and its tokens\./, "the section's own line names the unit a phone's cells leave to their first word");
   assert.equal(v.text(first.querySelector("tfoot tr")!), "Total $0.002 20 1 200 100");
 });
 
