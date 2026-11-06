@@ -274,6 +274,9 @@ main:has(.hero) .section-head .eyebrow::before { counter-increment: sec; content
 .hero h1 { max-width: 22ch; }
 .hero .lede { margin-top: 24px; }
 .hero-cta { margin-top: 28px; }
+/* The note under the actions is prose, so it keeps the page's measure: at 900–1,039 it was 836–975px
+   (110–128 characters a line) while the lede above it was 40rem. */
+.hero-cta .small { max-width: 68ch; }
 /* The price with the promise: the figures a visitor came to check stand under the actions and before the picture, in a
    ruled line, so the first screen answers "what is it" and "what does it cost". Written from the plan table
    (scripts/export-pricing.mjs), never typed here. */
@@ -454,14 +457,28 @@ main:has(.hero) .section-head .eyebrow::before { counter-increment: sec; content
 .viz .s { fill: var(--panel); }
 @media (max-width: 639px) { .bento .viz, .steps .viz { display: none; } }
 @media (min-width: 640px) { .bento { grid-template-columns: var(--c2); } .bento > :first-child, .bento > :last-child { grid-column: 1 / -1; } }
-@media (min-width: 1040px) {
-  .bento { grid-template-columns: var(--c3); }
-  .bento > :last-child { grid-column: auto; }
+/* A reason that spans the row puts its drawing beside its words, not under them: from 900, where the
+   first card spans two columns, its paragraph was 836–975px wide (110–127 characters a line at 1,024)
+   with the drawing centred below. The wide first reason takes the design's 24px title from here. */
+@media (min-width: 900px) {
   .bento > :first-child { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 6fr); grid-template-rows: auto auto 1fr; column-gap: 56px; }
   .bento > :first-child > :not(.viz) { grid-column: 1; }
   .bento > :first-child h3 { font-size: 1.5rem; }
   .bento > :first-child p { font-size: 1.0625rem; }
   .bento > :first-child .viz { grid-column: 2; grid-row: 1 / span 3; align-self: center; padding: 0; }
+}
+/* The last reason spans the same row until the bento is three columns; it is the same shape there. */
+@media (min-width: 900px) and (max-width: 1039.98px) {
+  .bento > :last-child { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 6fr); grid-template-rows: auto auto 1fr; column-gap: 56px; }
+  .bento > :last-child > :not(.viz) { grid-column: 1; }
+  .bento > :last-child .viz { grid-column: 2; grid-row: 1 / span 3; align-self: center; padding: 0; }
+}
+/* A spanning card's paragraph keeps the page's prose measure: it was 707–796px (88–97 characters) at
+   768–899 and 955px (127) at 900–1,039, against 68ch everywhere else. */
+.bento > .card > p { max-width: 68ch; }
+@media (min-width: 1040px) {
+  .bento { grid-template-columns: var(--c3); }
+  .bento > :last-child { grid-column: auto; }
 }
 
 /* two ways in: the one we run has a tinted head and the leading action; actions stay at the foot.
@@ -702,6 +719,13 @@ main:has(.hero) .section-head .eyebrow::before { counter-increment: sec; content
 .notice { --i: var(--k-warn); position: relative; margin: 0; padding: 14px 16px 14px 48px; border: 1px solid color-mix(in srgb, var(--i) 30%, transparent); border-radius: var(--k-r-md); background: color-mix(in srgb, var(--i) 8%, var(--panel)); font-size: .9375rem; }
 .notice.neutral { --i: var(--link); }
 .notice::before { content: ""; position: absolute; left: 16px; top: 15px; width: 20px; height: 20px; border: 1.5px solid var(--i); border-radius: 50%; background: radial-gradient(circle at 50% 28%, var(--i) 1.4px, transparent 1.7px), linear-gradient(var(--i), var(--i)) 50% 72% / 1.5px 7px no-repeat; }
+/* On a phone the notice's words run the panel's width, as the security page's answers do: the icon's
+   48px column left the text 214–264px of a 278–328px panel, so the caveat under the At a glance box was
+   13 lines at 360 and the pricing page's licence caveat 17 at 320. The icon sits on the first line. */
+@media (max-width: 639px) {
+  .notice { padding-left: 16px; }
+  .notice::before { position: static; display: inline-block; margin: 0 8px -4px 0; }
+}
 .tag { display: inline-flex; align-items: center; height: 22px; padding: 0 8px; border: 1px solid var(--line); border-radius: var(--k-r-pill); background: var(--panel2); color: var(--muted); font-size: .75rem; font-weight: 600; white-space: nowrap; }
 
 /* questions */

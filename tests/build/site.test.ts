@@ -1260,3 +1260,44 @@ test("a field's focus ring is an outline, so a forced-colour mode keeps it", () 
   assert.match(css, /\.field input\[type=number\]:focus, \.field select:focus, \.doc-filter input:focus \{ outline: none; border-color: var\(--accent\); box-shadow: var\(--k-ring\); \}/, "a pointer keeps the border and the shadow");
   assert.match(css, /\.field input\[type=number\]:focus-visible, \.field select:focus-visible, \.doc-filter input:focus-visible \{ outline: 2px solid var\(--accent\); outline-offset: 2px; \}/, "the keyboard's focus is an outline, which a forced-colour mode paints");
 });
+
+/**
+ * A reason that spans the bento's row is wide: at 768 it is 706px and at 1,024 it is 960px, and its paragraph ran
+ * the whole card — 661px (88 characters) at 768, 826–955px (110–127) at 900–1,039 — while the same paragraph is
+ * 418–484px at 1,040 and up. The drawing stood centred under it. At 1,024 the paragraph was 127 characters a line,
+ * nearly twice the page's 68ch, and the card was 388px tall where the same card at 1,040 is 246. The two spanning
+ * cards (the first and last reasons) put their drawing beside their words from 900, where the first card begins to
+ * span, and the wide first reason takes the design's 24px title there; their paragraphs and the hero's note under
+ * the actions (836–975px at 900–1,039) take the page's 68ch. `#why` is 1,752 → 1,430 at 1,024 and the page 11,760
+ * → 11,439; at 1,040 and up, and below 900, nothing moves.
+ */
+test("a reason that spans the row puts its drawing beside its words, and its prose keeps the page's measure", () => {
+  const css = fs.readFileSync(path.join(SITE, "assets", "site.css"), "utf8");
+  assert.match(css, /\n@media \(min-width: 900px\) \{\n  \.bento > :first-child \{ display: grid; grid-template-columns: minmax\(0, 5fr\) minmax\(0, 6fr\); grid-template-rows: auto auto 1fr; column-gap: 56px; \}/, "the wide first reason is a spread from 900, where it begins to span");
+  assert.match(css, /\n  \.bento > :first-child h3 \{ font-size: 1\.5rem; \}/, "and takes the design's 24px title there");
+  assert.match(css, /\n@media \(min-width: 900px\) and \(max-width: 1039\.98px\) \{\n  \.bento > :last-child \{ display: grid; grid-template-columns: minmax\(0, 5fr\) minmax\(0, 6fr\);/, "the last reason spans the same row until the bento is three columns, and is the same shape");
+  assert.match(css, /\n  \.bento > :last-child \.viz \{ grid-column: 2; grid-row: 1 \/ span 3; align-self: center; padding: 0; \}/, "with its drawing beside its words");
+  assert.match(css, /\n\.bento > \.card > p \{ max-width: 68ch; \}/, "a spanning card's paragraph takes the page's prose measure");
+  assert.match(css, /\n\.hero-cta \.small \{ max-width: 68ch; \}/, "and so does the note under the hero's actions");
+  assert.ok(css.includes("@media (min-width: 1040px) {\n  .bento { grid-template-columns: var(--c3); }\n  .bento > :last-child { grid-column: auto; }\n}"), "at 1,040 the bento is three columns and the last reason a column of its own; the wide reason's grid is not tied to it");
+});
+
+/**
+ * A notice's icon was an absolutely positioned 20px circle in a 48px column of the panel, so on a phone the words
+ * began 48px in: at 360 the security page's Cloud caveat was 212px of a 278px panel (16 lines), the pricing page's
+ * licence caveat 261 of 328 (24 lines at 320) and its roadmap caveat 257 of 328. The icon sits on the first line
+ * below 640, and the words run the panel's width: the caveat is 342 → 294 at 360 (16 → 12 lines), the licence
+ * caveat 438 → 390 at 320 and 390 → 342 at 360, and the two pages are 48 and 72px shorter there. A desk keeps the
+ * 48px column: a panel 836–1,120px wide has the room for an icon beside its words.
+ */
+test("a notice's words run the panel's width on a phone", () => {
+  const css = fs.readFileSync(path.join(SITE, "assets", "site.css"), "utf8");
+  assert.match(css, /\n\.notice \{[^}]*padding: 14px 16px 14px 48px;/, "a desk keeps the icon's 48px column");
+  assert.match(css, /\n@media \(max-width: 639px\) \{\n  \.notice \{ padding-left: 16px; \}\n  \.notice::before \{ position: static; display: inline-block; margin: 0 8px -4px 0; \}\n\}/, "a phone puts the icon on the first line and gives the words the panel");
+  const home = page(pages, "index.html").markup;
+  const pricing = page(pages, "pricing/index.html").markup;
+  const security = page(pages, "security/index.html").markup;
+  assert.ok(home.includes('class="notice neutral mt-m" data-cloud-only'), "the home page's Cloud caveat is one of them");
+  assert.ok(pricing.includes('class="notice mt-m"><b>Planned, not included:</b>'), "so is the pricing page's roadmap caveat");
+  assert.ok(security.includes('class="notice neutral mt-m" data-cloud-only'), "and the security page's");
+});
