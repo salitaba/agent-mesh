@@ -172,7 +172,7 @@ td, th, dd, .price, .num, .badge, .auth-points li::before { font-variant-numeric
   background: var(--k-surface);
 }
 .card, .row, .plan { box-shadow: var(--k-hl), var(--k-shadow-1); }
-.stage, .row, .confirm { overflow-wrap: anywhere; }
+.card, .stage, .row, .confirm, .table-wrap { overflow-wrap: anywhere; }
 
 /* header */
 .site-header {
@@ -622,9 +622,9 @@ body[data-page="home"] main { background: var(--k-glow) top / 100% 520px no-repe
 }
 .panel { margin-top: 40px; scroll-margin-top: 124px; }
 .panel > h2 { scroll-margin-top: 124px; }
-.panel > h2, .section > h2, .panel summary h2 { display: flex; align-items: center; gap: 16px; margin-bottom: 16px; font-size: 1.125rem; }
+.panel > h2, .panel summary h2 { display: flex; align-items: center; gap: 16px; margin-bottom: 16px; font-size: 1.125rem; }
 .panel > h2::before, .panel summary h2::before { content: attr(data-entry) / ""; margin-right: -4px; color: var(--k-accent-ink); font: 650 .75rem var(--k-mono); letter-spacing: var(--k-track-caps); }
-.panel > h2::after, .section > h2::after { content: ""; flex: 1; height: 1px; background: var(--k-line); }
+.panel > h2::after { content: ""; flex: 1; height: 1px; background: var(--k-line); }
 .panel > p { max-width: 42rem; margin-bottom: 16px; }
 #plan-steps { margin-bottom: 12px; }
 .panel h3 { margin: 22px 0 12px; }

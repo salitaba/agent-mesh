@@ -3822,3 +3822,86 @@ confirming return to no Change plan and no credit row until the payment arrives 
   what the switch is.
 - **The usage read's rate limit, the checkout stand-in and the prose-only 19 px links are unchanged.** They are
   the earlier entries.
+
+## 2026-11-06 — the address that wraps, the name that fits its cell, and the key that is said once
+
+Same harness: Chromium 1248 through `playwright-core` against this worktree's trial on `localhost:7622`
+(fresh data folder `trial-account`), 320 / 360 / 390 / 768 / 1,024 / 1,440 in light, 360 and 1,440 in dark,
+forced colours at 360, `prefers-reduced-motion: reduce`, a touch pointer below 721, and axe-core 4.14. "Before"
+is the base commit's own pages served by the same trial in the same browser session; the sign-up answer and the
+two account fixtures were held by request interception, so no mail was sent and no account changed. Three states:
+the confirmation card after a sign-up whose address is 72 characters (a 50-character local part, a 20-character
+label and `.example.com`), a paid account with one workspace renamed to 60 `x` characters and a one-day usage
+answer naming it, and a hosting fixture with one running workspace whose model key is `null`. Heights are
+`document.documentElement.scrollHeight`; positions are `getBoundingClientRect` plus `scrollY`.
+
+- **The address a person just typed is a word the card breaks.** The confirmation card draws the address in a
+  `<strong>` with no break opportunity, and an address has no spaces: at 320 the line was **911px** wide in a
+  **288px** card and the document was **953** wide (633 over); at 360 it was the same 911 in **328** (page 953,
+  593 over). At 1,440 the page did not scroll, but the line ran from **x = 321 to 1,232**, through the rail at
+  **x = 832–1,152**, over the steps a reader is about to follow. The card is now covered by the rule that already
+  breaks a workspace's long name (`.card` joins `.stage, .row, .confirm, .table-wrap`): the address is **242 × 95.8**
+  at 320, **286 × 95.8** at 360 and **379 × 70.2** at 1,440, and its right edge is **700**, inside the 448px card
+  that ends at 736. The three pages are **320 / 360 / 1,440** wide, with no sideways scroll; the card grows
+  **77 / 51 / 26px** because the address now takes five lines at 320 and three at 1,440.
+- **A workspace's name is wrapped by its own cell in a phone's bill.** The by-workspace table puts the name in a
+  first cell fixed at 7rem, but the cell had no `overflow-wrap`, so a name with nowhere to break grew the cell and
+  the document: the cell was **480px** at 320 and 360 (right edge **496**), the page **496** wide — **176px** over
+  at 320 and **136** at 360. The wrap rule now reaches the table through `.table-wrap` (it is inherited by the
+  cells; the wide table keeps its `white-space: nowrap` and its own scrolling box). The cell is **112px**, the page
+  is **320 / 360** and the row is **154.1px** tall at 360: the page pays **62px** at 320 and **83** at 360 to keep
+  the whole name instead of cutting it. At 1,440 the cell was 554.4px in a 1,078px table and the page did not
+  change (2,465).
+- **The missing-key record says its one fact once.** A running workspace with no key drew the record's sentence
+  ("Add your model key. Its team has no model yet…") and then the key block's own **"Until you give it a key, a
+  team in this workspace has no model to run on."** — the same fact twice, 44.8px apart at 360. The key block's
+  line is dropped when the workspace is running (its record or its card already says it); a suspended workspace
+  keeps the line because its own sentence is about its files, and a starting one keeps its "once the workspace has
+  started" sentence. The record is **1,075.2 → 1,020.5** at 360 and **876.3 → 843.9** at 1,440; the page
+  **2,804 → 2,750** and **2,732 → 2,699**.
+- **Widths, schemes and the floor.** 320 / 360 / 390 / 768 / 1,024 / 1,440 in light: no sideways page scroll
+  (320: 320; 360: 360; 390: 390; 768: 768; 1,024: 1,024; 1,440: 1,440), nothing computes below **12px**, and no
+  control is under 44 × 44 below 721 (the 21 pointer-sized controls at 768 are the earlier records'). The account
+  with three workspaces is **2,506 / 2,343 / 2,320 / 2,434 / 2,337 / 2,396**; the plan-less account is
+  **1,556 / 1,421 / 936** at 320 / 360 / 1,440; dark is **2,483** at 360 and **2,396** at 1,440. The way-in and legal
+  pages are unchanged at 360 (sign-in **1,258**, sign-up **1,414**, forgot **1,164**, reset **976**, verify
+  **1,203**, terms **3,821**, privacy **2,858**, the 404 **844**). Forced colours at 360 draws the wrapped address
+  and the keyboard's 2px outline (Tab through the header, fields and buttons); axe-core finds **no violation** on
+  the plain account, the plan-less account, the long-address confirmation, the long-name bill and the missing-key
+  record. The 429 a repeated `/api/usage` read logs is the trial's rate limit, not a page error.
+- **The budget.** `app.css` is **40,948 → 40,931 bytes of 40,960** (29 left): the wrap rule gains `.card` and
+  `.table-wrap` (+20) and loses the two `.section > h2` selector parts (−37), which no page used — every home
+  section's h2 is inside its `.section-head`. The JavaScript change is a condition and a text node, not a
+  stylesheet byte.
+- **Tests.** `npm run build`; `node --test "dist/tests/cloud/pages-*.test.js"` — **159 pass, 0 fail**;
+  `node --test "dist/tests/build/*.test.js"` — **235 pass, 0 fail**; `npm run typecheck` clean; `npx eslint` on
+  the touched files 0 errors. The mutation check: with the base stylesheet the pages test fails on `.card`, and
+  with the base script the missing-key test fails on "the key block does not say it a second time".
+
+| measured at 360, light | before | after |
+| --- | --- | --- |
+| The sign-up address, 320 | **911px** line, page **953** wide (633 over) | **242 × 95.8**, page **320** |
+| … 360 | 911px line, page **953** (593 over) | **286 × 95.8**, page **360** |
+| … 1,440 | 911px, x = 321 → 1,232, across the rail (832–1,152) | **379 × 70.2**, right **700** in a 448px card |
+| … the page, 320 / 360 / 1,440 | 1,551 / 1,434 / 960 | **1,628 / 1,485 / 986** |
+| A 60-character workspace name, 320 | first cell **480px**, page **496** (176 over) | **112px**, page **320** |
+| … 360 | 480px, page **496** (136 over) | **112px**, page **360**, row **154.1** |
+| … 1,440 | 554.4px in a 1,078px table, page 2,465 | **the same** |
+| The usage page, 320 / 360 | 2,570 / 2,460 | **2,632 / 2,543** |
+| The missing-key record, 360 | **1,075.2**, page **2,804**, "no model" twice | **1,020.5**, page **2,750**, once |
+| … 1,440 | 876.3 / 2,732 / twice | **843.9 / 2,699 / once** |
+| `app.css` | 40,948 bytes | **40,931** |
+
+### What this pass leaves
+
+- **The long address costs the confirmation card 77px at 320.** Five lines at 19.2px are the honest height of a
+  72-character address in a 288px card; a shorter address does not wrap and keeps the old height. The card is still
+  shorter than the old horizontal page was wide.
+- **A 60-character workspace name makes its bill row 154.1px at 360.** The name is the row's key, so it is kept
+  whole rather than truncated; the alternative was a 136px sideways scroll.
+- **The table at 1,440 still holds a long name on one 554px line.** Its cells are `nowrap` and the table's own
+  box scrolls, so the page does not; this pass did not change the wide table.
+- **The key form's height is unchanged.** `Save key` is still below the first screen at 360 (the 2026-11-01
+  entry's 255px); this pass removed a repeated sentence, not the form.
+- **The 320 plan-less first screen and the cancelled-checkout notice are unchanged.** They are the 2026-11-05
+  entries, and this pass did not touch them.

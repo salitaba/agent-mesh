@@ -2134,7 +2134,9 @@ test("a workspace with no key says so and asks for a provider, a model and a key
   const w = hosting();
   const v = await visit("account", { routes: w.routes });
   const key = v.$("workspaces").querySelector(".ws-key")!;
-  assert.match(v.text(key), /^Model key No key yet Until you give it a key, a team in this workspace has no model to run on\. Your key stays with your workspace\./);
+  assert.match(v.text(v.$("workspaces")), /Add your model key\. Its team has no model yet\./, "the record says why it asks");
+  assert.doesNotMatch(v.text(key), /has no model|no model to run on/, "and the key block does not say it a second time");
+  assert.match(v.text(key), /^Model key No key yet Your key stays with your workspace\./);
   assert.equal(v.shows(v.$("key-form-ws_1")), true, "with no key the form is open");
   assert.equal(v.shows(v.$("key-base-ws_1")), false, "Anthropic is called at its own address");
   assert.equal(v.$("key-secret-ws_1").getAttribute("type"), "password", "the key is typed into a field that shows nothing");
