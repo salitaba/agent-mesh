@@ -651,7 +651,11 @@ main:has(.hero) .section-head .eyebrow::before { counter-increment: sec; content
 .try .copy { width: 64px; justify-content: center; text-align: center; line-height: 1.15; white-space: normal; }
 .copy:hover { background-color: var(--panel2); color: var(--ink); }
 .copy:active { background-color: var(--k-sunken); box-shadow: none; }
-.copy.is-done { border-color: color-mix(in srgb, var(--k-ok) 40%, transparent); color: var(--k-ok); }
+/* A copy that worked says so in the colour of what went well, and keeps the control's edge while it says it: the 40% green
+   border it had measured 1.78–1.87:1 on the button's light ground and 2.45–2.50:1 on the dark one, under the 3:1 a
+   boundary needs, so the button lost its edge for the 2.2 seconds it said "Copied". The status colour itself is 6.00:1 on
+   the light ground and 8.71:1 on the dark one. */
+.copy.is-done { border-color: var(--k-ok); color: var(--k-ok); }
 @media (max-width: 719px), (pointer: coarse) { .copy { min-height: 44px; } }
 .try > li { position: relative; counter-increment: try; padding: 0 0 36px 56px; }
 .try { counter-reset: try; }

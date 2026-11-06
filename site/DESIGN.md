@@ -3392,3 +3392,82 @@ browser in one run, so the differences stand.
   chip) and the page is still 13,528 at 360; the row of seven chips cannot fit the 1,120px column at 14px, and the edge
   shadow is its cue. The console captures were not retaken, Curule Cloud's prices are still in the app, and `site/ux/` was
   not edited. This pass's frames are handed over with the report.
+
+## 2026-11-06: a count that agrees with the map, a button's edge while it says Copied, and the twin a dark visitor opens
+
+Measured with the same probe (Chrome 156 over CDP, reduced motion, light unless said, touch at 320/360/390, a mouse at
+768/1440). The before column is this worktree before any edit, served on port 4380 and measured in the same run; no number is
+copied from an earlier pass. The absolute heights are this container's system font; both halves are one browser in one run.
+
+### What changed
+
+- **The documentation page's visible count is the map's answer at once.** With a no-match filter the map is empty at once and
+  the empty panel says `No document matches “kubernetes operator”`, but the count above it said **"All 16 documents"** until
+  the 400 ms pause, then **"0 of 16 documents"**. Clearing the field was the same contradiction the other way: the sixteen
+  documents came back while the count still said **"0 of 16 documents"**. The count a reader sees is now written with the
+  rows, at once; only the polite live region (`#doc-filter-announce`) waits for the pause, which is what the pause was for —
+  a screen reader is still told one answer, not one per keystroke. At 360 typing the same query now gives **"0 of 16
+  documents"** while the announce still holds `All 16 documents` until the pause, then the 102-character sentence with the
+  query and the Clear. The empty panel is **318 × 228.4** at 360 and **1,120 × 147.6** at 1440; the page is the height it was
+  (8,173 at 360, 4,445 at 1440), and the no-match page is 4,101 at 360 and 2,727 at 1440.
+- **A copy that says Copied keeps a control's edge.** The success state painted its border with
+  `color-mix(in srgb, var(--k-ok) 40%, transparent)`; on the button's hover ground that composites to **#98beae on #f7f5f1,
+  1.87:1** in light and **#2f6952 on #22211e, 2.50:1** in dark (1.78 and 2.45 on the panel at rest), under the **3:1** a
+  control's boundary needs, for the 2.2 seconds the button says Copied. The edge is `var(--k-ok)` now: **#0a6b49 on
+  #f7f5f1, 6.00:1** light and **#43d6a0 on #22211e, 8.71:1** dark (6.54 and 9.41 on the panel), so the state still says what
+  went well in colour as it does in words and the button keeps its boundary. The button is **76 × 44** at 360 and **76 × 36**
+  at 1440, the address row **169.4** and **93.8**, in both states: nothing moves.
+- **A capture's Full size link opens the twin the picture is showing.** The plate swaps the Overview, Events and Designer
+  pictures with `<source media="(prefers-color-scheme: dark)">`, but all three Full size links named the light files. In dark
+  at 360 and 1440 the picture was `shot-overview-dark.jpg` while the link opened `shot-overview-light.jpg`: a **1440 × 900**
+  light capture whose top-left pixel is **rgb(241, 238, 231)** against the dark page's **rgb(19, 18, 17)**. The three links
+  carry `data-shot-dark` now and `shotHref()` in `site.js` gives the link the dark twin when the visitor's scheme is dark (and
+  follows a change of scheme); the opened dark file's top-left is **rgb(14, 13, 11)**. The light file stays in the markup, so
+  a browser with no script still opens it; the six view cards and the graph have no dark twin and keep their one file. The
+  halves are the same 1,440 × 900, so no page moves.
+
+### Measurements after this pass
+
+| The documentation filter, after typing `kubernetes operator` | Before | After |
+|---|---|---|
+| The visible count at 0 ms (map 0 of 16, empty panel shown) | **All 16 documents** | **0 of 16 documents** |
+| The count when the 400 ms pause has passed | 0 of 16 documents | 0 of 16 documents |
+| The live region at 0 ms | All 16 documents | All 16 documents (it still waits) |
+| The live region after the pause | No document matches “…”. 0 of 16… | the same sentence |
+| After Clear, the count at 0 ms (map 16 of 16) | **0 of 16 documents** | **All 16 documents** |
+
+| The Copy button | Light, at rest | Light, Copied before → after | Dark, at rest | Dark, Copied before → after |
+|---|---|---|---|---|
+| Border | #837d72 | **#98beae 1.87:1 → #0a6b49 6.00:1** | #7a746a | **#2f6952 2.50:1 → #43d6a0 8.71:1** |
+| Against the ground it is on | #fff, 4.08:1 | #f7f5f1 | #1b1a18, 3.75:1 | #22211e |
+| The button at 360 / 1440 | 76 × 44 / 76 × 36 | 76 × 44 / 76 × 36, no move | 76 × 44 / 76 × 36 | unchanged |
+
+| The plate's Full size link, dark scheme at 360 / 1440 | Before | After |
+|---|---|---|
+| The picture the pane shows | shot-overview-dark.jpg | shot-overview-dark.jpg |
+| The file the link names | **shot-overview-light.jpg** | **shot-overview-dark.jpg** |
+| The opened image's top-left pixel | **rgb(241, 238, 231)** (light paper) | **rgb(14, 13, 11)** (the dark page) |
+| The three views | Overview, Events, Designer all light | all the twin they show; light scheme unchanged |
+
+- Page heights are unchanged at every width: home **13,130 / 12,280 / 11,971 / 12,037 / 11,119**; pricing **14,325 / 13,218 /
+  12,583 / 10,026 / 9,102**; documentation **8,960 / 8,173 / 7,930 / 5,132 / 4,445**; security **12,258 / 11,076 / 10,519 /
+  7,738 / 7,444**; contact **4,639 / 4,282 / 4,141 / 3,413 / 2,833**; legal **5,464 / 4,887 / 4,641 / 3,420 / 3,262**; 404
+  **2,266 / 2,065 / 2,021 / 1,437 / 1,516** at 320 / 360 / 390 / 768 / 1,440.
+- No page scrolls sideways at 320, 360, 390, 768, 1,024 or 1,440 in light or dark (**0** on all 84 page/width/theme pairs),
+  and the dark sweep confirms the page's ground is `rgb(19, 18, 17)` on every one. No page error is reported.
+- The site's own suites are **158** tests, all passing (155 before: the three new tests are the twin's markup, the twin's
+  script and the copy boundary; the count is held by the filter test this pass changed); `site-chrome --check` and
+  `pricing:check` pass; `npm run typecheck` and `npx eslint` on the touched tests are clean. `npm run site:check` still exits
+  1 on the owner's `TODO(owner)` for the terms at `site/legal/index.html:134`.
+
+### What this pass deliberately leaves
+
+- **The six view cards and the graph still show the light captures in dark.** Only the plate has dark twins, and retaking the
+  six 720 × 450 pictures and the graph is the console's job, not this pass's.
+- **The spoken count still waits 400 ms.** The visible count is now immediate, because it sits beside the rows; the live region
+  keeps its pause so a fast typist is still announced one answer, as `site/README.md` says.
+- **The copy button's success border is green rather than the neutral control line.** The status colour is the state's own
+  colour and clears 6.00/8.71:1; the neutral line would lose what went well from the edge, which the words already say.
+- **No capture was retaken**, Curule Cloud's prices are still in the app, and `site/ux/` was not edited. The next pass's
+  questions are the six cards' dark twins, the security page's On this page row at 1,440 (its last chip is still cut) and the
+  plan stack's repeated limits.

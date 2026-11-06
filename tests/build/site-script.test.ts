@@ -50,6 +50,7 @@ interface Pure {
   withoutArrival(names: string): string;
   copyName(label: string, shown: string): string;
   tocEdges(left: number, client: number, total: number): { back: boolean; more: boolean };
+  shotHref(light: string, dark: string, darkNow: boolean): string;
 }
 
 /** The script's pure parts, as it exports them when it is loaded as a module (in a browser nothing is exported). */
@@ -674,16 +675,17 @@ test("the filter is not on the page without a script, and with one it is there, 
   assert.equal(r.shown().length, all);
 });
 
-test("typing keeps the documents with every word, hides a group with none left, and says how many after a pause", () => {
+test("typing keeps the documents with every word, hides a group with none left, and the visible count is the map's answer at once while the spoken one waits for a pause", () => {
   const r = docsPage();
   const all = r.doc.querySelectorAll(".doc-list li");
   const guides = all.filter((li) => li.getAttribute("data-kind") === "guide").map((li) => li.querySelector("a")!.textContent);
   r.type("Guide");
   assert.deepEqual(r.shown(), guides, "the label is part of what is matched: Guide keeps the guides, and only them");
   assert.ok(r.groups() < r.doc.querySelectorAll(".doc-card").length, "a group with no guide is hidden");
-  assert.equal(r.count(), `All ${all.length} documents`, "the count waits for a pause in the typing");
+  assert.equal(r.count(), `${guides.length} of ${all.length} documents`, "the count a reader sees is the answer the map is showing, before the pause");
+  assert.equal(r.announce(), `All ${all.length} documents`, "the live region waits for the pause, so a screen reader is not read every keystroke");
   r.runTimers();
-  assert.equal(r.count(), `${guides.length} of ${all.length} documents`);
+  assert.equal(r.count(), `${guides.length} of ${all.length} documents`, "and the count is the same after it");
   assert.equal(r.announce(), `${guides.length} of ${all.length} documents`, "and the live region says the same answer");
   r.type("guide deploy");
   assert.deepEqual(r.shown(), ["Try it in a minute", "Deploying Curule"]);
@@ -700,12 +702,14 @@ test("when nothing matches the page says so, names what was typed, and Clear the
   const r = docsPage();
   const all = r.doc.querySelectorAll(".doc-list li").length;
   r.type("  kubernetes   operator ");
-  r.runTimers();
   assert.deepEqual(r.shown(), []);
   assert.equal(r.groups(), 0);
   const none = r.doc.getElementById("doc-filter-none")!;
   assert.equal(none.hidden, false);
   assert.equal(r.doc.getElementById("doc-filter-said")!.textContent, "kubernetes   operator");
+  assert.equal(r.count(), `0 of ${all} documents`, "the count is the map's answer at once, not 'All 16 documents' above a panel that says nothing matches");
+  assert.equal(r.announce(), `All ${all} documents`, "only the spoken answer waits for the pause");
+  r.runTimers();
   assert.equal(r.count(), `0 of ${all} documents`);
   // The live region used to say only "0 of 16 documents": the empty box's 125 characters — the words typed, and the Clear
   // that brings everything back — were outside every live region, so a screen reader never heard them.
@@ -715,12 +719,13 @@ test("when nothing matches the page says so, names what was typed, and Clear the
   const clear = r.doc.getElementById("doc-filter-clear")!;
   assert.equal(clear.tag, "button");
   for (const fn of clear.listeners.get("click") ?? []) fn(event(clear));
-  r.runTimers();
   assert.equal(r.field.value, "");
-  assert.equal(r.shown().length, all);
+  assert.equal(r.shown().length, all, "the map comes back at once");
   assert.equal(none.hidden, true);
+  assert.equal(r.count(), `All ${all} documents`, "and so does the count beside it");
+  r.runTimers();
   assert.equal(r.count(), `All ${all} documents`);
-  assert.equal(r.announce(), `All ${all} documents`);
+  assert.equal(r.announce(), `All ${all} documents`, "the spoken answer follows after its pause");
   assert.ok(r.doc.activeElement === r.field, "the focus goes back to the field");
 });
 
@@ -751,6 +756,40 @@ test("the filter is for the map and leaves the cards at the top alone: they are 
   for (const a of r.doc.querySelectorAll(".start a")) {
     if (a.hasAttribute("data-doc")) assert.match(a.href, /^https:\/\/github\.com\/salitaba\/agent-mesh\/blob\/main\/docs\/[\w/.#-]+$/, "the script gave the title its address");
   }
+});
+
+// ---------------------------------------------------------------- a capture's full size, in the visitor's scheme
+
+test("a Full size link opens the capture the page is showing: the dark twin for a dark visitor, the light file without a script", () => {
+  const { shotHref } = pure();
+  assert.equal(shotHref("shot-light.jpg", "shot-dark.jpg", false), "shot-light.jpg", "a light visitor gets the file the markup names");
+  assert.equal(shotHref("shot-light.jpg", "shot-dark.jpg", true), "shot-dark.jpg", "a dark visitor gets the twin the picture is showing");
+  assert.equal(shotHref("shot.jpg", "", true), "shot.jpg", "a capture with no twin has one file");
+  const doc = parsePage(page(pages, "index.html").html);
+  const links = doc.querySelectorAll("[data-shot-dark]");
+  assert.equal(links.length, 3, "the plate's three views each have a dark twin");
+  const light = links.map((a) => a.getAttribute("href"));
+  const dark = links.map((a) => a.getAttribute("data-shot-dark"));
+  for (const [i, file] of light.entries()) {
+    assert.match(file!, /-light\.jpg$/, `view ${i + 1}: the markup names the light file`);
+    assert.equal(dark[i], file!.replace("-light.jpg", "-dark.jpg"), `view ${i + 1}: the twin is the one beside it`);
+  }
+  const run = (darkNow: boolean): void => {
+    const window = {
+      matchMedia: (query: string) => ({ matches: darkNow && query.includes("prefers-color-scheme: dark") }),
+      setTimeout: () => 0,
+      clearTimeout: () => undefined,
+      addEventListener: () => undefined,
+      requestAnimationFrame: (fn: () => void) => fn(),
+      innerHeight: 800,
+      innerWidth: 360,
+    };
+    vm.runInNewContext(SCRIPT, { document: doc, navigator: {}, window }, { filename: "site.js" });
+  };
+  run(false);
+  assert.deepEqual(links.map((a) => a.getAttribute("href")), light, "a light visitor's link is the light file");
+  run(true);
+  assert.deepEqual(links.map((a) => a.getAttribute("href")), dark, "and a dark visitor's link is the file the picture shows");
 });
 
 // ---------------------------------------------------------------- copy buttons
@@ -900,6 +939,48 @@ test("the copy buttons are 44 pixel targets on a phone and where a finger points
   assert.match(CSS, /@media \(max-width: 420px\) \{ \.address-row \{ padding-inline: 16px; \} \.address-row \.address \{ gap: 4px 4px; \} \}/, "and the row makes the room for it at a phone's width");
   assert.match(CSS, /\n\.copy-note \{[^}]*color: var\(--k-bad\);[^}]*font-size: \.875rem;/, "a refusal is written where the reader is looking, in the site's refusal colour");
   assert.match(CSS, /@media print \{[\s\S]*?\.copy-note, \.doc-filter/, "and a printed page carries neither the buttons nor a refusal they left on screen");
+});
+
+test("a copy button that says Copied keeps a boundary a reader can see", () => {
+  // The success state used a 40% mix of the status colour with transparent: #98beae on the button's light ground (1.87:1)
+  // and #2f6952 on the dark one (2.50:1), so its edge fell under the 3:1 a control's boundary needs for 2.2 seconds. The
+  // status colour itself is strong enough on both grounds, and still says what went well in colour as it does in words.
+  const rule = /\.copy\.is-done \{([^}]*)\}/.exec(CSS)?.[1] ?? "";
+  assert.match(rule, /border-color: var\(--k-ok\)/, "the edge is the status colour itself");
+  assert.doesNotMatch(rule, /color-mix|transparent/, "not a mix with transparent, which leaves no boundary");
+  const kit = CSS.slice(CSS.indexOf("/* @kit:tokens begin"), CSS.indexOf("/* @kit:tokens end"));
+  const blocks = {
+    light: kit.slice(0, kit.indexOf("@media (prefers-color-scheme: dark)")),
+    dark: kit.slice(kit.indexOf("@media (prefers-color-scheme: dark)")),
+  };
+  const token = (theme: "light" | "dark", name: string): string => {
+    const found = new RegExp(`--k-${name}: (#[0-9a-f]{6});`).exec(blocks[theme])?.[1];
+    assert.ok(found, `${theme}: --k-${name} is a hex colour`);
+    return found!;
+  };
+  const rgb = (hex: string): [number, number, number] => {
+    const n = parseInt(hex.slice(1), 16);
+    return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+  };
+  const luminance = (colour: [number, number, number]): number => {
+    const channel = (v: number): number => {
+      const x = v / 255;
+      return x <= 0.03928 ? x / 12.92 : Math.pow((x + 0.055) / 1.055, 2.4);
+    };
+    return 0.2126 * channel(colour[0]) + 0.7152 * channel(colour[1]) + 0.0722 * channel(colour[2]);
+  };
+  const contrast = (a: [number, number, number], b: [number, number, number]): number => {
+    const x = luminance(a);
+    const y = luminance(b);
+    return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05);
+  };
+  for (const theme of ["light", "dark"] as const) {
+    // The button's ground at rest (--panel) and under the pointer (--panel2), both of which it can say Copied on.
+    for (const ground of ["surface", "surface-2"] as const) {
+      const ratio = contrast(rgb(token(theme, "ok")), rgb(token(theme, ground)));
+      assert.ok(ratio >= 3, `${theme}: --k-ok on --k-${ground} is ${ratio.toFixed(2)}:1, and a boundary needs 3:1`);
+    }
+  }
 });
 
 test("without a clipboard no page has a copy button, and an address that is not one yet (a marker) is not offered to copy", () => {
