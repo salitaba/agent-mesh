@@ -377,6 +377,69 @@ Breakpoints: **1280 1100 900 800 760 620 560**. 800 is the sidebar drawer (JS
 
 ## Pass log
 
+### 2026-11-06 — a timeline's window chips are thumb-wide, a payload's one door is 44 tall, and Start waits for a command
+
+Surface: `src/styles.css` (the phone-target floor and the timeline's segmented choice), `src/views/steps.css` (the trough's
+narrowest phone shape), `src/productlive.ts` (`canStart`), `src/views/YourProduct.tsx` (the button binding), with
+`tests/dashboard/phone-targets.test.ts`, `steps-phone.test.ts` and `productlive.test.ts`.
+
+Measured on the scripted demo at **Delivered** (481 events, 49.3k of 2.0M tokens, 7 checks, 9 files, 7 seats, 28 turns,
+ran 2m 50s) in the production build served by `curule console`, Chromium 1248 at 320/360/700/1,440 in light, a touch
+pointer at 800 and below, reduced motion. Both halves are the **same delivered log**, and each pair opens the same state:
+the Steps timeline by its caption, the first Event and then its Payload, the Product page at *Its own UI* with an empty
+command.
+
+- **The Steps timeline's window choice was under 44 px wide.** Opened on the delivered run, its six chips measured
+  **39, 41, 49, 36, 44 and 36 px wide × 44 tall** at 320 and at 360 (Fit / 5m / 30m / 2h / 12h / all): four under the floor,
+  the smallest 36. The page head's own Cards/List choice had already been widened by `.page-head .seg button`, but the
+  timeline's trough is drawn by a view sheet that rule never reached. The floor now names `.st-tl-head .seg button`: at 360
+  the six are **44, 44, 49, 44, 44, 44** on one **285 in 285** row (the page stays 3,875), and at 700 the same 285 px row
+  holds them. At 320, six 44 px chips need **280 px** in a **260 px** trough, so the head is a query container (`st-head`)
+  and lays them **3 × 2** — each **83.3 × 44**, trough **260 / 260**, the page **3,968 → 4,014** — rather than leaving the
+  last chip half out of a scroller. The desk at 1,440 keeps its **36–49 × 28** chips: the floor is the thumb's.
+- **An event's payload had one door 24 px tall.** Opening the first Event and scrolling to *Payload* finds a single
+  collapsed tree row, `messageid, protocolVersion, type, +11`, **304 × 24.14 px** at 360 — the only way into the tree, half
+  a thumb's target. `.jt-row.can` now takes the phone floor and centres its line: the row is **304 × 44**, the payload block
+  **111.1 → 131**, and the event pane keeps its **836 px** page and scrolls inside it. A leaf row is text, not a control, so
+  it stays 24.14; at 1,440 the desk row is unchanged at **498.9 × 24.14**.
+- **Start it was enabled with nothing to start.** On the Product page's *Its own UI*, with the command box empty, the
+  **123.7 × 44** button was `disabled=false`; pressing it changed **0** lines of the view and left focus on the button, while
+  the "Type how this product starts its own UI…" sentence already sat above the field. The model now says whether there is
+  a command (`canStart`: empty and whitespace false), and the button follows it: with the box empty it is **disabled=true,
+  opacity .5** at 360 and 1,440, and typing `node bin/ui.js` makes it **disabled=false, opacity 1**. An empty press no longer
+  fires (a forced press focuses the page, not the button).
+
+| | Before | After |
+|---|---|---|
+| The timeline chips at 360: Fit / 5m / 30m / 2h / 12h / all | 39 / 41 / 49 / 36 / 44 / 36 × 44 | **44 / 44 / 49 / 44 / 44 / 44 × 44** |
+| The same at 700 | 39 / 41 / 49 / 36 / 44 / 36 × 44 | **44 / 44 / 49 / 44 / 44 / 44 × 44** |
+| The trough at 360: content / box | 261 / 261 | **285 / 285** |
+| The trough at 320: content / box | 261 / 260 (1 px scroll) | **260 / 260** (3 × 2) |
+| A window chip at 320 | 39–49 × 44 | **83.3 × 44** |
+| The Steps page at 320 / 360 | 3,968 / 3,875 | **4,014 / 3,875** |
+| The desk chips at 1,440 | 36–49 × 28 | 36–49 × 28 (unchanged) |
+| The Event payload door at 360 | 304 × 24.14 | **304 × 44** |
+| The payload block at 360 | 111.1 | **131** |
+| The Event page / pane at 360 | 836 / 997 | 836 / 997 |
+| The desk payload door at 1,440 | 498.9 × 24.14 | 498.9 × 24.14 (unchanged) |
+| The Product Start with an empty box, 360 / 1,440 | 123.7 × 44, enabled; press changes 0, focus stays | **123.7 × 44, disabled (.5); typing enables (.5 → 1)** |
+| Axe / horizontal page scroll, the three states × 320/360/1,440 light | — | **0 / 0** |
+
+Floors: `npm run typecheck` and `npm run build` clean; `dist/tests/dashboard` + `dist/tests/build` **1,496 pass, 0 fail**
+(two new rules, one in `steps-phone` and one in `productlive`, and two selectors added to `phone-targets`; each was
+mutation-checked by putting the old code back); eslint **0** on the touched TypeScript (the two stylesheets are outside its
+configuration); axe **0** in nine reads over the three states at 320/360/1,440; no state scrolls the page sideways.
+`npm run qa:console` at 1,440/390 in both themes: **52 screenshots, 52 axe runs, 0 violations, 0 px of page scroll**, and
+the one console error in every read is the single-mesh `/api/projects` 404 the spec expects.
+
+**Left.** At 320 the trough is two rows, **96 px** tall, and the Steps page grows **46 px**: six 44 px chips cannot share
+260 px, and the 3 × 2 grid is the whole set rather than a scroll. At 360 the six exactly fill **285 px**, so a translation or
+a wider font would need the trough's scroll back. The payload's leaf rows stay **24.14 px**: only `.can` rows expand, and a
+tree with many expandable nested rows is taller on a phone. The Start button is prevented, but the sentence above it is
+still the model's hint rather than a field error; Enter in the empty box still takes the model's empty path (it re-says the
+same sentence). The Replay drawer's explorer row still reads "1 turns" — a wording bug seen while measuring, outside this
+pass's three controls.
+
 ### 2026-11-06 — a phone's help is not behind its menu, its step chips are 44 px, and two labels leave the 11 px step
 
 Surface: `src/shell.tsx` (`openHelp`), `src/views/drawers.css` (the phone jump row), `src/designer/topology.css`

@@ -25,6 +25,7 @@ import * as path from "path";
 import type { ProjectClient } from "../../apps/mesh-dashboard/src/api";
 import {
   NO_PORT_AFTER_MS,
+  canStart,
   createLiveUi,
   lifetimeText,
   liveSrc,
@@ -210,6 +211,15 @@ test("a refusal with nothing behind it says the host's own words and leaves the 
   assert.equal(live.getState().problem, "a command is required: the product's own way of starting its UI", "the host's own sentence, not a guess at it");
   assert.equal(live.getState().phase, "idle", "nothing is claimed to be running");
   assert.equal(live.getState().busy, false, "and the button is pressable again");
+});
+
+test("an empty box offers no Start it press", () => {
+  // The page already asks for a command above the field; the button used to stay enabled, and pressing it with nothing in
+  // the box changed nothing on screen. The model says whether there is anything to start, and the view binds the button.
+  assert.equal(canStart(""), false);
+  assert.equal(canStart("   "), false);
+  assert.equal(canStart("node bin/skillctl.js ui"), true);
+  assert.match(read("views/YourProduct.tsx"), /<Button[^>]*disabled=\{!canStart\(text\)\}[^>]*>Start it<\/Button>/, "the button follows the box");
 });
 
 test("the command the owner used is remembered, so starting it again is one press on a phone", async () => {

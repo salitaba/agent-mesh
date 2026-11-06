@@ -5,6 +5,7 @@ import { Button, Skeleton, useNow } from "../components";
 import { Icon } from "../icons";
 import type { ProjectClient } from "../api";
 import {
+  canStart,
   createLiveUi,
   lifetimeText,
   problemOf,
@@ -221,7 +222,7 @@ export function YourProduct({ client, projectId, refreshKey = 0 }: {
               onChange={(e) => setText(e.target.value)}
               onKeyDown={(e) => { if (e.key === "Enter") start(); }}
             />
-            <Button variant="primary" size="lg" icon="play" loading={state.busy} onClick={start}>Start it</Button>
+            <Button variant="primary" size="lg" icon="play" loading={state.busy} disabled={!canStart(text)} onClick={start}>Start it</Button>
           </div>
         ) : null}
         {state.log ? (
