@@ -1312,9 +1312,10 @@
       const used = !state.flash && sectionsOf(viewOf()).balance && b && b.balance.available <= 0;
       const kind = state.flash ? state.flash.kind : used ? "warn" : "";
       const text = state.flash ? state.flash.text : used ? "Your balance is used up. Calls to models are refused until you add credit or your plan renews, and a workspace that needs them pauses with a notice that says why." : "";
-      const offer = Boolean(used) && Boolean(state.topups);
+      // While a payment is being confirmed, no amount is on offer: the payment may be the very credit this would add a second time.
+      const offer = Boolean(used) && Boolean(state.topups) && !state.confirming;
       // Drawn only when what it says changes, so a look at the account does not take the cursor from the action it is on.
-      const shape = `${kind}|${text}|${offer}`;
+      const shape = `${kind}|${text}|${offer}|${state.confirming}`;
       if (shape === state.noticeShape) return;
       state.noticeShape = shape;
       say(node, kind, text);
@@ -1673,7 +1674,9 @@
           said = "The address could not be copied.";
         }
         const copied = said === "Copied the address.";
-        press.textContent = copied ? "Copied" : "Copy";
+        // The word on the button is the word in its name, in both outcomes: a person who says what they see ("Copied", or "Can't copy") is
+        // understood, and a copy that failed says so where the press happened instead of only in a line a sighted reader cannot see.
+        press.textContent = copied ? "Copied" : "Can't copy";
         press.setAttribute("aria-label", named(press.textContent));
         // Said where the card says what became of what was asked, unless that line is in use for something else.
         const free = card.note.className.split(/\s+/).includes("sr");
@@ -2246,7 +2249,8 @@
       let change = null;
       if (sub) {
         const label = planState(sub);
-        const others = live ? state.plans.filter((p) => p.id !== sub.plan) : [];
+        // While a payment is being confirmed, the plans to move to are not offered: a second checkout could charge a second plan.
+        const others = live && !state.confirming ? state.plans.filter((p) => p.id !== sub.plan) : [];
         const said = [plan && live ? `${money(plan.priceMinor, state.currency)} per ${plan.period}.` : "", live && sub.periodEnd ? `Paid until ${when(sub.periodEnd)}.` : ""].filter(Boolean).join(" ");
         parts.push(
           el(
@@ -2343,13 +2347,14 @@
     function renderTopups() {
       const t = state.topups;
       // Drawn when what it says changes, not on every look: a refresh while a workspace starts must not take the cursor from a button.
-      const shape = JSON.stringify([t, state.currency]);
+      const shape = JSON.stringify([t, state.currency, state.confirming]);
       if (shape === state.topupShape) return;
       state.topupShape = shape;
       // The amounts, the caption and the form are all read from the plans. Unread, there is nothing to offer, so the card says why and
       // carries the read that fills it, rather than a field and a Pay that cannot work and would blame the amount typed for it. A service
       // that sells no credit also has nothing to offer, but nothing failed, and its balance panel is not drawn at all.
-      $("topup-details").hidden = !t;
+      // A payment being confirmed is not on offer again: the credit this row would add may be the payment the page is waiting for.
+      $("topup-details").hidden = !t || state.confirming;
       $("topup-add").hidden = !t;
       $("topup-options").hidden = !t;
       $("topup").hidden = !t;
@@ -2370,7 +2375,8 @@
       $("topup-hint").textContent = `From ${money(t.minimumMinor, state.currency)} to ${money(t.maximumMinor, state.currency)}. Each ${money(10 ** d, state.currency)} adds ${format(rate, state.currency, d, Math.max(d, 4))} of usage, and credit does not expire.`;
       // The amount is what a reader compares; "Add credit" is the trough's caption, so the three fit one row on a phone, and each says its own action to a screen reader.
       $("topup-options").replaceChildren(...t.optionsMinor.map((minor) => button(money(minor, state.currency), { small: true, attrs: { "aria-label": `Add ${money(minor, state.currency)}` }, onclick: (event) => payTopup(minor, event.currentTarget) })));
-      fitTopup();
+      // The row is drawn whole even while it is hidden, so that it is ready when the confirmation ends; only a row on offer is fitted.
+      if (!state.confirming) fitTopup();
     }
 
     function payTopup(minor, trigger) {
@@ -2416,6 +2422,16 @@
           total ? el("tfoot", null, line(cells(total, "Total"), "td")) : null,
         ),
       );
+    }
+
+    /**
+     * A total under a table is the table's own rows added up, so that a reader who adds them is never told a different number. A total
+     * the service sends covers every day it has; the day table shows the newest fourteen, so it is summed from the rows it draws.
+     */
+    function sumUsage(rows) {
+      const sum = { calls: 0, failed: 0, inputTokens: 0, outputTokens: 0, cachedTokens: 0, chargedMicros: 0 };
+      for (const row of rows) for (const key of Object.keys(sum)) sum[key] += row[key] || 0;
+      return sum;
     }
 
     async function loadUsage(asked) {
@@ -2467,7 +2483,7 @@
         .map((row) => ({ ...row, label: dayLabel(row.group) }));
       const spaces = u.byWorkspace.map((row) => ({ ...row, label: nameOf(row.group) }));
       const showFailed = u.total.failed > 0;
-      box.replaceChildren(usageTable(`By day, the last ${USAGE_DAYS} days with calls`, "Day", days, u.total, showFailed, true), usageTable("By workspace, in all", "Workspace", spaces, null, showFailed, false));
+      box.replaceChildren(usageTable(`By day, the last ${USAGE_DAYS} days with calls`, "Day", days, days.length > 0 ? sumUsage(days) : null, showFailed, true), usageTable("By workspace, in all", "Workspace", spaces, spaces.length > 0 ? sumUsage(spaces) : null, showFailed, false));
       arrived();
     }
 
@@ -2628,6 +2644,9 @@
           if ((await refresh()) && fingerprint(state.me) !== then) {
             // The answer is the page's now: a plan that sells usage has some to show, and the list is no longer waiting for one.
             state.confirming = false;
+            // What a confirmation withheld comes back with it: the plan to change to and the credit to add.
+            renderPlan();
+            renderTopups();
             flash("ok", "Your payment has arrived.");
             // A plan that sells usage has some to show now; one that sells hosting only has none, and none is asked for.
             if (sectionsOf(viewOf()).balance) await loadUsage();
@@ -2637,6 +2656,7 @@
         // The page has stopped waiting, so the list is a list again: a person whose payment never arrived can choose one.
         state.confirming = false;
         renderPlan();
+        renderTopups();
         if (known) flash("warn", "Your payment has not shown up yet. It can take a few minutes, and nothing more is needed from you. Reload this page later to see it.");
         else flash("", "If your payment is not in the figures below yet, it can take a few minutes. Nothing more is needed from you. Reload this page later to see it.");
       }

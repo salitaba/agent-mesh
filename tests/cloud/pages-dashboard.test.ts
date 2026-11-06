@@ -251,8 +251,12 @@ test("the address of a workspace can be copied where the browser will copy, and 
   assert.deepEqual([copy.textContent, copy.getAttribute("aria-label"), v.text(line)], ["Copy", "Copy the address of Research", ""]);
 
   const refused = await running({ clipboard: "refuses" });
-  refused.click(refused.button("workspaces", "Copy"));
+  const no = refused.button("workspaces", "Copy");
+  refused.click(no);
   await refused.idle();
   assert.equal(refused.text(refused.$("workspaces").querySelector(".ws-note")!), "The address could not be copied.");
-  assert.equal(refused.button("workspaces", "Copy").textContent, "Copy", "and the control stays what it was");
+  assert.equal(no.textContent, "Can't copy", "the press says what happened where it happened: the word on the button is what became of it");
+  assert.equal(no.getAttribute("aria-label"), "Can't copy the address of Research", "and the name follows the word, so a person who says what they see is understood");
+  await refused.advance(2000);
+  assert.deepEqual([no.textContent, no.getAttribute("aria-label")], ["Copy", "Copy the address of Research"], "and it is a Copy button again once the answer has been read");
 });
