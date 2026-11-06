@@ -202,7 +202,7 @@ test("the long pages carry an On this page bar right under their heading, and ea
     // The bar follows the page's opening block inside <main>, so that it can stay under the header through the whole of the page
     // (a sticky element never leaves the box it is in), and it is one navigation landmark with a name. The document pages open on a
     // page-head; the home page opens on its hero, and its bar is the index that used to stand there as four rows of chips.
-    assert.match(p.markup, /<main id="main" tabindex="-1">\s*<section class="(?:page-head has-toc|hero)"[\s\S]*?<\/section>\s*<nav class="toc-bar" aria-label="On this page">\s*<ul class="toc">/, p.rel);
+    assert.match(p.markup, /<main id="main" tabindex="-1">\s*<section class="(?:page-head has-toc|hero)"[\s\S]*?<\/section>\s*<nav class="toc-bar" aria-label="On this page"[^>]*>\s*<ul class="toc">/, p.rel);
     const nav = /<nav class="toc-bar"[\s\S]*?<\/nav>/.exec(p.markup)![0];
     const chips = [...nav.matchAll(/<li([^>]*)><a href="#([\w-]+)">(?:<span class="n">\d\d<\/span> )?[^<]+<\/a><\/li>/g)].map((m) => ({ attrs: m[1]!, id: m[2]! }));
     assert.equal(chips.length, (nav.match(/<a /g) ?? []).length, `${p.rel}: every chip is a plain link to a place on the page`);

@@ -46,6 +46,9 @@ class El {
   addEventListener(): void {
     // The script wires events for a browser; the test calls calc through the one run at load.
   }
+  querySelector(_selector: string): El | null {
+    return null;
+  }
 }
 
 function run(values: { projects: string; seats: string; missions: string; reports?: boolean }): { result: El; cells: string[][]; pinned: string[]; said: string; errors: Record<string, { hidden: boolean; text: string }>; invalid: Record<string, string | null> } {
@@ -59,6 +62,17 @@ function run(values: { projects: string; seats: string; missions: string; report
   const missions = field(values.missions);
   const error = (): El => Object.assign(new El("p"), { hidden: true });
   const errors = { projects: error(), seats: error(), missions: error() };
+  // The plan's card, with the action the ledger's step copies: the page's own markup has one per plan (the pricing page
+  // writes four <p class="plan-cta"><a class="btn ...">), and the test reads only what the script asks of it.
+  const card = (words: string, href: string): El => {
+    const action = new El("a");
+    action.className = words === "Start free" ? "btn" : "btn btn-primary";
+    action.textContent = words;
+    action.setAttribute("href", href);
+    const node = new El("article");
+    node.querySelector = (selector: string) => (selector === ".plan-cta a" ? action : null);
+    return node;
+  };
   const nodes: Record<string, unknown> = {
     "plans-data": Object.assign(new El("script"), { textContent: DATA }),
     calc: new El("form"),
@@ -74,6 +88,10 @@ function run(values: { projects: string; seats: string; missions: string; report
     "c-missions-error": errors.missions,
     "c-reports": Object.assign(new El("input"), { checked: values.reports ?? false }),
     "c-model": Object.assign(new El("select"), { value: "claude-haiku-4-5" }),
+    "plan-community": card("Start free", "../#try"),
+    "plan-team": card("Get Team", "mailto:team"),
+    "plan-business": card("Get Business", "mailto:business"),
+    "plan-enterprise": card("Talk to us", "mailto:enterprise"),
   };
   const document = {
     getElementById: (id: string) => nodes[id] ?? null,
@@ -199,8 +217,53 @@ test("a number outside its field's range says what the estimate used, and the fi
  * already wrap as a pair; the figure itself now takes a second line instead of widening the page.
  */
 test("the figure pinned over the estimate wraps instead of widening the page at a large user text size", () => {
-  assert.match(CSS, /\.calc-total-figure \{ white-space: normal; text-align: right; \}/);
+  assert.match(CSS, /\.calc-total-figure \{ white-space: normal; text-align: right; margin-left: auto; \}/);
   assert.match(CSS, /\.calc-total \{[^}]*flex-wrap: wrap;/, "the plan and the figure can take a line each");
+});
+
+/**
+ * The plan and the figure shared a line when they fitted, so the strip over the fields was 72px on Community (its
+ * "$138 / month (model usage)" wrapped) and 46 on Team ("$262 / month (annual)" did not), and the first field moved
+ * 26px under the reader's hand as the plan changed while typing; the estimate's note below it moved by up to 43px.
+ * The plan is its own line now and the figure the next one, the taller state every plan already could need, so the
+ * strip is 72px for all four and the form never moves. Measured at 320/360/390 in site/DESIGN.md.
+ */
+test("the strip over the fields is two lines for every plan, so no field moves as the plan changes", () => {
+  assert.match(CSS, /\.calc-total-plan \{ flex: 1 0 100%; color: var\(--muted\); font-weight: 500; \}/, "the plan takes a line of its own");
+  assert.match(CSS, /\.calc-total-figure \{ white-space: normal; text-align: right; margin-left: auto; \}/, "the figure takes the next line, at the right edge");
+  // Both lines are the strip's own text: no fixed height that a reader's text size would leave blank or overflow.
+  const strip = /\.calc-total \{ display: flex;[^}]*\}/.exec(CSS)![0]!;
+  assert.ok(!/min-height|height:/.test(strip), "the two lines size the strip, at whatever text size the reader has");
+});
+
+/**
+ * The ledger names the plan, and the card that carries its action was 4,456px above the answer at 1,440 and 6,825px at
+ * 360; the answer ended on the name with nothing to do next. The step is the card's own action — the card's words and
+ * address, read from the card by its id rather than written again here — so the two cannot disagree.
+ */
+test("the estimate ends with the plan's own way to buy it", () => {
+  const cases: Array<[string, { projects: string; seats: string; missions: string }, string, string, string]> = [
+    ["Community", { projects: "1", seats: "7", missions: "25" }, "Start free", "../#try", "btn"],
+    ["Team", { projects: "3", seats: "7", missions: "25" }, "Get Team", "mailto:team", "btn btn-primary"],
+    ["Business", { projects: "25", seats: "30", missions: "25" }, "Get Business", "mailto:business", "btn btn-primary"],
+    ["Enterprise", { projects: "1000", seats: "1000", missions: "10" }, "Talk to us", "mailto:enterprise", "btn btn-primary"],
+  ];
+  for (const [name, values, words, href, classes] of cases) {
+    const { result } = run(values);
+    const step = result.children[result.children.length - 1]!;
+    assert.equal(step.className, "plan-cta", `${name}: the action stands under the ledger, as a plan's does under its card`);
+    const action = step.children[0]!;
+    assert.equal(action.tagName, "a");
+    assert.equal(action.textContent, words, `${name}: the card's own words`);
+    assert.equal(action.getAttribute("href"), href, `${name}: the card's own address`);
+    assert.equal(action.className, classes, `${name}: and the card's emphasis`);
+  }
+  // The cards the script reads the action from are the cards the page has, each with the action where the script looks.
+  const data = JSON.parse(DATA);
+  for (const plan of data.plans as Array<{ id: string }>) {
+    assert.match(PAGE, new RegExp(`<article class="plan" id="plan-${plan.id}"`), `${plan.id}: the card the ledger reads is on the page`);
+  }
+  assert.equal((PAGE.match(/<p class="plan-cta"><a class="btn/g) ?? []).length, 4, "the four cards keep their own actions");
 });
 
 /**

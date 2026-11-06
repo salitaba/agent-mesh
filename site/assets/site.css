@@ -817,6 +817,17 @@ body:has(#billing-monthly:checked) .head-price-monthly { display: inline; }
 .toc a[aria-current="true"] { position: relative; padding: 0 10px 0 22px; border-color: color-mix(in srgb, var(--accent) 40%, transparent); background: var(--soft); color: var(--link); }
 .toc a[aria-current="true"]::before { content: ""; position: absolute; left: 10px; top: 50%; width: 6px; height: 6px; margin-top: -3px; border-radius: 50%; background: currentColor; }
 .toc .n { flex: none; min-width: 2ch; margin-right: 8px; color: var(--muted); font-size: .75rem; font-weight: 600; letter-spacing: .04em; font-variant-numeric: tabular-nums; }
+/* The security page's seven names are the one row too wide for the page's column: at 1,440 they took 1,504px in a 1,440px
+   window, so the row scrolled and "Reporting a problem" was cut by 32px, with only the swipe and its edge shadow to say the
+   rest was there. A wide desktop has nothing to swipe with, so from 1,200 this row keeps a little less air — 11px a side
+   instead of 16, a 6px gap instead of 8 — and the seven fit one line at 1,440 again: 1,422px, 18 to spare. The marked chip
+   is inset by the same 22px (16 before the 6px dot, 6 after) as a plain chip's 11 + 11, so the current section still does
+   not move the row. Below 1,200 the row is unchanged: where the chips do not fit it is the swipe row the shadow marks. */
+@media (min-width: 1200px) {
+  [data-toc-long] .toc { gap: 6px; }
+  [data-toc-long] .toc a { padding: 0 11px; }
+  [data-toc-long] .toc a[aria-current="true"] { padding: 0 6px 0 16px; }
+}
 /* The documentation page's bar has exactly three sections, and their names do not fit one phone line: at 360 the row was 502px
    in 360, the third chip ended at 486 and only 59px of "Something missing" was on screen (19 at 320). A third of that row can
    hold a name, so below 540 the three chips share it — 104px each at 360, 90 at 320 — and each name wraps inside its 44px chip:
@@ -1069,11 +1080,16 @@ body:has(#billing-monthly:checked) .head-price-monthly { display: inline; }
 .calc-total { display: none; }
 @media (max-width: 859px) {
   .calc-total { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 2px 12px; position: sticky; top: calc(var(--head-h) + var(--toc-h) + 10px); z-index: 4; margin: 0 0 20px; padding: 10px 14px; border: 1px solid var(--k-line-control); border-radius: var(--k-r-md); background: var(--panel); box-shadow: var(--lift); color: var(--ink); font-size: .9375rem; font-weight: 650; font-variant-numeric: tabular-nums; }
-  .calc-total-plan { color: var(--muted); font-weight: 500; }
+  /* The plan is the strip's label and the figure is its number, on a line each: the pair used to share a line when they
+     fitted, so at 360 Community's "$138 / month (model usage)" made a 72px strip and Team's "$262 / month (annual)" a 46px
+     one, and the first field moved 26px under the reader's thumb when the plan changed (the estimate's note by up to 43px).
+     Two labelled lines are the taller state every plan already can need, so the strip is 72px for all four and the fields
+     never move; the figure keeps the right edge. The answer still grows below the form with the plan it names. */
+  .calc-total-plan { flex: 1 0 100%; color: var(--muted); font-weight: 500; }
   /* The figure wraps rather than widening the page. At a 24px user default its one line was 358.4px in a 300px line at 360, and
      the pricing page was 389px wide on a 360 screen (29px over); the plan and the figure already wrap as a pair, and this lets
      the figure itself take two lines where its own line is too narrow. */
-  .calc-total-figure { white-space: normal; text-align: right; }
+  .calc-total-figure { white-space: normal; text-align: right; margin-left: auto; }
 }
 .field { margin-bottom: 20px; }
 .field label, .doc-filter label { display: block; margin-bottom: 6px; font-size: .875rem; font-weight: 600; }
