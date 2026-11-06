@@ -377,6 +377,71 @@ Breakpoints: **1280 1100 900 800 760 620 560**. 800 is the sidebar drawer (JS
 
 ## Pass log
 
+### 2026-11-06 — a fold switch says what its list is doing, a folder crumb is a thumb's target, and Latest work draws the six it counts
+
+Surface: `src/views/Events.tsx` (the fold switch's state and its reason), `src/styles.css` (the crumb's phone width floor),
+`src/views/Overview.tsx` (the work list), with one rule each in `tests/dashboard/events-log.test.ts`,
+`phone-targets.test.ts` and `overview-index.test.ts`.
+
+Measured on the scripted demo at **Delivered** (481 events, 49.3k of 2.0M tokens, 7 checks, 9 files, 7 seats, 28 turns,
+ran 3m 41s) in the production build served by `curule console`, Chromium 1248 at 320/360/1,440 in light, a touch pointer
+at 800 and below, reduced motion, axe-core 4.14. Both halves are the **same delivered log**: the before console is the
+base build at `e6a0b2e` on 8841, the after this branch's build on 8881. Each pair opens the same state: Events filtered
+to Routine, Product's Files card two folders down, and Overview's Latest work section.
+
+- **The fold switch said on while nothing was folded.** Filtered to **Routine**, folding is turned off — one fold row
+  would hide all 284 results — but the switch still read on. At 1,440 with Routine on: **26 fold bars and 110 rows** before
+  the filter, **0 and 284** after, and the switch still `checked`; pressing it off and on again changed nothing (0 folds,
+  284 rows both times). At 360 the same, with the switch **178 × 44** and its label claiming the fold. It now reads the
+  list's own answer (`foldPref && !routineOn`): off, disabled, with the reason under it, **"Off while the Routine filter is
+  on."**, 209 × 18.2. The routine state's facet row grows **70.5 → 81.8** at 1,440 and stays **308** at 360, where the 44 px
+  label floor already covers the hint; the Events page does not move (**836** and **788**). The list is still 284 rows and
+  no folds — that is what the filter asks for — and the control no longer says otherwise. Clearing Routine restores the
+  preference and the checked switch.
+- **A folder crumb was 27–34 px wide on a phone.** In the Product page's Files card, two folders down, **root** measured
+  **34 × 44** and **src 27 × 44** at 320 and 360: both took the phone's height floor but kept their own text width, the two
+  smallest targets on the screen, on the only way back up the tree. The touch block now gives `.crumb-btn` a **44 px**
+  minimum width and 10 px of inline padding: both are **44 × 44** at 320 and 360, the crumb row stays one **44 px line**
+  (**254 / 294** wide) and the Product page does not move (**1,648 / 1,529**). At 1,440 a pointer keeps **34 × 24** and
+  **27 × 24**, because the floor is a finger's.
+- **Latest work counted six and drew five.** The page asks for six steps and its door and closed row count them
+  (**"Latest work 6"**, **"6 steps"**), but the section drew `steps.slice(0, 5)`: at 1,440 the sticky index read 6 over
+  **five** rows and the page was **1,787**; at 360 the closed row said **6 steps** and opening it showed **five** rows
+  (**1,352**). It draws every step it counted now: **six** rows at both widths, the sixth being **pm · release candidate ·
+  29m ago · 2 messages · produced**; the opened phone section is **1,444** and the desk page **1,809**, while the closed
+  360 page is unchanged at **858**. The figure, the closed row and the rows are one number.
+
+| | Before | After |
+|---|---|---|
+| The fold switch with Routine filtered, 1,440: checked / folds / rows | on / 0 / 284 | **off + disabled / 0 / 284** |
+| Pressing that switch off and on again, 1,440 / 360 | 0 folds, 284 rows both times | **cannot be pressed; its reason is on screen** |
+| The switch's label at 360 | 178 × 44, no reason | **251 × 44, hint 209 × 18.2** |
+| The facet row with Routine on, 1,440 / 360 | 70.5 / 308 | **81.8 / 308** |
+| The Events page, 1,440 / 360 | 836 / 788 | 836 / 788 |
+| The crumb "root" at 320 / 360 | 34 × 44 | **44 × 44** |
+| The crumb "src" at 320 / 360 | 27 × 44 | **44 × 44** |
+| The crumb row at 320 / 360: content / line | 254 / 44, 294 / 44 | 254 / 44, 294 / 44 (one line) |
+| The same crumbs at 1,440 | 34 × 24, 27 × 24 | 34 × 24, 27 × 24 (unchanged) |
+| The Product page at 320 / 360 / 1,440 | 1,648 / 1,529 / 1,059 | 1,648 / 1,529 / 1,059 |
+| Latest work rows: 1,440 / 360 open | 5 / 5 | **6 / 6** |
+| The door and the closed row | "Latest work 6", "6 steps" | "Latest work 6", "6 steps" (now true) |
+| The Overview at 1,440 / 360 open / 360 closed | 1,787 / 1,352 / 858 | **1,809 / 1,444 / 858** |
+| Axe, the three states × 320/360/1,440 light and 360 dark | — | **0 violations** |
+| Horizontal page scroll, those states | 0 | **0** |
+
+Floors: `npm run typecheck` and `npm run build` clean; `dist/tests/dashboard` + `dist/tests/build` **1,502 pass, 0 fail**
+(one new rule in each of `events-log`, `phone-targets` and `overview-index`, each mutation-checked by putting the old
+code back); eslint **0** on the touched TypeScript (the stylesheet is outside its configuration); axe **0** in nine reads
+over the three states at 360 and 1,440 light and at 360 dark; no state scrolls the page sideways.
+
+**Left.** The fold switch is disabled rather than able to fold 284 routine events into one row, and a reader must clear
+the Routine filter to use it again; the hint says why, but a reader who does not connect the two will find a greyed
+control. The crumb's new 44 px width costs 10 px a segment: a path of five or more folders will wrap to a second 44 px
+line at 320 (it wraps rather than scrolls, and two segments still share one line). Latest work's sixth row is 92 px of
+an opened phone section and 22 px of the desk page; it is the most recent step, not the whole 28, and All steps is still
+the way to the rest. Seen while measuring and untouched: the agent and graph drawers' tab badge is 11 px on a phone, and
+the Replay drawer's explorer row still reads "1 turns".
+
 ### 2026-11-06 — a timeline's window chips are thumb-wide, a payload's one door is 44 tall, and Start waits for a command
 
 Surface: `src/styles.css` (the phone-target floor and the timeline's segmented choice), `src/views/steps.css` (the trough's

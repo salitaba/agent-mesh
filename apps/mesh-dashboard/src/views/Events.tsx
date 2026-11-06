@@ -211,8 +211,10 @@ export default function Events(): React.JSX.Element {
   const shown = useMemo(() => held.shown.slice(0, CAP), [held.shown]);
 
   // Folding a list you have explicitly filtered down to routine events would collapse the entire result into one row. Asking for
-  // them turns it off.
-  const folding = foldPref && !sevOn.has("routine");
+  // them turns it off — and the switch says so: it used to stay on while 284 routine events were drawn one by one, and pressing it
+  // changed nothing. It reads off and is disabled, with the reason under it, until the Routine filter is cleared.
+  const routineOn = sevOn.has("routine");
+  const folding = foldPref && !routineOn;
   const rows = useMemo(() => buildRows(shown, now, folding), [shown, now, folding]);
   const windowText = logWindowText({ drawn: shown.length, matched: held.shown.length, held: events.length, logged: typeof logLength === "number" ? logLength : 0 });
   // How many events sit under each time heading, folded ones included: a heading that said nothing of its size made the list read as one run.
@@ -320,7 +322,13 @@ export default function Events(): React.JSX.Element {
           ))}
         </div>
         <span title="Collapse runs of routine bookkeeping into a single row">
-          <Switch label="Fold routine events" checked={foldPref} onChange={() => setFoldPref((f) => !f)} />
+          <Switch
+            label="Fold routine events"
+            checked={folding}
+            disabled={routineOn}
+            hint={routineOn ? "Off while the Routine filter is on." : undefined}
+            onChange={() => setFoldPref((f) => !f)}
+          />
         </span>
       </div>
 

@@ -416,7 +416,9 @@ export default function Overview(): React.JSX.Element {
           {stepsErr && !steps.length ? (
             <div className="ov-retry">Could not load recent work. <Button variant="small" icon="refresh" onClick={() => setAttempt((n) => n + 1)}>Try again</Button></div>
           ) : steps.length ? (
-            <WorkTimeline steps={steps.slice(0, 5)} roleOf={roleOf} onOpen={(t) => openDrawer(<StepDrawer turnId={t} steps={steps} />)} />
+            // Every step the section counted is drawn. It used to take 6 and draw 5, so the phone's closed row said "6 steps" and
+            // the index said "Latest work 6" over five rows; the sixth was fetched and thrown away.
+            <WorkTimeline steps={steps} roleOf={roleOf} onOpen={(t) => openDrawer(<StepDrawer turnId={t} steps={steps} />)} />
           ) : stepsLoaded ? (
             <div className="ov-empty-row">
               <span>No steps yet. Each agent turn appears here, with what woke it and what it left.</span>

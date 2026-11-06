@@ -1431,6 +1431,10 @@ ul.errs { margin: var(--s1-5) 0; padding-left: 18px; font-size: 14px; color: var
     min-height: 44px;
   }
   :is(.pj-home, .ptab-x, .ptab-add, .agent-open, .gr-open, .icon-btn, .close-x, .palette-x, .toast-x, .copy-btn.compact, .srch-clear) { min-width: 44px; }
+  /* A folder crumb is the one way up the tree in the Product page's file browser, and a word is not a target at 44 px tall
+     alone: at 360 "src" was 27 x 44 and "root" 34 x 44. Ten px of padding and the 44 px square make them pressable; the row
+     still fits one line at 320. tests/dashboard/phone-targets.test.ts reads this rule. */
+  .crumb-btn { min-width: 44px; padding-inline: var(--s2-5); }
   /* An event's payload is a tree whose root row expands: at 360 it measured 24.14 px tall, half a thumb's target, and it is
      the only way into the payload. Only the rows that do something take the floor (`.can`); a leaf is text. Centring keeps
      the key and its value on one line in the taller row. */

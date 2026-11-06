@@ -41,3 +41,15 @@ test("the foot note is the log's window, not the page's buffer", () => {
   assert.match(tsx, /windowText \? <p className="list-more" role="status">\{windowText\}<\/p> : null/, "it is drawn as one note");
   assert.doesNotMatch(tsx, /Narrow the search to reach older ones/, "the promise the page could not keep is gone");
 });
+
+test("the fold switch follows the list: with Routine filtered it reads off and says why", () => {
+  // Filtered to Routine, folding would collapse all 284 rows into one fold, so the page turns it off. The switch still read on:
+  // measured at 1440, 26 fold bars and 110 rows before the filter, 0 and 284 after, and pressing the switch changed neither. The
+  // control now shows the state it is in, and is disabled with its reason under it until the filter is cleared.
+  assert.match(tsx, /const routineOn = sevOn\.has\("routine"\);/, "one answer names the filter that overrides the setting");
+  assert.match(tsx, /const folding = foldPref && !routineOn;/, "the list folds only when the filter allows it");
+  assert.doesNotMatch(tsx, /checked=\{foldPref\}/, "the switch no longer reports the preference over the list");
+  assert.match(tsx, /checked=\{folding\}/, "it reads what the list is doing");
+  assert.match(tsx, /disabled=\{routineOn\}/, "and cannot be pressed when pressing it would do nothing");
+  assert.match(tsx, /hint=\{routineOn \? "Off while the Routine filter is on\." : undefined\}/, "the reason is on screen, not only in a tooltip");
+});
