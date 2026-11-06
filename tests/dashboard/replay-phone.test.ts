@@ -25,7 +25,7 @@ const phone = sheet.slice(phoneAt);
 const desk = sheet.slice(0, phoneAt);
 
 test("each figure says its unit on a phone, and the desk's head does the naming", () => {
-  assert.match(tsx, /className="mono rp-turns">\{a\.activations \?\? 0\}<span className="rp-u"> turns<\/span>/, "turns");
+  assert.match(tsx, /className="mono rp-turns">\{a\.activations \?\? 0\}<span className="rp-u"> \{a\.activations === 1 \? "turn" : "turns"\}<\/span>/, "turns, singular for one");
   assert.match(tsx, /className="mono rp-tok">\{fmt\(a\.tokensConsumed \?\? 0\)\}<span className="rp-u"> tokens<\/span>/, "tokens");
   assert.match(desk, /\.replay \.rp-u \{ display: none; \}/, "a desk keeps its head and hides the repeat");
   assert.match(phone, /\.replay \.rp-u \{ display: inline; \}/, "the stacked row draws it");

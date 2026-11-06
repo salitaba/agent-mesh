@@ -110,3 +110,12 @@ test("an agent's open request names the seat it waits on", () => {
   assert.match(drawers, /pendingLine\(pending\.length, pendingRecipients\(pending\)\)/, "the drawer asks the model for the sentence");
   assert.doesNotMatch(drawers, /waiting on an answer<\/div>/, "the vague sentence is gone");
 });
+
+test("a seat's Config budget formats the mission limit as the rest of the console does", () => {
+  // Measured on the delivered demo at 360: the row read "200k tokens · mission 49.3k / 2000000" and wrapped to 57 px, while the
+  // Cost page and the same drawer's own agent budget say "2.0M" and "200k". The mission limit is a figure, not a raw field.
+  assert.match(drawers, /mission \$\{fmt\(json\.budgets\.mission\.consumed\)\} \/ \$\{json\.budgets\.mission\.limit == null \? "\?" : fmt\(json\.budgets\.mission\.limit\)\}/,
+    "both sides of the mission budget go through fmt");
+  assert.doesNotMatch(drawers, /mission \$\{fmt\(json\.budgets\.mission\.consumed\)\} \/ \$\{json\.budgets\.mission\.limit \?\? "\?"\}/,
+    "the raw limit is gone");
+});

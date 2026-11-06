@@ -57,7 +57,7 @@ export function ReplayDrawer({ goalId }: { goalId: string }): React.JSX.Element 
                   <tr key={a.agentId}>
                     <td className="mono rp-agent">{a.agentId}</td>
                     <td className="rp-state">{String(a.lifecycle ?? "").toLowerCase()}</td>
-                    <td className="mono rp-turns">{a.activations ?? 0}<span className="rp-u"> turns</span></td>
+                    <td className="mono rp-turns">{a.activations ?? 0}<span className="rp-u"> {a.activations === 1 ? "turn" : "turns"}</span></td>
                     <td className="mono rp-tok">{fmt(a.tokensConsumed ?? 0)}<span className="rp-u"> tokens</span></td>
                   </tr>
                 ))}

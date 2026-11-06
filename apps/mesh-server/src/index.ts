@@ -2106,11 +2106,15 @@ if (parts[0] === LIVE_UI_PREFIX && parts.length >= 2 && req.method === "OPTIONS"
             const events = await store.read({ tail: 800 });
             // The shared fill, not a private merge: this route's copy invented
             // zero ops for every tracker turn older than its 800-event window.
-            const live = supervisor.getRecentTurns(stepLimit * 2);
-            const steps = (await fillTurnSteps(events, live, store, stepLimit * 2))
+            // The filter is part of the fill, not after it: `fillTurnSteps` cuts to
+            // `logLimit` newest steps across every seat, so filtering a 20-step
+            // window afterwards left a seat with only the few of its own turns
+            // that happened to fall inside it (architect: 2 of 5).
+            const live = supervisor.getRecentTurns(stepLimit * 2).filter((t) => t.agentId === id);
+            const steps = (await fillTurnSteps(events, live, store, stepLimit, (s) => s.agentId === id))
               .sort((a, b) => b.startedAt.localeCompare(a.startedAt));
-            const currentTurnId = live.find((t) => t.agentId === id && t.status === "running")?.turnId
-              ?? steps.find((s) => s.agentId === id && s.status === "running")?.turnId;
+            const currentTurnId = live.find((t) => t.status === "running")?.turnId
+              ?? steps.find((s) => s.status === "running")?.turnId;
             detail = buildAgentDetail(kernel.state, config, id, { steps, events, currentTurnId });
           } catch {
             /* fall through to minimal shape — detail must never 500 */

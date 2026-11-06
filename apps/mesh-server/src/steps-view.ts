@@ -148,8 +148,9 @@ export async function fillTurnSteps(
   live: TurnRecord[],
   reader: StepEventReader,
   logLimit: number,
+  keep: (s: TurnStep) => boolean = () => true,
 ): Promise<TurnStep[]> {
-  const fromLog = buildTurnSteps(window, logLimit);
+  const fromLog = buildTurnSteps(window, logLimit, keep);
   const opened = new Set<number>();
   for (const e of window) if (e.type === "agent.awakened" && e.seq !== undefined) opened.add(e.seq);
   const byId = new Map(fromLog.map((s) => [s.turnId, s]));
@@ -183,7 +184,7 @@ export async function fillTurnSteps(
       if (step) byId.set(turnId, step);
     }
   }
-  return mergeTurnSteps([...byId.values()], live);
+  return mergeTurnSteps([...byId.values()], live).filter(keep);
 }
 
 /**
@@ -198,7 +199,7 @@ export async function recentTurnSteps(
   keep: (s: TurnStep) => boolean = () => true,
 ): Promise<TurnStep[]> {
   const window = await reader.read({ tail: stepWindow(limit) });
-  const steps = await fillTurnSteps(window, live, reader, limit * 2);
+  const steps = await fillTurnSteps(window, live, reader, limit * 2, keep);
   return steps
     .filter(keep)
     .sort((a, b) => b.startedAt.localeCompare(a.startedAt))
