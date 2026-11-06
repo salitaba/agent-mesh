@@ -3565,3 +3565,95 @@ screenshots at 360 and 1,440 are of those two copies. The absolute heights are t
   six before and six after frames are under `site/ux/shots/`). Still open from the last pass: the six view cards' and the
   graph's dark twins, the security page's On this page row at 1,440 (its last chip is 32px cut), and the plan stack's
   repeated limits.
+
+## 2026-11-06, third pass: the On this page row fits a desktop, the estimate's strip keeps its lines, and the answer carries its action
+
+Measured with the same probe (Chrome 156 over CDP; reduced motion; light unless said; touch at 320/360/390, a mouse at
+1,280/1,360/1,440). The before column is the site at `e6a0b2e`, served on port 8811 and measured in the same run as this
+worktree on 8851; no number is copied from an earlier pass. The absolute heights are this container's; both halves are one
+browser in one run, so the differences stand.
+
+### What changed
+
+- **The security page's On this page row fits the page's column at 1,440.** The seven chips and their six 8px gaps were
+  1,312px, and the column's inset (160px left, 32px right) made the row 1,504 in a 1,440px window, so it scrolled and
+  "Reporting a problem" ended at 1,472: **32px of it past the edge**, with only the edge shadow to say the rest was there
+  (72px past at 1,360, 112 at 1,280, 152 at 1,200). A desktop mouse has no swipe to give it. From 1,200 that row keeps
+  11px a side instead of 16 and a 6px gap instead of 8 — 82px less — and the seven end at **1,390 in the 1,440 window**,
+  whole, 50px inside it (1,350 at 1,360, where the edge was 72px past). The marked chip is inset by the same 22px (16
+  before the 6px dot, 6 after) as a plain chip's 11 + 11, so the current section still moves nothing: scrolled to "What it
+  protects" at 1,440 the row is 1,440/1,440 and the last chip still ends at 1,390. The bar is one row and 61px at every
+  width, so the page heights and a followed chip's landing are unchanged: `#report` lands at 149.5 with the bar's bottom
+  at 130 and its heading at 221.5 at 1,440, as before.
+- **The strip over the estimate is two lines for every plan, so the fields never move.** The strip put the plan and the
+  figure on one line when they fitted; at 360 Community's "$138 / month (model usage)" wrapped to a 72px strip and Team's
+  "$262 / month (annual)" did not, 46px, so the first field moved **26px under the reader's hand** when the plan changed
+  (one project to five), the result 26px and the note under it **43.2px** (the page 13,528 → 13,485). The plan is its own
+  line now and the figure the next one — the taller state every plan already could need — and the strip is **72px for
+  Community, Team, Business and Enterprise at 320, 360 and 390**. The first field is at 7,921.2 / 7,313 / 6,977.1 for all
+  four, and the result begins at 8,497.5 / 7,866.9 / 7,508.6, the same four ways; the fields take the taller state's
+  height, so at 360 the Team view is 26px taller and the page 13,485 → 13,511 before the answer's action below.
+- **The estimate's answer carries the plan's own action.** The ledger named the plan and stopped: `#result` held **no link
+  at all**, while the card that carries the way to buy it stood **4,455.8px above the answer at 1,440 and 6,824.9px at
+  360**. The last row is a step now — the card's own action ("Start free", "Get Team", "Get Business", "Talk to us"), its
+  address and its emphasis, read from `#plan-<id>` rather than written a second time in the script, so the two cannot
+  disagree and a licence enquiry keeps the subject `site.js` puts on the card. A Team ledger ends on "Get Team"
+  (`mailto:…?subject=Curule%20Team%20plan`) and a quoted one on "Talk to us", which is the line the 2026-11-05 pass left
+  for the owner. The step is **278 × 44 at 320/360/390** and 486 × 40 at 1,440 (a mouse), with the page's 2px focus ring
+  on Tab and a 2px outline in forced colours; the result is 60px taller (its 16px gap and the 44px button) and the page
+  with it (13,528 → 13,588 at 360 for Community, 13,508 → 13,568 for Enterprise).
+
+### Measurements after this pass
+
+| The security page's On this page row | 1,200 | 1,280 | 1,360 | 1,440 | 360 |
+|---|---|---|---|---|---|
+| Row / window, before → after | 1,384/1,200 → **1,302/1,200** | 1,424/1,280 → **1,342/1,280** | 1,464/1,360 → **1,382/1,360** | 1,504/1,440 → **1,440/1,440** | 1,344/360, unchanged |
+| The last chip's right edge, past the window | 152 → **70** | 112 → **30** | 72 → **&minus;10 (whole)** | 32 → **&minus;50 (whole)** | 968 → 968 (the swipe row) |
+| The bar / `is-more` | 61, yes → 61, yes | 61, yes → 61, yes | 61, yes → 61, yes | 61, **yes → no** | 61, yes |
+| The page | 7,630 | 7,638 | 7,638 | 7,638 | 11,600 |
+
+| The estimate's strip and the first field | 320 | 360 | 390 |
+|---|---|---|---|
+| The strip, Community / Team / Business / Enterprise | 72/46/72/72 → **72 ×4** | 72/46/46/72 → **72 ×4** | 72/46/46/46 → **72 ×4** |
+| The first field's top, the same four | 7,921.2 / 7,895.2 / 7,921.2 / 7,921.2 → **7,921.2 ×4** | 7,313 / 7,287 / 7,287 / 7,313 → **7,313 ×4** | 6,977.1 / 6,951.1 / 6,951.1 / 6,951.1 → **6,977.1 ×4** |
+| The result's top | 8,497.5 / 8,471.5 / 8,497.5 / 8,497.5 → **8,497.5 ×4** | 7,866.9 / 7,840.9 / 7,840.9 / 7,866.9 → **7,866.9 ×4** | 7,508.6 / 7,482.6 / 7,482.6 / 7,482.6 → **7,508.6 ×4** |
+| The page | 14,506 / 14,446 / 14,472 / 14,444 → 14,566 / 14,532 / 14,532 / 14,504 | 13,528 / 13,485 / 13,485 / 13,508 → 13,588 / 13,571 / 13,571 / 13,568 | 12,864 / 12,843 / 12,843 / 12,894 → 12,924 / 12,929 / 12,929 / 12,980 |
+
+| The answer's way to its plan | Before | After |
+|---|---|---|
+| Links in `#result`, all four plans | **0** | **1** |
+| The step | — | "Start free" → `../#try`; "Get Team", "Get Business", "Talk to us" → the card's `mailto:` (with its subject) |
+| Its size, 320 / 360 / 390 / 1,440 | — | 278 × 44 / 278 × 44 / 278 × 44 / 486 × 40 |
+| The card above the answer, 360 / 1,440 | 6,824.9 / 4,455.8 | the same card, no longer the only way |
+| The page, 360 (Community / Enterprise) | 13,528 / 13,508 | **13,588 / 13,568** |
+
+- No page scrolls sideways at 320, 360, 390, 768, 1,024, 1,280 or 1,440 in light or dark (**0** on all 98 page/width/theme
+  pairs), the probe reports **0** console errors, and no computed text is under 12px. axe-core WCAG 2.0–2.2 A and AA is
+  **0** on the six states read: the security page at 1,440 in light and dark, the Team estimate at 320 and 360 (light and
+  dark) and the Enterprise estimate at 1,440.
+- The step's focus ring is `solid 2px` at a 2px offset under a real Tab at 360, and `solid 2px` in forced colours; the
+  card's words and address are one source, and the four cards keep their own actions.
+- The site's suites are **164** tests, all passing (161 before: the three new ones are the security row's wide rule, the
+  strip's two lines and the answer's step); `site-chrome --check` and `pricing:check` pass, `npm run typecheck` and
+  `npx eslint` on the three touched test files are clean, and `set-domain --check` still exits 1 on the owner's one
+  `TODO(owner)` at `site/legal/index.html:134`.
+
+### What this pass deliberately leaves
+
+- **Below 1,200 the security row is still the swipe row the shadow marks.** At 1,024 its last chip was 352px past the
+  window and at 1,280 it is now 30 (was 112): the row's seven names do not fit that column without a smaller type or
+  wrapping to a two-row bar, and a two-row bar is 113px pinned over the page. The wide desktop, where there is no swipe,
+  is what this pass fixed.
+- **The `is-more` shadow still shows at 1,360 and above while only the row's 32px end padding is past** a whole last chip.
+  That is the padding the 2026-11-03 pass chose for a row read to its end, not a cut name.
+- **The ledger's own height still differs by the plan it names** (the free plan's extra line, the quoted total's longer
+  wrap), so the note below the estimate moves up to 20.4px at 360 and 56.3 at 390 when the plan changes. The fields, which
+  the reader is typing in, no longer do.
+- **At a reader's 200% text the strip takes three lines for the longer figures** (132px at 360 for Community and
+  Enterprise) and two for the shorter (96), so the fields can still move 36px there; the two lines reserved are the 16px
+  size's. The 200% test still finds the page its own width and the Enterprise figure whole.
+- **The step's words are the card's.** "Get Team" under the ledger is the card's label; if the owner wants "See the Team
+  plan" there, the change is in the card's action, where both read it.
+- No product capture was retaken, Curule Cloud's prices are still in the app, and `site/ux/index.html` was not edited
+  (this pass's six before and six after frames are under `site/ux/shots/`). Still open from the last two passes: the six
+  view cards' and the graph's dark twins, and the plan stack's repeated limits.

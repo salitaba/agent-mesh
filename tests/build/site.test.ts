@@ -659,6 +659,33 @@ test("a bar of three sections fits a phone's row, and a row with room no longer 
   assert.match(css, /\n\.toc \{ display: flex; gap: 8px; padding: 8px var\(--gutter\) 8px max\(var\(--gutter\), \(100% - var\(--max\)\) \/ 2\); overflow-x: auto; scrollbar-width: none; \}/, "a row's end padding is the gutter, so a row that fits has no scroll range");
 });
 
+/**
+ * The security page's seven names are the one row wider than the page's column. At 1,440 the chips were 1,504px in the
+ * window, so the row scrolled and "Reporting a problem" ended at 1,472: 32px of it past the edge, with only the edge shadow
+ * to say the rest was there, and a desktop mouse has no swipe to give it. From 1,200 that row keeps 11px of air a side and a
+ * 6px gap instead of 16 and 8 — 82px less — and the seven end at 1,390 in a 1,440px window, a whole chip inside it. The
+ * marked chip is inset by the same 22px (16 before the dot, 6 after), so the current section still does not move the row,
+ * and the bar stays one row and 61px, so nothing under it moves. Only that row carries the attribute: the rows that fit
+ * keep the measure the 2026-11-03 pass gave them.
+ */
+test("the security page's On this page row fits a desktop's column, and only that row is tightened", () => {
+  const css = fs.readFileSync(path.join(SITE, "assets", "site.css"), "utf8");
+  const security = page(pages, "security/index.html").html;
+  assert.match(security, /<nav class="toc-bar" aria-label="On this page" data-toc-long>/, "the security page's bar is the long row");
+  for (const p of pages) {
+    if (p.rel === "security/index.html") continue;
+    assert.ok(!/\sdata-toc-long\b/.test(p.markup), `${p.rel}: a bar whose chips fit is not tightened`);
+  }
+  assert.match(
+    css,
+    /@media \(min-width: 1200px\) \{\n  \[data-toc-long\] \.toc \{ gap: 6px; \}\n  \[data-toc-long\] \.toc a \{ padding: 0 11px; \}\n  \[data-toc-long\] \.toc a\[aria-current="true"\] \{ padding: 0 6px 0 16px; \}\n\}/,
+    "the wide row keeps 11px a side and a 6px gap, and the marked chip the same 22px so the row does not move"
+  );
+  // The base chip is still a thumb's target and still does not wrap its name; the wide row changes only its air.
+  assert.match(css, /\n\.toc a \{[^}]*min-height: 44px;[^}]*white-space: nowrap;/, "a chip is a 44px target whatever the row");
+  assert.ok(!/\[data-toc-long\] \.toc a \{[^}]*min-height/.test(css), "the wide row takes no height off the target");
+});
+
 test("on a phone the four plans are one rate card read in rows, with how buying starts before the buttons", () => {
   const home = page(pages, "index.html").html;
   const section = /<section class="section" id="pricing">([\s\S]*?)<\/section>/.exec(home)![1]!;

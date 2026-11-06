@@ -135,6 +135,21 @@
       money2(run.costUsd) + " on " + nameOf(run.model) + "), re-priced at " + nameOf(model) + "'s published list price of " + data.modelPrices.asOf +
       ". A different model takes a different number of turns, so treat the spread across models as a range of prices, not a forecast. Your provider bills you directly; we never touch it."));
     if (plan.pricing === "free") out.appendChild(el("p", "fine", "The free plan has no licence and no expiry."));
+    // The ledger names a plan and the plan's card carries the way to buy it, 4,456px above the answer at 1,440 and
+    // 6,825px at 360; the answer used to end on the name with nothing to do next. The step is the card's own action — its
+    // words and its address, read from the card by its id rather than written a second time here — so the two cannot
+    // disagree, and a licence enquiry keeps the subject site.js set on the card.
+    var card = document.getElementById("plan-" + plan.id);
+    var action = card && card.querySelector ? card.querySelector(".plan-cta a") : null;
+    if (action && action.getAttribute("href")) {
+      var step = el("p", "plan-cta");
+      var next = el("a", action.className || "btn", action.textContent.trim());
+      next.setAttribute("href", action.getAttribute("href"));
+      var rel = action.getAttribute("rel");
+      if (rel) next.setAttribute("rel", rel);
+      step.appendChild(next);
+      out.appendChild(step);
+    }
   }
 
   form.addEventListener("submit", function (event) { event.preventDefault(); });
