@@ -77,3 +77,12 @@ test("an inline link that becomes a phone target takes a line of its own, or the
   const body = phoneBlocks(styles).join("\n");
   assert.match(body, /button\.linklike[^{]*\{[^}]*display:\s*(?:inline-)?flex/, "a linklike is a flex box so its 44 px height applies");
 });
+
+test("a folder crumb is a 44 px target, not a word with padding", () => {
+  // The Product page's file browser offers "root" and "src" as the only way up the tree. They took the 44 px height but kept
+  // their own width: at 360 "src" measured 27 x 44 and "root" 34 x 44, the two smallest controls on the phone.
+  const body = phoneBlocks(styles).join("\n");
+  const rule = /\.crumb-btn[^{]*\{[^}]*min-width:\s*44px[^}]*\}/.exec(body);
+  assert.ok(rule, "the phone's crumb floor is 44 px wide");
+  assert.match(body, /\.crumb-btn[^{]*\{[^}]*padding-inline:\s*var\(--s2-5\)[^}]*\}/, "and its word sits inside a target, not against the edge");
+});

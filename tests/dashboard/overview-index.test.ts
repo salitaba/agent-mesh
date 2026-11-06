@@ -83,3 +83,12 @@ test("the row's summary and the page's index are one fraction", () => {
   assert.match(shipped, /export function shippedFigure\(arts: readonly \{ status\?: string \}\[\]\): string \{[\s\S]*?return `\$\{arts\.filter\(\(a\) => groupOf\(a\.status\) === "delivered"\)\.length\} of \$\{arts\.length\}`;/, "the fraction is one function");
   assert.match(shipped, /export function shippedLine\(arts: readonly \{ status\?: string \}\[\]\): string \{\s*return arts\.length \? `\$\{shippedFigure\(arts\)\} delivered` : "no files";/, "the sentence is the fraction plus its word, so the closed row and the index cannot disagree");
 });
+
+test("Latest work draws every step its figure counts", () => {
+  // The page asks for six steps and the work door says "6", but the section drew steps.slice(0, 5): at 1440 the sticky index read
+  // "Latest work 6" over five rows, and a phone's closed row said "6 steps" before opening five. The sixth was fetched for nothing.
+  assert.match(overview, /client\.api\("GET", "\/steps\?limit=6"\)/, "the page asks for six steps");
+  assert.match(overview, /work: steps\.length \? String\(steps\.length\)/, "the door counts them");
+  assert.match(overview, /<WorkTimeline steps=\{steps\} roleOf=\{roleOf\}/, "and the section draws all of them");
+  assert.doesNotMatch(overview, /steps\.slice\(0, 5\)/, "no fetched step is dropped after it was counted");
+});
