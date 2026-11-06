@@ -334,6 +334,17 @@ test("the account's head and the way in keep their title on one line at a raised
   assert.equal(declared(rules.find((r) => r.selectors.includes("#who .who-a"))!, "word-break"), "break-all", "the address fills each line it is on");
   const plans = rules.find((r) => r.selectors.includes(".plans") && declared(r, "grid-template-columns") !== undefined)!;
   assert.match(declared(plans, "grid-template-columns")!, /minmax\(0,\s*1fr\)/, "a plan's card can be narrower than its price at a raised root, rather than widening the page");
+  const auth = rules.find((r) => r.selectors.includes(".auth") && declared(r, "grid-template-columns") !== undefined)!;
+  assert.equal(declared(auth, "grid-template-columns"), "minmax(0, 28rem) minmax(0, 20rem)", "the way-in form and its rail can shrink at a raised root: at 28rem and 20rem a 32px root put the form 96px past the left of a 1,440 screen and the rail 96px past the right");
+});
+
+test("the create form's fields start on the same line, so a plan's hint does not become the name field's label", () => {
+  // The form is one row of fields above its button. The plan field carries the sentence about a workspace's plan, and with the row's
+  // fields bottom-aligned that sentence pushed the name field down 104px: its label sat beside the hint at 1,440.
+  const rules = cssRules(read(path.join(ASSETS, "app.css")));
+  const field = rules.find((r) => r.selectors.includes(".inline-form .field") && declared(r, "align-self") !== undefined)!;
+  assert.ok(field, "the inline form's field is a rule of its own");
+  assert.equal(declared(field, "align-self"), "flex-start", "a field starts at the top of the row, whatever its neighbour's hint adds below it");
 });
 
 test("the account's figures keep their shape at a raised root: a step's ring is its numeral's size, and a plan's price is capped by its line", () => {
@@ -468,7 +479,10 @@ test("what a finger has to hit is as tall as a button on a phone: the buttons, t
   assert.equal(value(".site-footer a", "min-height"), "44px", "the footer's links are words with the reach of a button");
   assert.equal(value(".site-footer a", "min-width"), "44px");
   assert.equal(value(".check label", "min-height"), "44px", "a tick box is ticked by hitting its sentence");
-  assert.equal(value(".check label a", "min-height", phone), "44px", "and the terms inside that sentence are as tall as a button, on a line of their own");
+  assert.equal(value(".check label", "line-height"), "24px", "the sentence keeps the leading of its text on a phone: at 44 every line of the tick box read as a separate paragraph");
+  assert.equal(value(".check label a", "display", phone), "inline", "and the terms stay in that sentence rather than being set as a row of their own");
+  assert.equal(value(".check label a", "padding", phone), "13px 0", "reaching a finger's 44px with padding, which does not set the line's height");
+  assert.equal(value(".check label a", "white-space", phone), "nowrap", "and each link stays whole where it falls");
   assert.equal(value(".aside a", "padding"), "12px 2px", "a link in a line of its own has a hit area taller than its text");
   assert.equal(value(".aside a", "margin"), "-12px 0", "without moving the lines around it");
   assert.equal(value(".ws .ws-auto .check", "min-height"), "44px", "and so is the offer to open a workspace when it is ready");

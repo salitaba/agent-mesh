@@ -3987,3 +3987,96 @@ on `#resend-status`.
   the field would not move it, but the site's refusals are sentences under their fields.
 - **Nothing was changed on the account's plan card at 1440 or on the legal pages.** The lone alternative plan, the
   prose-only 19px links and the 200% text check are the earlier entries' items.
+
+## 2026-11-06 — the tick box's sentence, the way in at 200% text, and the create form's two labels
+
+Same harness: Chromium 1248 through `playwright-core` against this worktree's trial on `localhost:7710` (fresh data
+folder `/tmp/ux1106f/trial-account`), 320 / 360 / 390 / 768 / 1,024 / 1,440 in light, 320 and 360 in dark, forced
+colours at 360, `prefers-reduced-motion: reduce`, a touch pointer below 721, and axe-core 4.14 over the states
+below. "Before" is this worktree's own stylesheet before the change, served by the same trial in the same browser
+session; the markup and the script did not change. Fixtures: the signed-out sign-up page; the signed-out sign-in
+page at a **32px root** (200% text); and a paid Team account with no workspace (`planless@example.com`), which is
+the first screen after a payment. Heights are `document.documentElement.scrollHeight`; positions are
+`getBoundingClientRect` plus `scrollY`.
+
+- **A tick box's sentence is a sentence, not three paragraphs.** On a phone the label carried
+  `line-height: 44px` and its links were `inline-block` with `min-height: 44px`. Every line of "I agree to the
+  Terms and have read the Privacy notice." was therefore 44px apart: the label was **152px** at 320 (three lines)
+  and **108px** at 360 (two), against **68px** at 1,440 (two lines at 24). At 320 it read as "I agree to the Terms
+  and" / "have read the" / "Privacy notice.", with the checkbox beside the first line and the last two lines
+  starting at the card's left edge. The label keeps its **24px** leading on a phone now; the links stay in the
+  sentence as `display: inline` with `padding: 13px 0` and `white-space: nowrap`, so each link's own box is still
+  **44 × 44** (Terms) and **105 × 44** (Privacy notice) without setting the line's height. The label is **92px** at
+  320 and **68px** at 360 and 390; the card is 500 → **440** and 456 → **416**, and the page 1,582 → **1,522**,
+  1,410 → **1,370** and 1,410 → **1,370**. At 320 the Privacy link falls whole on a third line rather than
+  splitting "Privacy" / "notice."; at 360 and 390 the sentence is two lines with both links whole.
+- **The way-in form and its rail stay on the page at 200% text.** From 1,000px the sign-in family's grid was
+  `28rem 20rem`, and both columns are in `rem`, so a 32px root made the two tracks **896 + 640px** plus a 96px gap
+  in a 1,080px wrap. At 1,440 the form card began at **x = -96** (its left 96px off the screen) and the rail ended
+  at **1,536**; the page was **1,536** wide (96 over). At 1,024 the form began at **x = -292**, the rail ended at
+  **1,316** and the page was **1,316** wide (292 over); at 1,280 it was 173 over and at 1,000 it was 303 over. The
+  tracks are `minmax(0, 28rem) minmax(0, 20rem)` now, so they give up width before the page does: at 1,440 the
+  form is **492px at x = 180** and the rail **492px at x = 768**, the page **1,440**; at 1,024 both are **444px**
+  (x = 32 and 548) and the page **1,024**; at 1,000 both are **433px** and the page **1,000**. At the normal 16px
+  root the columns are the ones they were (448px at x = 288 and 320px at x = 832 at 1,440; 448 at 92 and 320 at
+  612 at 1,024), and the page heights there are unchanged. The 200% pages are taller because the narrower columns
+  wrap their text (1,440: 908 → 1,100; 1,024: 908 → 1,196); nothing is clipped or lost.
+- **The create form's name field starts where its label is.** The form is a row of fields above its button. The
+  plan field carries the 104px sentence about a workspace's plan, and with the row's fields bottom-aligned that
+  sentence pushed the name field down: at 1,440 the name label was at **y = 350** (input 380) while the plan label
+  was at **y = 246**, so "Name a new workspace" sat beside the plan's hint (324–428) rather than above its own
+  input. At 768 it was **443** against **339** (input 473 against 369). The fields are `align-self: flex-start`
+  now: both labels are at **246** at 1,440 (inputs 276) and both at **339** at 768 (inputs 369). The form is still
+  240px and the page is still 1,709 and 1,799; the button still wraps to its own line below the two 235px fields,
+  as it did.
+- **Widths, schemes and the floor.** 320 / 360 / 390 / 768 / 1,024 / 1,440 in light, 320 and 360 in dark, forced
+  colours at 360, on the sign-up page, the sign-in page at 1,024 and 1,440 with a 32px root, and the paid account
+  with and without a workspace: no sideways page scroll (320: 320; 360: 360; 390: 390; 768: 768; 1,024: 1,024;
+  1,440: 1,440), nothing computes below **12px**, and no control under 44 × 44 below 721 (the 20px tick inside its
+  44px sentence and the prose's 19px inline link are the earlier records'). The tick box's two links measure
+  44 × 44 and 105 × 44; their focus ring is the page's 2px outline around that box. **Fourteen axe-core runs**
+  (sign-up at 320, 360, 1,440; sign-in at 1,024 and 1,440 with a 32px root; the account at 320, 360, 1,440 and the
+  empty account at 320, 1,440; dark at 320 and 360 and 1,440; forced colours at 360) find **no violation**, and no
+  changed state logs a console error.
+- **The budget.** `app.css` is **40,884 → 40,906 bytes of 40,960** (54 left): the tick box loses its 44px
+  line-height and its links' 44px min-height and gains the 13px padding and `nowrap` (−24), the auth grid gains
+  `minmax(0, …)` twice (+22), and the inline form's field gains `align-self: flex-start` (+24).
+- **Tests.** `npm run build`; `node --test "dist/tests/cloud/pages*.test.js"` — **196 pass, 0 fail**; the cloud
+  suite — **891 pass, 0 fail**; the build tests — **241 pass, 0 fail**; `npm run typecheck` clean; `npx eslint` on
+  the touched files 0 errors (the stylesheet is not in the ESLint config, so it reports one ignored-file warning).
+  `pages.test.ts` holds the tick box's label to its 24px leading and its links
+  to inline, 13px padding and `nowrap`; the way-in grid to `minmax(0, 28rem) minmax(0, 20rem)` in the 200% test;
+  and the inline form's field to `align-self: flex-start`. The mutation check: with the base stylesheet the pages
+  suite is **193 pass, 3 fail**, the three tests above.
+
+| measured | before | after |
+| --- | --- | --- |
+| The tick box's label at 320 | **152px**, three lines at 44 | **92px**, three lines at 24 |
+| … at 360 / 390 | 108px, two lines at 44 | **68px**, two lines at 24 |
+| … the card, 320 / 360 | 500 / 456 | **440 / 416** |
+| … the page, 320 / 360 / 390 | 1,582 / 1,410 / 1,410 | **1,522 / 1,370 / 1,370** |
+| … the links' own boxes | 44 × 44 and 105 × 44, `inline-block` | **44 × 44 and 105 × 44**, inline + 13px padding |
+| The way-in page at a 32px root, 1,440 | form **x = -96**, w 896; rail x = 896, w 640; page **1,536** (96 over) | **x = 180 / 492; x = 768 / 492; 1,440** |
+| … 1,024 | form **x = -292**, w 896; rail ends 1,316; page **1,316** (292 over) | **x = 32 / 444; x = 548 / 444; 1,024** |
+| … 1,000 / 1,280 | page 1,303 (303 over) / 1,453 (173 over) | **1,000 / 1,280** |
+| … the normal root, 1,440 | form 448 at 288; rail 320 at 832 | **the same** |
+| The create form's name label at 1,440 | **y = 350** (plan 246), input 380 | **y = 246**, input 276 |
+| … at 768 | **y = 443** (plan 339), input 473 | **y = 339**, input 369 |
+| … the form / the page, 768 / 1,440 | 240 / 1,799 and 240 / 1,709 | **the same** |
+| `app.css` | 40,884 bytes | **40,906** |
+
+### What this pass leaves
+
+- **The tick box's sentence is still three lines at 320.** The Privacy link is whole on its own line rather than
+  split across two; the sentence's 24px leading is the text's own, and a 214px column cannot hold the whole
+  sentence on two lines with both links whole. The label is 92px, 60px shorter than the 44px-leading version.
+- **The way-in form and rail are equal 492px columns at 1,440 with a 32px root.** The form is narrower than the
+  896px it asked for, so its title takes two lines and the rail's sentences wrap more; both columns are fully on
+  the page, which is what 200% text asks. The normal 16px layout is unchanged.
+- **The create form's button still takes a line of its own at 768 and above.** The two 235px fields and the gap
+  fill the form's 30rem; the button is 214px and wraps. The pass aligned the fields; it did not widen the form.
+- **The prose's 19px inline link and the 20px tick are the earlier records'.** The tick box's own sentence is the
+  44px target; the tick is drawn small inside it, as the 2026-11-06 entries already say.
+- **The sign-in family is the only 200% layout this pass measured in detail.** The home, account and legal pages
+  at a 32px root were checked for sideways overflow in the same browser and have none; their 200% layouts are the
+  earlier entries' work.

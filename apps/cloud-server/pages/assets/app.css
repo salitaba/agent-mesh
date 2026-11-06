@@ -472,7 +472,7 @@ meter::-moz-meter-bar { border-radius: var(--k-r-pill); background: currentColor
 #again form { display: grid; gap: 14px; margin-top: 4px; }
 #again form .field, #again form p, #again form .note { margin: 0; }
 @media (min-width: 1000px) {
-  .auth { display: grid; grid-template-columns: 28rem 20rem; column-gap: clamp(48px, 7vw, 96px); justify-content: center; align-items: start; }
+  .auth { display: grid; grid-template-columns: minmax(0, 28rem) minmax(0, 20rem); column-gap: clamp(48px, 7vw, 96px); justify-content: center; align-items: start; }
   .auth-side { margin-top: 0; }
 }
 
@@ -670,7 +670,7 @@ body[data-page="home"] main { background: var(--k-glow) top / 100% 520px no-repe
 .confirm .btn-danger { border-color: transparent; background: var(--k-bad); color: var(--k-on-accent); }
 .confirm .btn-danger[disabled] { background: var(--k-bad); }
 .inline-form { display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-end; max-width: 30rem; }
-.inline-form .field { flex: 1 1 10rem; margin: 0; }
+.inline-form .field { flex: 1 1 10rem; margin: 0; align-self: flex-start; }
 .plans { display: grid; grid-template-columns: minmax(0,1fr); gap: 16px; }
 @media (min-width: 720px) {
   .plans { grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); }
@@ -835,8 +835,7 @@ tfoot > tr > * { background: var(--k-surface-2); font-weight: 650; }
   .stage > .btn-row > .btn { flex: 1 1 100%; }
   .steps { column-gap: 12px; }
   .steps li::after { display: none; }
-  .check label { line-height: 44px; }
-  .check label a { display: inline-block; min-height: 44px; }
+  .check label a { display: inline; padding: 13px 0; white-space: nowrap; }
   .bar, .bar nav { flex-wrap: wrap; }
   .ws-address-l { flex: 1 0 100%; font-size: .75rem; }
   .ws .ws-address code { flex: 1 1 8rem; min-width: 0; }
