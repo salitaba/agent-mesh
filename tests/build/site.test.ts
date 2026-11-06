@@ -835,7 +835,7 @@ test("a caption is text: a capture's way to its full size is a line of it, and t
   const captions = [...home.matchAll(/<figcaption>([\s\S]*?)<\/figcaption>/g)].map((m) => m[1]!);
   const withLink = captions.filter((c) => /class="shot-open"/.test(c));
   assert.equal(withLink.length, 4, "four captures put their way to the full size in the caption");
-  assert.match(withLink[0]!, /^<b>Overview\.<\/b>[\s\S]*<a class="shot-open" href="assets\/shots\/shot-overview-light\.jpg" aria-label="Open the Overview capture at full size">Full size<\/a>$/, "each of the plate's captions is its words, then its link");
+  assert.match(withLink[0]!, /^<b>Overview\.<\/b>[\s\S]*<a class="shot-open" href="assets\/shots\/shot-overview-light\.jpg" data-shot-dark="assets\/shots\/shot-overview-dark\.jpg" aria-label="Open the Overview capture at full size">Full size<\/a>$/, "each of the plate's captions is its words, then its link, with the dark twin it opens");
   for (const n of ["Events", "Designer"]) assert.ok(withLink.some((c) => c.includes(`<b>${n}.</b>`) && c.endsWith(`>Full size</a>`)), `${n}: the same shape`);
   assert.match(withLink[3]!, /^<b>Graph\.<\/b>[\s\S]*<a class="shot-open" href="assets\/shots\/shot-graph\.jpg" aria-label="Open the Graph capture at full size">Full size<\/a>$/, "the graph's caption is its words, then its link");
   // A 44px link in a 13px caption made its last line 44px tall: at 360 the line above stood 31.75px from it in a
@@ -846,6 +846,24 @@ test("a caption is text: a capture's way to its full size is a line of it, and t
   assert.match(css, /\n\.frame-bar \{[^}]*height: 50px;/, "the plate's bar is the 50px row its three labels fill");
   assert.match(css, /\n\.tile \.tile-open \.shot-open \{[^}]*width: 100%;/, "the cards' rows are the cards' width");
   assert.match(css, /\n\.frame:has\(\.shot-open\) \.shot-open::before,\n\.tile \.shot-open::before \{ content: ""; position: absolute; inset: 0; \}/, "the figure, not the caption's line, is the press");
+});
+
+test("the plate's Full size links name the dark twin the picture shows, and no capture without one pretends to have it", () => {
+  const home = page(pages, "index.html").html;
+  // The picture swaps by <source media="(prefers-color-scheme: dark)">; the link under it has to open the same file the
+  // visitor is looking at, or a dark visitor's Full size press is a white flash. site-script.test.ts runs the script that
+  // reads data-shot-dark; this holds the attribute to the file the picture really shows.
+  const panes = [...home.matchAll(/<figure class="pane">([\s\S]*?)<\/figure>/g)].map((m) => m[1]!);
+  assert.equal(panes.length, 3);
+  for (const pane of panes) {
+    const dark = /<source media="\(prefers-color-scheme: dark\)" srcset="([^"]+)">/.exec(pane)?.[1];
+    const link = /<a class="shot-open" href="([^"]+)" data-shot-dark="([^"]+)"/.exec(pane);
+    assert.ok(dark && link, `${pane.slice(0, 60)}: the picture and its link`);
+    assert.equal(link![2], dark, "the link opens the file the dark picture is showing");
+    assert.equal(link![1]!.replace("-light.jpg", "-dark.jpg"), dark, "and the light file is its twin");
+    assert.ok(fs.existsSync(path.join(SITE, dark!)), `${dark} is there`);
+  }
+  assert.equal((home.match(/data-shot-dark=/g) ?? []).length, 3, "only the three captures with a dark twin carry one: the six cards and the graph have no twin to open");
 });
 
 /**

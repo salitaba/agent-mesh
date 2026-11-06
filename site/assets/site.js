@@ -64,10 +64,15 @@ var IMAGE_NAME = "ghcr.io/salitaba/curule";
   var tocEdges = function (left, client, total) {
     return { back: left > 1, more: total - client > 1 && left + client < total - 1 };
   };
+  // The file a Full size link opens: the capture the page is showing. A capture with a dark twin is shown in the visitor's
+  // scheme, so the link opens that twin; without one, or with no scheme to read, it opens the light file the markup names.
+  var shotHref = function (light, dark, darkNow) {
+    return darkNow && dark ? dark : light;
+  };
 
   // The pure parts, for the tests, when the file is loaded as a module; in a browser nothing is exported.
   if (typeof module === "object" && module !== null && typeof module.exports === "object") {
-    module.exports = { readingAt: readingAt, docMatches: docMatches, scrolledOff: scrolledOff, staggerOf: staggerOf, startsHidden: startsHidden, withClass: withClass, withoutArrival: withoutArrival, copyName: copyName, tocEdges: tocEdges };
+    module.exports = { readingAt: readingAt, docMatches: docMatches, scrolledOff: scrolledOff, staggerOf: staggerOf, startsHidden: startsHidden, withClass: withClass, withoutArrival: withoutArrival, copyName: copyName, tocEdges: tocEdges, shotHref: shotHref };
   }
   if (typeof document === "undefined") return;
 
@@ -121,6 +126,20 @@ var IMAGE_NAME = "ghcr.io/salitaba/curule";
       a.href = CONTACT_HREF + (subject ? "?subject=" + encodeURIComponent(subject) : "");
     });
   }
+
+  // A capture with a dark twin is shown in the visitor's scheme (the picture's own <source>), and its Full size link opens
+  // the same file the picture is showing: in a dark room the light twin was a white flash. Without a script the link still
+  // opens the light file the markup names, as the page did before; the picture itself follows the scheme in CSS.
+  all("[data-shot-dark]").forEach(function (a) {
+    var light = a.getAttribute("href");
+    var dark = a.getAttribute("data-shot-dark");
+    if (!light || !dark || typeof window.matchMedia !== "function") return;
+    var scheme = window.matchMedia("(prefers-color-scheme: dark)");
+    var choose = function () { a.setAttribute("href", shotHref(light, dark, scheme.matches)); };
+    choose();
+    if (typeof scheme.addEventListener === "function") scheme.addEventListener("change", choose);
+    else if (typeof scheme.addListener === "function") scheme.addListener(choose);
+  });
 
   // After the first release the demo can be started from the published image as well as from a build.
   if (IMAGE_RELEASED) {
@@ -425,16 +444,26 @@ var IMAGE_NAME = "ghcr.io/salitaba/curule";
     });
     var total = groups.reduce(function (n, g) { return n + g.docs.length; }, 0);
     var saying = 0;
-    // The visible count, and the same answer in the one polite live region. When nothing matches, the region says what a
-    // reader looking at the empty box sees: the words typed, and the way back to every document. Its first version said only
-    // "0 of 16 documents", so the query and the Clear offer never reached a screen reader.
-    var tell = function (shown, filtering, query) {
+    // The visible count and the one polite live region say the same answer, but not at the same moment. The count is part of
+    // the map a reader is looking at: it changes with the rows, at once, so it can never say "All 16 documents" above a panel
+    // that says nothing matches. The live region waits for a pause in the typing, so a screen reader is not read a count on
+    // every keystroke. When nothing matches, the region says what a reader looking at the empty box sees: the words typed,
+    // and the way back to every document. Its first version said only "0 of 16 documents", so the query and the Clear offer
+    // never reached a screen reader.
+    var answer = function (shown, filtering, query) {
       var typed = String(query === undefined ? "" : query).trim().replace(/\s+/g, " ");
-      count.textContent = filtering ? shown + " of " + total + " documents" : "All " + total + " documents";
-      if (!announce) return;
-      announce.textContent = filtering && shown === 0
-        ? "No document matches \u201c" + typed + "\u201d. " + count.textContent + ". Clear the filter, below, shows them all."
-        : count.textContent;
+      var visible = filtering ? shown + " of " + total + " documents" : "All " + total + " documents";
+      return {
+        visible: visible,
+        spoken: filtering && shown === 0
+          ? "No document matches \u201c" + typed + "\u201d. " + visible + ". Clear the filter, below, shows them all."
+          : visible
+      };
+    };
+    var tell = function (shown, filtering, query) {
+      var now = answer(shown, filtering, query);
+      count.textContent = now.visible;
+      if (announce) announce.textContent = now.spoken;
     };
     var apply = function () {
       var query = field.value;
@@ -450,10 +479,12 @@ var IMAGE_NAME = "ghcr.io/salitaba/curule";
         shown += left;
       });
       var filtering = words(query).length > 0;
+      var now = answer(shown, filtering, query);
       none.hidden = shown > 0;
       said.textContent = query.trim();
+      count.textContent = now.visible;
       window.clearTimeout(saying);
-      saying = window.setTimeout(function () { tell(shown, filtering, query); }, 400);
+      saying = window.setTimeout(function () { if (announce) announce.textContent = now.spoken; }, 400);
     };
     var clear = function () {
       field.value = "";

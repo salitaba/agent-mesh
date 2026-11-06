@@ -351,6 +351,8 @@ file's real size is not the size its page says, when a file is under no page, an
 | `shot-graph.jpg` | Graph: who talked to whom, with its legend | 1139 × 606, the inside of the graph card (6 pixels in from its edge, clear of its rounded corners), legend included |
 
 A light picture and its dark twin must be the same size, so that the page does not move when the visitor's colour scheme changes.
+Where a capture has a dark twin, its *Full size* link opens the twin the picture is showing in the visitor's scheme; the markup
+names the light file, so a browser without a script opens that one and nothing is missing.
 They show the scripted demo, which makes no model calls, and the pages say so beside them.
 
 To retake them without Docker: scaffold the demo project into a scratch folder (`curule init <dir> --example demo-stub`), register
