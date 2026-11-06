@@ -144,7 +144,7 @@
 .ms-seatrow-sub { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s1) var(--s2); min-width: 0; }
 .ms-seatrow .rl { font: var(--tx-meta); color: var(--muted); overflow-wrap: anywhere; }
 .ms-seatrow-meta { font: var(--tx-meta); color: var(--muted); overflow-wrap: anywhere; }
-.ms-flag { display: inline-flex; align-items: center; gap: var(--s1); padding: 1px var(--s2); border-radius: var(--k-r-pill); font: 600 11px var(--sans); color: var(--text-dim); background: var(--panel-2); border: 1px solid var(--line); }
+.ms-flag { display: inline-flex; align-items: center; gap: var(--s1); padding: 1px var(--s2); border-radius: var(--k-r-pill); font: 600 12px var(--sans); color: var(--text-dim); background: var(--panel-2); border: 1px solid var(--line); }
 .ms-flag.bad { color: var(--bad); background: color-mix(in srgb, var(--bad) 14%, transparent); border-color: color-mix(in srgb, var(--bad) 24%, transparent); }
 .ms-seatrow-go { color: var(--muted); }
 .ms-seats-note { margin: 0; font: var(--tx-meta); color: var(--muted); }

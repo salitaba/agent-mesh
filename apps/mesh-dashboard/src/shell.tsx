@@ -343,9 +343,14 @@ export function Shell({ viewNode }: { viewNode: React.ReactNode }): React.JSX.El
   }, []);
   // The help panel scrolled its own close control off the top (measured at 360: y = -136 after scrolling 400). A real title
   // row, the one every other panel uses, stays at the top of the panel while the text under it moves.
-  const openHelp = useCallback(() => openDrawer(
-    <><DrawerHead onClose={closeDrawer}>Help</DrawerHead><Help /></>,
-  ), [openDrawer, closeDrawer]);
+  // The help button lives at the foot of the sidebar, so on a phone it is pressed while the off-canvas menu is open — and the
+  // menu sits above the drawer (`--z-sidebar` 50 over `--z-overlay` 40). Opening the panel without closing the menu put it
+  // behind the menu: measured at 360 the only thing that changed was the button's own pressed background, and Escape (which
+  // unwinds the menu first) was the only way to see the help it had opened. The panel is a route of its own, so the menu closes.
+  const openHelp = useCallback(() => {
+    setMenuOpen(false);
+    openDrawer(<><DrawerHead onClose={closeDrawer}>Help</DrawerHead><Help /></>);
+  }, [openDrawer, closeDrawer]);
 
   // The mission's controls (useMissionActions.ts): the bar, the Overview and the keyboard all go through the same functions.
   const missionActions = useMissionActions();

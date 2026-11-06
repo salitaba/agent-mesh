@@ -11,6 +11,8 @@ import * as path from "path";
 const SRC = path.resolve(__dirname, "..", "..", "..", "apps", "mesh-dashboard", "src");
 const styles = fs.readFileSync(path.join(SRC, "styles.css"), "utf8");
 const projects = fs.readFileSync(path.join(SRC, "projects.css"), "utf8");
+const topology = fs.readFileSync(path.join(SRC, "designer", "topology.css"), "utf8");
+const steps = fs.readFileSync(path.join(SRC, "views", "steps.css"), "utf8");
 
 /** Every media block whose condition names a phone or a coarse pointer, joined. */
 function phoneBlocks(css: string): string {
@@ -48,4 +50,16 @@ test("the goal id under the wordmark is a word at 12 px, like every other captio
   // Measured at 360: the `.sub` span was 11 px and 247 px wide, the last off-ladder word on the page (the 22 px avatar initials
   // and the 18 px key chips are glyphs and stay). A name set at 11 px is a caption that got smaller than the caption floor.
   assert.match(phoneBlocks(styles), /\.brand \.sub \{ font-size: 12px; \}/, "the goal id takes the phone's 12 px caption step");
+});
+
+test("a status word and a clock tick are 12 px, not 11: the designer's seat flags and the timeline's axis", () => {
+  // Measured on the delivered demo: the Designer's seat list drew "Starts" and "Service" at 11 px (mixed case, a chip a person
+  // reads), and the Steps timeline's clock ticks ("23:39:30") were 11 px figures at 768 and 1,440. The 11 px step belongs to a
+  // capital micro-label and to a glyph mark (the avatar initials), not to a word or a time. Both take the 12 px step.
+  const flag = /\.ms-flag \{([^}]*)\}/.exec(topology);
+  assert.ok(flag, "the seat flag's rule is read");
+  assert.match(flag![1]!, /font:\s*600 12px/, "a seat flag is 12 px");
+  const tick = /\.st-tick \{([^}]*)\}/.exec(steps);
+  assert.ok(tick, "the timeline tick's rule is read");
+  assert.match(tick![1]!, /font:\s*12px/, "a clock tick is 12 px");
 });

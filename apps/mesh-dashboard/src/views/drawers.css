@@ -492,8 +492,8 @@ span.caret { color: var(--ok); animation: blink 1s steps(1) infinite; }
      delivered demo at 360: 3 of the 6 chips wholly in view, 105 px of row out of reach. The names fit one row at this width
      once the counts (each section repeats its own over its first rows) are off the chips; below that the row wraps rather
      than scrolls, so a narrower phone loses a row and not a section. */
-  .sv-jump { flex-wrap: wrap; }
-  .sv-jump-b { flex: 0 1 auto; min-width: 0; padding: 0 var(--s1); }
+  .sv-jump { flex-wrap: wrap; gap: 0 var(--s0); }
+  .sv-jump-b { flex: 0 1 auto; min-width: 44px; min-height: 44px; justify-content: center; padding: 0 var(--s1); }
   .sv-jump-n { display: none; }
   /* The step's drawer is the one panel that kept a desk width on a phone: `:has(.stepv)`'s 96vw outranks the phone's 100vw,
      so 12.8–15.6px of a page that cannot be read peeked beside it, and its sticky head — drawn with the desk's 22px bleed —

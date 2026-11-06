@@ -377,6 +377,69 @@ Breakpoints: **1280 1100 900 800 760 620 560**. 800 is the sidebar drawer (JS
 
 ## Pass log
 
+### 2026-11-06 — a phone's help is not behind its menu, its step chips are 44 px, and two labels leave the 11 px step
+
+Surface: `src/shell.tsx` (`openHelp`), `src/views/drawers.css` (the phone jump row), `src/designer/topology.css`
+(`.ms-flag`), `src/views/steps.css` (`.st-tick`), with one rule in each of `tests/dashboard/help.test.ts`,
+`drawer-phone.test.ts` and `phone-type.test.ts`.
+
+Measured on the scripted demo at **Delivered** (481 events, 49.3k of 2.0M tokens, 7 checks, 9 files, 7 seats, 28
+turns, ran 3m 6s) in the production build served by `curule console`, Chromium 156 (headless Chrome over CDP) at
+320/360/390/768/1,024/1,440 in light and 360/1,440 in dark, a touch pointer at 800 and below, reduced motion,
+axe-core 4.14. The before bundle is the same worktree at `6d0bf23`, built and served in the same session.
+
+- **The help button did nothing while the phone's menu was open.** The button lives at the foot of the sidebar; at
+  360 opening the menu and pressing it drew the help panel at **360 × 900, z = 40** under the menu at **288 × 900,
+  z = 50**. The only visible change was the button's own pressed background — the point at (180, 60) was still the
+  sidebar — and Escape, which unwinds the menu first, was the only way to see the help that had been opened. At 320 the
+  menu covered **275.2 of the panel's 320 px** (86%; 80% at 360). `openHelp` closes the menu first now: at 360 the
+  sidebar is off-screen at **x = −302.4**, the help panel is **360 × 900** and the element at its title row is its own
+  `drawer-head`; at 320 it is **320 × 900**. The `?` key goes through the same function, so it no longer opens the
+  panel behind a menu either.
+- **Three jump chips in a step's drawer were under 44 px wide.** With the first turn open, the jump row's Tools,
+  Brief and Raw chips were **39.6, 37 and 33.6 px** at 320, 360 and 390 (Outcome, Reasoning and Events were 67.7, 72.2
+  and 48.1). They were the only pressed things under 44 × 44 in the twelve views and the drawers. The phone block now
+  gives every chip a **44 px** width and centres its word; the row's gap narrows from 4 to 2 px so the six chips still
+  share one **334 px** row at 360 (329.98 px of content), and the 320 row wraps exactly as before (two rows, **88 px**).
+  At 1,440 with a fine pointer the chips keep their 36 px height and 64.5/49/45.6 px widths.
+- **Two labels were 11 px: a seat flag and a clock tick.** The Designer's seat list drew "Starts" and "Service" as
+  **11 px** mixed-case chips, and the Steps timeline drew its clock ticks ("23:39:30") as **11 px** figures at 768 and
+  1,440. The 11 px step belongs to a capital micro-label and to a glyph mark (the avatar initials), not to a word or a
+  time. Both are **12 px** now: the flags measure 67.7 and 60.9 px wide, and a tick is 47.6 px wide with 202.1 px
+  between major ticks at 768 and 187.7 px at 1,440, so nothing collides. The Designer page grows **4 px** (320:
+  1,096, 360: 1,057, 390: 1,023); the Steps page does not move (2,576 at 768, 2,438 at 1,440). The only 11 px text left
+  in a view is the avatar initials, a glyph in a 22 px disc.
+
+| | Before | After |
+|---|---|---|
+| Help under the phone menu at 360: menu / panel | 288 × 900 (z 50) over 360 × 900 (z 40) | panel 360 × 900, menu closed (x −302.4) |
+| Help under the phone menu at 320 | 275.2 × 900 over 320 × 900 | panel 320 × 900, menu closed |
+| The step jump chips at 320/360/390: Tools / Brief / Raw | 39.6 / 37 / 33.6 | **44 / 44 / 44** |
+| The jump row at 360: content / row | 318.2 / 334 (one row) | **329.98 / 334** (one row) |
+| The jump row at 320 | 294 / 88 (two rows) | 294 / 88 (two rows) |
+| The jump chips at 1,440 | 64.5 / 49 / 45.6, 36 tall | 64.5 / 49 / 45.6, 36 tall |
+| A seat flag: font / "Starts" / "Service" | 11 / — / — | **12** / 67.7 / 60.9 |
+| The Designer page at 320 / 360 / 390 | 1,092 / 1,053 / 1,019 | **1,096 / 1,057 / 1,023** |
+| A timeline tick: font / width | 11 / — | **12** / 47.6 |
+| Major-tick spacing at 768 / 1,440 | 202.1 / 187.7 | 202.1 / 187.7 |
+| The Steps page at 768 / 1,440 | 2,576 / 2,438 | 2,576 / 2,438 |
+| Axe, 12 views × 320/360/390/1,440 × both themes | — | **0 violations (96 reads)** |
+| Horizontal page scroll, 320–1,440 × both themes | 0 | **0** |
+
+Floors: `npm run typecheck` and `npm run build` clean; `dist/tests/dashboard` + `dist/tests/build` **1,491 pass, 0
+fail** (three new rules, one in each of `help`, `drawer-phone` and `phone-type`; each was mutation-checked by putting
+the old code back); eslint 0 on the touched TypeScript; axe 0 in 96 reads; no page scrolls sideways at
+320/360/390/768/1,024/1,440 in light or 360/1,440 in dark; no pressed thing under 44 × 44 at 320/360/390 in the views
+or the drawers beyond the 1 × 1 skip link and the raw switch inputs inside their 44 px labels; and every word or figure
+in a view is 12 px or larger, the avatar initials (11 px glyphs) aside.
+
+**Left.** The jump row still wraps at 320 (two 44 px rows), and the 2 px gap that keeps 360 on one row is the price of
+six 44 px targets in a 334 px row; a translation or a wider font wraps it as at 320, which the row already supports.
+The Events and Steps header still says **Live** while the list's own bar says **Updates paused** — two facts, and the
+open question from the 2026-11-05 pass about that chip; this pass did not change it. The phone's drawer close is 44 px,
+the desk's stays 32. The help fix is measured in Chromium with touch emulation in CSS, not on hardware, and the screen
+reader path (`?` and Escape) is reasoned from the one handler, not read with a real screen reader.
+
 ### 2026-11-05 — a phone's drawer tabs wrap, and its open request names the seat
 
 Surface: `src/styles.css` (the phone tab strip and the dock tab's inset), `src/views/steps.css` (the pulse row as a

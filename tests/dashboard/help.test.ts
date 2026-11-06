@@ -42,3 +42,14 @@ test("a key and its alternative stay on one line", () => {
   assert.match(css, /\.help table td:first-child, \.help kbd \{ white-space: nowrap; \}/);
   assert.match(help, /<kbd>⌘K<\/kbd> \/ <kbd>Ctrl K<\/kbd>/);
 });
+
+test("the help button under a phone's menu closes the menu before the panel opens", () => {
+  // Measured at 360: the menu is `--z-sidebar` 50 and the help panel `--z-overlay` 40, so pressing the sidebar's help button
+  // opened the panel under the still-open menu. Nothing visible happened except the button's own pressed background; the panel
+  // was only revealed by Escape, which unwinds the menu first. The panel is a page of its own, so opening it closes the menu.
+  const open = /const openHelp = useCallback\(\(\) => \{([\s\S]*?)\}, \[([^\]]*)\]\);/.exec(shell);
+  assert.ok(open, "openHelp is one callback");
+  assert.match(open![1]!, /setMenuOpen\(false\)/, "it closes the off-canvas menu first");
+  assert.match(open![1]!, /openDrawer\(/, "and then opens the help panel");
+});
+
