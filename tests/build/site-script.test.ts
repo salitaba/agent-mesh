@@ -51,6 +51,7 @@ interface Pure {
   copyName(label: string, shown: string): string;
   tocEdges(left: number, client: number, total: number): { back: boolean; more: boolean };
   shotHref(light: string, dark: string, darkNow: boolean): string;
+  needsTabStop(scrollWidth: number, clientWidth: number, scrollHeight: number, clientHeight: number): boolean;
 }
 
 /** The script's pure parts, as it exports them when it is loaded as a module (in a browser nothing is exported). */
@@ -59,6 +60,21 @@ function pure(): Pure {
   vm.runInNewContext(SCRIPT, { module }, { filename: "site.js" });
   return module.exports as unknown as Pure;
 }
+
+/**
+ * A box that does not scroll is not a control. Measured at 360 and 1,440: the home page's three commands and the
+ * pricing page's two comparison tables (plus the licence command) all had scrollWidth === clientWidth and
+ * scrollHeight === clientHeight, and every one carried tabindex="0": three stops on the home page between its Copy
+ * buttons, three on the pricing page. The measure is the rule; `tests/build/site.test.ts` holds the markup to it.
+ */
+test("a region is a tab stop only while it has something to scroll, and a pixel of rounding is not a scroll", () => {
+  const p = pure();
+  assert.equal(p.needsTabStop(326, 326, 84, 84), false, "a command that wraps is not a stop");
+  assert.equal(p.needsTabStop(1118, 1118, 535, 535), false, "a table that fits is not a stop");
+  assert.equal(p.needsTabStop(2574, 326, 51, 51), true, "a command past its box is");
+  assert.equal(p.needsTabStop(326, 326, 86, 84), true, "so is one that runs past the bottom");
+  assert.equal(p.needsTabStop(326, 326, 85, 84), false, "one pixel of a rounded measurement is not");
+});
 
 /** A node of the small DOM with the parts of a browser's element the script reads or calls, which the test sets by hand. */
 type Placed = FakeNode & {

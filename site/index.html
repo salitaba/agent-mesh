@@ -10,7 +10,7 @@
 <link rel="apple-touch-icon" href="assets/apple-touch-icon.png">
 <meta name="theme-color" content="#fbfaf8" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#131211" media="(prefers-color-scheme: dark)">
-<link rel="stylesheet" href="assets/site.css?v=5b966172cf">
+<link rel="stylesheet" href="assets/site.css?v=69c3cc5f19">
 <meta property="og:type" content="website">
 <link rel="canonical" href="https://curule.dev/">
 <meta property="og:url" content="https://curule.dev/">
@@ -280,7 +280,7 @@
       <li>
         <h3>Make a token, and keep it</h3>
         <p>The container will not start without one; you paste it at sign-in.</p>
-        <div class="code"><pre tabindex="0"><code>export MESH_API_TOKEN=\
+        <div class="code"><pre data-scroll><code>export MESH_API_TOKEN=\
 "$(openssl rand -hex 32)"
 echo "$MESH_API_TOKEN"</code></pre></div>
       </li>
@@ -288,13 +288,13 @@ echo "$MESH_API_TOKEN"</code></pre></div>
         <h3>Build the image</h3>
         <!-- The caveat belongs to the step it explains: it used to stand in the preamble, above the first command. -->
         <p data-image-off class="small muted">No image is published yet, so this step builds it from the source; tagged releases will publish one.</p>
-        <div class="code"><pre tabindex="0"><code>git clone https://github.com/salitaba/agent-mesh.git curule
+        <div class="code"><pre data-scroll><code>git clone https://github.com/salitaba/agent-mesh.git curule
 cd curule
 docker build -t curule .</code></pre></div>
       </li>
       <li>
         <h3>Start the demo</h3>
-        <div class="code"><pre tabindex="0"><code>docker run --rm \
+        <div class="code"><pre data-scroll><code>docker run --rm \
   -p 127.0.0.1:7420:7420 \
   -v mesh-demo:/data \
   -e MESH_API_TOKEN=\
@@ -513,6 +513,6 @@ docker build -t curule .</code></pre></div>
   </div>
 </footer>
 <!-- generated:chrome-footer:end -->
-<script src="assets/site.js?v=77ad091077" defer></script>
+<script src="assets/site.js?v=2690dea67a" defer></script>
 </body>
 </html>

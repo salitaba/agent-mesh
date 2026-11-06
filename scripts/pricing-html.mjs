@@ -125,7 +125,7 @@ export function renderPlanTable(out) {
   };
   const yes = (on) => (on ? { html: "Yes", cls: "yes" } : { html: "No", cls: "no" });
   const hasReports = (p) => p.features.includes("usage-export") && p.features.includes("prometheus-metrics");
-  return `<div class="table-wrap" role="region" aria-label="The plans compared" tabindex="0">
+  return `<div class="table-wrap" role="region" aria-label="The plans compared" data-scroll>
   <table class="compare">
     <caption class="sr">The four plans side by side: price, limits, features and support. A plan is for one host, so a limit that is not per mesh is that host&rsquo;s. Prices are in US dollars and exclude taxes.</caption>
     <thead><tr><th scope="col"><span class="sr">Plan</span></th>${head}</tr></thead>
@@ -184,7 +184,7 @@ export function renderRunCosts(out) {
       return `      <tr><th scope="row">${esc(modelName(m))}${own}</th><td>${usdc(one)}</td><td>${usdc(cents(one * 10))}</td><td>${usdc(cents(one * 25))}</td><td>${usdc(cents(one * 100))}</td></tr>`;
     })
     .join("\n");
-  return `<div class="table-wrap" role="region" aria-label="What the measured mission costs at each model's list price" tabindex="0">
+  return `<div class="table-wrap" role="region" aria-label="What the measured mission costs at each model's list price" data-scroll>
   <table class="compare">
     <caption class="sr">The tokens of the measured mission priced at each model's list price of ${esc(out.modelPrices.asOf)}, and a month of 10, 25 or 100 such missions</caption>
     <thead><tr><th scope="col">Model</th><th scope="col">This mission</th><th scope="col">10 a month</th><th scope="col">25 a month</th><th scope="col">100 a month</th></tr></thead>

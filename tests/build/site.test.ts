@@ -514,13 +514,22 @@ test("nothing is hidden by the stylesheet to be shown later: what arrives as the
   assert.ok(!/\.rv\b/.test(outside), "no rule hides anything outside the block for a visitor who allows motion");
   // The only things the stylesheet makes invisible on its own: the radio buttons behind the two segmented controls and the
   // six views' chooser (they are used, not seen), the view cards the chooser is not showing (one is always visible, and the
-  // first is chosen in the markup, so a page with no script shows a view), the four plan cards that share one cell on a
-  // phone (the chosen one is visible, the others only size the cell, and the first is chosen in the markup), and the
-  // back-to-top button, which only the script makes.
+  // first is chosen in the markup, so a page with no script shows a view), the price and the period row of the billing
+  // period not chosen (they keep their box so the page does not move, and neither is read), the four plan cards that
+  // share one cell on a phone (the chosen one is visible, the others only size the cell, and the first is chosen in the
+  // markup), and the back-to-top button, which only the script makes.
   const invisible = [...outside.replace(/\/\*[\s\S]*?\*\//g, "").matchAll(/([^{}]+)\{([^{}]*)\}/g)]
     .filter((m) => /\bopacity: 0;|\bvisibility: hidden;/.test(m[2]!))
     .map((m) => m[1]!.trim().replace(/\s+/g, " "));
-  assert.deepEqual(invisible, [".tab-input, .billing-input, .choice-input", ".view-input", ".tiles > .tile", ".plans > .plan", ".to-top:not(.is-shown)"], "nothing else is made invisible by the stylesheet alone");
+  assert.deepEqual(invisible, [
+    ".tab-input, .billing-input, .choice-input",
+    ".view-input",
+    ".tiles > .tile",
+    ".billing-input:nth-of-type(1):checked ~ .plans .price-monthly, .billing-input:nth-of-type(2):checked ~ .plans .price-annual",
+    ".plans > .plan",
+    "body:has(#billing-monthly:checked) #compare .plan-stack .period-annual, body:has(#billing-annual:checked) #compare .plan-stack .period-monthly",
+    ".to-top:not(.is-shown)",
+  ], "nothing else is made invisible by the stylesheet alone");
   assert.match(/@media print \{[\s\S]*?\n\}/.exec(css)![0], /\.rv \{ opacity: 1 !important; transform: none !important; \}/, "and a page printed half-way down is printed whole");
   // A browser does not print backgrounds unless it is told to: the primary button's white label and the closing band's light one would
   // be white on white. On paper a button is black text in a black line, and the band is black text on the paper.
@@ -1187,17 +1196,30 @@ test("a note and an answer hold the prose measure", () => {
 });
 
 /**
- * The licence command is a scroll region a keyboard can reach (`pre tabindex="0"`), and its code box clips everything
- * outside its own 1px border. The ring was drawn 2px outside the pre's box with a 2px offset, so at 360 and at 1,440 every
- * side of it fell outside the clip: under a real Tab the pre matched `:focus-visible`, its computed outline was 2px solid in
- * the accent, and no pixel of it was on the screen. It is drawn inside the pre's edge now.
+ * A command box is a scroll region a keyboard can reach only while it has something to scroll (`data-scroll`, and the
+ * script adds tabindex="0" when the content overflows). The three demo commands wrap at every width, and the plans' two
+ * tables fit at 720 and up (below that neither is drawn): all six carried a stop that moved the keyboard nowhere, and
+ * the four on the pricing page sat between the Copy button and the next control. The ring is still drawn inside the
+ * pre's edge, because a command that does overflow has to show where the keyboard is: the box clips everything outside
+ * its own 1px border, and the ring drawn 2px outside it was invisible at 360 and 1,440.
  */
-test("a command a keyboard can scroll draws its ring inside the box that would clip it", () => {
+test("a command is a tab stop only while it can scroll, and its ring is drawn inside the box that would clip it", () => {
   const css = fs.readFileSync(path.join(SITE, "assets", "site.css"), "utf8");
+  const script = fs.readFileSync(path.join(SITE, "assets", "site.js"), "utf8");
   const home = page(pages, "index.html").markup;
+  const pricing = page(pages, "pricing/index.html").markup;
   assert.match(css, /\n\.code pre:focus-visible \{ outline-offset: -2px; \}/, "the ring is drawn inside the pre, where the code box cannot cut it");
   assert.match(css, /\n\.code \{ position: relative;[^}]*overflow: hidden;/, "the box that clips it is still the framed terminal");
-  assert.match(home, /<div class="code"><pre tabindex="0"><code>/, "a command is a tab stop, which is why its ring matters");
+  assert.match(home, /<div class="code"><pre data-scroll><code>/, "a command is a scroll region, marked for the script");
+  assert.ok(!/\btabindex="0"/.test(home), "and it is not a stop until the script finds it overflows: these commands wrap");
+  for (const m of pricing.matchAll(/<div class="table-wrap"[^>]*>/g)) {
+    assert.match(m[0], /data-scroll/, "a table that can scroll is marked for the script");
+    assert.ok(!/tabindex="0"/.test(m[0]), "and is not a stop while it fits");
+  }
+  assert.match(script, /var needsTabStop = function \(scrollWidth, clientWidth, scrollHeight, clientHeight\) \{/, "the measure is one rule");
+  assert.match(script, /all\("\[data-scroll\]"\)/, "every marked region is measured");
+  assert.match(script, /if \(needsTabStop\([^)]*\)\) node\.setAttribute\("tabindex", "0"\);/, "a region that overflows takes a stop");
+  assert.match(script, /else node\.removeAttribute\("tabindex"\);/, "and one that stops overflowing gives it back");
 });
 
 /**
