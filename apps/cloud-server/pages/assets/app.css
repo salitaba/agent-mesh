@@ -872,7 +872,7 @@ tfoot > tr > * { background: var(--k-surface-2); font-weight: 650; }
   .logo { height: 20px; }
 }
 @media (max-width: 389px) { .subnav a { padding: 0 4px; font-size: max(12px, min(.75rem, 3.8vw)); } }
-@media (max-width: 359px) { .subnav { gap: 0 } .subnav a { padding: 0; justify-content: center } .subnav a + a { border-left: 1px solid var(--k-line-strong) } .row .btn-row { gap: 4px } .row .btn-small { padding-inline: 8px } #who { display: flex; flex-wrap: wrap; gap: 0 4px } }
+@media (max-width: 359px) { .subnav a { padding: 0 10px } .plan .price small { display: block; margin-left: 0 } .row .btn-row { gap: 4px } .row .btn-small { padding-inline: 8px } #who { display: flex; flex-wrap: wrap; gap: 0 4px } }
 
 @media (forced-colors: active) {
   input[type="checkbox"] { appearance: auto; }

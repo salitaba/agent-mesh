@@ -26,7 +26,7 @@
     home: ["bar-say", "plans", "topups"],
     signup: ["bar-say", "card", "form", "status", "title", "lede", "email", "email-error", "password", "password-error", "agree", "agree-error"],
     login: ["bar-say", "form", "status", "email", "email-error", "password", "password-error", "resend-form", "resend", "resend-wait", "resend-status"],
-    verify: ["bar-say", "status", "title", "again", "resend-form", "resend", "resend-wait", "resend-status", "email"],
+    verify: ["bar-say", "status", "title", "again", "resend-form", "resend", "resend-wait", "resend-status", "resend-email-error", "email"],
     forgot: ["bar-say", "form", "status", "email", "email-error"],
     reset: ["bar-say", "card", "form", "status", "title", "lede", "ask", "password", "password-error"],
     account: ["bar-say", "who", "notice", "retry-row", "skeleton", "glance", "glance-list", "subnav", "settings-panel", "stage", "stage-steps", "stage-title", "stage-text", "stage-status", "stage-actions", "stage-live", "workspaces-panel", "workspaces", "create-slot", "create-box", "create", "workspace-name", "create-name-error", "create-plan-field", "workspace-plan", "create-note", "plan-panel", "plan-h", "plan-steps", "plan-lede", "plan-status", "plan", "balance-panel", "usage-panel", "usage-h", "usage-lede", "usage-say", "figures", "topup-fail", "topup-details", "topup", "topup-amount", "topup-amount-error", "topup-unit", "topup-hint", "topup-status", "topup-add", "topup-options", "usage", "password-form", "password-status", "current", "current-error", "next", "next-error"],
@@ -1055,7 +1055,7 @@
       resender($("resend-form"), $("resend"), answer, $("resend-wait"), () => {
         const to = email.value.trim();
         if (to) return to;
-        invalid(email, answer, "Enter your email address.");
+        invalid(email, $("resend-email-error"), "Enter your email address.");
         return null;
       });
       // The way out is the page's one action now: a phone gets the cursor there (no keyboard opens over the page it was opened for),

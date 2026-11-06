@@ -141,12 +141,15 @@ test("a link that did not work offers a new one: the person gives the address, a
 
   v.click(v.$("resend"));
   await v.idle();
-  assert.equal(v.text("resend-status"), "Enter your email address.");
+  assert.equal(v.text("resend-email-error"), "Enter your email address.", "the refusal is said under the field it names");
+  assert.equal(v.text("resend-status"), "", "and not under the button, 72px below that field");
   assert.equal(v.$("email").getAttribute("aria-invalid"), "true");
+  assert.equal(v.$("email").getAttribute("aria-describedby"), "resend-email-error", "the sentence stays with the field a reader comes back to");
   assert.deepEqual(v.to("POST", "/api/verify/resend"), [], "with no address there is nothing to send");
   assert.equal(v.doc.activeElement, v.$("email"));
 
   v.type("email", "  ada@example.com ");
+  assert.equal(v.text("resend-email-error"), "", "the refusal stops when the field it names changes");
   v.click(v.$("resend"));
   await v.idle();
   assert.deepEqual(v.to("POST", "/api/verify/resend"), [{ method: "POST", path: "/api/verify/resend", body: { email: "ada@example.com" } }]);

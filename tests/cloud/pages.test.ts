@@ -345,6 +345,13 @@ test("the account's figures keep their shape at a raised root: a step's ring is 
   assert.equal(declared(ring, "height"), "1.8333em", "and square, so the whole number is in it");
   const price = rules.find((r) => r.selectors.includes(".plan .price") && declared(r, "font-size") !== undefined)!;
   assert.equal(declared(price, "font-size"), "min(2.25rem, 16vw)", "the price is display type capped by the line, as the account's title is, so a raised root cannot take it off a 320 phone");
+  // A 320 phone's price line is 238px: $149.00 is 151.9 and " per month" 83.1, with 80.1 left beside it, so the period broke after
+  // "per" and "month" landed alone at the card's left edge. Below 360 the period is a line of its own under the price — one line
+  // ("per month" 78.4) in every card. At 360 the inline period already fits and is unchanged.
+  const narrow = rules.filter((r) => r.at.includes("max-width: 359px"));
+  const period = narrow.find((r) => r.selectors.includes(".plan .price small") && declared(r, "display") !== undefined);
+  assert.equal(declared(period!, "display"), "block", "the price's period sits on its own line under the number at 320");
+  assert.equal(declared(period!, "margin-left"), "0", "and keeps no inline margin from the line it used to share");
 });
 
 test("the words are the product's: a stranger is never given the internal name for a running team, the password advice is grammar, and the page for a forgotten password is named after the link that brings people there", () => {
@@ -475,7 +482,7 @@ test("what a finger has to hit is as tall as a button on a phone: the buttons, t
   assert.notEqual(value(".subnav", "overflow-x"), "auto", "and there is no sideways strip to discover");
 });
 
-test("a button's edge is a control's edge, and the contents line is one row on a 320 phone", () => {
+test("a button's edge is a control's edge, and the contents line wraps at 320 rather than touching itself", () => {
   const rules = cssRules(read(path.join(ASSETS, "app.css")));
   // A neutral button is a white fill on the page's paper: the fill is 1.0:1 against the page, so the 1px edge is the control's whole
   // boundary. At --k-line-strong it was 1.52:1 on the page and 1.58:1 on a card in light, 1.87 and 1.74 in dark; a control boundary
@@ -484,22 +491,22 @@ test("a button's edge is a control's edge, and the contents line is one row on a
   assert.match(declared(button, "border")!, /var\(--k-line-control\)/, "the secondary button's edge is the control token, not the decorative hairline");
   assert.equal(declared(button, "background"), "var(--k-surface)", "the fill alone is the page's own paper and cannot be the boundary");
 
-  // The five names and four gaps were 316.8px in the 288px a 320 phone has, so Settings took a second row and the first screen lost 43px.
-  // Below 360 the side padding goes and four 1px rules separate the names: 283.1 of 288, each name still 44 × 44. At 360 the 4px
-  // padding stays, because the row already fits there with its spacing intact.
+  // The five names and four gaps were 316.8px in the 288px a 320 phone has. The previous pass made them fit by dropping the
+  // side padding and putting a 1px rule between the names; at 320 the names then began 1–1.5px from each other and half a pixel
+  // from the rules, so the strip read as one word ("UsageBalanceSettings") and a thumb at the edge of one name hit its neighbour.
+  // The names now keep the row's 10px of side padding and the row wraps as the design table asks: Workspaces, Plan and Usage on
+  // the first row and Balance and Settings on the second, each name 12px from the next. The two rows cost 43px at 320 (the
+  // account is 2,016 → 2,059 with a workspace open); at 360 the row still fits on one line with its 4px padding, unchanged.
   const narrow = rules.filter((r) => r.at.includes("max-width: 389px"));
   const small = rules.filter((r) => r.at.includes("max-width: 359px"));
-  const strip = small.find((r) => r.selectors.includes(".subnav") && declared(r, "gap") !== undefined);
-  assert.equal(declared(strip!, "gap"), "0", "the five names sit on one row, with the rules between them doing the separating");
-  const link = small.find((r) => r.selectors.includes(".subnav a") && declared(r, "padding") !== undefined);
-  assert.equal(declared(link!, "padding"), "0", "the name is the target's width; the 44px minimum is unchanged");
-  assert.equal(declared(link!, "justify-content"), "center", "a name narrower than its 44px target is centred in it, not pushed against the next name");
-  const rule = small.find((r) => r.selectors.includes(".subnav a + a") && declared(r, "border-left") !== undefined);
-  assert.match(declared(rule!, "border-left")!, /var\(--k-line-strong\)/, "one rule between two names, as the ledger's own edge");
+  assert.ok(!small.some((r) => r.selectors.includes(".subnav") && declared(r, "gap") !== undefined), "no 320 rule takes the row's gap");
+  assert.ok(!small.some((r) => r.selectors.includes(".subnav a + a") && declared(r, "border-left") !== undefined), "and no rule runs between two names that have only a padding between them");
+  const strip = small.find((r) => r.selectors.includes(".subnav a") && declared(r, "padding") !== undefined);
+  assert.equal(declared(strip!, "padding"), "0 10px", "a name keeps 10px of side padding at 320, so the row wraps instead of touching");
   const sized = rules.find((r) => r.at === "" && r.selectors.includes(".subnav a") && declared(r, "min-width") !== undefined);
-  assert.equal(declared(sized!, "min-width"), "44px", "so Plan, Usage and Balance are a finger wide at 320, at 360 and at 390");
-  assert.equal(declared(sized!, "font-size"), "min(.8125rem, 3.8vw)", "and the line is sized by the row it is on");
-  assert.ok(!narrow.some((r) => declared(r, "padding") === "0"), "the compact padding is below 360 only: the 360 row has room and keeps its spacing");
+  assert.equal(declared(sized!, "min-width"), "44px", "Plan, Usage and Balance are still a finger wide at 320");
+  assert.equal(declared(sized!, "font-size"), "min(.8125rem, 3.8vw)", "and the line is still sized by the row it is on");
+  assert.ok(narrow.some((r) => r.selectors.includes(".subnav a") && declared(r, "padding") === "0 4px"), "at 360 the 4px padding is the row's own and is unchanged");
 });
 
 test("the account's two rows of actions fit one line on a 320 phone", () => {

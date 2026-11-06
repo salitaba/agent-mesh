@@ -3905,3 +3905,85 @@ answer naming it, and a hosting fixture with one running workspace whose model k
   entry's 255px); this pass removed a repeated sentence, not the form.
 - **The 320 plan-less first screen and the cancelled-checkout notice are unchanged.** They are the 2026-11-05
   entries, and this pass did not touch them.
+
+## 2026-11-06 — the price that keeps its period, the strip that wraps, and the refusal under its field
+
+Same harness: Chromium 1248 through `playwright-core` against two trials — the unmodified base on
+`localhost:8821` and this pass on `localhost:8861` — at 320 / 360 / 390 / 768 / 1,024 / 1,440 in light, 320 and 360
+in dark, `prefers-reduced-motion: reduce`, a touch pointer below 721, and axe-core 4.14 at 320, 360 and 1,440.
+"Before" is the base trial's own pages and "after" this worktree's, both on the same fixtures, measured in the same
+browser: a fresh account with no plan (the plan list on offer), a Team account with one running workspace named with
+60 characters, and the confirmation page with an incomplete link. Heights are `document.documentElement.scrollHeight`;
+positions are `getBoundingClientRect` plus `scrollY`.
+
+- **A plan's price keeps its period on a 320 phone.** The chooser's price line was 238px wide, and the 36px
+  `$149.00` (151.9px) left 80.1px beside it for the 15px `" per month"` (83.1px): the phrase broke after "per", so the
+  card read `$149.00 per` with **"month" alone on the next line at the card's left edge** (the small spanned 183.9 ×
+  57.6 in two lines, the second line starting at x = 41). Below 360 the period is now a line of its own under the
+  number: one line, **78.4 × 18** at x = 41, in both cards. The price block is **79.2 → 56.1px**, the Team card
+  **442.3 → 419.2**, the 320 plan-less page **1,535 → 1,489**, and "Choose Team" **822.8 → 799.7** — its top reaches an
+  800px screen. The cards are the front page's too, so its plan list pays the same 23.1px a card and the page is
+  **4,620 → 4,574** at 320, the second plan at **1,630 → 1,607** and "What you get" at **2,176 → 2,129**. At 360 the
+  inline period already fits (83.1px at x = 198.9) and the card, the button and the page (1,400) are unchanged.
+- **The section strip wraps rather than touching itself at 320.** The previous pass made the five names fit one 288px
+  row by dropping the row's gap and the links' side padding and putting a 1px rule between them. At 320 the links then
+  began **1–1.5px from each other** ("Usage" ended at 184.5, "Balance" began at 186) and **half a pixel from the rules**
+  at 97 / 141 / 185 / 239, so the strip read as one word — `UsageBalanceSettings` — and a thumb at the edge of one name
+  hit the next. The names now keep **10px of side padding** and the 2px gap the row has below 720, and the row wraps as
+  the design table asks: Workspaces, Plan and Usage on the first row (101 / 50 / 62px) and Balance and Settings on the
+  second (73 / 78px), each name **22px** from the next, all **44px tall**. The strip is **44 → 87px**, the workspace
+  record's heading **310 → 353** and the page **2,016 → 2,059** at 320. At 360 the row still fits one line with its 4px
+  padding (page 1,901 before and after); the Settings link still opens its panel and gives the cursor to its summary.
+- **A resend refusal is said under the email field it names.** On the confirmation page an incomplete link opens the
+  "Send a new link" form, and pressing it with no address wrote "Enter your email address." into the form's **status
+  after the button**: at 360 that note was **580.4–630.4**, **72px below the field's bottom and 14px under the button**,
+  while the cursor went back up to the field (464.4–508.4). At 320 it was 72px below the field too. The sentence now goes
+  in a note under the field (**8px** under it) and the field describes it (`aria-describedby="resend-email-error"`), as
+  every other field on the site does: the note is **516.4–566.4** at 360 and **566–640** at 320, the button moves to
+  580.4 / 654 (still inside an 800px screen), and the page is **1,263 → 1,257** and **1,337 → 1,331**. Typing into the
+  field clears the sentence and the mark, and a real send still answers in the form's status ("If that address is
+  waiting to be confirmed, a new link is on its way.").
+- **Widths, schemes and the floor.** 320 / 360 / 390 / 768 / 1,024 / 1,440 in light and 320 / 360 in dark on the
+  plan-less account, the Team account with its strip, the confirmation page and the resend refusal: no sideways page
+  scroll (320: 320; 360: 360; 390: 390; 768: 768; 1,024: 1,024; 1,440: 1,440), nothing computes below **12px**, and no
+  control under 44 × 44 below 721 (the 20px tick inside its 44px sentence and the prose's 19px inline link are the
+  earlier records'). The account is **1,489 / 1,400 / 1,352 / 973 / 936 / 936** at 320 / 360 / 390 / 768 / 1,024 / 1,440
+  plan-less, and **2,059 / 1,901 / 1,878 / 1,994 / 1,928 / 1,928** with one running workspace. axe-core 4.14 finds
+  **no violation** at 320, 360 and 1,440 on the account and on the confirmation page with its refusal up.
+- **The budget.** `app.css` is **40,931 → 40,884 bytes of 40,960** (76 left, a net −47): the three 320-only rules the
+  previous pass used for the strip (the row's zero gap, the links' zero padding and centre, the 1px rule between names)
+  are gone and one 10px padding rule and the price's block period take their place.
+
+| measured at 320, light | before | after |
+| --- | --- | --- |
+| A plan's price line | **79.2px**; "per month" **183.9 × 57.6** in two lines ("per" at x = 198.9, "month" at x = 41) | **56.1px**; "per month" **78.4 × 18** at x = 41, one line |
+| … the Team card / the page | 442.3 / **1,535** | **419.2 / 1,489** |
+| … "Choose Team" | **822.8** | **799.7** |
+| … the front page's plan list / the page | 442.3 / **4,620** | **419.2 / 4,574** |
+| … 360 | 39.6; period 83.1 at x = 198.9; page 1,400 | **the same** |
+| The section strip | **44px**, one row, gap 0, padding 0, 1px rules between; names **1.5px** apart | **87px, two rows**, gap 2, padding 0 10px, no rules; names **22px** apart |
+| … its links | 81 / 44 / 44 / 54 / 59 | **101 / 50 / 62 / 73 / 78**, each 44 tall |
+| … the page with a workspace | **2,016** | **2,059** |
+| … 360 | 44px, one row, padding 4; page 1,901 | **the same** |
+| The resend refusal | `#resend-status` **246 × 74** at 630, 72px below the field, 14px under the button; page 1,337 | **`#resend-email-error` 246 × 74** at 566, **8px under the field**; button 654; page 1,331 |
+| … 360 | **286 × 50** at 580.4, 72px below the field; page 1,263 | **8px under the field**; button 580.4; page 1,257 |
+| `app.css` | 40,931 bytes | **40,884** |
+
+**Tests.** `npm run build`; `node --test "dist/tests/cloud/pages*.test.js"` — **195 pass, 0 fail** (the six page
+suites: `pages.test.ts` and the five `pages-*.test.ts`); the build tests — **238 pass, 0 fail**; `npm run typecheck`
+clean; `npx eslint` on the touched files 0 errors. `pages.test.ts` now holds the strip to its 10px padding, its wrap
+and the absence of the 1px rule, and the price's period to a block below 360; `pages-resend.test.ts` holds the refusal
+to `#resend-email-error` (not the status under the button), the field's `aria-describedby`, and the clearing on input.
+The mutation check: with the base stylesheet the price and strip tests fail; with the base script the resend test fails
+on `#resend-status`.
+
+### What this pass leaves
+
+- **The strip's second row costs 43px at 320.** The workspace record begins at y = 353 instead of 310; the alternative
+  was the 1px separation this pass removed, and a smaller name type would fall below the 12px floor.
+- **A 320 phone's period is a second line under the price.** The card is 23px shorter than the broken wrap, but the
+  period is no longer beside the number at 320 as it is at 360; the block is the honest fit, not the inline one.
+- **The resend refusal pushes the button 82px down at 320.** It is at 654–698, inside an 800px screen; a note beside
+  the field would not move it, but the site's refusals are sentences under their fields.
+- **Nothing was changed on the account's plan card at 1440 or on the legal pages.** The lone alternative plan, the
+  prose-only 19px links and the 200% text check are the earlier entries' items.
