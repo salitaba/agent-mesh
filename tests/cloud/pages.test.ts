@@ -568,7 +568,8 @@ test("a name a person typed cannot widen the page: the cards that show one break
     return found.length > 0 ? declared(found[found.length - 1]!, property) : undefined;
   };
   // A workspace is named by its owner and nothing says where the name may break: without this a card is as wide as its name and the page scrolls sideways.
-  for (const selector of [".row", ".stage", ".confirm"]) assert.equal(own(selector, "overflow-wrap"), "anywhere", selector);
+  // The sign-up confirmation shows the address a person typed, and the usage table shows a workspace's name: both are the same long word, and both were measured past the page at 320 and 360.
+  for (const selector of [".row", ".stage", ".confirm", ".card", ".table-wrap"]) assert.equal(own(selector, "overflow-wrap"), "anywhere", selector);
   // The header's three links stay on one line at normal text, and on a phone as small as 320 px they and the mark are made smaller before the bar is allowed to wrap.
   // Signed in, the bar holds the mark and three links: measured at 320 px it came to 325 px (327 on the account), so the bar gives way rather than widen the page.
   assert.equal(own(".bar nav a", "white-space"), "nowrap", "a link is a word, not two");

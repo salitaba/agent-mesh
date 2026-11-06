@@ -2061,7 +2061,7 @@
       const promise = el("p", { class: "muted small" }, "Your key stays with your workspace. Curule does not resell model usage, so you pay your provider directly. A key is only ever sent to the workspace it is for, and nobody can read it back, including you.");
       const buttons = [];
       const { key, form } = keyForm(w, kept, note, buttons);
-      if (!kept) return [head, el("p", { class: "muted small" }, "Until you give it a key, a team in this workspace has no model to run on."), promise, form, note];
+      if (!kept) return [head, ...(w.status === "running" ? [] : [el("p", { class: "muted small" }, "Until you give it a key, a team in this workspace has no model to run on.")]), promise, form, note];
 
       const panel = el("div", { id: `key-replace-${id}`, class: "disclosed", hidden: true }, promise, form);
       const toggle = button("Replace key", {
