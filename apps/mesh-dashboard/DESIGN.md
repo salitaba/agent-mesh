@@ -377,6 +377,66 @@ Breakpoints: **1280 1100 900 800 760 620 560**. 800 is the sidebar drawer (JS
 
 ## Pass log
 
+### 2026-11-06 — a seat's own record lists all its steps, its budget reads like the rest, and one turn is a turn
+
+Surface: `apps/mesh-server/src/index.ts` and `steps-view.ts` plus `packages/observability/src/steps.ts` (the agent
+route's step filter), `src/drawers.tsx` (the Config budget), `src/views/ReplayDrawer.tsx` (one turn), with
+`tests/server/steps-routes.test.ts`, `tests/dashboard/drawer-phone.test.ts` and `tests/dashboard/replay-phone.test.ts`.
+
+Measured on the scripted demo at **Delivered** (before 481 events, after 480; 28 turns, 49.3k of 2.0M tokens, 7 seats,
+9 files) in the production build served by `curule console`, Chromium 1248 at 360 and 1,440 in light, a touch pointer at
+360, reduced motion, axe-core 4.14. The before build is the worktree at `6e03b97` served on 7424; the after is this
+branch's build on the same port after a restart. Both halves are the scripted demo at Delivered; the runs differ by one
+timing event and by the clock, not by the architect's five turns, the 28 activations or the 49.3k tokens.
+
+- **A seat's drawer counted two of its five steps.** `/agents/:id` filled the step list with the newest 20 turns of
+  *every* seat and only then filtered to the agent (`fillTurnSteps(..., stepLimit * 2)` → `buildAgentDetail`'s
+  `filter`). Architect had run **5** turns; the route returned **2** recentSteps, so its drawer read **"Recent steps
+  (2)"** under **"5 turns run"**, **"50% produced something"** (one of the two it could see) where the five turns are
+  **60%** (three produced), and **"— typical turn"** because two steps are fewer than the four a median needs. The
+  filter is part of the fill now (`buildTurnSteps(..., keep)` and `fillTurnSteps(..., keep)` apply it before the cut),
+  and the route passes the agent's own live turns. `/agents/architect?limit=10` returns **5**; the drawer reads
+  **"Recent steps (5)"**, **60%** and **80ms typical turn**, and the Work tab draws **5** cards (drawer 1,078 → 1,131
+  at 360; 900 and scrolling at 1,440).
+- **The Config tab printed the mission limit raw.** The budget row read **"200k tokens · mission 49.3k / 2000000"**
+  while the Cost page and the same row's agent budget say **"2.0M"** and **"200k"**. Both sides of the mission figure
+  go through `fmt` now: **"200k tokens · mission 49.3k / 2.0M"**. The row is 57 px at 360 before and after (the value
+  column is 200 px, so it still wraps) and 38 px at 1,440; the fix is the figure, not the row height.
+- **The Replay said "1 turns".** Explorer ran one turn and the phone's agent table drew the unit beside the figure
+  (`rp-u` is shown only at 620 and below; a desk's column head says "Turns"): **"1 turns"** → **"1 turn"**. The drawer
+  is 360/360 and 922 tall at 360; at 1,440 the cell is still "1" under "TURNS".
+
+| | Before | After |
+|---|---|---|
+| `/agents/architect?limit=10`: recentSteps | 2 | **5** |
+| The drawer's "produced something", 360 / 1,440 | 50% | **60%** |
+| The drawer's "typical turn", 360 / 1,440 | — | **80ms** |
+| The Work tab: heading / cards at 360 | Recent steps (2) / 2 | **Recent steps (5) / 5** |
+| The agent drawer's scroll height at 360 | 1,078 | **1,131** |
+| The Config budget row at 360 / 1,440 | mission 49.3k / 2000000, 57 / 38 px | **mission 49.3k / 2.0M, 57 / 38 px** |
+| The Replay's explorer row at 360 | 1 turns | **1 turn** |
+| The Replay drawer at 360: width / height | 360 / 922 | 360 / 922 |
+| Axe, the agent drawer Now/Work/Config and the Replay, 360 / 1,440 | — | **0 violations** |
+| Horizontal page scroll, those states | 0 | **0** |
+| Controls under 44 at 360, those states | 0 | **0** |
+| Off-ramp type, those states | 0 | **0** |
+| Console errors, those states | 0 | **0** |
+
+Floors: `npm run build` and `npm run typecheck` clean; `dist/tests/dashboard` **1,265 pass, 0 fail**;
+`dist/tests/server/steps-view.test.js` + `steps-routes.test.js` **16 pass, 0 fail** (the new route test fails 1 when
+the old route is put back); eslint **0 errors, 24 warnings**, all the pre-existing cross-package import warnings; axe
+**0** in the changed states at 360 and 1,440; no state scrolls the page sideways; no control under 44 × 44 at 360.
+
+**Left.** The drawer's vitals still read the last **10** turns (`?limit=10`), not the seat's whole history: a seat with
+50 turns gets a 10-turn sample for "produced something" and "typical turn" while "turns run" is the full `activations`;
+the route's cap is the next question, and "Recent steps" is honest about it. The Config budget row still wraps to two
+lines at 360 (57 px) because the value column is 200 px; a label/value split would make it one line, but the table's
+shape is unchanged. The Replay's "1 turn" is visible only at 360; at 1,440 the unit is hidden by design and the column
+head names it. Seen while measuring and untouched: the step drawer opened from Overview's Latest work reads "1 of 6" and
+walks only the six the Overview fetched, while the same turn from Steps reads "1 of 28"; the Graph key's aria-label still
+says "Show lines: …" while its `aria-pressed` is true (its title says hide); the agent and graph drawers' tab badge is
+11 px at 360; the Events page's 81 oldest events are still not loaded.
+
 ### 2026-11-06 — a fold switch says what its list is doing, a folder crumb is a thumb's target, and Latest work draws the six it counts
 
 Surface: `src/views/Events.tsx` (the fold switch's state and its reason), `src/styles.css` (the crumb's phone width floor),

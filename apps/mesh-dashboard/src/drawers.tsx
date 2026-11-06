@@ -621,7 +621,7 @@ export function AgentDrawer({ id }: { id: string }): React.JSX.Element {
               ) : <span className="muted">off — it may act without a plan</span>}
             </td></tr>
             <tr><td>listens for</td><td>{(d.interests || []).length ? (d.interests || []).slice(0, 12).map((c: string) => <Chip key={c}>{(c)}</Chip>) : <span className="muted">—</span>}</td></tr>
-            <tr><td>budget</td><td className="mono">{fmt(d.budget?.tokens ?? 0)} tokens{json.budgets?.mission ? ` · mission ${fmt(json.budgets.mission.consumed)} / ${json.budgets.mission.limit ?? "?"}` : ""}</td></tr>
+            <tr><td>budget</td><td className="mono">{fmt(d.budget?.tokens ?? 0)} tokens{json.budgets?.mission ? ` · mission ${fmt(json.budgets.mission.consumed)} / ${json.budgets.mission.limit == null ? "?" : fmt(json.budgets.mission.limit)}` : ""}</td></tr>
             {json.communication ? <tr><td>contacts</td><td style={{ fontSize: 12 }}>→ {((json.communication.mayContact || []).join(", ") || "nobody new")}<br />← {((json.communication.mayBeContactedBy || []).join(", ") || "restricted")}</td></tr> : null}
             {json.session ? <tr><td>session</td><td className="mono">{(json.session.sessionId)} ({(json.session.runtime)})</td></tr> : null}
             {json.stats ? <tr><td>totals</td><td className="mono" style={{ fontSize: 12 }}>{json.stats.messagesSent} sent · {json.stats.messagesReceived} received · {plural(Number(json.stats.artifactsCreated ?? 0), "file")}</td></tr> : null}

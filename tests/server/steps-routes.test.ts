@@ -66,6 +66,13 @@ async function seed(m: TestMesh): Promise<{ note: string }> {
   return { note: note.id };
 }
 
+/** One closed turn in the log, for the seat's own history: an awakening and its close. */
+async function appendTurn(m: TestMesh, agentId: string, turnId: string, at: string): Promise<void> {
+  const env = { actorId: agentId, correlationId: turnId, timestamp: at };
+  await m.store.append(ev("agent.awakened", { agentId, turnId, reason: { kind: "message" } }, env));
+  await m.store.append(ev("agent.state_changed", { agentId, to: "IDLE", turnId }, { ...env, timestamp: new Date(Date.parse(at) + 10).toISOString() }));
+}
+
 async function withServer(fn: (base: string, m: TestMesh, seeded: { note: string }) => Promise<void>): Promise<void> {
   const m = await makeMesh({
     agents: [{ id: "architect", role: "architect", interests: [] }],
@@ -98,6 +105,27 @@ test("/steps gives a ring turn outside the scan its logged counts", async () => 
     // And the answer does not move with the window.
     const wide = (await (await fetch(`${base}/steps?limit=200`)).json()) as TurnStep[];
     assert.deepEqual(wide.find((x) => x.turnId === TURN)?.ops, s.ops);
+  });
+});
+
+test("/agents/:id lists the seat's own steps, not the newest 20 of everyone's", async () => {
+  // The route cut the log's steps to 20 across every seat and filtered to the
+  // agent afterwards. On the delivered demo that gave architect 2 of its 5
+  // turns, so its drawer read "Recent steps (2)" under "5 turns run", showed
+  // "50% produced something" where the five turns are 60%, and hid the median
+  // turn ("— typical turn") because it had fewer than four to measure.
+  await withServer(async (base, m) => {
+    const t0 = Date.parse("2026-01-01T00:00:00.000Z");
+    for (let i = 0; i < 3; i++) await appendTurn(m, "architect", `turn-arch-${i}`, new Date(t0 + i * 1000).toISOString());
+    // Newer than every architect turn: these are what filled the 20-step cut.
+    for (let i = 0; i < 25; i++) await appendTurn(m, "qa", `turn-qa-${i}`, new Date(t0 + 100_000 + i * 1000).toISOString());
+    const body = (await (await fetch(`${base}/agents/architect?limit=10`)).json()) as { recentSteps: TurnStep[] };
+    assert.deepEqual(
+      body.recentSteps.map((s) => s.turnId).sort(),
+      [TURN, "turn-arch-0", "turn-arch-1", "turn-arch-2"].sort(),
+      "the seeded turn plus the three architect turns, not the newest 20 qa turns",
+    );
+    assert.ok(body.recentSteps.every((s) => s.agentId === "architect"));
   });
 });
 

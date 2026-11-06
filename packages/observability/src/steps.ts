@@ -174,7 +174,7 @@ function turnIdOf(e: MeshEvent): string | undefined {
  * Works for live + replayed logs: prefers explicit turnId correlation,
  * falls back to per-agent running-step attribution for messages/artifacts.
  */
-export function buildTurnSteps(events: MeshEvent[], limit = 60): TurnStep[] {
+export function buildTurnSteps(events: MeshEvent[], limit = 60, keep: (s: TurnStep) => boolean = () => true): TurnStep[] {
   // A step built here always has its counts: it was built from events, so
   // zero is a measurement. Only a step with no log behind it lacks `ops`.
   type CountedStep = TurnStep & { ops: TurnOps };
@@ -347,6 +347,7 @@ export function buildTurnSteps(events: MeshEvent[], limit = 60): TurnStep[] {
   }
 
   return [...byTurn.values()]
+    .filter(keep)
     .sort((a, b) => b.seqStart - a.seqStart)
     .slice(0, limit);
 }
