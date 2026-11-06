@@ -69,10 +69,17 @@ var IMAGE_NAME = "ghcr.io/salitaba/curule";
   var shotHref = function (light, dark, darkNow) {
     return darkNow && dark ? dark : light;
   };
+  // A region a keyboard can scroll is a tab stop; a command that wraps, or a table that fits its box, is not. The demo's
+  // three commands have wrapped since the pass that stopped hiding their ends, and the plans' two tables fit at 720 and
+  // up (below that neither is drawn), so six regions were tab stops that moved the keyboard to nothing. The stop is
+  // added only while there is something to scroll, measured when the page is read and when the window is resized.
+  var needsTabStop = function (scrollWidth, clientWidth, scrollHeight, clientHeight) {
+    return scrollWidth > clientWidth + 1 || scrollHeight > clientHeight + 1;
+  };
 
   // The pure parts, for the tests, when the file is loaded as a module; in a browser nothing is exported.
   if (typeof module === "object" && module !== null && typeof module.exports === "object") {
-    module.exports = { readingAt: readingAt, docMatches: docMatches, scrolledOff: scrolledOff, staggerOf: staggerOf, startsHidden: startsHidden, withClass: withClass, withoutArrival: withoutArrival, copyName: copyName, tocEdges: tocEdges, shotHref: shotHref };
+    module.exports = { readingAt: readingAt, docMatches: docMatches, scrolledOff: scrolledOff, staggerOf: staggerOf, startsHidden: startsHidden, withClass: withClass, withoutArrival: withoutArrival, copyName: copyName, tocEdges: tocEdges, shotHref: shotHref, needsTabStop: needsTabStop };
   }
   if (typeof document === "undefined") return;
 
@@ -85,6 +92,23 @@ var IMAGE_NAME = "ghcr.io/salitaba/curule";
     if (text) node.textContent = text;
     return node;
   };
+  // A command block and a table are marked data-scroll: they take a tab stop only while they overflow, so a box the
+  // keyboard cannot move is not a stop between the Copy button and the next step.
+  var scrollRegions = all("[data-scroll]");
+  var markScrollRegions = function () {
+    scrollRegions.forEach(function (node) {
+      if (needsTabStop(node.scrollWidth, node.clientWidth, node.scrollHeight, node.clientHeight)) node.setAttribute("tabindex", "0");
+      else node.removeAttribute("tabindex");
+    });
+  };
+  markScrollRegions();
+  if (typeof window.addEventListener === "function") {
+    var measuring = 0;
+    window.addEventListener("resize", function () {
+      window.clearTimeout(measuring);
+      measuring = window.setTimeout(markScrollRegions, 150);
+    });
+  }
 
   // Links out of the site are never written into the pages: they are set here, from the constants above.
   all("[data-doc]").forEach(function (a) {

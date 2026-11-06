@@ -53,7 +53,11 @@
     var n = raw === "" ? NaN : Number(raw);
     var used = !isFinite(n) ? rule.low : Math.max(rule.low, Math.min(rule.high, Math.round(n)));
     var problem = "";
-    if (!isFinite(n)) problem = "Enter " + rule.low + " or more. The estimate uses " + rule.low + ".";
+    // An empty field is not a number below the minimum: "Enter 0 or more" for a blank Missions box named a value that
+    // was already allowed and never said the box was empty (measured at 360 and 1,440). An empty box asks for a whole
+    // number, as a fraction does, and says the figure the estimate used.
+    if (raw === "") problem = "Enter a whole number. The estimate uses " + rule.low + ".";
+    else if (!isFinite(n)) problem = "Enter " + rule.low + " or more. The estimate uses " + rule.low + ".";
     else if (!Number.isInteger(n)) problem = "Enter a whole number. The estimate uses " + used + ".";
     else if (n < rule.low) problem = "Enter " + rule.low + " or more. The estimate uses " + rule.low + ".";
     else if (n > rule.high) problem = "Enter " + rule.high.toLocaleString("en-US") + " or less. The estimate uses " + rule.high.toLocaleString("en-US") + ".";

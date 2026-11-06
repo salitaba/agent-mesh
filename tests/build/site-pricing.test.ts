@@ -202,3 +202,41 @@ test("the figure pinned over the estimate wraps instead of widening the page at 
   assert.match(CSS, /\.calc-total-figure \{ white-space: normal; text-align: right; \}/);
   assert.match(CSS, /\.calc-total \{[^}]*flex-wrap: wrap;/, "the plan and the figure can take a line each");
 });
+
+/**
+ * An empty field is not a number below its minimum. Clearing "Missions a month" said "Enter 0 or more. The estimate
+ * uses 0." at 360 and 1,440: a refusal for a figure that was already allowed, and one that never said the box was
+ * empty. A blank box now asks for a whole number, as a fraction does, and says the figure the estimate used.
+ */
+test("an empty number is asked for as a whole number, not refused as a value below its minimum", () => {
+  const missions = run({ projects: "1", seats: "7", missions: "" });
+  assert.deepEqual(missions.errors.missions, { hidden: false, text: "Enter a whole number. The estimate uses 0." });
+  assert.equal(missions.invalid.missions, "true", "the box is marked invalid for a screen reader");
+  assert.deepEqual(missions.cells[3], ["Roughly", "$0 / month"], "and the estimate is the figure the message names");
+  const projects = run({ projects: "", seats: "7", missions: "25" });
+  assert.deepEqual(projects.errors.projects, { hidden: false, text: "Enter a whole number. The estimate uses 1." });
+  assert.ok(!/Enter 0 or more/.test(JSON.stringify([missions.errors, projects.errors])), "a minimum is not asked for as a range when nothing is entered");
+  // A value below the range keeps its range message: -1 missions is not an empty box.
+  const below = run({ projects: "1", seats: "7", missions: "-1" });
+  assert.equal(below.errors.missions.text, "Enter 0 or more. The estimate uses 0.");
+});
+
+/**
+ * The period a reader did not choose was removed with `display: none`, so choosing Monthly took the annual total's
+ * second line out of the layout: "Two ways in" came up 18.8px at 360 (40.6 at 768 and 1440), and at 320 the page was
+ * 108px shorter, where the phone's period row lost a line too. Both prices now share a cell, and so do the two period
+ * rows of the phone's comparison; the hidden one is out of the accessibility tree but keeps its box, so the choice
+ * moves nothing. Print, which has no switch, stacks both prices.
+ */
+test("choosing the billing period moves nothing below the cards", () => {
+  assert.match(CSS, /\n\.plan-price \{ display: grid; margin: 20px 0 0; \}/, "the two prices share one cell");
+  assert.match(CSS, /\n\.price \{ grid-area: 1 \/ 1; margin: 0;/, "at the top of the cell");
+  assert.match(CSS, /\n\.billing-input:nth-of-type\(1\):checked ~ \.plans \.price-monthly,\n\.billing-input:nth-of-type\(2\):checked ~ \.plans \.price-annual \{ visibility: hidden; \}/, "the other price keeps its box");
+  assert.ok(!/\.billing-input:nth-of-type\(1\):checked ~ \.plans \.price-monthly,[\s\S]{0,160}display: none;/.test(CSS), "and is not removed from the layout");
+  assert.match(CSS, /#compare \.plan-stack dl \{ display: grid; \}/, "the phone's period rows share a cell too");
+  assert.match(CSS, /#compare \.plan-stack \.period-annual, #compare \.plan-stack \.period-monthly \{ grid-area: 1 \/ 1; \}/);
+  assert.match(CSS, /body:has\(#billing-monthly:checked\) #compare \.plan-stack \.period-annual,\n  body:has\(#billing-annual:checked\) #compare \.plan-stack \.period-monthly \{ visibility: hidden; \}/, "the period not chosen is hidden, not removed");
+  const print = /@media print \{[\s\S]*?\n\}/.exec(CSS)![0];
+  assert.match(print, /\.plan-price \{ display: block; \}/, "a printed plan stacks its two prices");
+  assert.match(print, /\.plans \.price-annual, \.plans \.price-monthly \{ display: block !important; visibility: visible !important; \}/, "and prints both, whichever period is chosen on screen");
+});

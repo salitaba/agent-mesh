@@ -941,8 +941,13 @@ body:has(#billing-monthly:checked) .head-price-monthly { display: inline; }
 .nf-list span { color: var(--muted); font-size: .9375rem; }
 
 /* pricing */
+/* A plan's two prices share one cell: the period the reader did not choose keeps the box its words need, so the switch
+   moves nothing below it. Hiding the other price with display took the annual line's second line ($1,488 a year) out of
+   the page at 320, 360, 768 and 1,440 and pulled "Two ways in" up by up to 40.6px (the page by 108px at 320, where the
+   phone's period row also lost a line). The hidden price is still laid out (visibility, not display) and is not in the
+   accessibility tree; the cell is the taller of the two. Print shows both, stacked. */
 .billing-input:nth-of-type(1):checked ~ .plans .price-monthly,
-.billing-input:nth-of-type(2):checked ~ .plans .price-annual { display: none; }
+.billing-input:nth-of-type(2):checked ~ .plans .price-annual { visibility: hidden; }
 .plans { gap: 0 16px; }
 @media (min-width: 640px) { .plans { grid-template-columns: var(--c2); } }
 @media (min-width: 1040px) { .plans { grid-template-columns: var(--c4); } }
@@ -986,8 +991,8 @@ body:has(#billing-monthly:checked) .head-price-monthly { display: inline; }
 .plan { display: grid; grid-row: span 6; grid-template-rows: subgrid; margin-bottom: 16px; padding: 24px; }
 .plan-head h3 { font-size: 1.375rem; }
 .plan-tag { margin: 8px 0 0; line-height: 1.5; }
-.plan-price { margin: 20px 0 0; }
-.price { margin: 0; font-variant-numeric: tabular-nums; }
+.plan-price { display: grid; margin: 20px 0 0; }
+.price { grid-area: 1 / 1; margin: 0; font-variant-numeric: tabular-nums; }
 .price .amount { display: block; font-size: 2.75rem; font-weight: 650; line-height: 1.05; letter-spacing: var(--k-track-display); }
 .price .per { display: block; margin-top: 6px; color: var(--muted); font-size: .875rem; line-height: 1.45; }
 .plan-limits { display: grid; grid-template-columns: var(--c3); gap: 1px; margin: 20px 0 0; align-self: start; overflow: hidden; border: 1px solid var(--line); border-radius: var(--k-r-md); background: var(--line); }
@@ -1028,10 +1033,14 @@ body:has(#billing-monthly:checked) .head-price-monthly { display: inline; }
   .stack-plan dd { margin: 0; font-size: .9375rem; line-height: 1.45; font-variant-numeric: tabular-nums; }
   .stack-plan h3, .stack-plan dt, .stack-plan dd { overflow-wrap: anywhere; }
   #compare .table-wrap, #calculator .table-wrap { display: none; }
-  /* The Annual/Monthly switch above the plans is the reader's choice for the whole page: the phone's
-     comparison shows that period's line, not both. The surviving row still says which period it is. */
+  /* The phone's comparison shows the period chosen, and both period rows share one cell: the annual total's second
+     line stays in the layout while Monthly is read, so the choice no longer pulls "What you are paying for" up by
+     43.5px at 320/360/390. The hidden row is not in the accessibility tree; the visible one sits at the top of the cell
+     and its rule stays at the cell's foot. */
+  #compare .plan-stack dl { display: grid; }
+  #compare .plan-stack .period-annual, #compare .plan-stack .period-monthly { grid-area: 1 / 1; }
   body:has(#billing-monthly:checked) #compare .plan-stack .period-annual,
-  body:has(#billing-annual:checked) #compare .plan-stack .period-monthly { display: none; }
+  body:has(#billing-annual:checked) #compare .plan-stack .period-monthly { visibility: hidden; }
 }
 .compare .yes, .compare .no, .stack-plan .yes, .stack-plan .no { white-space: nowrap; }
 .compare .yes, .stack-plan .yes { color: var(--k-ok); font-weight: 600; }
@@ -1257,8 +1266,10 @@ body:has(#billing-monthly:checked) .head-price-monthly { display: inline; }
   body { background: #fff; color: #000; }
   .cta, .cta .lede { background: none; color: #000; }
   .btn { background: none !important; border-color: #000 !important; color: #000 !important; }
-  /* A printed plan has no switch to choose a period with, so it shows both prices. */
-  .plans .price-annual, .plans .price-monthly { display: block !important; }
+  /* A printed plan has no switch to choose a period with, so it shows both prices, stacked: the shared cell that keeps
+     the screen still would put them on top of each other. */
+  .plan-price { display: block; }
+  .plans .price-annual, .plans .price-monthly { display: block !important; visibility: visible !important; }
   /* The same for the figures at the head: two labelled lines, since the switch is not printed. */
   .head-price-annual, .head-price-monthly { display: block !important; }
   /* A printed page has no swipe: the rows and the table are laid out, not scrolled. */

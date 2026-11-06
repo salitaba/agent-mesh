@@ -3471,3 +3471,97 @@ copied from an earlier pass. The absolute heights are this container's system fo
 - **No capture was retaken**, Curule Cloud's prices are still in the app, and `site/ux/` was not edited. The next pass's
   questions are the six cards' dark twins, the security page's On this page row at 1,440 (its last chip is still cut) and the
   plan stack's repeated limits.
+
+## 2026-11-06, second pass: the period keeps its cell, a scroll region is a stop only while it scrolls, and an empty box asks for a number
+
+Measured with the same probe (Chrome 156 over CDP; reduced motion; light unless said; touch at 320/360/390, a mouse at
+768/1,024/1,440). The before column is the commit this pass started from (`91867ff`), extracted to a second copy and served
+on port 4392; the after is this worktree on 4391. Both halves were measured in the same run, and the before and after
+screenshots at 360 and 1,440 are of those two copies. The absolute heights are this container's; the differences stand.
+
+### What changed
+
+- **The billing period no longer moves the page.** The four plan cards' prices did not share a cell: the annual price's
+  second line (`per month, billed annually ($1,488 a year)`) was `display: none` when Monthly was chosen, and the phone's
+  period row the same. Choosing Monthly pulled "Two ways in" up **18.8px at 360** (40.6 at 768, 20.3 at 1,440),
+  "What you are paying for" up **107.3px at 320, 62.3 at 360 and 43.5 at 390**, and the page by **108 / 62 / 44 / 41 /
+  21px at 320 / 360 / 390 / 768 / 1,440** (0 at 600, 719 and 1,024, where both periods are one line). Both prices are in
+  one cell of `.plan-price` now, and the phone's two period rows in one cell of the stack's `dl`; the one not chosen is
+  `visibility: hidden`, so it keeps its box and leaves the accessibility tree. The choice moves **0px at every width**,
+  and the Annual view is unchanged: 14,506 / 13,528 / 12,864 / 11,290 / 10,917 / 10,144 / 9,346 / 9,253 at 320 / 360 /
+  390 / 600 / 719 / 768 / 1,024 / 1,440. The cost is the gap the annual figure already had: the Team card's price cell is
+  **93.3 → 113.6** at 320, **93.5 → 113.6** at 360 and **72.5 → 92.8** at 768/1,440 in Monthly, and the phone's period
+  row **36.8 → 80.3** at 320 and **36.8 → 58.5** at 360/390. Print stacks both prices, as before (10,017px at 794).
+- **A box that cannot scroll is not a Tab stop.** The three demo commands, the licence command and the pricing page's two
+  comparison tables carried `tabindex="0"` as scroll regions. At 320, 360, 390, 768, 900, 1,024 and 1,440 every one had
+  `scrollWidth === clientWidth` and `scrollHeight === clientHeight`: the commands wrap, and the tables fit at 720 and up
+  and are not drawn below it. They were **three stops with nothing to scroll on the home page** (64 → 61 Tab stops at
+  360, 72 → 69 at 1,440) and **three on the pricing page at 1,440** (58 → 55; one at 360, 50 → 49). The markup marks them
+  `data-scroll`, and `needsTabStop()` in `site.js` gives a stop only while the content overflows; a licence command of
+  **2,574px in a 326px box** takes `tabindex="0"` and gives it back when the text is short again. The ring rule inside
+  the pre stays, for a command that does overflow.
+- **An empty number is asked for as a number.** Clearing "Missions a month" (min 0) said **"Enter 0 or more. The estimate
+  uses 0."** at 360 and 1,440: the sentence for a value below the minimum, never saying the box was empty. It says
+  **"Enter a whole number. The estimate uses 0."** now, and a cleared projects or seats box **"…uses 1."**; a value below
+  the minimum (missions = −1) keeps "Enter 0 or more…". The estimate, `aria-invalid` and the field's place are unchanged:
+  the field 16,869, 328 × 44 at 360, its refusal 16,919, 328 × 20, and the page 13,500 at 360 and 9,279 at 1,440 in this
+  state.
+
+### Measurements after this pass
+
+| The pricing page, Monthly | Before | After |
+|---|---|---|
+| Page, 320 / 360 / 390 | 14,398 / 13,466 / 12,820 | **14,506 / 13,528 / 12,864** (the Annual heights) |
+| Page, 768 / 1,440 | 10,103 / 9,232 | **10,144 / 9,253** |
+| Page, 600 / 719 / 1,024 | 11,290 / 10,917 / 9,346 | unchanged |
+| "Two ways in", 360 / 768 / 1,440 | 2,199.0 / 2,472.9 / 1,990.1 | **2,217.8 / 2,513.5 / 2,010.4** |
+| "What you are paying for", 320 / 360 / 390 | 5,406.0 / 5,014.3 / 4,825.5 | **5,513.3 / 5,076.6 / 4,869.0** |
+| The Team card's price cell, 320 / 360 / 768 / 1,440 | 93.3 / 93.5 / 72.5 / 72.5 | **113.6 / 113.6 / 92.8 / 92.8** |
+| The phone's Team period row, 320 / 360 / 390 | 36.8 / 36.8 / 36.8 | **80.3 / 58.5 / 58.5** |
+| The choice's movement, 320 / 360 / 390 / 768 / 1,440 | &minus;107.3 / &minus;62.3 / &minus;43.5 / &minus;40.6 / &minus;20.3 (page &minus;108 / &minus;62 / &minus;44 / &minus;41 / &minus;21) | **0** |
+
+| A focusable scroll region | Before | After |
+|---|---|---|
+| The home page's three commands, 360 / 1,440 | `tabindex="0"`; 326/326 and 84/105/147; 466/466 and 84/84/147 | no stop; **64 → 61** / **72 → 69** Tab stops |
+| The licence command, 360 / 1,440 | `tabindex="0"`; 326/326 and 51/51; 466/466 and 51/51 | no stop; **50 → 49** / **58 → 55** with the tables |
+| The two comparison tables, 1,440 | `tabindex="0"`; 1,118/1,118 and 535/535 / 284/284 | no stop |
+| A 2,574px command in a 326px box | — | `tabindex="0"`; given back when short |
+
+| The estimate's number fields, empty | Before | After |
+|---|---|---|
+| Missions a month, 360 / 1,440 | "Enter 0 or more. The estimate uses 0." | **"Enter a whole number. The estimate uses 0."** |
+| Projects open / Agents, empty | "Enter 1 or more. The estimate uses 1." | **"Enter a whole number. The estimate uses 1."** |
+| Missions = −1 | "Enter 0 or more. The estimate uses 0." | unchanged |
+| `aria-invalid`, the estimate, the refusal's place | true, $0 / month, under the input | unchanged |
+
+- The Annual page heights are the last pass's at every width; the Monthly state now joins them. The print sheet is
+  **10,017px** at 794 and shows both prices, stacked.
+- No page scrolls sideways at 320, 360, 390, 768, 1,024 or 1,440 in light or dark (**0** on all 84 page/width/theme
+  pairs); the probe reports **0** console errors, the smallest computed text is **12px** on every page at 320 and 360,
+  the contrast probe finds **0** failing text pairs on the seven pages at 360 in both schemes, and axe-core is **0** on
+  the ten states read (the home menu open, the estimate with errors, the map with no match, the map read, the security
+  page read, a copy that worked, the 404 at 320, the home at 390 in dark, the pricing page at 1,024, the home at 320).
+- With no script the switch still works (the shared cell is CSS); the pricing page is 12,268 at 360 in both periods.
+  In forced colours the chosen price is visible and the other is hidden; each is measured.
+- The site's suites are **161** tests, all passing (158 before: the three new ones are `needsTabStop`, the empty field's
+  words and the billing cell); `site-chrome --check` and `pricing:check` pass, `npm run typecheck` and `npx eslint` on the
+  three touched test files are clean, and `set-domain --check` still exits 1 on the owner's one `TODO(owner)` at
+  `site/legal/index.html:134`.
+
+### What this pass deliberately leaves
+
+- **The Monthly view pays the Annual's height.** The blank under the shorter price is 20.1–20.3px in the card and 21.7px
+  in the phone's period row (43.5px at 320), and the Monthly page is up to 108px taller than it was. That is the same
+  trade the plan chooser made (65.3px at 320) for a choice that moves nothing; the Annual view, which is what the page
+  opens on, is unchanged.
+- **The phone's comparison still shows one period at a time.** The shared cell keeps the annual row's height; showing
+  both would close the gap and bring back the four rows the 2026-10-23 pass removed.
+- **A page with no script gets no stop for a region that overflows.** None does today (the commands wrap and the tables
+  fit); a future long command would be scrollable by touch and not by a scriptless keyboard. A static stop is the defect
+  above.
+- **The empty field's refusal still appears on the first keystroke**, as before; this pass changed its words, not when it
+  shows.
+- No product capture was retaken, Curule Cloud's prices are still in the app, and `site/ux/` was not edited (this pass's
+  six before and six after frames are under `site/ux/shots/`). Still open from the last pass: the six view cards' and the
+  graph's dark twins, the security page's On this page row at 1,440 (its last chip is 32px cut), and the plan stack's
+  repeated limits.
