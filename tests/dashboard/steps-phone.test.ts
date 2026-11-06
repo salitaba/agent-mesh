@@ -45,6 +45,15 @@ test("a thumb's tablet folds the chips too, and the timeline zone fits the capti
   assert.match(tsx, /className="st-axis-note" title=\{`Times in \$\{zoneLabel\(\)\}`\}><span className="sr-only">Times in <\/span>\{zoneLabel\(\)\}/, "the visible note is the zone, the accessible name is the sentence");
 });
 
+test("the timeline's window choice is six whole targets, two rows of three when the trough cannot hold them", () => {
+  // Fit, 5m, 30m, 2h, 12h and all measured 39, 41, 49, 36, 44 and 36 px wide at 320–390: four under the 44 px floor the
+  // page head's own Cards/List choice already takes. The floor is set in styles.css (phone-targets.test.ts reads it); at
+  // 320 the six 44 px chips need 280 px in a 260 px trough, so the head is a query container that lays them out 3 × 2
+  // rather than clipping the last one inside a scroller. At 360 the trough is 304 px and they fit one 44 px row.
+  assert.match(sheet, /\.st-tl-head \{[^}]*container-type: inline-size; container-name: st-head;/, "the head is the container the trough can ask");
+  assert.match(sheet, /@container st-head \(max-width: 300px\) \{[\s\S]*?\.st-tl \.st-tl-head \.seg \{ display: grid; grid-template-columns: repeat\(3, minmax\(0, 1fr\)\); width: 100%; overflow: visible; \}/, "the narrowest phone gets two rows of three, all in view");
+});
+
 test("the quiet-run choice travels with the chips it belongs to", () => {
   const tsx = read("views/Steps.tsx");
   const facetbox = tsx.slice(tsx.indexOf('className={`st-facetbox'), tsx.indexOf('<div className="st-toolbar-right">'));

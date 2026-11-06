@@ -96,6 +96,14 @@ export function phaseOf(a: LiveUiAnswer): LivePhase {
 export const NO_PORT_AFTER_MS = 20_000;
 
 /**
+ * Whether there is a command to start. The page's own hint asks for one, so an empty box must not offer the press: it used to
+ * be enabled, and pressing it changed nothing on screen (the hint was already there) — a control that does nothing.
+ */
+export function canStart(command: string): boolean {
+  return command.trim().length > 0;
+}
+
+/**
  * The sentence for a UI that is not usable, or null when there is nothing to explain.
  *
  * Every one of these is a state the old panel drew as the start box: a command that is up but has not said where it
@@ -202,7 +210,7 @@ export function createLiveUi(opts: LiveUiOptions = {}): LiveUi {
 
   const start = async (client: ProjectClient, command?: string): Promise<void> => {
     const text = (command ?? state.command).trim();
-    if (!text) {
+    if (!canStart(text)) {
       set({ problem: "Type how this product starts its own UI — its own command, the one that prints where it listens." });
       return;
     }
