@@ -53,6 +53,18 @@ test("a phone's step drawer presses at 44 px: the walk arrows and every row buil
   assert.doesNotMatch(phone, /\.sv-ev\s*\{[^}]*min-height:\s*44px/, "a row that is not a button is not lifted");
 });
 
+test("a phone's step drawer jump chips are 44 px wide, not 33 to 40", () => {
+  // Measured on the delivered demo with the first turn open: at 320, 360 and 390 the jump row's Tools, Brief and Raw chips were
+  // 39.6, 37 and 33.6 px wide (Outcome, Reasoning and Events were 67.7, 72.2 and 48.1). They were the only pressed things in the
+  // console under 44 px in any of the twelve views and the drawers; the row wraps, so a 44 px floor costs a row only where the
+  // names cannot share one.
+  const phone = phoneBlocks(drawersCss).join("\n");
+  const chips = /\.sv-jump-b\s*\{([^}]*)\}/.exec(phone);
+  assert.ok(chips, "the phone block names the step drawer's jump chips");
+  assert.match(chips![1]!, /min-width:\s*44px/, "a chip is a 44 px target even when its word is short");
+  assert.match(chips![1]!, /justify-content:\s*center/, "and its word is centred in the wider chip");
+});
+
 test("the drawer's long bodies take a tab stop only when they scroll", () => {
   assert.match(scrollStop, /export function ScrollPre\(/, "a pre that measures itself exists");
   assert.match(scrollStop, /tabIndex=\{scrolls \? 0 : undefined\} \{\.\.\.rest\}/, "the stop is set exactly when the body holds more than it shows");

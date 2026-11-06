@@ -98,7 +98,7 @@
 /* The axis sits under the track column only (the label and the sums are the grid's other two), so a tick's percentage lands where
    the bars' percentages do. */
 .st-axis { position: relative; height: 22px; margin: var(--s1-5) calc(var(--st-sum) + var(--s3)) 0 calc(var(--st-lab) + var(--s3)); }
-.st-tick { position: absolute; top: 5px; left: var(--at); transform: translateX(-50%); font: 11px var(--sans); color: var(--muted); white-space: nowrap; }
+.st-tick { position: absolute; top: 5px; left: var(--at); transform: translateX(-50%); font: 12px var(--sans); color: var(--muted); white-space: nowrap; }
 .st-tick::before { content: ""; position: absolute; top: -6px; left: 50%; width: 1px; height: 4px; background: var(--line-strong); }
 .st-tick.edge { transform: none; }
 .st-tick.edge::before { left: 0; }
