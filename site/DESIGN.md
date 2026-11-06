@@ -3657,3 +3657,123 @@ browser in one run, so the differences stand.
 - No product capture was retaken, Curule Cloud's prices are still in the app, and `site/ux/index.html` was not edited
   (this pass's six before and six after frames are under `site/ux/shots/`). Still open from the last two passes: the six
   view cards' and the graph's dark twins, and the plan stack's repeated limits.
+
+## 2026-11-06, fourth pass: the wide reason at a laptop's width, and a notice's words on a phone
+
+Measured with the same probe (Chrome 156 over CDP; reduced motion; light unless said; touch at 320/360/390, a mouse at
+768/900/960/1,024/1,039/1,040/1,440; dark at every one of those widths; print at 794; forced colours at 360; no script at
+360 and 1,024; a 24px root at 360 and a 32px root at 320). The before column is the site at `6e03b97`, exported with
+`git archive` and served on a second port (8812) while this worktree served the after on 8811; both halves were measured
+in the same run, and every before/after screenshot is of those two copies. No number is copied from an earlier pass. The
+absolute heights are this container's; both halves are one browser in one run, so the differences stand.
+
+### What changed
+
+- **A reason that spans the bento's row puts its drawing beside its words, and its paragraph keeps the page's measure.**
+  The first and last reasons span the grid from 640, and their paragraphs ran the whole card: **707px (88 characters) at
+  768**, **826–955px (110–127) at 900–1,039** — 127 characters a line at 1,024, nearly twice the page's 68ch — with the
+  drawing centred under them. The first reason took the design's wide shape (a 24px title, the drawing beside the text)
+  only from 1,040, where the bento is three columns, although the card had been wide since 640. From **900**, the width
+  where the first card spans two of the bento's two columns, both spanning reasons are that shape: **`#why` 1,752.1 →
+  1,430.3 at 1,024** (1,703 → 1,401.1 at 900, 1,732.5 → 1,410.7 at 960, 1,755.8 → 1,434 at 1,039), the first card **388 →
+  245.9**, its paragraph **960 → 411px (127 → 45 characters)** and its title **19 → 24px**; the last card **424.7 →
+  245**, its paragraph **960 → 411 (127 → 54)**. At 1,040 and up, and below 900, nothing moves. The cap
+  `.bento > .card > p { max-width: 68ch }` also holds the two spanning cards at 768–899: 707–796 → 680px (88–97 → 86
+  characters), at the same height. The page is **321px shorter at 1,024**, 302 at 900, 322 at 960 and 321 at 1,039.
+- **The note under the hero's actions takes the page's measure.** At 900–1,039 the hero is still one column, and the note
+  ("Curule Cloud runs it for you…") ran **836–975px, 110–128 characters a line** (898 at 1,024) while the lede above it
+  was 40rem and the price line below it 40rem. It is **612px** (553px of longest line) at every width; the hero is the
+  height it was at 768/900/960/1,024/1,039/1,440 (two lines before and after). At 1,440 it was 643px and is 612.
+- **A notice's words run the panel's width on a phone.** The icon was an absolutely positioned 20px circle in a 48px
+  column of the panel, so below 640 the words began 48px in: at 360 the security page's Cloud caveat was **214px of a
+  278px panel** (13 lines), the pricing page's licence caveat **264 of 328** (17 lines at 320) and its roadmap caveat
+  264 of 328. The icon sits on the first line — an inline-block at the start of the text — and the words take the panel:
+  the caveat **342 → 294 at 360** (13 → 11 lines; 414 → 366 at 320, 294 → 270 at 390), the licence caveat **390 → 342
+  at 360** (15 → 13; 438 → 390 at 320, 342 → 318 at 390), the roadmap caveat **222 → 198** (8 → 7) and 270 → 246, and
+  the legal page's owner-marked notice 198 → 174 at 360 (its text is not touched). The pricing page is **72px shorter
+  at 320 and 360** (14,566 → 14,494, 13,588 → 13,516) and 24 at 390; the security page **48px shorter at 320 and 360**
+  (12,527 → 12,479, 11,600 → 11,552) and 24 at 390; the legal page 24 at 320 and 360. The home page's caveat keeps its
+  height, and its text column goes **224 → 256 at 320 and 264 → 296 at 360**. A desk keeps the 48px column: a panel
+  836–1,120px wide has the room, and every notice at 1,440 is the height it was.
+
+### Measurements after this pass
+
+| Page, height at 320 / 360 / 390 / 768 / 1,440 | Before | After |
+|---|---|---|
+| Home | 13,356 / 12,604 / 12,160 / 12,105 / 11,226 | **unchanged** |
+| Pricing | 14,566 / 13,588 / 12,924 / 10,226 / 9,254 | **14,494 / 13,516 / 12,900 / 10,226 / 9,254** |
+| Documentation | 8,975 / 8,382 / 8,065 / 5,284 / 4,451 | unchanged |
+| Security | 12,527 / 11,600 / 10,883 / 7,884 / 7,638 | **12,479 / 11,552 / 10,859 / 7,884 / 7,638** |
+| Contact | 4,755 / 4,381 / 4,215 / 3,413 / 2,857 | unchanged |
+| Legal | 5,513 / 5,037 / 4,741 / 3,419 / 3,313 | **5,489 / 5,013 / 4,741 / 3,419 / 3,313** |
+| 404 | 2,266 / 2,089 / 2,045 / 1,437 / 1,516 | unchanged |
+
+| The home page at 900 / 960 / 1,024 / 1,039 / 1,040 | Before | After |
+|---|---|---|
+| The page | 11,557 / 11,645 / 11,760 / 11,867 / 10,550 | **11,255 / 11,323 / 11,439 / 11,546 / 10,550** |
+| `#why` | 1,703 / 1,732.5 / 1,752.1 / 1,755.8 / 1,145.2 | **1,401.1 / 1,410.7 / 1,430.3 / 1,434 / 1,145.2** |
+| The first reason's card | 388 / 388 / 388 / 388 / 245.9 | **273.1 / 245.9 / 245.9 / 245.9 / 245.9** |
+| Its paragraph | 836 / 896 / 960 / 975 / 418 | **355 / 382 / 411 / 418 / 418** |
+| Its longest line | 826 / 894 / 955 / 955 / 417 | **338 / 371 / 382 / 417 / 417** |
+| Its title | 19 / 19 / 19 / 19 / 24 | **24 / 24 / 24 / 24 / 24** |
+| The last reason's card | 424.7 / 424.7 / 424.7 / 424.7 / 452.7 | **237.7 / 245 / 245 / 245 / 452.7** |
+| Its paragraph | 836 / 896 / 960 / 975 / 304 | **355 / 382 / 411 / 418 / 304** |
+
+| The hero's note at 768 / 900 / 960 / 1,024 / 1,039 / 1,440 | Before | After |
+|---|---|---|
+| Its box | 707 / 836 / 896 / 960 / 975 / 643 | **612 / 612 / 612 / 612 / 612 / 612** |
+| Its longest line | 677 / 817 / 865 / 898 / 898 / 614 | **553 / 553 / 553 / 553 / 553 / 553** |
+| The hero | 1,434.2 / 1,465.3 / 1,479.5 / 1,494.7 / 1,498.2 / 902.5 | **unchanged** |
+
+| A notice's panel at 320 / 360 / 390 | Before | After |
+|---|---|---|
+| The security page's caveat | 414 / 342 / 294 | **366 / 294 / 270** |
+| Its text column | 174 / 214 / 244 | **206 / 246 / 276** |
+| The pricing page's licence caveat | 438 / 390 / 342 | **390 / 342 / 318** |
+| The pricing page's roadmap caveat | 270 / 222 / 198 | **246 / 198 / 198** |
+| Their text column | 224 / 264 / 294 | **256 / 296 / 326** |
+| The home page's caveat | 174 / 174 / 150 | **174 / 174 / 150** |
+| Its text column | 224 / 264 / 294 | **256 / 296 / 326** |
+| The legal page's owner-marked notice (360) | 198 | **174** |
+
+- No page scrolls sideways at 320, 360, 390, 768, 900, 960, 1,024, 1,039, 1,040 or 1,440 in either theme (**0** on all 140
+  page/width/theme pairs), the probe reports **0** console errors, and no computed text is under **12px**. axe-core WCAG
+  2.0–2.2 A and AA is **0** on eleven runs: the home page at 900, 960, 1,024 (light and dark) and 360, the pricing page
+  at 320, 360 (light and dark), and the security page at 360, 320 dark and 1,440. The target census is unchanged: the
+  only controls under 44 × 44 below 721 are the inline links in sentences, the 1 × 1 radios and the 24 × 24 checkbox
+  whose label is 44.
+- Without a script the home page is **11,438 at 1,024** (11,759) and 12,581 at 360, the pricing page **12,196 at 360**
+  (12,268) and the security page 11,551 (11,599), all 0px over. Print at 794 is unchanged on all three (home 11,840,
+  pricing 10,073, security 7,518), 0px over: the phone rule does not reach paper. At a 24px root the home page is
+  **19,817** at 360 (19,853), pricing 21,872 (22,016) and security 19,725 (19,797); at a 32px root, 33,699 (33,843),
+  37,625 (38,105) and 34,884 (35,220); every one 0px over. With `forcedColors: active` at 360 the pricing page is 13,516
+  (13,588) and the security page 11,552 (11,600), 0px over, and the notice's icon keeps its `CanvasText` circle.
+- The tests hold the two shapes: `tests/build/site.test.ts` has **"a reason that spans the row puts its drawing beside
+  its words, and its prose keeps the page's measure"** (the 900 block, the last reason's 900–1,039 block, the 68ch caps,
+  and the 1,040 block that holds only the three columns) and **"a notice's words run the panel's width on a phone"** (the
+  desk's 48px column and the phone's 16px with the icon in the line). Reverting the stylesheet fails both. The site's
+  own suites are **210** tests and the build suites **243**, all passing; `site-chrome --check`, `pricing:check`,
+  `npm run typecheck` and `npx eslint` on the touched test file are clean.
+
+### What this pass deliberately leaves
+
+- **A notice at a desk still runs 900–1,047px (111–140 characters a line).** Capping it at 68ch would add 24–48px to the
+  home, pricing and security pages, and the record has twice kept a panel's own width (a panel is not a note or an
+  answer). The phone, where the panel is narrower than the measure, is what this pass fixed.
+- **The footer's legal lines are still 879px (135 characters) and 688px (106) at 1,024 and 1,440.** They are the last
+  prose on the site past 68ch, and capping them costs every page a line at the desk; the footer is its own surface, as
+  the last passes said.
+- **At 1,040 the section still drops 289px** (1,434 → 1,145) because the last reason becomes a column and the bento a
+  three-column grid. Before this pass the same 1px step was **610.6px** (1,755.8 → 1,145.2); the remaining step is the
+  grid's, not the measure's.
+- **The four plan cards' figures are still said twice** in one card ("5 / 12 / 8" in the figure row and "Up to 5
+  projects open under one host, 12 seats per mesh, 8 concurrent turns" in the includes). The includes are written by
+  `scripts/pricing-html.mjs` from `packages/licensing/src/plans.ts`, so the duplicate is the exporter's and the data's,
+  not the page's.
+- **The docs page's Start here cards are 218px wide at 1,200 and up** (27 characters a line) where they are 422 at
+  1,024, because the four take one row from 1,200. That is the four-card row's shape, and the cards hold a title, a
+  description and a path; a 2 × 2 grid there would be a different page.
+- **The six console captures and the graph still show the light pictures in dark**, Curule Cloud's prices are still in
+  the app, and no capture was retaken. `site/ux/` was not edited (this pass's six before and six after frames were
+  handed over with the report). `npm run site:check` still exits 1 on the owner's `TODO(owner)` for the terms at
+  `site/legal/index.html:134`.
