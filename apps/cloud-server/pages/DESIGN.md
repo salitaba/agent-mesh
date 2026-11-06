@@ -3732,3 +3732,93 @@ not yet applied, the same page with a four-day bill, and the account's plan list
   width; the cells' own labels would cost 21.2px a row at 360 and a third line at 320.
 - **The checkout stand-in, the prose-only 19px links and the usage read's rate limit are unchanged.** They are the earlier
   entries.
+
+## 2026-11-06: the copy that failed says so, the bill that adds up, and no second checkout while one is confirming
+
+Same harness: Chromium 156.0.8078.47 through `playwright-core` over CDP against this worktree's trial
+(`trial --port 7601`, whose plans are the trial's own fixtures), 320 / 360 / 390 / 768 / 1,024 / 1,440 in
+light, 360 and 1,440 in dark, forced colours at 360, `prefers-reduced-motion: reduce`, a touch pointer below
+721, and axe-core 4.14 over the states below. "Before" is the base commit's own `app.js` served by the same
+trial through request interception in the same browser session, with the same account, the same usage answer
+and the same widths; the HTML and the stylesheet did not change. Fixtures: a Team account with one running
+workspace named Research and $10.00 available; a usage answer of 20 days (Sep 1–20, one call and $0.0001 a
+day, Sep 1 failed) with one workspace row; a clipboard that refuses; and `?paid=1` with the tab's
+before-payment fingerprint while the provider has not confirmed, with an empty usage answer held in both
+halves (the trial's own 60-reads-an-hour limit had been spent by the pass). Heights are
+`document.documentElement.scrollHeight`; positions are `getBoundingClientRect` plus `scrollY`.
+
+- **A copy that failed says so where the press happened.** Pressing **Copy** when the browser refuses the
+  clipboard left the button reading **"Copy"** at 60.1 × 44 at 360 and 60.1 × 32 at 1,440; the only sentence,
+  "The address could not be copied.", was in the card's `.ws-note sr`, **1 × 1 px** and read only by a screen
+  reader. A sighted person saw no change at all: the same word, the same name, no message. The button's word is
+  the answer now — **"Can't copy"**, 98.3 × 44 at 360 and 98.3 × 32 at 1,440, named **"Can't copy the address of
+  Research"**, and back to "Copy" after 1.8 s — the design spec's CopyButton wording. The address strip is 65
+  at 360 and 53 at 1,440 either way; at 320 the button is 52.1 → **90.3 × 44** and the strip 88.2 → **90.4**
+  (the host wraps inside its chip, as it already did at 320; the page does not scroll). The screen-reader
+  sentence stays, so both readers hear the failure.
+- **The day table's Total is the fourteen days above it, and the all-time total has a table that holds every
+  day.** With 20 days of usage the "By day, the last 14 days with calls" table drew Sep 7–20 — 14 calls,
+  140 / 70 tokens, $0.0014 — and its footer read **"Total $0.002 20 1 200 100"**, the all-time figure: 6 calls,
+  1 failure and $0.0006 more than the rows it followed, with nothing saying it included days the table did not
+  draw. The by-workspace table ("By workspace, in all") had no footer at all, so the all-time figure existed
+  only as a total that did not add up. The day footer is **"Total $0.0014 14 0 140 70"** (the rows added up)
+  and the by-workspace table ends on **"Total $0.002 20 1 200 100"**, where every day and every workspace is in
+  the table. The day table is 1,313.3 → **1,381.1** at 360 and 1,065.1 → **1,113.1** at 1,440; the page 2,975 →
+  **3,043** and 2,856 → **2,904** (one 67.8 / 48 px total row). The caption is true of the total now, and a
+  reader who adds either table gets the number under it.
+- **A payment being confirmed is not sold a second time.** On `/account?paid=1` while the provider had not
+  confirmed, the notice said the payment was being confirmed — and the plan row still offered **Change plan**,
+  whose list carried **Switch to Business** (398 × 44 at 1,440, 268 × 44 at 360) and posted `/api/checkout`;
+  the balance's Add credit row was open at 1,440 with three amounts (157 × 32) and could be opened to the same
+  three at 360. A customer who had just paid could start a second plan purchase or a second top-up while the
+  first was in flight. While `state.confirming`, the plan row offers only **Manage billing** (Change plan
+  1 → **0**, Switch 1 → **0**) and the credit row is hidden (`hidden` false → **true**; amounts 3 → **0** at
+  1,440); the balance card is 239.27 → **187.27** at 360 and 425.84 → **244.67** at 1,440, and the resting page
+  1,938 → **1,886** and 1,995 → **1,814**. The notice's own Add credit is withheld in that state too. When the
+  payment arrives (the remembered fingerprint changes) or the page stops waiting after a minute, both come
+  back: the plan to change to and the credit row are offered again, with the page's own words.
+- **Widths, schemes and the floor.** 320 / 360 / 390 / 768 / 1,024 / 1,440 in light, 360 and 1,440 in dark,
+  forced colours at 360, on the plain account, the 20-day bill, the confirming return and the refused copy: no
+  sideways page scroll (320: 320; 360: 360; 390: 390; 768: 768; 1,024: 1,024; 1,440: 1,440), nothing computes
+  below **12 px**, no control under 44 × 44 below 721 (the h2 targets carry `tabindex="-1"` and are not
+  controls), no console error, and **eight axe-core runs** (plain 360 and 1,440 dark; the 20-day bill at 360 and
+  1,440; the confirming return at 320, 360 in both schemes, and 1,440) find **no violation**.
+- **The budget.** `app.css` is untouched at **40,948 bytes of 40,960**. The three changes are text and
+  conditions in `app.js`: a word in `copyButton`, `sumUsage` and two `usageTable` arguments, and
+  `state.confirming` read by `renderNotice`, `renderPlan` and `renderTopups`.
+
+| measured | before | after |
+| --- | --- | --- |
+| A refused copy, 360 | **"Copy"** 60.1 × 44; the sentence in a 1 × 1 `sr` line | **"Can't copy"** 98.3 × 44, name "Can't copy the address of Research"; strip 65 |
+| … 320 / 1,440 | 52.1 × 44 / 60.1 × 32 | **90.3 × 44 / 98.3 × 32**; strips 88.2 → 90.4 / 53 → 53 |
+| The day table's Total, 20 days | **"Total $0.002 20 1 200 100"** under 14 rows that sum 14 calls, $0.0014, 140 / 70 | **"Total $0.0014 14 0 140 70"** |
+| The by-workspace table | no Total row | **"Total $0.002 20 1 200 100"** |
+| The usage panel, 360 / 1,440 | 1,313.3 / 1,065.1 | **1,381.1 / 1,113.1** |
+| The page with the 20-day bill, 360 / 1,440 | 2,975 / 2,856 | **3,043 / 2,904** |
+| `?paid=1`, Change plan / Switch | **1 / 1** | **0 / 0** |
+| … the credit row (`hidden`) / amounts at 1,440 | false / **3** | **true / 0** |
+| … the balance card, 360 / 1,440 | 239.27 / 425.84 | **187.27 / 244.67** |
+| … the resting page, 360 / 1,440 | 1,938 / 1,995 | **1,886 / 1,814** |
+| `app.css` | 40,948 bytes | **40,948** |
+
+**Tests.** `dist/tests/cloud/pages-*.test.js` — **159 pass, 0 fail**; the cloud suite — **890 pass, 0 fail**;
+the build tests — **232 pass, 0 fail**; `npm run typecheck` clean; `npx eslint` 0 errors.
+`pages-dashboard.test.ts` holds the refused Copy to "Can't copy" and its name, and to the return after 1.8 s;
+`pages-app.test.ts` holds the day total to the fourteen rows and the by-workspace total to its rows, and the
+confirming return to no Change plan and no credit row until the payment arrives or the page stops waiting.
+
+### What this pass leaves
+
+- **The refused Copy's wider word wraps the host at 360 for 1.8 s.** "Can't copy" costs 38 px of the address
+  chip's line; the host is still whole and the strip the same 65 px at 360 (2.2 px taller at 320). A shorter
+  word would fit and would not be the spec's wording.
+- **The day table's total is now the fourteen days it draws.** The all-time figure is one table lower, at the
+  foot of "By workspace, in all"; a person who wants the account's whole spend has to read the second table.
+- **The confirming return hides the credit row for up to a minute.** A person who wants to top up while a plan
+  payment is being confirmed waits for the payment's answer; the notice says the balance below updates when it
+  does. The top-up that was itself the payment is the case the withholding protects.
+- **The lone alternative plan is still a 448 px card at 1,440 when the account is not confirming.** It is the
+  2026-11-05 entry's card, not this pass's; the list is behind Change plan, so a customer who opens it asked
+  what the switch is.
+- **The usage read's rate limit, the checkout stand-in and the prose-only 19 px links are unchanged.** They are
+  the earlier entries.

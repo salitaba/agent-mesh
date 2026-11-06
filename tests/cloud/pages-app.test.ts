@@ -1663,6 +1663,8 @@ test("what is typed for credit is read in the currency's own places: a currency 
 
 const BEFORE = "curule:before-payment";
 const NOTHING_YET = JSON.stringify([null, [20_000_000, 0]]);
+/** The same account with a plan: what the tab remembers before a payment, so the page can tell on return whether it was applied. */
+const PAID_NOT_YET = JSON.stringify([[ACTIVE!.plan, ACTIVE!.status, ACTIVE!.periodEnd], [20_000_000, 0]]);
 const THANKS_KNOWN = "Thank you. The payment provider confirms a payment a few moments after checkout, and this page updates when yours is confirmed.";
 const THANKS_UNKNOWN = "Thank you. The payment provider confirms a payment a few moments after checkout, and your plan and balance below update when it does.";
 const PENDING_UNKNOWN = "If your payment is not in the figures below yet, it can take a few minutes. Nothing more is needed from you. Reload this page later to see it.";
@@ -1691,6 +1693,35 @@ test("coming back from a payment that has not been applied yet: the page says it
   await v.until("the arrival to be seen", () => v.text("notice") === "Your payment has arrived.");
   assert.match(v.text("plan"), /Team Active \$149\.00 per month\. Paid until November 5, 2026\./);
   assert.equal(v.shows(v.$("create")), true, "with a plan the person can create a workspace");
+});
+
+test("a payment being confirmed is not sold a second time from the plan section or the balance", async () => {
+  const w = world((x) => {
+    paid(x);
+    x.workspaces = [workspace()];
+  });
+  const v = new Visit("account", { routes: w.routes, search: "?paid=1", storage: { [BEFORE]: PAID_NOT_YET } });
+  const started = v.start();
+  await v.until("the notice that the payment is being confirmed", () => v.text("notice") === THANKS_KNOWN);
+  assert.deepEqual(v.labels("plan"), ["Manage billing"], "the plan row offers no Change plan while the payment it is waiting for may already have bought one");
+  assert.equal(v.shows(v.$("topup-details")), false, "and the credit row is not offered either: the payment may be the very credit it would add");
+  // The provider's answer arrives while the page is waiting.
+  w.balance = balance({ purchased: 10_000_000 });
+  await started;
+  await v.until("the arrival to be seen", () => v.text("notice") === "Your payment has arrived.");
+  assert.deepEqual(v.labels("plan"), ["Manage billing", "Change plan"], "once it is confirmed, the plan to change to is offered again");
+  assert.equal(v.shows(v.$("topup-details")), true, "and so is the credit row");
+});
+
+test("a payment that does not show up in a minute puts the plan change and the credit row back", async () => {
+  const w = world((x) => {
+    paid(x);
+    x.workspaces = [workspace()];
+  });
+  const v = await visit("account", { routes: w.routes, search: "?paid=1", storage: { [BEFORE]: PAID_NOT_YET } });
+  await v.until("the page to give up waiting", () => /has not shown up yet/.test(v.text("notice")), 5_000);
+  assert.deepEqual(v.labels("plan"), ["Manage billing", "Change plan"], "the page has stopped waiting, so a plan can be changed again");
+  assert.equal(v.shows(v.$("topup-details")), true, "and credit can be added again");
 });
 
 test("a payment that does not show up in a minute is said to be on its way, and nothing more is asked of the person", async () => {
@@ -1773,7 +1804,7 @@ test("usage is a table by day and one by workspace, with a total, the charge in 
     "Oct 3, 2026 $0.0008 2 200 40",
     "Total $0.0096 6 600 120",
   ]);
-  assert.deepEqual(rows(tables[1]!), ["Workspace Charged Calls Input tokens Output tokens", "Research $0.009 4 400 80", "A deleted workspace $0.0006 2 200 40", "No workspace $0.00 0 0 0"]);
+  assert.deepEqual(rows(tables[1]!), ["Workspace Charged Calls Input tokens Output tokens", "Research $0.009 4 400 80", "A deleted workspace $0.0006 2 200 40", "No workspace $0.00 0 0 0", "Total $0.0096 6 600 120"]);
   // A phone draws no header row, so every figure carries the column's first word as the label beside it: check each one, and the total's.
   for (const table of tables) {
     const words = (table.querySelector("thead tr") as FakeNode).children.filter((n) => !n.isText).map((c) => v.text(c).split(" ")[0]);
@@ -1803,7 +1834,31 @@ test("usage shows only the last fourteen days, newest first, and a Failed column
   assert.match(v.text(rows[13]!), /^Sep 7, 2026 /);
   assert.equal(v.text(first.querySelector("thead tr")!), "Day Charged Calls Failed Input tokens Output tokens");
   assert.match(v.text("usage-lede"), /and its tokens\./, "the section's own line names the unit a phone's cells leave to their first word");
-  assert.equal(v.text(first.querySelector("tfoot tr")!), "Total $0.002 20 1 200 100");
+  assert.equal(v.text(first.querySelector("tfoot tr")!), "Total $0.0014 14 0 140 70", "the total is the fourteen days above it, which is what the caption says the table is");
+});
+
+test("each usage table's total is the rows under it added up, and the all-time total has a table that holds every day it covers", async () => {
+  const row = (group: string, calls: number, charged: number, failed = 0) => ({ group, calls, failed, inputTokens: calls * 10, outputTokens: calls * 5, cachedTokens: 0, chargedMicros: charged });
+  const days = Array.from({ length: 20 }, (_v, i) => row(`2026-09-${String(i + 1).padStart(2, "0")}`, 1, 100, i === 0 ? 1 : 0));
+  const w = world((x) => {
+    paid(x);
+    x.usage = {
+      currency: "USD",
+      byDay: days,
+      byWorkspace: [{ ...row("ws_1", 20, 2_000, 1) }],
+      total: { calls: 20, failed: 1, inputTokens: 200, outputTokens: 100, cachedTokens: 0, chargedMicros: 2_000 },
+    };
+  });
+  const v = await visit("account", { routes: w.routes });
+  const [byDay, byWorkspace] = v.$("usage").querySelectorAll("table");
+  const cells = (tr: (typeof byDay)) => tr.children.filter((n) => !n.isText).map((c) => v.text(c));
+  const rows = [...byDay!.querySelectorAll("tbody tr")].map(cells);
+  const total = cells(byDay!.querySelector("tfoot tr")!);
+  assert.equal(rows.length, 14, "the table draws the last fourteen days");
+  assert.equal(total[1], "$0.0014", "the total is those fourteen days' charge, not the all-time $0.002 the service sent");
+  assert.equal(Number(total[2]), rows.reduce((n, r) => n + Number(r[2]), 0), "and its calls are the calls above it, added up");
+  assert.deepEqual(total, ["Total", "$0.0014", "14", "0", "140", "70"]);
+  assert.deepEqual(cells(byWorkspace!.querySelector("tfoot tr")!), ["Total", "$0.002", "20", "1", "200", "100"], "the table that holds every day has the all-time total, under rows that add up to it");
 });
 
 test("a usage read that fails while the page draws is said to a reader, not only drawn", async () => {
