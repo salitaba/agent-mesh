@@ -4291,3 +4291,57 @@ Research, and the hosting-only key form is held by one `/api/me` answer. Heights
   their rules, not a shorter form.
 - **The address strip's Copy, the steps at 320, the checkout stand-in, the dead reset link's submit and the prose-only
   19px links are unchanged.** They are the earlier entries.
+
+## 2026-11-07: the empty confirmation card, the retry's cursor, and the plans a script cannot show
+
+Same harness: Chromium 1248 through `playwright-core` against this worktree's trial (`trial --port 8340`),
+320 / 360 / 390 / 768 / 1,440 in light, JavaScript off and on, axe-core 4.14 on the front page and the
+confirmation page at 320 / 360 / 768 / 1,440 in both schemes, `prefers-reduced-motion: reduce`. "Before" is
+this worktree's own pages before the first edit; heights are `document.documentElement.scrollHeight` and
+positions are `getBoundingClientRect`.
+
+- **A confirmation page read with no script is a page, not an empty panel.** The card was in the markup,
+  so with scripts off it drew a bordered **42px** empty box at 360 (66px at 1,440, from y = 303.9) under
+  "This page needs JavaScript…", and the status inside it was still `aria-busy="true"` with nothing to
+  arrive. The card is `hidden` in the markup now and the script draws it, as the sign-up, sign-in and
+  forgot pages already did: at 360 the page is **897 → 835px** (320: **921 → 859**); at 1,440 the box is
+  gone and the page remains 900. A scripted failure still says "Checking the link." in the card while the
+  request is out, then the refusal and the resend form, with the cursor on "Send a new link" or the email
+  field as before (**320 / 360 / 768 / 1,440** measured).
+- **A retried plans read leaves the cursor on its answer.** On the front page with `/api/plans` failing,
+  **Try again** replaced the button with the cards and left `document.activeElement` on **BODY**: the next
+  Tab started at the skip link above the page. It now focuses the new warning's own **Try again** when the
+  read failed again, or the **Plans** heading when it answered; the heading gets `tabindex="-1"` and the
+  page's 2px `rgb(43, 95, 217)` ring (`:focus-visible` true, offset 2px). At 360 the heading is at
+  **y = 277.3**, scrollY **638** and the page **4,269px** before and after; at 1,440 it is at **635.5**,
+  scrollY 0 and the page **2,701px** before and after.
+- **A front page with no script does not promise cards it cannot draw.** The Plans section kept its
+  standing note — "One flat price for each period… **Each card lists what its price includes.**" — over
+  an **empty 0px** box. The note is hidden in the markup and the script draws it with the cards; the empty
+  box now says why it is empty: "These plans are shown with JavaScript, which this browser is not running,
+  so no plan or price is shown here." At 360 the note is **72px → 0**, the box **0 → 122px**, the section
+  **144.2 → 164.2** and the page **3,310 → 3,330**; at 1,440 the note is **48 → 0**, the box **0 → 50**,
+  the section **125 → 97** and the page **2,123 → 2,095**. With a script the note still returns with the
+  cards and is hidden in the failed and empty-plan states, which the existing tests already pin.
+- **Widths, schemes and the floor.** 320 / 360 / 390 / 768 / 1,024 / 1,440, scripts off and on, light and
+  dark: no sideways page scroll, nothing computes below **12px**, and **16 axe-core runs** on the front
+  page and the confirmation page at 320 / 360 / 768 / 1,440 in both schemes find **no violation**.
+- **The budget.** `app.css` is untouched at **40,925 bytes of 40,960** (35 left): the three fixes are
+  markup, script and two sentences. The script grew by the retry handler and the two ids it needs.
+- **Tests.** `npm run typecheck`; `npm run build`; `node --test dist/tests/cloud/pages*.test.js` — **201
+  pass, 0 fail**; `dist/tests/cloud/*.test.js` — **896 pass, 0 fail**; `dist/tests/build/*.test.js` — **250
+  pass, 0 fail**; eslint on the touched script and tests, 0 errors. `pages-app.test.ts` holds the retry's
+  cursor and the drawn confirmation card; `pages.test.ts` holds the hidden note and the no-script sentence.
+  The mutation check: with the base pages and script, those three tests fail (**198 pass, 3 fail**).
+
+### What this pass leaves
+
+- **The no-script confirmation page has no action of its own.** It says what it needs and the header
+  offers the plans and sign-in; the resend form cannot work without the script that sends it, so it is not
+  drawn. The page is 835px at 360 rather than the 897px empty card.
+- **The no-script front page still cannot show the prices.** It now says so in the Plans section instead
+  of promising cards; the terms and the privacy notice remain readable without a script.
+- **A retry that fails again says nothing new.** The warning sentence is still there and the new Try again
+  has the cursor; only the button's word returns from "Trying again" to "Try again".
+- **The empty confirmation card and the no-script home note are the two places a script was assumed;**
+  the account's skeleton, the usage and plan retries and the address strip are the earlier entries' work.

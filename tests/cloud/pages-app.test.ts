@@ -241,6 +241,7 @@ test("a front page that cannot get the plans says so, claims nothing about model
   v.click(retry);
   await v.idle();
   assert.equal(v.$("plans").querySelectorAll("article").length, 2);
+  assert.equal(v.doc.activeElement, v.$("plans-h"), "the cursor goes to the section that answered, not the body the button left");
   assert.equal(v.shows(v.$("plans-note")), true, "and the note that describes the cards comes back with them");
   assert.deepEqual(v.doc.querySelectorAll("[data-from-price]").map((n) => n.textContent), ["From $149.00 a month", "From $149.00 a month"], "and both lines take the price once it is read");
   assert.match(v.text("main"), /\$20\.00 of model usage each month/);
@@ -784,6 +785,8 @@ test("the page that says the link was sent has an icon for what it is, which is 
 test("the page that checks a link says so while it is checking, and says nothing there without a script", async () => {
   // With no script the status is empty: the noscript sentence explains the page, and "Checking the link." beside it would contradict it.
   assert.match(fs.readFileSync(`${PAGES_DIR}/verify.html`, "utf8"), /id="status"[^>]*aria-busy="true"[^>]*><\/div>/, "the waiting line is not in the markup");
+  // The card itself is drawn by the script too: without one it held a border, 42px of empty paper and a status that was still busy.
+  assert.match(fs.readFileSync(`${PAGES_DIR}/verify.html`, "utf8"), /<div class="card" id="card" hidden>/, "the card is not in the markup either");
   let during = "";
   const w = world((x) => (x.signedIn = false));
   w.answers.set("POST /api/verify", () => {
@@ -793,6 +796,7 @@ test("the page that checks a link says so while it is checking, and says nothing
   // Built first, then started, so the answer can read the page while the request is out.
   const v = new Visit("verify", { routes: w.routes, search: "?token=old" });
   await v.start();
+  assert.equal(v.$("card").hidden, false, "a script draws the card it is about to fill");
   assert.equal(during, "Checking the link.", "the script writes it, while it is waiting for the answer");
   assert.equal(v.$("status").getAttribute("aria-busy"), null, "and a status that has said something stops waiting");
 });
