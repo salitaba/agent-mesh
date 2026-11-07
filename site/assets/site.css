@@ -720,7 +720,10 @@ main:has(.hero) .section-head .eyebrow::before { counter-increment: sec; content
 
 
 /* notices and tags: a ring, a dot and a bar in the notice's colour; the tint, the edge and the bold words say it again */
-.notice { --i: var(--k-warn); position: relative; margin: 0; padding: 14px 16px 14px 48px; border: 1px solid color-mix(in srgb, var(--i) 30%, transparent); border-radius: var(--k-r-md); background: color-mix(in srgb, var(--i) 8%, var(--panel)); font-size: .9375rem; }
+/* A notice is prose, and prose takes the 68ch measure: at 1,440 the pricing page's "Limits are reported" ran the whole
+   1,120px column and 89 characters on a line, while every note beside it took 68ch. The 64px is the notice's own left
+   and right padding, so the words themselves keep the measure. */
+.notice { --i: var(--k-warn); position: relative; margin: 0; padding: 14px 16px 14px 48px; border: 1px solid color-mix(in srgb, var(--i) 30%, transparent); border-radius: var(--k-r-md); background: color-mix(in srgb, var(--i) 8%, var(--panel)); max-width: calc(68ch + 64px); font-size: .9375rem; }
 .notice.neutral { --i: var(--link); }
 .notice::before { content: ""; position: absolute; left: 16px; top: 15px; width: 20px; height: 20px; border: 1.5px solid var(--i); border-radius: 50%; background: radial-gradient(circle at 50% 28%, var(--i) 1.4px, transparent 1.7px), linear-gradient(var(--i), var(--i)) 50% 72% / 1.5px 7px no-repeat; }
 /* On a phone the notice's words run the panel's width, as the security page's answers do: the icon's
@@ -1256,6 +1259,14 @@ body:has(#billing-monthly:checked) .head-price-monthly { display: inline; }
   html.has-top .site-footer .foot-legal { padding-right: 64px; }
   .to-top.is-end { position: fixed; }
 }
+/* A short window has the same problem above 640. The dock rests above the footer, so when the footer is taller than
+   the window the button ends up above the screen — at 768×500 its box was -92..-44, and at 768×600 it was 8..56
+   under the 69px header. It is the same corner rule for a window shorter than a footer plus the button (and the header)
+   would leave room for; the legal block takes the lane only while the page has the script's button. */
+@media (min-width: 640px) and (max-height: 680px) {
+  html.has-top .site-footer .foot-legal { padding-right: 64px; }
+  .to-top.is-end { position: fixed; }
+}
 @media (min-width: 860px) { .to-top { right: 24px; bottom: 24px; } }
 /* The policy forbids style attributes: spacing is a class. */
 .mt-s { margin-top: 16px; }
@@ -1346,11 +1357,27 @@ body:has(#billing-monthly:checked) .head-price-monthly { display: inline; }
   .head-price-annual, .head-price-monthly { display: block !important; }
   /* A printed page has no swipe: the rows and the table are laid out, not scrolled. */
   .tiles, .plans { display: grid; grid-template-columns: var(--c2); grid-auto-flow: row; gap: 16px; margin-inline: 0; padding: 0; overflow: visible; }
-  /* A sheet has no chooser and can show all six views, not the one chosen on screen. */
-  .view-choice { display: none; }
+  /* A sheet has no chooser and can show all six views and all four plans, not the one chosen on screen. */
+  .view-choice, .plan-choice { display: none; }
   .tiles > .tile { display: flex !important; visibility: visible !important; grid-area: auto; }
   .table-wrap { overflow: visible; }
   .compare { min-width: 0; }
   /* The plate is a crop of the capture on a screen; a printed page has room for the whole picture. */
   .hero-visual .pane img { height: auto; object-fit: fill; }
+}
+
+/* A sheet below a tablet has no room for two cards or the 660px comparison table: at 320 the home page was 15px over
+   the paper and pricing 34px, its four plans were two 136px columns and its comparison a 286px box around a 337px
+   table (the last column ran off the sheet). Down to 540 the printed page takes the phone's one-column rows and its
+   per-plan stack, with both periods printed because paper has no switch; from 540 to 719 the two columns and the table
+   fit, so the sheet keeps them and only the four cards, not one, are restored. */
+@media print and (max-width: 719px) {
+  .plans > .plan { visibility: visible !important; grid-area: auto; }
+}
+@media print and (max-width: 539px) {
+  .tiles, .plans { grid-template-columns: minmax(0, 1fr); }
+  .stack-table { display: grid !important; }
+  #compare .table-wrap, #calculator .table-wrap { display: none !important; }
+  #compare .plan-stack .period-annual,
+  #compare .plan-stack .period-monthly { visibility: visible !important; grid-area: auto !important; }
 }
