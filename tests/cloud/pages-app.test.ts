@@ -180,6 +180,21 @@ test("a front page for someone who is signed in marks their plan and points the 
   assert.equal(v.text(v.$("start").querySelector(".btn-row")!), "Go to your account", "and the page's last entry is their account too");
 });
 
+test("the front page's last entry speaks to the person reading it: a customer is not told to create the account they have", async () => {
+  const active = await visit("home", { routes: world((x) => { paid(x); x.workspaces = [workspace()]; }).routes });
+  assert.equal(active.text("start-note"), "Your workspaces, your plan and your settings are in your account.");
+  const empty = await visit("home", { routes: world(paid).routes });
+  assert.equal(empty.text("start-note"), "Your account is where you make your first workspace.");
+  const none = await visit("home", { routes: world().routes });
+  assert.equal(none.text("start-note"), "Your account is where you choose a plan and make your first workspace.");
+  const ended = await visit("home", { routes: world((x) => (x.subscription = { ...ACTIVE!, status: "ended" })).routes });
+  assert.equal(ended.text("start-note"), "Your account is where you choose a plan to start again.");
+  const late = await visit("home", { routes: world((x) => (x.subscription = { ...ACTIVE!, status: "past_due" })).routes });
+  assert.equal(late.text("start-note"), "Your account says what your plan needs.");
+  const out = await visit("home", { routes: world((x) => (x.signedIn = false)).routes });
+  assert.equal(out.text("start-note"), "An email and a password, then a plan. Nothing is charged until you have chosen the plan and paid for it.", "a visitor is still told how to start");
+});
+
 test("the policy numbers a page states are changed with the service's settings, with the unit in the singular when it is one", async () => {
   const w = world((x) => {
     x.signedIn = false;
@@ -1217,6 +1232,26 @@ test("the plans being unavailable leaves the rest of the account usable, says wh
   assert.deepEqual(z.labels("plan"), [], "and there is nothing to press, because nothing is on offer");
 });
 
+test("a cancelled checkout points below only when there is a list below: a failed or empty read is not called a choice", async () => {
+  const down = world((x) => {
+    x.plans = failure(503, "unavailable", "Down.");
+  });
+  const d = await visit("account", { routes: down.routes, search: "?cancelled=1" });
+  assert.equal(d.text("notice"), "Checkout was cancelled. Nothing was charged.", "the notice does not send a person to a list it knows is not there");
+  assert.match(d.text("plan"), /The plans could not be loaded just now/, "the section below says what happened, with its own Try again");
+
+  const empty = world((x) => {
+    x.plans = { json: { ...PLANS, plans: [] } };
+  });
+  const e = await visit("account", { routes: empty.routes, search: "?cancelled=1" });
+  assert.equal(e.text("notice"), "Checkout was cancelled. Nothing was charged.");
+  assert.match(e.text("plan"), /No plan is on offer just now/);
+
+  const offered = await visit("account", { routes: world().routes, search: "?cancelled=1" });
+  assert.equal(offered.text("notice"), "", "with a list below, the sentence is the list's own and the notice has nothing to add");
+  assert.equal(offered.text("plan-lede"), "Checkout was cancelled, so nothing was charged.");
+});
+
 // ---- workspaces ----
 
 test("each workspace shows its state in words, with only what can be done to it in that state, and deleting is behind More except for a workspace that could not start", async () => {
@@ -1562,6 +1597,41 @@ test("a confirmation that is open stays open, with what was typed, when the page
   v.submit(form);
   await v.idle();
   assert.equal(v.to("POST", "/api/workspaces/ws_1/delete").length, 1, "a form sent twice deletes once");
+});
+
+test("a deletion's question does not put away the credit row or the plan's own change", async () => {
+  // A workspace that is starting makes the page look again while the question is open. The question is about the workspace,
+  // and the plan and the balance are the account's: neither is being deleted.
+  const w = world((x) => {
+    x.subscription = { ...ACTIVE!, plan: "business", title: "Business" };
+    x.workspaces = [workspace({ workspaceId: "ws_1", name: "Research" }), workspace({ workspaceId: "ws_2", name: "Other", status: "provisioning" })];
+  });
+  const v = new Visit("account", { routes: w.routes, manualTimers: true });
+  await v.start();
+  const first = (): FakeNode => v.$("workspaces").querySelectorAll("li")[0]!;
+  v.click(v.button(first(), "More"));
+  v.click(v.button(first(), "Delete this workspace"));
+  assert.equal(v.shows(v.$("topup-details")), true, "the credit row is still on the page when the question opens");
+  assert.ok(v.labels("plan").includes("Change plan"), "and so is the plan's own change");
+  await v.advance(3000);
+  await v.idle();
+  assert.equal(v.shows(v.$("topup-details")), true, "a look at the account while the question is open leaves the credit row where it was");
+  assert.ok(v.labels("plan").includes("Change plan"), "and the plan's change stays with it");
+  assert.equal(v.$("confirm-ws_1").value, "", "the question is still the one being asked");
+});
+
+test("a look at a starting account leaves the cursor in the plan where it was", async () => {
+  const w = world((x) => {
+    paid(x);
+    x.workspaces = [workspace({ status: "provisioning" })];
+  });
+  const v = new Visit("account", { routes: w.routes, manualTimers: true });
+  await v.start();
+  v.click(v.$("plan-change-toggle"));
+  assert.equal(v.doc.activeElement?.id, "plan-change-toggle", "the button that opened the list has the cursor");
+  await v.advance(3000);
+  await v.idle();
+  assert.equal(v.doc.activeElement?.id, "plan-change-toggle", "the refreshed page has the same button under the cursor, not the body");
 });
 
 // ---- credit ----

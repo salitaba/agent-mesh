@@ -4150,3 +4150,71 @@ sign-up page after the link was sent, and the home page with `/api/plans` answer
 - **With scripts off the home page still shows the note over no cards.** The page says in its `noscript` line that it needs
   JavaScript to show the plans; the note is the markup's, and the failure state is the script's. A browser with no script
   never reaches the branch this pass fixed.
+
+## 2026-11-07: the question about a workspace, the sentence after a payment, and the cursor a look takes
+
+Same harness: Chromium 1248 through `playwright-core` against this worktree's trial (`trial --port 8342`), 360 × 800 and
+1440 × 900 in light, 320 / 390 / 768 / 1,024 and 1,440 in light and 360 / 1,440 in dark for the width pass,
+`prefers-reduced-motion: reduce`, and a touch pointer below 721. "Before" is this worktree's own pages before the first
+edit, captured in the same trial; no figure is copied from an earlier record. Fixtures held by request interception: a Team
+account with one running workspace named Research and a Business alternative, the same account with the workspace at
+`provisioning`, a fresh account with no plan, `/api/plans` answering 503, and an empty plan list. Heights are
+`document.documentElement.scrollHeight`; positions are `getBoundingClientRect` plus `scrollY`.
+
+- **A deletion's question no longer puts the account's plan and balance away.** One field, `state.confirming`, meant both
+  the payment the page is waiting for and the workspace whose deletion is being confirmed. While the question was open, the
+  next look at the account — the starting-workspace poll, or any action that refreshes — read the workspace id as "a payment
+  is confirming": the plan's `Change plan` went, and the balance's credit row was hidden. At 360 the credit row was **0px
+  (hidden) and the plan offered only Manage billing**; it is **52px and Manage billing + Change plan**, and the page
+  2,048 → **2,100**. At 1,440 the row is **0 → 181.2px**, the same two plan actions, and the page 2,011 → **2,192**. The
+  workspace answer is `state.deleting` now, and only the payment keeps `state.confirming`.
+- **A cancelled checkout points below only when there is a list below.** With the plans unread or none on offer, the notice
+  still ended **"Choose a plan below when you are ready."** — immediately over "The plans could not be loaded just now…" or
+  "No plan is on offer just now" (360 and 1,440). It ends **"Checkout was cancelled. Nothing was charged."**; the plan
+  section says what happened and carries its own Try again. At 360 the page is 801 → **800**; at 1,440 it is 900 either
+  way. With a list, the sentence is still the plan section's own ("Checkout was cancelled, so nothing was charged."), and
+  the notice stays empty.
+- **The home page's last entry speaks to the person reading it.** "05 Start" told a signed-in customer **"An email and a
+  password, then a plan…"** above "Go to your account". It now says **"Your workspaces, your plan and your settings are in
+  your account."** (active with a workspace), **"Your account is where you make your first workspace."** (no workspaces),
+  **"…choose a plan and make your first workspace."** (no plan), **"…choose a plan to start again."** (ended) or **"Your
+  account says what your plan needs."** (past due). The signed-out sentence did not change. The home page is 4,151 →
+  **4,127** at 360 and 2,667 → **2,643** at 1,440, the shorter sentence's 24px.
+- **A look at a starting account leaves the cursor in the plan.** The three-second poll redrew the whole plan section, and
+  a control in it was removed with the old nodes: 3.3 seconds after focusing **Change plan** at 360 or 1,440,
+  `document.activeElement` was **BODY**, so the next Tab began at the skip link. `renderPlan` now remembers the focused
+  control (its id, then the words on it) and gives it the cursor after the redraw; the plan's controls have ids
+  (`plan-billing`, `plan-retry`, `plan-choose-*`, `plan-switch-*`). The measured cursor is **BUTTON#plan-change-toggle**
+  with the page's 2px `rgb(43, 95, 217)` outline, at 360 and 1,440, and the page heights are unchanged (1,883 / 2,025). The cursor is restored with `preventScroll`: a person who scrolled away is not pulled back (measured `scrollY` 0 → 0).
+- **Widths, schemes and the floor.** 320 / 360 / 390 / 768 / 1,024 / 1,440 in light, 360 and 1,440 in dark, on the home
+  and account pages: no sideways page scroll, nothing computes below **12px**, and no console error. **8 axe-core runs**
+  (home and account at 320, 360, 768 and 1,440) find **no violation**. The 320 and 360 way-in pages are unchanged. The
+  stylesheet is untouched at **40,906 bytes of 40,960**.
+- **Tests.** `node --test "dist/tests/cloud/pages*.test.js"` — **200 pass, 0 fail**; `dist/tests/cloud/*.test.js` —
+  **895 pass, 0 fail**; `dist/tests/build/*.test.js` — **244 pass, 0 fail**; typecheck and build clean; eslint 0 errors.
+  The four new tests are the deletion's question through a poll, the cancelled notice in the failed and empty states, the
+  five signed-in home sentences (and the signed-out one), and the cursor through a starting poll. Each was mutation-checked
+  against the base `app.js`: the four fail there and pass here.
+
+| measured at 360, light | before | after |
+| --- | --- | --- |
+| A deletion's question, after a look | credit row hidden, plan only **Manage billing**; page 2,048 | **52px** credit row, **Manage billing + Change plan**; page **2,100** |
+| … at 1,440 | credit row **0px**; page 2,011 | **181.2px**; page **2,192** |
+| A cancelled checkout with no plans | "…Choose a plan below when you are ready." over "could not be loaded" | **"Checkout was cancelled. Nothing was charged."**; page 801 → 800 |
+| A signed-in home's Start note, 360 / 1,440 | "An email and a password, then a plan…" | **"Your workspaces, your plan and your settings are in your account."**; 4,151 → 4,127 / 2,667 → 2,643 |
+| A starting account, 3.3s after focusing Change plan | **BODY**, no ring | **BUTTON#plan-change-toggle**, 2px ring; page 1,883 / 2,025 unchanged |
+| `app.css` | 40,906 bytes | **40,906** |
+
+### What this pass leaves
+
+- **The deletion question still lets a top-up or a plan change begin while it is open.** They are unrelated actions, and
+  the fix only stops the question from hiding them; the page does not lock the account against a second intent.
+- **The focus restore is by id, then by the words on the control.** A plan control whose words change in the same redraw
+  cannot be found and the cursor goes to the **Plan** heading, which is still better than the body but not the control the
+  person was on.
+- **The home page's five sentences are chosen from the session, not from the plan read.** A signed-in customer whose
+  `/api/session` read fails still sees the signed-out Start sentence, as the page cannot tell who they are.
+- **The sign-up sent card's minute still has no `aria-describedby` on the held button** (the previous pass's entry). The
+  countdown is not a live region, so a screen-reader user must browse to it; this pass did not change that.
+- **The address strip, the prose-only 19px links, the usage read's rate limit and the key form's height are unchanged.**
+  They are the earlier entries.
