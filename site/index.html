@@ -10,7 +10,7 @@
 <link rel="apple-touch-icon" href="assets/apple-touch-icon.png">
 <meta name="theme-color" content="#fbfaf8" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#131211" media="(prefers-color-scheme: dark)">
-<link rel="stylesheet" href="assets/site.css?v=369dd5ea59">
+<link rel="stylesheet" href="assets/site.css?v=37e6a0c210">
 <meta property="og:type" content="website">
 <link rel="canonical" href="https://curule.dev/">
 <meta property="og:url" content="https://curule.dev/">
@@ -409,7 +409,7 @@ docker build -t curule .</code></pre></div>
       <p class="lede">What it protects, what leaves your environment, and what it does not do. The agents run commands, so this is the part to read before you promise anything to anyone.</p>
     </div>
     <div class="grid grid-3">
-      <div class="card"><svg class="mark mark-ok" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M12 3 4.5 6v5.5c0 4.4 3.1 7.6 7.5 9 4.4-1.4 7.5-4.6 7.5-9V6L12 3Z"/><path d="m8.8 12 2.4 2.4L15.6 10"/></svg><h3>What it does</h3><p>Refuses to listen on a network address without a strong token, and guards against cross-site and rebinding attacks. Serves agent-written pages in a sandbox, and keeps the operator&rsquo;s secrets out of the agents&rsquo; environment. Runs unprivileged with a read-only root, and ships a network policy for Kubernetes. Every control is pinned by a test.</p></div>
+      <div class="card"><svg class="mark mark-ok" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M12 3 4.5 6v5.5c0 4.4 3.1 7.6 7.5 9 4.4-1.4 7.5-4.6 7.5-9V6L12 3Z"/><path d="m8.8 12 2.4 2.4L15.6 10"/></svg><h3>What it protects</h3><p>Refuses to listen on a network address without a strong token, and guards against cross-site and rebinding attacks. Serves agent-written pages in a sandbox, and keeps the operator&rsquo;s secrets out of the agents&rsquo; environment. Runs unprivileged with a read-only root, and ships a network policy for Kubernetes. Every control is pinned by a test.</p></div>
       <div class="card"><svg class="mark mark-out" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M9 5H6.5A1.5 1.5 0 0 0 5 6.5v11A1.5 1.5 0 0 0 6.5 19h11a1.5 1.5 0 0 0 1.5-1.5V15"/><path d="M13 5h6v6"/><path d="M19 5 11 13"/></svg><h3>What leaves your environment</h3><p>Only the agents&rsquo; calls to the model provider you chose, with your credentials. Nothing goes to us: no telemetry, no analytics, no update check, no licence server.</p></div>
       <div class="card"><svg class="mark mark-no" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="8.5"/><path d="m6 6 12 12"/></svg><h3>What it does not do</h3><p>One shared operator token: single sign-on and per-operator identity are planned, not included. No third-party audit, penetration test or SOC 2. The container is the boundary: narrow its network, and give each instance its own provider key with a spend limit.</p></div>
     </div>
@@ -513,6 +513,6 @@ docker build -t curule .</code></pre></div>
   </div>
 </footer>
 <!-- generated:chrome-footer:end -->
-<script src="assets/site.js?v=2690dea67a" defer></script>
+<script src="assets/site.js?v=3463635869" defer></script>
 </body>
 </html>
