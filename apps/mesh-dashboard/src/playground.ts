@@ -126,6 +126,13 @@ export const isLive = (run: PlayRun | null): boolean => !!run && !run.done && !r
 export const isBusy = (s: PlayState): boolean => s.starting || s.clearing || isLive(s.run);
 
 /**
+ * Whether there is a command to run. The Run button used to be enabled over an empty box, and pressing it posted the
+ * empty command to the host, which answered `provide a `command`` — a schema error in the output area, under a field
+ * that already said "Type one above". An empty or whitespace-only command is not a request (2026-11-07).
+ */
+export const canRun = (command: string): boolean => command.trim().length > 0;
+
+/**
  * The run a refusal names, or null. Only a 409 carries one: the host is the only one that knows what is in the way
  * (another tab's command, or a script the Product page started), and it says so rather than leaving the page guessing.
  */
@@ -143,9 +150,12 @@ export function blockedRunOf(status: number, json: unknown): BlockedRun | null {
 /**
  * The sentence for a start the server would not accept. The server's own words are used verbatim, because
  * it is the one that knows why (`a run is already in progress` names the other run, which the page cannot).
+ * The one exception is the contract error for an empty command — the page prevents that press now, so if it
+ * ever arrives it is a bug in the console, and the reader should not be shown a schema complaint (2026-11-07).
  */
 export function startRefusal(status: number, json: unknown, timeout = false): string {
   const said = (json as { error?: unknown } | null)?.error;
+  if (status === 400 && typeof said === "string" && /^provide a `?command`?$/i.test(said.trim())) return "Type a command to run.";
   if (typeof said === "string" && said.trim()) return said;
   if (timeout) return "The server did not answer in time. The command was not started.";
   return `The command was not started (the server answered ${status || "nothing"}).`;

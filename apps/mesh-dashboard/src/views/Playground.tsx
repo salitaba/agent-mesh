@@ -6,7 +6,7 @@ import { useMesh } from "../store";
 import { Button, CopyButton, ErrorState, Input, NextLinks, PageHeader, Pill, useNow } from "../components";
 import { Icon } from "../icons";
 import { YourProduct } from "./YourProduct";
-import { clockWords, createPlayground, isBusy, isLive, outcomeOf, stopReason, RUN_CEILING_MS, type PlayRun } from "../playground";
+import { canRun, clockWords, createPlayground, isBusy, isLive, outcomeOf, stopReason, RUN_CEILING_MS, type PlayRun } from "../playground";
 
 /* The Playground: the operator's own terminal for the thing they paid for.
  *
@@ -82,6 +82,12 @@ export default function Playground(): React.JSX.Element {
 
   const submit = (e: FormEvent): void => {
     e.preventDefault();
+    // The box is the only thing that says what will run; an empty press goes back to it rather than to the host,
+    // which would answer with a schema complaint under the field (2026-11-07).
+    if (!canRun(command)) {
+      document.getElementById("pg-cmd")?.focus();
+      return;
+    }
     runIt(command);
   };
 
@@ -107,7 +113,7 @@ export default function Playground(): React.JSX.Element {
           value={command}
           onChange={(e) => setCommand(e.target.value)}
         />
-        <Button variant="primary" size="lg" type="submit" icon="play" loading={state.starting} disabled={busy}>
+        <Button variant="primary" size="lg" type="submit" icon="play" loading={state.starting} disabled={busy || !canRun(command)}>
           {state.starting ? "Starting…" : "Run"}
         </Button>
       </form>

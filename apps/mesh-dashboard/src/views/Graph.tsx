@@ -7,7 +7,7 @@ import { AgentDrawer } from "../drawers";
 import { roleLabel } from "../agents";
 import { sinceText } from "../feed";
 import { middleClip } from "../text";
-import { around, drawingWidth, edgeKey, edgeText, edgeWidth, flowingKeys, isFlowing, kindOf, kindsPresent, labelPlacement, nodeTone, pairFilter, ringLayout, seatTies, toggleKind, visibleEdges, type LabelSpot, type NodeTone } from "../graph";
+import { around, drawingWidth, edgeKey, edgeText, edgeWidth, flowingKeys, isFlowing, kindKeyWords, kindOf, kindsPresent, labelPlacement, nodeTone, pairFilter, ringLayout, seatTies, toggleKind, visibleEdges, type LabelSpot, type NodeTone } from "../graph";
 import { useMedia } from "../useMedia";
 import "./graph.css";
 
@@ -154,17 +154,19 @@ export default function Graph(): React.JSX.Element {
   // in words and draw solid bars, so those two entries would decode nothing on the page under them.
   const kindsKey = (label: string, extra?: React.ReactNode): React.JSX.Element => (
     <ul className="gr-legend" aria-label={label}>
-      {kinds.map((k) => (
-        <li key={k.id}>
-          <button
-            type="button" className="gr-key" aria-pressed={!off.has(k.id)} aria-label={`Show lines: ${k.label}`}
-            title={off.has(k.id) ? `Show the lines that ${k.label}` : `Hide the lines that ${k.label}`}
-            onClick={() => setOff((o) => toggleKind(o, k.id))}
-          >
-            <i className={`gr-line ${k.id}`} aria-hidden="true" />{k.label}
-          </button>
-        </li>
-      ))}
+      {kinds.map((k) => {
+        const keyWords = kindKeyWords(k.label, !off.has(k.id));
+        return (
+          <li key={k.id}>
+            <button
+              type="button" className="gr-key" aria-pressed={!off.has(k.id)} aria-label={keyWords.name} title={keyWords.title}
+              onClick={() => setOff((o) => toggleKind(o, k.id))}
+            >
+              <i className={`gr-line ${k.id}`} aria-hidden="true" />{k.label}
+            </button>
+          </li>
+        );
+      })}
       {extra}
     </ul>
   );

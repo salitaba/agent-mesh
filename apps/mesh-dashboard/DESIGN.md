@@ -377,6 +377,79 @@ Breakpoints: **1280 1100 900 800 760 620 560**. 800 is the sidebar drawer (JS
 
 ## Pass log
 
+### 2026-11-07 — an empty command is not a request, a failed read is a sentence, and a legend key says the press it makes
+
+Surface: `src/views/Playground.tsx` and `src/playground.ts` (`canRun`, the empty-command refusal), `src/components.tsx`
+and the new `src/errorwords.ts`, `src/views/Graph.tsx` and `src/graph.ts` (`kindKeyWords`), `src/styles.css` (the
+inspector chip's width floor), with `tests/dashboard/playground.test.ts`, the new `error-words.test.ts`,
+`graph.test.ts` and `phone-targets.test.ts`.
+
+Measured on the scripted demo at **Delivered** (481 events, 49.3k of 2.0M tokens, 7 checks, 9 files, 7 seats, 28 turns,
+ran 19s) in the production build served by `curule console`, Chromium 1248 at 320/360/390/768/1,024/1,440 in light and
+360/1,440 in dark, a touch pointer at every width for the chip, reduced motion, axe-core 4.14. Both halves are the
+**same delivered log**: the before is this worktree at `04ead2a` served on 8,363, the after this branch's build on the
+same port without restarting the mission; the clock is the only difference.
+
+- **Run posted an empty command.** On the Playground, with the box empty, Run was enabled (**336 × 44**, opacity 1) and
+  pressing it sent `{command:""}`: the host answered 400 and the page drew its schema complaint, **"provide a \`command\`"**,
+  at 360 y = 528.9 — **315.3 px below the field's bottom** — under a note that already said "Type one above". The press is
+  guarded now (`canRun` in `playground.ts`): Run is **disabled, opacity .5** at 360 and 1,440, typing `node …` makes it
+  enabled, and Enter in the empty box keeps focus in the field (**0 POSTs**, no refusal). If that contract error ever
+  arrives it reads **"Type a command to run."** A 400 for any other reason still shows the server's sentence.
+- **A failed read printed the browser's exception.** With the file list, the budgets and the graph refused at the
+  transport, each `ErrorState` body was **"Failed to fetch"** — Chromium naming its machinery, 100 px wide at 360 and
+  1,440. The same component already had the sentence for a missing detail; `errorwords.ts` maps the browser's five
+  phrasings (and only those) to **"The mesh server did not answer. It may be restarting."** The Files card is
+  **225.8 → 246.8** at 360 (the body **100 × 21 → 304 × 42**, two lines) and **209.8 → 209.8** at 1,440 (body
+  **100 × 21 → 377 × 21**); the page is **780** at 360, **836** at 1,440. A server's own 503 sentence is kept.
+- **A legend key's name said the opposite press.** All five Graph keys carried `aria-pressed="true"` and
+  `aria-label="Show lines: approved"` while their title said "Hide the lines that approved"; a screen reader heard
+  "Show lines: approved, pressed". `kindKeyWords` gives the key the press it will make: shown → **"Hide lines: …"**
+  (title Hide), hidden → **"Show lines: …"**, and toggling one key reads Show / `aria-pressed="false"`. The five key
+  boxes are unchanged (137/105/95/97/111 × 44 at 360) and the page is **1,917** at 360 and **1,498** at 1,440.
+- **The inspector's shortest chip was 38 px on a finger.** The 44 px width floor for the Designer inspector's chips
+  lived in the 760 phone block, so a touch laptop at 1,440 measured **"qa" 38 × 44** in both "May message" and "Also
+  reachable by" — the only controls under 44 × 44 in the view (the 18 × 18 switch inside its 44 px label is the
+  recorded exception). The floor is in the coarse block at every width now: **44 × 44**, its word centred, the row
+  still fits (chips content 366 in 366) and the panel does not scroll sideways (398 / 398). 768 and 1,024 coarse take
+  it too; a fine pointer keeps the 38 px density at 1,440.
+
+| | Before | After |
+|---|---|---|
+| Playground Run, empty box, 360 / 1,440 | enabled, opacity 1 | **disabled, opacity .5** |
+| Pressing it: POSTs / refusal | 1 / "provide a \`command\`" | **0 / none** |
+| The refusal at 360: y, below the field | 528.9, 315.3 | **—** |
+| The Playground page, 360 (with / without the refusal) | 1,151 / 1,093 | **1,093 / 1,093** |
+| Typing `node …`: Run | enabled | **enabled** |
+| Enter in the empty box: focus | the page | **the command field** |
+| Files' error body, 360 / 1,440 | "Failed to fetch", 100 × 21 | **the sentence, 304 × 42 / 377 × 21** |
+| The Files error card, 360 / 1,440 | 225.8 / 209.8 | **246.8 / 209.8** |
+| Cost and Graph error bodies | "Failed to fetch" | **the sentence** |
+| A 503's own sentence | kept | **kept** |
+| Graph keys shown: name / pressed / title | Show / true / Hide | **Hide / true / Hide** |
+| A key toggled off: name / pressed / title | Show / false / Show | Show / false / Show (unchanged) |
+| "qa" chip, 1,440 touch | 38 × 44 | **44 × 44** |
+| Under-44 controls in the view, 1,440 touch | 2 ("qa", twice) | **0** |
+| The inspector panel, 768 / 1,024 / 1,440: scroll / client | — | **399/399, 399/399, 398/398** |
+| Axe, the four states × 360/1,440 light and 360/1,440 dark | 0 | **0** |
+| Horizontal page scroll, 320–1,440 × both themes | 0 | **0** |
+| Controls under 44 × 44 at 320/360/390, the changed views | 0 | **0** |
+
+Floors: `npm run typecheck` and `npm run build` clean; `dist/tests/dashboard` **1,272 pass, 0 fail** (the new
+`error-words` and the changed `playground`, `graph` and `phone-targets` rules); eslint **0** on the touched TypeScript
+(the stylesheet is outside its configuration); axe **0** in the changed states at 320/360/390/768/1,024/1,440 light and
+360/1,440 dark; no page scrolls sideways; the smallest text in the changed views is 11 px (the avatar initials and
+sidebar key glyphs).
+
+**Left.** The Playground's Run is disabled with no inline reason; the placeholder and "Type one above." are the only
+words, and a field-level hint would be a new line the page does not have. The empty-command map names the server's exact
+phrase, so a reworded contract error would pass through as the server wrote it. The browser-failure map is exact
+strings, so a proxy's or a translation's own wording is kept — the rule turns the known browser sentences into one
+sentence, it does not classify every failure. The Designer's 44 px width is a finger's: a fine pointer at 1,440 keeps
+38 px, and the 18 × 18 switch inside a 44 px label is still the recorded exception. Seen while measuring and untouched:
+the agent and graph drawers' tab count is still 11 px at 360, the step drawer opened from Overview still reads "1 of 6"
+where Steps reads "1 of 28", and the Events page's 81 oldest events are still outside its 400-event read.
+
 ### 2026-11-06 — a seat's own record lists all its steps, its budget reads like the rest, and one turn is a turn
 
 Surface: `apps/mesh-server/src/index.ts` and `steps-view.ts` plus `packages/observability/src/steps.ts` (the agent

@@ -15,11 +15,13 @@ import type { ProjectClient } from "../../apps/mesh-dashboard/src/api";
 import {
   RUN_CEILING_MS,
   blockedRunOf,
+  canRun,
   clockWords,
   createPlayground,
   isBusy,
   outcomeOf,
   parseCommands,
+  startRefusal,
   stopReason,
   type PlayRun,
 } from "../../apps/mesh-dashboard/src/playground";
@@ -224,21 +226,44 @@ test("a 409 shows the server's own sentence and keeps the output of the run befo
   assert.equal(starts(calls).length, 2, "the command was sent; the refusal came from the server");
 });
 
-test("a 400 is the server's sentence too — the page does not decide for itself what an empty command means", async () => {
+test("a 400 keeps the server's sentence, except the empty command the page itself prevents", async () => {
+  // Measured at 360 and 1,440 on the delivered demo: Run was enabled over an empty box, and pressing it posted the
+  // empty command. The host answered 400 "provide a `command`", which the page printed 359 px below the field at 360.
+  // The view now refuses the press; the controller still maps that one contract error to the console's words.
   const { client } = rig((method, path, body) => {
     if (method === "POST" && path === "/playground/exec") {
-      return body.command === "" ? { status: 400, json: { error: "provide a `command`" } } : { status: 201, json: { runId: "z" } };
+      if (body.command === "") return { status: 400, json: { error: "provide a `command`" } };
+      if (body.command === "nope") return { status: 400, json: { error: "unknown command: nope" } };
+      return { status: 201, json: { runId: "z" } };
     }
     if (path === "/playground/exec/z") return { json: { id: "z", done: true, exitCode: 0, log: "hi\n" } };
     return { status: 404, json: { error: "no route" } };
   });
   const pg = createPlayground({ pollMs: 1 });
-  await pg.start(client, "   ");
-  assert.equal(pg.getState().refusal, "provide a `command`");
+  await pg.start(client, "");
+  assert.equal(pg.getState().refusal, "Type a command to run.", "the console's sentence, not a schema complaint");
   assert.equal(pg.getState().run, null, "nothing ran, so there is nothing to keep");
+  await pg.start(client, "nope");
+  assert.equal(pg.getState().refusal, "unknown command: nope", "any other 400 is still the server's own words");
   await pg.start(client, "node bin/skillctl.js list");
   assert.equal(pg.getState().refusal, null, "a run that starts clears the refusal");
   assert.equal(pg.getState().run!.log, "hi\n");
+});
+
+test("an empty command is not a request: the box says so and Run does not post it", () => {
+  assert.equal(canRun(""), false);
+  assert.equal(canRun("   "), false);
+  assert.equal(canRun("\t\n"), false);
+  assert.equal(canRun("node bin/skillctl.js --help"), true);
+  assert.equal(canRun("  node bin/skillctl.js --help  "), true, "the words are what matters, not the edges");
+
+  assert.equal(startRefusal(400, { error: "provide a `command`" }), "Type a command to run.");
+  assert.equal(startRefusal(400, { error: "provide a command" }), "Type a command to run.");
+  assert.equal(startRefusal(400, { error: "unknown command: nope" }), "unknown command: nope");
+
+  const view = read("views/Playground.tsx");
+  assert.match(view, /disabled=\{busy \|\| !canRun\(command\)\}/, "the empty box cannot be pressed");
+  assert.match(view, /if \(!canRun\(command\)\) \{\s*document\.getElementById\("pg-cmd"\)\?\.focus\(\);\s*return;\s*\}/, "Enter in the empty box goes back to the field, not to the host");
 });
 
 test("an unanswered start is reported without claiming the run began", async () => {

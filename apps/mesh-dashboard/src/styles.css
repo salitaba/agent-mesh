@@ -1430,7 +1430,10 @@ ul.errs { margin: var(--s1-5) 0; padding-left: 18px; font-size: 14px; color: var
       input.search, input.txt, select.sel, textarea.txt) {
     min-height: 44px;
   }
-  :is(.pj-home, .ptab-x, .ptab-add, .agent-open, .gr-open, .icon-btn, .close-x, .palette-x, .toast-x, .copy-btn.compact, .srch-clear) { min-width: 44px; }
+  /* The Designer inspector's shortest kind chip is "qa", 38 px wide. Its 44 px floor lived in the 760 phone block, so a
+     touch laptop at 1,024 or 1,440 kept a 38 x 44 target on a finger. The width floor is a finger's at every width. */
+  :is(.pj-home, .ptab-x, .ptab-add, .agent-open, .gr-open, .icon-btn, .close-x, .palette-x, .toast-x, .copy-btn.compact, .srch-clear, .ms-insp .chip-toggle) { min-width: 44px; }
+  .ms-insp .chip-toggle { justify-content: center; }
   /* A folder crumb is the one way up the tree in the Product page's file browser, and a word is not a target at 44 px tall
      alone: at 360 "src" was 27 x 44 and "root" 34 x 44. Ten px of padding and the 44 px square make them pressable; the row
      still fits one line at 320. tests/dashboard/phone-targets.test.ts reads this rule. */
