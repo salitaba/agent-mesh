@@ -3959,3 +3959,94 @@ both halves and both sets of frames are from the same run; no number is copied f
   its third chip at 360.** None of these changed.
 - **The notices at a desk (900–1,047px) and Curule Cloud's prices** are as the last pass left them. `site/ux/` was not edited;
   this pass's frames are in `/tmp/opencode/ux1107b/marketing/shots/`, not in that page's record.
+
+## 2026-11-07, third pass: a printed phone's sheet, a notice's measure, and the way back in a short window
+
+Measured with the same probe (Chrome over CDP; reduced motion; light unless said; touch at 320/360/390, a mouse at
+768/1,024/1,440; print at 320/360/539/540/719/720/794; no script at 320/360; forced colours at 360; a 24px and a 32px
+root at 320/360/720). The before column is the site at `1184c19`, served on 8347 while this worktree served the after on
+8341; both halves and both sets of frames are from the same run, and no number is copied from an earlier pass.
+
+### What changed
+
+- **A printed page the width of a phone is a readable sheet.** At 320 print the home page was **16,768px and 15px wider than
+  the paper**, and pricing **14,796px and 34px over**; at 360 pricing was **13,876 and 27px over**. The six views and four plans
+  were two 136px columns, and pricing's 660px comparison table sat in a 286px box, its headings overlapping ("COMMUNITY TEAM
+  BUSINESS ENTERPRISE" printed on top of one another). Pricing also printed its **plan chooser** — a control with no paper
+  switch — and only **one of its four cards**. Down to 540 the sheet now takes the phone's one-column rows and its per-plan
+  stack, with both billing periods printed; from 540 to 719 the two columns and the table fit, so the sheet keeps them and
+  prints all four cards. At 320 print the pages are **17,561 / 17,406px** (home / pricing), at 360 **16,574 / 16,189**, all
+  **0px over**; 539 and 540 are 0 over on either side of the break; 719, 720 and 794 are 0 over, and 720+ is unchanged
+  (home 13,305, pricing 11,196 at 720; 13,278 / 10,724 at 794). The printed plan chooser is hidden, and every plan card's
+  visibility is restored below 720.
+- **A notice is prose, and takes the 68ch measure.** At 1,440 the pricing page's "Limits are reported, not enforced" notice
+  ran the whole **1,120px** column, **89 characters on a line**; its sibling above was **1,120px and 83**, and the security
+  page's Cloud notice **1,070px and 78**, while every note beside them took 68ch. All notices now cap at **68ch plus their
+  own 64px of padding**: the limits notice is **744px, 7 lines, 64 characters**; the roadmap notice **744px, 4 lines, 63**;
+  the security caveat **744px, 5 lines, 62**. The pricing page is **+48px at 1,024 and +72 at 1,440** (9,430 → 9,478 and
+  9,318 → 9,390), the security page **+24** (7,896 → 7,920 and 7,679 → 7,703); at 768 the wrap is already under the cap
+  (707/657), so no page changes height there, and at 360 nothing moves.
+- **The way back is in the corner in a short window.** The floating Back to top rests above the footer, so when the footer is
+  taller than the window it ends up above the screen: at 768×500 its box was **-92..-44**, at 768×600 **8..56** under the 69px
+  header, at 1,024×600 **18..66**, at 1,440×600 **-4..44** and at 640×500 **-80..-32**. A window shorter than 680px now takes
+  the phone's corner rule at every width over 640: it is **436..484** at 768×500 (and 640×500), **536..584** at 768×600,
+  **528..576** at 1,024×600 and 1,440×600. The footer's legal block keeps the **64px lane**, so the button covers **0** footer
+  links or lines; a 700px window is unchanged (docked at 768: 108..156). Pressing it still goes to y = 0 and focuses `#main`.
+- **A calculator that needs a script says where its numbers are.** The no-script notice said "The table below holds the same
+  numbers", but at 360 the table is not drawn (the per-model stack is) and the plan prices are in the cards **6,000px above**
+  it; the sentence named neither the plan fee nor the model costs. It now says "The plans above give the licence price; the
+  model costs are in the list below." The notice is **102 → 126px** at 320/360 and the no-script page **+24px** (12,196 →
+  12,220 at 360, 13,064 → 13,088 at 320), with 0px over.
+
+### Measurements after this pass
+
+| Page, height at 320 / 360 / 390 / 768 / 1,024 / 1,440 | Before | After |
+|---|---|---|
+| Home | 13,397 / 12,624 / 12,201 / 12,126 / 11,480 / 11,268 | **unchanged** |
+| Pricing | 14,535 / 13,537 / 12,941 / 10,247 / 9,430 / 9,318 | **14,535 / 13,537 / 12,941 / 10,247 / 9,478 / 9,390** |
+| Documentation | 9,017 / 8,403 / 8,107 / 5,304 / 4,993 / 4,493 | **unchanged** |
+| Security | 12,521 / 11,572 / 10,900 / 7,905 / 7,896 / 7,679 | **12,521 / 11,572 / 10,900 / 7,905 / 7,920 / 7,703** |
+| Contact / Legal / 404 | 4,796 / 5,531 / 2,307 at 320; 4,402 / 5,034 / 2,110 at 360 | **unchanged** |
+
+| Print at 320 / 360 / 539 / 540 / 719 / 720 / 794 | Before, 320 / 360 | After, 320 / 360 |
+|---|---|---|
+| Home | 16,768 (15 over) / 15,572 (0) | **17,561 (0) / 16,574 (0)** |
+| Pricing | 14,796 (34 over) / 13,876 (27 over) | **17,406 (0) / 16,189 (0)** |
+| The plan chooser / the four cards | printed / one card | **not printed / all four** |
+| Every page at 539, 540, 719, 720, 794 | 0 over | **0 over** |
+
+| The Back to top at the end | 640×500 | 768×500 | 768×600 | 1,024×600 | 1,440×600 |
+|---|---|---|---|---|---|
+| Before | -80..-32 | -92..-44 | 8..56 | 18..66 | -4..44 |
+| After | **436..484** | **436..484** | **536..584** | **528..576** | **528..576** |
+| Footer links or lines covered | 0 | 0 | 0 | 0 | 0 |
+
+- The **84** page/width/theme pairs (7 pages × 320/360/390/768/1,024/1,440 × light/dark) are **0px over**, with **0** console
+  errors and the smallest computed text **12px**. axe-core WCAG 2.0–2.2 A and AA reports **0** violations on all seven pages
+  at 360 and 1,440 in both schemes (28 runs).
+- Print at 320/360/539/540/719/720/794 is **0px over** on all seven pages. The narrow pages are longer because they print
+  more: pricing is 17,406 at 320 where it printed one card, and 12,246 at 540 where the table returns.
+- Without a script every page is 0px over at 320/360/768/1,440; with `forcedColors: active` at 320/360/768/1,440 every page is
+  0px over; at a 24px and a 32px root every page is 0px over at 320 and 360. The no-script notice is 0 over and its page +24px.
+- Tests: `site.test.ts` holds the notice's measure, the narrow print rules (both breakpoints) and the short-window button;
+  `site-copy.test.ts` holds the no-script sentence. The site's own suites are **173** tests, all passing; `site-chrome
+  --check` and `pricing:check` pass. `npm run site:check` still exits 1 on the owner's `TODO(owner)` at
+  `site/legal/index.html:134`.
+
+### What this pass deliberately left
+
+- **The narrow printed page is much longer.** At 320 pricing prints 17,406px, because it now prints all four plan cards and
+  the per-plan stack rather than one card and a table that did not fit. The alternative is hiding either the cards or the
+  comparison on paper; a printed page has no chooser and no swipe, so it gets both.
+- **Notices at 744px leave the right of a desk column empty.** The measure is the point: the same section's notes are 612px
+  and the rule is 68ch for prose. The notice is a panel, so the empty column reads as a margin rather than a missing panel;
+  a callout that spanned the column would be a change to what a notice is.
+- **The short-window rule is a height query (680px), not the footer's measured height.** It covers the measured short windows
+  (640/768/1,024/1,440 at 500 and 600) with a margin for a taller footer; a 700px window keeps the dock, which is visible
+  below the header, and a browser whose footer is taller than 680 + 64 + 69 would need a larger query or the script's own
+  measurement.
+- **The pricing page's plan stack still repeats the limits and support for all four plans, the six console captures and the
+  graph still show the light pictures in dark, the cards still state their figures twice, and Curule Cloud's prices are still
+  in the app.** None of these changed.
+- **The captures were not retaken** and `site/ux/` was not edited; this pass's frames are in
+  `/tmp/opencode/ux1107c/marketing/shots/`, not in that page's record.

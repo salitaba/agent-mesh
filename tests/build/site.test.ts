@@ -1117,6 +1117,46 @@ test("a phone's back-to-top stays in the window's corner at the end, and the leg
 });
 
 /**
+ * Above a phone the footer is still taller than a short window: at 768x500 the dock above the footer put the button
+ * at -92..-44, and at 768x600 it sat at 8..56 under the 69px header. The corner rule therefore covers a window whose
+ * height leaves no room for the footer, the button and the header, at every width over 640.
+ */
+test("a short window's back-to-top is in the corner too, and the legal block keeps its lane", () => {
+  const css = fs.readFileSync(path.join(SITE, "assets", "site.css"), "utf8");
+  assert.match(css, /\n@media \(min-width: 640px\) and \(max-height: 680px\) \{\n  html\.has-top \.site-footer \.foot-legal \{ padding-right: 64px; \}\n  \.to-top\.is-end \{ position: fixed; \}\n\}/, "a window shorter than the footer plus the button and header fixes it at 640 and up, with the same 64px lane");
+  assert.match(css, /\n\.to-top-dock \{ position: sticky; bottom: 0;/, "and the dock still rides above the footer when the window has room");
+});
+
+/**
+ * A notice is prose, not the column it happens to stand in. At 1,440 the pricing page's "Limits are reported" notice
+ * ran the whole 1,120px column and 89 characters on a line while every note beside it took 68ch; its sibling in the
+ * same section was 1,120px and 83 characters a line. The measure is on the notice itself, so the words keep it
+ * wherever a notice stands.
+ */
+test("a notice's words take the prose measure, not the column's width", () => {
+  const css = fs.readFileSync(path.join(SITE, "assets", "site.css"), "utf8");
+  assert.match(css, /\n\.notice \{[^}]*max-width: calc\(68ch \+ 64px\);/, "the notice caps its line at 68ch plus its own 64px of padding");
+});
+
+/**
+ * A printed page narrower than a tablet has no room for two cards or the 660px comparison table. At 320 the home page
+ * was 15px over the sheet and pricing 34px; pricing also printed a dead plan chooser and one of its four cards. Down to
+ * 540 the sheet takes the phone's one-column rows and per-plan stack, with both periods printed because paper has no
+ * switch; from 540 to 719 the two columns and the table fit, and all four cards print.
+ */
+test("a printed page narrower than a tablet takes the phone's rows and stack", () => {
+  const css = fs.readFileSync(path.join(SITE, "assets", "site.css"), "utf8");
+  const plans = /@media print and \(max-width: 719px\) \{[\s\S]*?\n\}/.exec(css)![0];
+  assert.match(plans, /\.plans > \.plan \{ visibility: visible !important; grid-area: auto; \}/, "all four plans print, not the chosen one");
+  const narrow = /@media print and \(max-width: 539px\) \{[\s\S]*?\n\}/.exec(css)![0];
+  assert.match(narrow, /\.tiles, \.plans \{ grid-template-columns: minmax\(0, 1fr\); \}/, "the six views and four plans are one column where two would not fit");
+  assert.match(narrow, /\.stack-table \{ display: grid !important; \}/, "the per-plan stack is what a narrow sheet reads");
+  assert.match(narrow, /#compare \.table-wrap, #calculator \.table-wrap \{ display: none !important; \}/, "and the wide tables are not squeezed onto it");
+  assert.match(narrow, /#compare \.plan-stack \.period-annual,\n  #compare \.plan-stack \.period-monthly \{ visibility: visible !important; grid-area: auto !important; \}/, "both billing periods print, since a sheet has no switch");
+  assert.match(css, /\.view-choice, \.plan-choice \{ display: none; \}/, "and no dead chooser prints");
+});
+
+/**
  * The plate's bar is its view switcher. The three labels used to stand in a trough above a 44px bar of decorative lights, the
  * demo's address and a Full size chip: 50 + 16 + 44 = 110px of chrome before the picture, so at 360 the first screen held
  * 48px of the capture. The bar is one 50px row now, the labels fill it, the lights and the address are gone (the address was

@@ -499,6 +499,8 @@ test("the pages say what they must: the plans, how licences work, the security s
   for (const id of ["c-projects", "c-seats", "c-missions", "c-model", "c-reports"]) assert.match(pricing.html, new RegExp(`id="${id}"`), `calculator field ${id}`);
   assert.match(pricing.html, /<form id="calc"[^>]*\bhidden\b/, "the calculator is shown only to a visitor who can run it");
   assert.match(pricing.html, /<noscript>[\s\S]*calculator needs JavaScript/, "and a visitor who cannot is told where the numbers are");
+  assert.match(pricing.html, /<noscript>[\s\S]*The plans above give the licence price; the model costs are in the list below\./, "naming both places the figures are: the cards above and the model list below");
+  assert.ok(!/table below holds the same numbers/.test(pricing.html), "not a table that a phone does not show");
 
   const security = page(pages, "security/index.html");
   for (const id of ["protects", "leaves", "not", "checklist", "assurance", "report"]) assert.match(security.html, new RegExp(`<section[^>]*\\sid="${id}"`), `security: section #${id}`);
