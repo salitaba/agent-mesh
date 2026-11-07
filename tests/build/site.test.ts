@@ -1101,6 +1101,22 @@ test("the footer's index is three stacked groups of wrapped links on a narrow ph
 });
 
 /**
+ * A phone's footer is taller than its window, so the floating Back to top, docked above the footer, was off the screen at
+ * the end of every page (at 360 its box was -102..-54 in an 800px window). While the footer's legal block is under it, the
+ * script gives it `is-end` and it is fixed in the corner; the legal block keeps a lane of the button's 16px corner and 48px
+ * circle so the button covers no sentence, and the links above it are never under the fixed button.
+ */
+test("a phone's back-to-top stays in the window's corner at the end, and the legal block keeps its lane", () => {
+  const css = fs.readFileSync(path.join(SITE, "assets", "site.css"), "utf8");
+  const script = fs.readFileSync(path.join(SITE, "assets", "site.js"), "utf8");
+  assert.match(css, /\n\.to-top \{ position: absolute; right: 16px; bottom: 16px;[^}]*width: 48px; height: 48px;/, "the button is a 48px circle 16px in from the corner");
+  assert.match(css, /\n@media \(max-width: 639px\) \{\n  html\.has-top \.site-footer \.foot-legal \{ padding-right: 64px; \}\n  \.to-top\.is-end \{ position: fixed; \}\n\}/, "below 640 the end of the page fixes it, and the footer's legal block keeps 16 + 48 = 64px at its right");
+  assert.match(script, /document\.documentElement\.className \+= " has-top";/, "only a page with the script (and so the button) spends the lane");
+  assert.match(script, /var legal = document\.querySelector\("\.site-footer \.foot-legal"\);/, "the script reads the block the button would sit on");
+  assert.match(script, /up\.className = "to-top" \+ \(shown \? " is-shown" : ""\) \+ \(shown && end \? " is-end" : ""\);/, "and fixes it only there");
+});
+
+/**
  * The plate's bar is its view switcher. The three labels used to stand in a trough above a 44px bar of decorative lights, the
  * demo's address and a Full size chip: 50 + 16 + 44 = 110px of chrome before the picture, so at 360 the first screen held
  * 48px of the capture. The bar is one 50px row now, the labels fill it, the lights and the address are gone (the address was
@@ -1220,6 +1236,11 @@ test("a note and an answer hold the prose measure", () => {
   assert.match(css, /\n\.doc-note \{ max-width: 68ch;/, "the map's note takes the 68ch measure");
   assert.match(css, /\n\.faq \.answer \{ max-width: 68ch;/, "and so does an answer");
   assert.ok(!/\.faq \.answer \{ max-width: 46rem;/.test(css), "an answer is prose, not a section head");
+  // The model-prices note is written by the exporter without a class of its own, so the rule names where it
+  // stands. It was the one paragraph on the pricing page with no measure: 153 characters on one 1,120px line.
+  const pricing = page(pages, "pricing/index.html");
+  assert.match(css, /\n#calculator \.wrap > p\.small \{ max-width: 68ch; \}/, "the note under the measured-mission table takes the note measure");
+  assert.match(pricing.html, /<p class="small muted mt-s[^"]*">Each model&rsquo;s list price/, "and the page carries that note under the estimate");
 });
 
 /**

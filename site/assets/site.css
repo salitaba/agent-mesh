@@ -1235,6 +1235,16 @@ body:has(#billing-monthly:checked) .head-price-monthly { display: inline; }
 .to-top::before { content: ""; width: 11px; height: 11px; margin-top: 6px; border-top: 2px solid currentColor; border-left: 2px solid currentColor; transform: rotate(45deg); }
 .to-top:hover { background: var(--panel2); }
 .to-top:not(.is-shown) { visibility: hidden; opacity: 0; }
+/* A phone's footer is taller than the window (837px at 360, 792 at 390, against a 800px screen), so a button that rests
+   above the footer was **off the top of the screen at the end of every page**: at 360 its box was -102..-54, and a reader
+   who had come to the end had no way back but the scroll. When the footer's last block (the legal lines) is at the bottom
+   of the window, the script gives the button `is-end` and it stays fixed in the corner; the legal block keeps a 64px lane
+   at its right (16 for the corner and the button's 48) so the button covers no sentence. It is fixed only while that block
+   is under it: over the footer's index the button is the dock's, above the footer, and the links are never covered. */
+@media (max-width: 639px) {
+  html.has-top .site-footer .foot-legal { padding-right: 64px; }
+  .to-top.is-end { position: fixed; }
+}
 @media (min-width: 860px) { .to-top { right: 24px; bottom: 24px; } }
 /* The policy forbids style attributes: spacing is a class. */
 .mt-s { margin-top: 16px; }
@@ -1242,6 +1252,11 @@ body:has(#billing-monthly:checked) .head-price-monthly { display: inline; }
 .mt-l { margin-top: 32px; }
 .mt-xl { margin-top: clamp(32px, 5vw, 56px); }
 .measure { max-width: 68ch; }
+/* A note under a table is prose, not the table's width. The model-prices note under the measured-mission table
+   was the one paragraph on the page with no measure: at 1,440 it ran the whole 1,120px column, 153 characters on
+   one line (137 at 1,024 and 1,200), while the two notes above it take 68ch. The exporter writes it without a class
+   of its own, so the rule names the place it stands: the note under the estimate's two tables. */
+#calculator .wrap > p.small { max-width: 68ch; }
 
 /* motion, only for a visitor who has not asked for less */
 @media (prefers-reduced-motion: no-preference) {

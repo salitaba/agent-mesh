@@ -427,7 +427,7 @@ test("the cards that carry a mark are the ones where it helps a reader find the 
   const why = marks(section(home.html, "why"));
   const answers = marks(section(home.html, "security"));
   assert.deepEqual(why.map((m) => m.title), ["Enforced, not asked", "Recorded and replayable", "Bounded", "Yours"], "the four reasons");
-  assert.deepEqual(answers.map((m) => m.title), ["What it does", "What leaves your environment", "What it does not do"], "and the three answers");
+  assert.deepEqual(answers.map((m) => m.title), ["What it protects", "What leaves your environment", "What it does not do"], "and the three answers, named as the section's lede and the security page name them");
   for (const group of [why, answers]) assert.equal(new Set(group.map((m) => m.shape)).size, group.length, "no two cards in a row have the same drawing");
   // The other pages' cards that are one of several kinds are the same: the four places to start in the documents, the three things a
   // plan is for, the three addresses. A kind keeps its drawing from page to page: the cloud is Curule Cloud on the home page and in

@@ -3777,3 +3777,101 @@ absolute heights are this container's; both halves are one browser in one run, s
   the app, and no capture was retaken. `site/ux/` was not edited (this pass's six before and six after frames were
   handed over with the report). `npm run site:check` still exits 1 on the owner's `TODO(owner)` for the terms at
   `site/legal/index.html:134`.
+
+## 2026-11-07: the note under the model table, the first security answer's name, and the way back at the end
+
+Measured with the same probe (Chrome 156 over CDP; reduced motion; light unless said; touch at 320/360/390; a mouse at
+768/1,024/1,440; dark at 360 and 1,440; print at 794; forced colours at 360; no script at 320 and 360; a 24px root at
+320 and 360). The before column is the site at `04ead2a`, exported with `git archive` and served on 8346 while this
+worktree served the after on 8345; both halves and both sets of frames are from the same run, and no number is copied
+from an earlier pass.
+
+### What changed
+
+- **A note under a table is prose, not the table's width.** The line under the measured-mission table — *Each model's
+  list price on 2026-10-01…* — was the one paragraph on the pricing page with no measure: at 1,440 it ran the whole
+  **1,120px** column, **153 characters on one line**; at 1,024 it was 960px and 137 characters; at 768, 707 and 97. The
+  exporter writes it without a class of its own, so the stylesheet names where it stands (`#calculator .wrap > p.small`)
+  and gives it the note measure, **68ch**. At 1,440 and 1,200 it is **612px, two lines, 80 characters**; at 1,024 and 768
+  it is 612 and 80 with the same two lines it already had. The page is **22px taller at 1,200 and 1,440** and unchanged
+  at 1,024, 768, 390, 360 and 320. Every other note on the page already took 68ch; this was the one that read as the
+  table's rule.
+- **The home page's first security answer is named as its own lede and as the security page names it.** The section's
+  lede promised "What it protects, what leaves your environment, and what it does not do", and the security page's section
+  and its at-a-glance answer both say "What it protects", but the home page's first card was titled **"What it does"** —
+  one of the three answers named differently from the other two places a reader meets it, four lines under the sentence
+  that named it. It is **"What it protects"** now; the card's shield was already the drawing the security page uses for
+  that answer. Its words, its drawing, the three-card row and every page height are unchanged at 320, 360, 390, 768,
+  1,024 and 1,440; only the `h3`'s four characters differ.
+- **The way back to the top is on the screen at the end of a phone page.** A phone's footer is taller than the window
+  (837px at 360, 792 at 390, 902 at 320, against an 800px screen), so the button, which rests above the footer so it never
+  covers the links, was **off the top of the screen at the end**: at 360 its box was **-102..-54**, at 320 **-167..-119**,
+  at 390 **-57..-9**. While the footer's last block (the legal lines) is under it, the script now gives the button
+  `is-end`, and below 640 it is **fixed in the corner at 736..784**; the legal block takes a **64px lane** at its right
+  (the 16px corner and the 48px button), only on a page whose script made the button (`html.has-top`), so it covers no
+  link and no sentence. Measured at the end at 320/360/390/420/639: the button is **736..784** in an 800px window and
+  **overlaps 0** footer links, group names or legal lines; it is **220..268 at 640, 229..277 at 768 and 238..286 at
+  1,440**, the dock above the footer, as before. The lane costs the footer **21px at 360, 41 at 320, 42 at 390 and 21 at
+  420** and nothing at 639 or above (677/515/506/489); the pages grow by the same. Pressing it at 360 goes to y = 0 and
+  focuses `#main`, as before.
+
+### Measurements after this pass
+
+| Page, height at 320 / 360 / 390 / 768 / 1,024 / 1,440 | Before | After |
+|---|---|---|
+| Home | 13,356 / 12,604 / 12,160 / 12,113 / 11,439 / 11,226 | **13,397 / 12,624 / 12,201 / 12,113 / 11,439 / 11,226** |
+| Pricing | 14,494 / 13,516 / 12,900 / 10,250 / 9,389 / 9,254 | **14,535 / 13,537 / 12,941 / 10,250 / 9,389 / 9,276** |
+| Documentation | 8,975 / 8,382 / 8,065 / 5,288 / 4,952 / 4,451 | **9,017 / 8,403 / 8,107 / 5,288 / 4,952 / 4,451** |
+| Security | 12,479 / 11,552 / 10,859 / 7,888 / 7,854 / 7,638 | **12,521 / 11,572 / 10,900 / 7,888 / 7,854 / 7,638** |
+| Contact | 4,755 / 4,381 / 4,215 / 3,413 / 2,810 / 2,857 | **4,796 / 4,402 / 4,256 / 3,413 / 2,810 / 2,857** |
+| Legal | 5,489 / 5,013 / 4,741 / 3,419 / 3,520 / 3,313 | **5,531 / 5,034 / 4,783 / 3,419 / 3,520 / 3,313** |
+| 404 | 2,266 / 2,089 / 2,045 / 1,441 / 1,450 / 1,516 | **2,307 / 2,110 / 2,087 / 1,441 / 1,450 / 1,516** |
+
+| The note under the measured-mission table | 768 | 1,024 | 1,200 | 1,440 |
+|---|---|---|---|---|
+| Its box, before → after | 707 → **612** | 960 → **612** | 1,120 → **612** | 1,120 → **612** |
+| Its longest line, characters | 97 → **80** | 137 → **80** | 153 → **80** | 153 → **80** |
+| Its lines | 2 → 2 | 2 → 2 | 1 → **2** | 1 → **2** |
+| The page | 10,250 → 10,250 | 9,389 → 9,389 | 9,040 → **9,062** | 9,254 → **9,276** |
+
+| The Back to top at the end, 800px window | 320 | 360 | 390 | 420 | 639 | 640 | 768 | 1,440 |
+|---|---|---|---|---|---|---|---|---|
+| Its box, before | -167..-119 | -102..-54 | -57..-9 | -57..-9 | 59..107 | 220..268 | 229..277 | 238..286 |
+| Its box, after | **736..784** | **736..784** | **736..784** | **736..784** | **736..784** | 220..268 | 229..277 | 238..286 |
+| Over a footer link or line | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| The footer, before → after | 902 → **943** | 837 → **858** | 792 → **834** | 792 → **813** | 677 → 677 | 515 → 515 | 506 → 506 | 489 → 489 |
+
+- No page scrolls sideways at 320, 360, 390, 768, 1,024 or 1,440 in light or dark (**0** on all 84 page/width/theme
+  pairs), the probe reports **0** console errors, and the smallest computed text is **12px** on every page. The target
+  census is unchanged (the same inline links in sentences, the 1×1 radios and the 24×24 checkbox whose label is 44; the
+  Back to top is 48×48 and the footer's "Terms" 44×44 at a phone). axe-core WCAG 2.0–2.2 A and AA is **0** on the home
+  page at 360 light and dark, the pricing page at 1,024 and 1,440, and the docs and contact pages at 360.
+- Print at 794 is unchanged on every page (home 11,840; pricing 10,073; docs 4,671; security 7,518; contact 3,079;
+  legal 3,086; 404 1,093), 0px over: the note's cap fits the sheet and the button, the dock and the lane are not printed.
+  No script: the home is 13,355 / 12,581 at 320/360, the footer keeps its full width (`padding-right: 0`) and there is no
+  button, as before, 0px over. With `forcedColors: active` at 360 the button is fixed at 736..784 and 0px over; at a 24px
+  root 320/360 every page is 0px over.
+- The tests hold the three rules: `site.test.ts` checks the note's selector and that the page carries the note under the
+  estimate, and the back-to-top's 48px/64px geometry with the script's `has-top` and `is-end`; `site-copy.test.ts` now
+  expects "What it protects" among the home page's three answers. The site's own suites are **167** tests, all passing;
+  `site-chrome --check`, `pricing:check`, `npm run typecheck` and `npx eslint` on the touched test files are clean.
+
+### What this pass deliberately left
+
+- **The fixed Back to top is a phone's rule (below 640).** At 640–859 a window shorter than the footer plus 64px (a
+  640×500 window, say) still leaves the button above the footer and off the screen; the common phone, where the footer
+  is taller than the window by 20–167px, is what this pass fixed. Making the lane and the fixed button the tablet's too
+  would take 64px from the four-column footer at 640–859, which the 2026-10-28 pass shaped deliberately.
+- **The footer's legal block is 64px narrower below 640, and the pages 20–42px taller there.** The lane is only on a
+  page whose script made the button; no script keeps the full-width legal block and no button. The index, the brand and
+  the contact line are untouched; the legal text wraps one line more at 320 and 390.
+- **The note's rule names the exporter's markup** (`#calculator .wrap > p.small`), because the generated block has no
+  class of its own. If `scripts/pricing-html.mjs` gives the note a class or joins the `.measure` rule, the selector can
+  go; the test checks both the page and the stylesheet.
+- **The first security answer's words are the card's own** and not the security page's section text; only its name was
+  aligned. The card's drawing was already the shield.
+- **The plan stack's repeated limits, the six console captures' and the graph's light pictures in dark, the footer's
+  879/688px legal lines at a desk, the notices' 900–1,047px measure at a desk, and Curule Cloud's prices** are unchanged.
+  `site/ux/` was not edited; this pass's frames are in the report's folder
+  (`/tmp/opencode/ux1107/site/shots/`), not in that page's record.
+- `npm run site:check` still exits 1 on the owner's `TODO(owner)` for the terms at `site/legal/index.html:134`.

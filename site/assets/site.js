@@ -417,7 +417,9 @@ var IMAGE_NAME = "ghcr.io/salitaba/curule";
     up.append(el("span", "sr", "Back to top"));
     dock.append(up);
     main.append(dock);
+    document.documentElement.className += " has-top"; // the stylesheet gives the footer's legal block the button's lane
     var shown = false;
+    var end = false;
     var looking = false;
     var turning = false; // the last movement of eight pixels or more was upward
     var from = window.scrollY || 0; // where that movement ended: a few pixels of shake do not turn the reader round
@@ -425,6 +427,9 @@ var IMAGE_NAME = "ghcr.io/salitaba/curule";
     var atEnd = function () {
       return typeof dock.getBoundingClientRect === "function" && dock.getBoundingClientRect().top < window.innerHeight - 1;
     };
+    // A phone's footer is taller than the window, so above it is off the screen: while the footer's last block is under
+    // the button, the button is fixed in the corner instead (the stylesheet gives that block a 64px lane for it).
+    var legal = document.querySelector(".site-footer .foot-legal");
     var look = function () {
       looking = false;
       var y = window.scrollY;
@@ -433,9 +438,11 @@ var IMAGE_NAME = "ghcr.io/salitaba/curule";
         from = y;
       }
       var now = y > 2 * window.innerHeight && (turning || atEnd());
-      if (now === shown) return;
+      var overLegal = !!(legal && typeof legal.getBoundingClientRect === "function" && legal.getBoundingClientRect().top < window.innerHeight - 16);
+      if (now === shown && overLegal === end) return;
       shown = now;
-      up.className = shown ? "to-top is-shown" : "to-top";
+      end = overLegal;
+      up.className = "to-top" + (shown ? " is-shown" : "") + (shown && end ? " is-end" : "");
     };
     window.addEventListener("scroll", function () {
       if (looking) return;
