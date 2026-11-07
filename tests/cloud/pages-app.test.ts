@@ -391,6 +391,11 @@ test("sign-up sends the address as typed (trimmed) and the password as typed, on
   assert.deepEqual(v.to("POST", "/api/signup"), [{ method: "POST", path: "/api/signup", body: { email: "Ada@Example.com", password: " a password with edges " } }], "a second submit while the first is out is not a second request");
   assert.equal(v.text("card"), "We sent the link to Ada@Example.com. Open it: it confirms your address and signs you in to your account. It works once and expires in 24 hours. Send a new link Use another address You can ask for another in 60 seconds. If it does not come It can take a few minutes. Look in your spam or junk folder too. Check the address above for a typo. If it is wrong, use another address.");
   assert.equal(v.text("resend"), "Send a new link", "the same request has one name here, on the sign-in page and on the confirmation page");
+  assert.equal(v.$("resend").getAttribute("aria-describedby"), "resend-wait", "the held button says why it cannot be pressed: the wait is its own description");
+  await v.advance(60_000);
+  assert.equal(v.$("resend").getAttribute("aria-describedby"), null, "and once the minute is over the wait is gone from its description");
+  assert.equal(v.text("resend-wait"), "", "the countdown is not left behind");
+  assert.equal(v.text("resend-status"), "You can ask for another email now.", "what the wait was for is said when it ends");
   const sentAside = v.doc.querySelector(".auth-main .aside")!;
   assert.equal(v.text(sentAside), "Already confirmed? Sign in.", "the door beside the form is for a confirmed account, not for this one before it has opened the link");
   assert.equal(sentAside.querySelector("a")!.getAttribute("href"), "/login");
@@ -549,6 +554,7 @@ test("choosing a new password: the form is not there without a link, and with on
   assert.equal(none.shows(none.$("form")), false, "a form with no link to go with it is not shown");
   assert.equal(none.text("status"), "This link is incomplete. Open the link in the email again, or ask for a new one.");
   assert.equal(none.link("card", "Send a new link").getAttribute("href"), "/forgot");
+  assert.equal(none.doc.activeElement, none.link("card", "Send a new link"), "a page with no link has the same one action as a spent one, and the cursor goes to it");
   assert.equal(none.text("title"), "That link did not work", "the heading says what the page is: a link that cannot be used is not \"Choose a new password\"");
   assert.equal(none.doc.title, "That link did not work – Curule Cloud");
   assert.equal(none.shows(none.$("lede")), false, "and the line about a link that works once goes with the form");
@@ -874,7 +880,7 @@ test("a person at a keyboard starts at the first field; a phone is left alone, b
     assert.equal(unknown.doc.activeElement, null, `${page}: a browser that cannot say is left alone`);
   }
   const link = await visit("reset", { routes: w.routes, pointer: "fine" });
-  assert.equal(link.doc.activeElement, null, "a reset page with no link has no field to start in");
+  assert.equal(link.doc.activeElement, link.link("card", "Send a new link"), "a reset page with no link has no field, so the cursor goes to the one action there is");
 });
 
 // ---- the account ----
@@ -976,7 +982,7 @@ test("a plan picked on the front page is kept through sign-up, opened on the acc
   const p = world(paid);
   const u = await visit("account", { routes: p.routes, search: "?plan=business" });
   assert.equal(u.shows(u.$("plan-change")), true, "the list is open, so the plan is really on the page");
-  const others = u.$("plan-change").querySelectorAll(".plan");
+  const others = u.$("plan-change").querySelectorAll("article");
   assert.equal(others.length, 1);
   assert.match(u.text(others[0]!), /^Business Your choice /);
   assert.equal(u.doc.activeElement, others[0]);
@@ -1044,6 +1050,8 @@ test("an account on a plan shows it once, with what it costs and includes and wh
   assert.equal(v.text(v.$("plan-change").querySelector("p")!), "Switching takes you to the payment page, and the new plan starts when it is paid.", "the list says what its Switch button does, as the workspace's own list does");
   const others = v.$("plan-change").querySelectorAll("article");
   assert.deepEqual(others.map((a) => v.text(a)), ["Business $599.00 per month For a team that runs several projects. $100.00 of model usage each month 3 workspaces Switch to Business"], "the plan the account is on is not in the list of plans to change to: it is shown above, once");
+  assert.deepEqual(others.map((a) => a.className), ["row"], "the plan to move to is the record's next entry, not a card of its own width in a list");
+  assert.equal(v.$("plan-change").querySelectorAll(".plan").length, 0, "and the card is not drawn in the list");
   assert.equal(v.doc.activeElement, v.$("plan-change-toggle"), "the cursor stays on the button that was pressed");
   assert.deepEqual(v.$("plan").children.filter((n) => !n.isText).map((n) => n.getAttribute("id") || n.className), ["row", "plan-change"], "the plans to move to are the record's next entry, not a card drawn inside the current plan's");
   v.click(v.$("plan-change-toggle"));
@@ -1572,6 +1580,8 @@ test("deleting a workspace needs its name typed; until it is, the button does no
   assert.equal(v.shows(v.$("workspaces-panel")), false, "there is nothing to list");
   assert.equal(v.text("stage-title"), "Make your first workspace");
   assert.equal(v.shows(v.$("create")), true, "the place is free again");
+  assert.equal(v.$("workspace-plan").getAttribute("aria-describedby"), "workspace-plan-hint", "the plan field describes the rule beside it");
+  assert.match(v.text("workspace-plan-hint"), /A workspace runs on its own plan/);
 });
 
 test("a confirmation that is open stays open, with what was typed, when the page looks again; and Enter in the field deletes when the name is right", async () => {
@@ -2217,6 +2227,10 @@ test("a workspace with no key says so and asks for a provider, a model and a key
   assert.equal(v.shows(v.$("key-base-ws_1")), false, "Anthropic is called at its own address");
   assert.equal(v.$("key-secret-ws_1").getAttribute("type"), "password", "the key is typed into a field that shows nothing");
   assert.equal(v.$("key-secret-ws_1").getAttribute("autocomplete"), "off");
+  assert.equal(v.$("key-model-ws_1").getAttribute("aria-describedby"), "key-model-hint-ws_1", "the model field describes the example beside it");
+  assert.equal(v.$("key-base-ws_1").getAttribute("aria-describedby"), "key-base-hint-ws_1", "and the address field the rule it must keep");
+  assert.equal(v.$("key-secret-ws_1").getAttribute("aria-describedby"), "key-secret-hint-ws_1", "and the key field what happens to it");
+  assert.match(v.text("key-model-hint-ws_1"), /claude-sonnet-4-5 or openai\/gpt-4o/, "which is the line a reader sees");
   assert.equal(v.labels(key).join("|"), "Save key");
   assert.match(v.text(key), /Paste it here once\. It is never shown again/);
 });
@@ -2266,7 +2280,7 @@ test("a key that is missing, short or has spaces in it is said before anything i
   await v.send(v.$("key-form-ws_1"));
   assert.equal(v.text("key-model-note-ws_1"), "Name the model your teams should run on, as your provider names it.");
   assert.equal(v.$("key-model-ws_1").getAttribute("aria-invalid"), "true");
-  assert.match(v.$("key-model-ws_1").getAttribute("aria-describedby")!, /key-model-note-ws_1/, "and the field describes the sentence it is marked for");
+  assert.equal(v.$("key-model-ws_1").getAttribute("aria-describedby"), "key-model-hint-ws_1 key-model-note-ws_1", "and the field describes the sentence it is marked for, after the rule it already described");
   v.type("key-model-ws_1", "claude-sonnet-4-5");
   for (const bad of ["", "short", "has a space in it"]) {
     v.type("key-secret-ws_1", bad);

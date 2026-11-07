@@ -4218,3 +4218,76 @@ account with one running workspace named Research and a Business alternative, th
   countdown is not a live region, so a screen-reader user must browse to it; this pass did not change that.
 - **The address strip, the prose-only 19px links, the usage read's rate limit and the key form's height are unchanged.**
   They are the earlier entries.
+
+## 2026-11-07: the cursor at the only action, the chevron on the phone, and the plan that is an entry
+
+Same harness: Chromium 1248 through `playwright-core` against this worktree's trial (`trial --port 8342`),
+320 / 360 / 390 / 768 / 1440 in light, 360 in dark and forced colours, `prefers-reduced-motion: reduce`, a touch
+pointer below 721, and axe-core 4.14 over the changed states. "Before" is this worktree's own pages before the first
+edit, captured in the same browser and the same account; the account is a Team plan with one running workspace named
+Research, and the hosting-only key form is held by one `/api/me` answer. Heights are
+`document.documentElement.scrollHeight`; positions are `getBoundingClientRect` plus `scrollY`.
+
+- **A reset page with no link starts at the one action it has.** `/reset` with no `?token` already says
+  "That link did not work" and shows the 286 × 44 `Send a new link` at y = 339.7, but it left
+  `document.activeElement` on **BODY** at 360: the next Tab began again at the skip link above the page, and a
+  screen reader landed nowhere. The page with a *spent* link already put the cursor on that button; the two are the
+  same refusal. Measured at 360 and 1440: active **A#ask**, with the page's 2px outline, the page 973 / 900 as it
+  was (320: 1024; 390: 946; 768: 905).
+- **The legal pages' phone contents draws the disclosure chevron.** The `<summary>` "On this page" had no `--n`, and
+  the icon's default sprite index is **the check mark**: the summary drew a 20 × 20 tick at `mask-position 0 0` where
+  a closed disclosure should show its chevron. It is `--n: 7; --s: 18px` on the same summary: the icon is
+  **18 × 18 at -126px**, the size the settings and credit rows draw theirs, and the page height is unchanged
+  (3,818 at 360, 2,624 at 768). The test in `pages.test.ts` holds the two properties.
+- **The words beside a control are in its description.** The sign-up sent card holds "Send a new link" for a minute,
+  and its `#resend-wait` sentence ("You can ask for another in 60 seconds.") sat 64px below it with no
+  `aria-describedby`: a reader on the held button heard "unavailable" and had to browse away to learn why. The button
+  now describes `resend-wait` while it is held, and drops the description when the minute ends (measured: null →
+  **resend-wait** → null, with "You can ask for another email now." in the status). The key form's three fields, and
+  the create form's plan select, had the same gap: their descriptions were empty while the visible rules beside them
+  were 67, 132, 86 and 142 characters. They now describe `key-model-hint-…`, `key-base-hint-…`, `key-secret-hint-…` and
+  `workspace-plan-hint`; a refusal still appends the field's note after the rule it already described. The form is the
+  same height: 1,888 at 360 and 1,683 at 1,440.
+- **The plan to change to is the record's next entry, not a card of its own width.** At 1,440 the open "Change plan"
+  list drew one **448 × 319.1px** Business card at x = 180 inside a 1,080px entry, with **632px** of empty paper to its
+  right and a 398px Switch button under it; the page was 2,286px. It is the same title, price, summary and facts in the
+  ruled `.row` the current plan and balance use: the entry is **1,080 × 270** at x = 180, the list 353.5 → **304.4**,
+  the Switch **184 × 40**, and the page **2,286 → 2,237** while it is open. The row is 328 × 233 at 360 (list 289.8,
+  page 2,092), 288 × 257 at 320 and 706.5 × 270 at 768; the resting account is unchanged (1,798 / 1,928). The picked
+  plan still gets the cursor (`?plan=business` → the row, `/account#plan-h`), and a refused Switch still answers in
+  that plan's entry (measured at 1,440: the sentence at 1,364.8 inside the row at 1,103.8, the cursor on the button).
+- **Widths, schemes and the floor.** 320 / 360 / 390 / 768 / 1440 in light, 360 in dark and forced colours, on the
+  account with the plan list open and the key form: no sideways page scroll (320: 320; 360: 360; 390: 390; 768: 768;
+  1,440: 1,440), nothing computes below **12px**, and no control under 44 × 44 below 721. **Axe-core** on the changed
+  states at 360, 768 and 1,440 finds **no violation**, and no page logs a console error.
+- **The budget.** `app.css` is **40,906 → 40,925 bytes of 40,960** (35 left): ten bytes for the chevron's index and
+  nine for its size. The rest is markup and script.
+- **Tests.** `npm run typecheck`; `npm run build`; `node --test --test-concurrency=2 dist/tests/cloud/pages*.test.js`
+  — **200 pass, 0 fail**; `dist/tests/build/pages*.test.js` and `ui-kit-tokens.test.js` — **11 pass, 0 fail**; eslint
+  on the touched script and tests, 0 errors. `pages-app.test.ts` holds the cursor on the no-token reset, the held
+  resend's description and its clearing, the key and plan descriptions, and the plan list as a `.row`; `pages.test.ts`
+  holds the chevron's `--n` and `--s`.
+
+| measured | before | after |
+| --- | --- | --- |
+| `/reset` with no token, 360 / 1440 | cursor **BODY**, the next Tab the skip link; page 973 / 900 | **A#ask** with a 2px ring; page 973 / 900 |
+| The legal phone contents, 360 | **0 0** mask, 20px check; page 3,818 | **-126px 0**, 18px chevron; page 3,818 |
+| The sent card's held button | `aria-describedby` **null**; the wait 64px below | **resend-wait**; null after 60s |
+| The key form's fields / the plan select | descriptions **0 / 0 / 0 / 0** characters | **67 / 132 / 86 / 142** |
+| The change list at 1,440 | a **448 × 319.1** card in 1,080, **632px** empty; page 2,286 | **1,080 × 270** row; page **2,237** |
+| … its Switch / the list | 398 × 44 / 353.5px | **184 × 40 / 304.4** |
+| The open list at 360 / 320 / 768 | — | **289.8 / 336.2 / 304.4**; pages 2,092 / 2,294 / 2,222 |
+| axe-core, changed states | — | **0** |
+| `app.css` | 40,906 bytes | **40,925** |
+
+### What this pass leaves
+
+- **The plan row keeps its facts above its button.** The row is the record's width, but the Switch still sits on its own
+  line under the facts; putting the price and the button on one line is a second drawing of the row, not this one.
+- **The legal chevron is 18px on a phone only.** At 1,000 and wider the side contents have no disclosure to mark.
+- **The countdown is still not a live region.** It is in the button's description and changes every second; announcing
+  each second would be worse than letting a reader ask again on focus. The end of the wait is announced in the status.
+- **The key form's height is unchanged.** `Save key` is still below an 800px screen at 360; this pass gave the fields
+  their rules, not a shorter form.
+- **The address strip's Copy, the steps at 320, the checkout stand-in, the dead reset link's submit and the prose-only
+  19px links are unchanged.** They are the earlier entries.

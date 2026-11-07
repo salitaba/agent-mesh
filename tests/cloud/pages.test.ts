@@ -488,6 +488,8 @@ test("what a finger has to hit is as tall as a button on a phone: the buttons, t
   assert.equal(value(".ws .ws-auto .check", "min-height"), "44px", "and so is the offer to open a workspace when it is ready");
   assert.equal(value(".toc-phone a", "min-height", "max-width: 999px"), "44px", "a contents link on a phone, where the side contents are not drawn");
   assert.equal(value(".toc-phone summary", "min-height", "max-width: 999px"), "44px", "and the control that opens it");
+  assert.equal(value(".toc-phone summary", "--n", "max-width: 999px"), "7", "it draws the disclosure chevron, not the check mark a summary with no icon name falls back to");
+  assert.equal(value(".toc-phone summary", "--s", "max-width: 999px"), "18px", "at the size the settings and credit rows draw theirs");
   assert.equal(value(".subnav a", "min-height", "max-width: 720px") ?? value(".subnav a", "min-height"), "44px", "a section of the account, on a phone: the line's own rule is 44 at every width, so the phone does not repeat it");
   assert.equal(value(".subnav a", "min-width"), "44px", "a name is a finger's width at every width, so the 41px Plan at 390 is 44 too");
   assert.equal(value(".subnav a", "font-size", "max-width: 389px"), "max(12px, min(.75rem, 3.8vw))", "while the contents line is sized by the row it is on, so a raised root keeps its five names in the row the phone gives them");

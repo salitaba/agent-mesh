@@ -825,6 +825,24 @@
     );
   }
 
+  /**
+   * A plan to move to is the record's next entry, not a card drawn in a list of one: the same title, price, summary and
+   * facts as the card, in the ruled row the plan and balance already use. At 1440 the card was 448px in a 1080px entry;
+   * this is the entry's own width, and a phone reads it as one more record.
+   */
+  function planRow(plan, currency, o) {
+    const action = o.action ? o.action(plan) : null;
+    return el(
+      "article",
+      { class: o.picked ? "row picked" : "row", "data-plan": plan.id },
+      el("div", { class: "row-head" }, el("strong", null, plan.title), o.picked ? el("span", { class: "badge" }, "Your choice") : null),
+      el("p", { class: "plan-line" }, `${money(plan.priceMinor, currency)} per ${plan.period}`),
+      plan.summary ? el("p", { class: "muted small" }, plan.summary) : null,
+      el("ul", { class: "facts-list muted small" }, planFacts(plan, currency).map((fact) => el("li", null, fact))),
+      action ? el("div", { class: "btn-row" }, action) : null,
+    );
+  }
+
   /** What the front page says where there is no credit to add: this service sells hosting, and the customer's own key pays for models. */
   const NO_USAGE_SOLD = "Curule does not resell model usage. You bring your own model key and pay your provider directly.";
 
@@ -936,6 +954,11 @@
    */
   function resender(form, press, status, wait, addressOf) {
     let left = 0;
+    const release = () => {
+      const described = press.getAttribute("aria-describedby");
+      if (wait.id && described === wait.id) press.removeAttribute("aria-describedby");
+      hold(press, false);
+    };
     const tick = () => {
       left -= 1;
       if (left > 0) {
@@ -944,12 +967,15 @@
         return;
       }
       wait.textContent = "";
-      hold(press, false);
+      release();
       say(status, "", "You can ask for another email now.");
     };
     const startWait = () => {
       left = RESEND_WAIT + 1;
       hold(press, true);
+      // A held button that cannot be pressed says why: the wait is the sentence beside it, and a reader who lands on
+      // the button hears it with the button rather than having to browse away to find it.
+      if (wait.id) press.setAttribute("aria-describedby", wait.id);
       tick();
     };
     onSubmit(form, status, async () => {
@@ -1145,7 +1171,9 @@
       return $("ask");
     };
     if (!token) {
-      dead("This link is incomplete. Open the link in the email again, or ask for a new one.");
+      // A page with no link has the same one action as one whose link is spent: the cursor goes to it, so the next Tab
+      // does not start again above the page (the spent-link branch below already does this).
+      dead("This link is incomplete. Open the link in the email again, or ask for a new one.").focus();
       return;
     }
     // The page asks whether the link can still be used before it draws a form for it. A check that cannot be answered — the service is
@@ -2021,13 +2049,21 @@
       const base = el("input", { id: `key-base-${id}`, name: "baseUrl", type: "text", inputmode: "url", autocomplete: "off", spellcheck: "false", value: draft.baseUrl, placeholder: "https://openrouter.ai/api/v1" });
       // autocomplete off and a password field: the browser neither fills in nor offers to remember a secret that is not a sign-in.
       const key = el("input", { id: `key-secret-${id}`, name: "key", type: "password", autocomplete: "off", spellcheck: "false", maxlength: 512 });
+      // The rule each field states is its description, as the password's hint already is on the way-in pages: a reader who lands on
+      // the field hears the example or the address it has to start with, without browsing to the line under it.
+      const modelHint = el("span", { class: "hint", id: `key-model-hint-${id}` }, "As your provider names it, like claude-sonnet-4-5 or openai/gpt-4o.");
+      const baseHint = el("span", { class: "hint", id: `key-base-hint-${id}` }, "Starts with https://, and is your provider's public address. OpenRouter, OpenAI, DeepSeek and Gemini's compatible endpoint all work.");
+      const keyHint = el("span", { class: "hint", id: `key-secret-hint-${id}` }, "Paste it here once. It is never shown again, by this page or by anything else of ours.");
+      model.setAttribute("aria-describedby", modelHint.id);
+      base.setAttribute("aria-describedby", baseHint.id);
+      key.setAttribute("aria-describedby", keyHint.id);
       // A refusal is said in the field it names, as every other form on the pages does: the one note at the foot of this form is for what
       // happened to the request, and a sentence about the model would otherwise be 300px below the field the cursor jumps to.
       const fieldNote = (name) => el("p", { id: `key-${name}-note-${id}`, class: "note", role: "status", "aria-live": "polite" });
       const modelNote = fieldNote("model");
       const baseNote = fieldNote("base");
       const keyNote = fieldNote("secret");
-      const baseField = el("div", { class: "field" }, el("label", { for: base.id }, "Provider address"), base, el("span", { class: "hint" }, "Starts with https://, and is your provider's public address. OpenRouter, OpenAI, DeepSeek and Gemini's compatible endpoint all work."), baseNote);
+      const baseField = el("div", { class: "field" }, el("label", { for: base.id }, "Provider address"), base, baseHint, baseNote);
       const chosen = () => provider.value || draft.provider;
       const sync = () => {
         draft.provider = chosen();
@@ -2074,9 +2110,9 @@
             },
           },
           el("div", { class: "field" }, el("label", { for: provider.id }, "Provider"), provider),
-          el("div", { class: "field" }, el("label", { for: model.id }, "Model"), model, el("span", { class: "hint" }, "As your provider names it, like claude-sonnet-4-5 or openai/gpt-4o."), modelNote),
+          el("div", { class: "field" }, el("label", { for: model.id }, "Model"), model, modelHint, modelNote),
           baseField,
-          el("div", { class: "field" }, el("label", { for: key.id }, kept ? "New key" : "Key"), key, el("span", { class: "hint" }, "Paste it here once. It is never shown again, by this page or by anything else of ours."), keyNote),
+          el("div", { class: "field" }, el("label", { for: key.id }, kept ? "New key" : "Key"), key, keyHint, keyNote),
           el("div", { class: "btn-row" }, save),
           el("p", { class: "muted small" }, "Saving or removing a key starts the workspace's host again, which ends a turn that is running. Its files are kept."),
         ),
@@ -2193,7 +2229,7 @@
 
     /** A plan picked on the front page is opened, marked, and gone to: a link that lands at the top of the page, with the plan it asked for behind a closed button, has not taken the person anywhere. */
     function landOnPlan(id) {
-      const card = [...doc.querySelectorAll(".plan")].find((n) => n.dataset.plan === id);
+      const card = [...doc.querySelectorAll("[data-plan]")].find((n) => n.dataset.plan === id);
       history.replaceState(null, "", "/account#plan-h");
       if (!card) {
         const panel = $("plan-h");
@@ -2252,7 +2288,7 @@
       const note = state.planNote;
       if (!note) return;
       const box = $("plan");
-      const card = note.plan ? [...box.querySelectorAll(".plan")].find((n) => n.dataset.plan === note.plan) : null;
+      const card = note.plan ? [...box.querySelectorAll("[data-plan]")].find((n) => n.dataset.plan === note.plan) : null;
       const host = card || box.querySelector(".row");
       if (host) host.append($("plan-status"));
     }
@@ -2323,7 +2359,7 @@
         // The plans to move to are the record's next entry, not a card drawn inside it: one plan is never a card within
         // another. A refusal of one of their Switch buttons still lands in that card, because attachStatus finds it by plan id. The
         // sentence above them says what the button does, which the workspace's own list has said since it had one.
-        if (live && others.length > 0) change = el("div", { id: "plan-change", class: "disclosed", hidden: !state.changing }, el("p", { class: "muted small plan-line" }, "Switching takes you to the payment page, and the new plan starts when it is paid."), el("div", { class: "plans" }, others.map((p) => planCard(p, state.currency, { subscription: sub, picked: state.picked === p.id, action: (x) => button(`Switch to ${x.title}`, { id: `plan-switch-${p.id}`, onclick: checkout(x) }) }))));
+        if (live && others.length > 0) change = el("div", { id: "plan-change", class: "disclosed", hidden: !state.changing }, el("p", { class: "muted small plan-line" }, "Switching takes you to the payment page, and the new plan starts when it is paid."), el("div", { class: "plans" }, others.map((p) => planRow(p, state.currency, { subscription: sub, picked: state.picked === p.id, action: (x) => button(`Switch to ${x.title}`, { id: `plan-switch-${p.id}`, onclick: checkout(x) }) }))));
       }
       if (change) parts.push(change);
       if (!state.plansKnown) {
