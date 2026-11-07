@@ -23,10 +23,10 @@
   const CONTACT = "mailto:ali79taba@gmail.com";
 
   const NEEDS = {
-    home: ["bar-say", "plans", "plans-note", "start-note", "topups"],
+    home: ["bar-say", "plans", "plans-h", "plans-note", "start-note", "topups"],
     signup: ["bar-say", "card", "form", "status", "title", "lede", "email", "email-error", "password", "password-error", "agree", "agree-error"],
     login: ["bar-say", "form", "status", "email", "email-error", "password", "password-error", "resend-form", "resend", "resend-wait", "resend-status"],
-    verify: ["bar-say", "status", "title", "again", "resend-form", "resend", "resend-wait", "resend-status", "resend-email-error", "email"],
+    verify: ["bar-say", "card", "status", "title", "again", "resend-form", "resend", "resend-wait", "resend-status", "resend-email-error", "email"],
     forgot: ["bar-say", "form", "status", "email", "email-error"],
     reset: ["bar-say", "card", "form", "status", "title", "lede", "ask", "password", "password-error"],
     account: ["bar-say", "who", "notice", "retry-row", "skeleton", "glance", "glance-list", "subnav", "settings-panel", "stage", "stage-steps", "stage-title", "stage-text", "stage-status", "stage-actions", "stage-live", "workspaces-panel", "workspaces", "create-slot", "create-box", "create", "workspace-name", "create-name-error", "create-plan-field", "workspace-plan", "create-note", "plan-panel", "plan-h", "plan-steps", "plan-lede", "plan-status", "plan", "balance-panel", "usage-panel", "usage-h", "usage-lede", "usage-say", "figures", "topup-fail", "topup-details", "topup", "topup-amount", "topup-amount-error", "topup-unit", "topup-hint", "topup-status", "topup-add", "topup-options", "usage", "password-form", "password-status", "current", "current-error", "next", "next-error"],
@@ -919,7 +919,21 @@
       box.replaceChildren(
         el("div", { class: "note note-warn" },
           el("p", null, r.ok ? "No plan is on offer just now, so no price is shown." : "The plans could not be loaded just now, so no price is shown."),
-          button("Try again", { onclick: () => { plansReply = null; homePage(me); } }),
+          button("Try again", {
+            onclick: async (event) => {
+              // The button that asked goes with the answer. A reader at a keyboard is put at what answered — the new warning and its retry,
+              // or the cards — rather than left on the body with the next Tab starting again above the page.
+              const press = event.currentTarget;
+              hold(press, true);
+              plansReply = null;
+              await homePage(me);
+              const again = $("plans").querySelector(".note-warn button");
+              const to = again || $("plans-h");
+              if (!to) return;
+              if (!to.hasAttribute("tabindex")) to.setAttribute("tabindex", "-1");
+              to.focus();
+            },
+          }),
         ),
       );
       return;
@@ -2768,7 +2782,7 @@
     }
     // A form only the script can send is not offered to a browser that cannot run it: with no script its submit is a GET, and a
     // password typed into it is written into the address bar and the history. Settings is drawn this way for the same reason.
-    if (page === "signup" || page === "login" || page === "forgot") $("card").hidden = false;
+    if (page === "signup" || page === "login" || page === "forgot" || page === "verify") $("card").hidden = false;
     if (page === "account") {
       skeleton(true);
       // Settings is the account's own form. It is not drawn while the account is being read, or when the read failed: a password form

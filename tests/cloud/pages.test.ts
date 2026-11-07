@@ -221,6 +221,15 @@ test("a page can be read and used by anyone: a language, a title, one heading, a
   }
 });
 
+test("the front page's note about its plan cards waits for the cards, and a browser with no script is told why the plans are not there", () => {
+  // Without a script the plans box held nothing while the standing note over it promised "Each card lists what its price includes."
+  // The note is drawn with the cards, and the empty box says in its own words why it is empty.
+  const html = read(path.join(PAGES_DIR, "index.html"));
+  assert.match(html, /id="plans-note"[^>]*hidden/, "the note that describes the cards is not in the markup's first paint");
+  assert.match(html, /<div id="plans"[^>]*><noscript>/, "the plans box says what it is waiting for when no script runs");
+  assert.match(html, /so no plan or price is shown here/, "and does not promise a price it has not drawn");
+});
+
 test("every link goes to a page or an anchor that exists, whether it is written in a page or made by the script", () => {
   const served = new Set(Object.values(PATHS));
   const byPath = Object.fromEntries(pages().filter((p) => p.name in PATHS).map((p) => [PATHS[p.name]!, p]));
