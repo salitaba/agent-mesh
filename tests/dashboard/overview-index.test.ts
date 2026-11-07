@@ -71,6 +71,20 @@ test("the figures are drawn only where the bar is pinned, so no width pays for t
   assert.match(css, /\.ov-jump-n \{[^}]*font-variant-numeric: tabular-nums;/, "a figure is a figure: tabular");
 });
 
+test("the whole delivered path is available on a hand, where the line can only show its end", () => {
+  // Measured at 320: the foot was one 254 px line whose text was 952 px wide, drawn right-to-left with an ellipsis, so the
+  // reader saw only ".../workspace"; the span had no title and the card had no copy control. At 768 and 1,440 the line wraps
+  // or fits, so the phone is the one width that needs the whole value behind a press.
+  assert.match(shipped, /<span className="ov-where-k">Delivered into<\/span>/, "the label keeps its words on one line");
+  assert.match(shipped, /<span className="mono" title=\{ws\}><bdi>\{ws\}<\/bdi><\/span>/, "the truncated line carries the whole path in its title");
+  assert.match(shipped, /<CopyButton compact text=\{ws\} what="the workspace path" \/>/, "and a copy door for a pointer with no hover");
+  const phone = at(/max-width:\s*620px/);
+  assert.match(phone, /\.ov-foot\.ov-where \{ display: flex; align-items: center; gap: var\(--s2\); \}/, "the phone row holds the path and its copy together");
+  assert.match(phone, /\.ov-foot\.ov-where \.ov-where-k \{ flex: 0 0 auto; \}/, "the label cannot be squeezed into one letter a line");
+  assert.match(phone, /\.ov-foot\.ov-where \.mono \{ flex: 1 1 auto; min-width: 0; \}/, "the path takes the room the copy leaves");
+  assert.match(phone, /\.ov-where-copy \{ display: inline-flex; \}/, "the copy control is drawn on the phone only");
+});
+
 test("the result's waiting files are two columns at the desk's grid", () => {
   const desk = at(/min-width:\s*1101px/);
   assert.match(desk, /\.ship-list \{ display: grid; grid-template-columns: repeat\(2, minmax\(0, 1fr\)\); column-gap: var\(--s4\); \}/, "six rows become three of two");

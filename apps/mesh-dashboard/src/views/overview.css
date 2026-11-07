@@ -160,6 +160,9 @@ details.ov-note { display: block; }
 .fc-path { justify-self: start; max-width: 100%; margin-top: var(--s1); padding: 0 var(--s2); background: var(--sunken); border: 1px solid var(--line); border-radius: var(--k-r-xs); font: 12px/20px var(--mono); color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ov-foot { margin: var(--s3) 0 0; font-size: 13px; color: var(--muted); overflow-wrap: anywhere; }
 .ov-foot .mono { color: var(--text-dim); }
+/* The whole destination is visible on a desk, where the line can wrap; the phone cuts its front to one line, so it carries a
+   copy door for the whole path. */
+.ov-where-copy { display: none; }
 
 /* The result is a delivery receipt, not a grid of equals: what landed is drawn as cards, under its own caption, and what has not
    is a ruled list of names. The panel used to draw six of nine files as identical cards — a merged patch beside a research report
@@ -408,6 +411,10 @@ details.ov-note { display: block; }
   /* Where the result lives on disk is one line on a phone, not five: a path is read from its end, so the front is the part to cut
      (the Files page's rows read the same way, with `direction: rtl` over a `<bdi>`). Measured at 390: 98 px of wrapped mono → 18. */
   .ov-foot .mono { display: block; direction: rtl; text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .ov-foot.ov-where { display: flex; align-items: center; gap: var(--s2); }
+  .ov-foot.ov-where .ov-where-k { flex: 0 0 auto; }
+  .ov-foot.ov-where .mono { flex: 1 1 auto; min-width: 0; }
+  .ov-where-copy { display: inline-flex; }
   .cb-meters { grid-template-columns: minmax(0, 1fr); }
   .tl-row { grid-template-columns: 28px minmax(0, 1fr); }
   .tl-row > :last-child { grid-column: 2; justify-self: start; }

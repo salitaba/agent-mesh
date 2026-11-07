@@ -1,6 +1,6 @@
 import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useMesh, type TimelineEvent } from "../store";
-import { AgentAvatar, Banner, Button, EmptyState, ErrorState, PageHeader, SearchField, Select, Skeleton, Switch, agentColor, useNow } from "../components";
+import { AgentAvatar, Banner, Button, EmptyState, ErrorState, PageHeader, SearchField, Select, Skeleton, Switch, agentColor, focusAfterRetry, useNow } from "../components";
 import { EventDetail, EventMissing } from "../evdetail";
 import { Icon, type IconName } from "../icons";
 import { EV_FILTER_GROUPS, EventSummary, SEVERITY_META, SEVERITY_ORDER, SevMark, evSeverity, severityTitle, sevWord, useNameOf } from "../events";
@@ -101,7 +101,7 @@ export default function Events(): React.JSX.Element {
   // a slow server and a dead one were the same screen. Three states, three answers.
   const [loading, setLoading] = useState(false);
   const [loadErr, setLoadErr] = useState<string | null>(null);
-  const [attempt, setAttempt] = useState(0);
+  const reading = useRef(false);
   const [foldPref, setFoldPref] = useState(true);
   // On a phone the chips are folded behind a button; on a wide screen they are always there and this does nothing.
   const [filtersOpen, setFiltersOpen] = useState(false);
@@ -113,30 +113,36 @@ export default function Events(): React.JSX.Element {
   // list every second.
   const now = useNow(15_000);
 
-  useEffect(() => {
-    let dead = false;
-    if (events.length > 0) return;
+  // One read of the log, whether it is the page's first, the reconciler catching up with the stream, or a person pressing
+  // Try again. A failed read is kept as a sentence on the page; the rows already on screen are not thrown away for it.
+  const readLog = useCallback(async (): Promise<void> => {
+    if (reading.current) return;
+    reading.current = true;
     setLoading(true);
+    try {
+      // This page draws the failure itself, so it is not also raised as a generic "server error" notice in the corner.
+      const { json, timeout, status } = await client.api("GET", `/events?limit=${EVENT_LIMIT}`, undefined, { timeoutMs: 30000, quiet: true });
+      if (timeout) setLoadErr("The request timed out. The server may be busy.");
+      // A 502 from a gateway is a JSON object, not a log. Handing it to primeEvents made it throw
+      // "not iterable" and the failure state printed that at the reader, in place of an answer.
+      else if (!Array.isArray(json)) setLoadErr(status >= 400 ? `The server answered ${status} instead of the log.` : "The server sent something that is not a list of events.");
+      else {
+        primeEvents(json);
+        setLoadErr(null);
+      }
+    } catch {
+      setLoadErr("The request to the server failed. It may be restarting.");
+    } finally {
+      reading.current = false;
+      setLoading(false);
+    }
+  }, [client, primeEvents]);
+
+  useEffect(() => {
+    if (events.length > 0) return;
     setLoadErr(null);
-    client.api("GET", `/events?limit=${EVENT_LIMIT}`, undefined, { timeoutMs: 30000 })
-      .then(({ json, timeout, status }) => {
-        if (dead) return;
-        if (timeout) setLoadErr("The request timed out. The server may be busy.");
-        // A 502 from a gateway is a JSON object, not a log. Handing it to primeEvents made it throw
-        // "not iterable" and the failure state printed that at the reader, in place of an answer.
-        else if (!Array.isArray(json)) setLoadErr(status >= 400 ? `The server answered ${status} instead of the log.` : "The server sent something that is not a list of events.");
-        else primeEvents(json);
-      })
-      .catch(() => {
-        if (!dead) setLoadErr("The request to the server failed. It may be restarting.");
-      })
-      .finally(() => {
-        if (!dead) setLoading(false);
-      });
-    return () => {
-      dead = true;
-    };
-  }, [events.length, client, primeEvents, attempt]);
+    void readLog();
+  }, [events.length, readLog]);
 
   // The log is the authority, and the live stream is not complete: it carries only the event types the console subscribed to by
   // name, so the rest (a seat restarted, a requirement satisfied, a release accepted) used to appear only after a reload. The
@@ -158,12 +164,10 @@ export default function Events(): React.JSX.Element {
     if (reconcileTries.current >= 3) return;
     const t = setTimeout(() => {
       reconcileTries.current++;
-      client.api("GET", `/events?limit=${EVENT_LIMIT}`, undefined, { timeoutMs: 30000 })
-        .then(({ json }) => { if (Array.isArray(json)) primeEvents(json); })
-        .catch(() => undefined);
+      void readLog();
     }, 1500);
     return () => clearTimeout(t);
-  }, [behind, logLength, newest, client, primeEvents]);
+  }, [behind, logLength, newest, readLog]);
 
   /* ----------------------------- facets -------------------------------- */
 
@@ -267,6 +271,9 @@ export default function Events(): React.JSX.Element {
   const clearAll = useCallback(() => {
     setEvFilter("");
     setEvSearch("");
+    // The toolbar's and the empty state's Clear controls both disappear with the filter they clear. Hand the keyboard back to
+    // the search field rather than dropping it on <body>, where the next Tab restarts at the document top.
+    document.getElementById("ev-search")?.focus();
   }, [setEvFilter, setEvSearch]);
 
   const firstLoad = !events.length;
@@ -282,6 +289,18 @@ export default function Events(): React.JSX.Element {
         actions={<PauseButton paused={hold.paused} onToggle={() => hold.setPaused(!hold.paused)} noun="events" compact={phone} />}
         lede={`The newest events first. Times are in ${zone}.`}
       />
+
+      {/* The live stream can give the page a tail before the full log is read. A failed read over that tail used to be
+          invisible: the page drew 200 rows and a window sentence, and a person could not tell a full read from a cap. */}
+      {loadErr && !firstLoad ? (
+        <Banner
+          tone="warn"
+          title="The full log did not load."
+          actions={<Button variant="banner-act" icon="refresh" loading={loading} onClick={(e) => { focusAfterRetry(e.currentTarget); void readLog(); }}>Try again</Button>}
+        >
+          {loadErr} Showing the newest {plural(events.length, "event")} the live stream delivered.
+        </Banner>
+      ) : null}
 
       <div className="ev-tools" role="search">
         <SearchField id="ev-search" label="Search events" placeholder="Messages, agents, files" hint="/" value={evSearch} onChange={(e) => setEvSearch(e.target.value)} onClear={() => setEvSearch("")} />
@@ -341,7 +360,7 @@ export default function Events(): React.JSX.Element {
       <div className={`evc${selectedSeq != null ? " split" : ""}`}>
         <div className="evc-stream">
           {loadErr && firstLoad ? (
-            <ErrorState what="the event log" detail={loadErr} onRetry={() => setAttempt((n) => n + 1)} />
+            <ErrorState what="the event log" detail={loadErr} onRetry={() => { setLoadErr(null); void readLog(); }} />
           ) : loading && firstLoad ? (
             <Rows />
           ) : !rows.length && !hold.paused && held.fresh === 0 ? (

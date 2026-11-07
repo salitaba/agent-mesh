@@ -51,6 +51,14 @@ test("a search box is one search field named for what it searches, with a clear 
   assert.match(live, /\.srch-clear \{ width: 44px; height: 44px; \}/, "the clear button is a thumb's target on a phone");
 });
 
+test("a compact copy button keeps its name after it copies", () => {
+  // The icon-only button named itself only while idle, so the press that turned its icon into a tick removed the accessible
+  // name with it: axe's button-name fired on the button that had just copied. The name now carries the state.
+  const body = bodyOf(components, "CopyButton");
+  assert.match(body, /const compactName = `\$\{name\}\$\{state === "done" \? ", copied" : state === "fail" \? ", could not copy" : ""\}`/, "the compact name has a state suffix");
+  assert.match(body, /aria-label=\{compact \? compactName : state === "idle" && what \? name : undefined\}/, "and survives the press");
+});
+
 test("the title row of a panel is not a second banner: the page has one, the top bar", () => {
   const body = bodyOf(components, "DrawerHead");
   assert.doesNotMatch(body, /<header/, "a header outside a section is a banner landmark, and the panel sits beside the top bar's");

@@ -377,6 +377,77 @@ Breakpoints: **1280 1100 900 800 760 620 560**. 800 is the sidebar drawer (JS
 
 ## Pass log
 
+### 2026-11-07 — a failed log read is said over the rows it kept, a clear keeps the field, and the delivered path can be copied
+
+Surface: `src/views/Events.tsx` (`readLog`, the full-log banner), `src/store.tsx` (the quiet step and event reads),
+`src/views/Agents.tsx` (the turn-history banners), `src/ui/search.tsx` and `src/views/Events.tsx` (`clearAll`),
+`src/views/Shipped.tsx` and `src/views/overview.css` (the workspace path and its copy), `src/components.tsx`
+(`focusAfterRetry`, `CopyButton`), with `tests/dashboard/failure-states.test.ts`, `events-log.test.ts`,
+`overview-index.test.ts`, `primitives-a11y.test.ts` and the new `search-focus.test.ts`.
+
+Measured on the scripted demo at **Delivered** (481 events, 49.3k of 2.0M tokens, 7 checks, 9 files, 7 seats, 28 turns)
+in the production build served by `curule console`, Chromium 1248 at 320/360/768/1024/1440 in light and 360/1440 in
+dark. The failure states were forced with `page.route` on `/events` and `/steps`; the before is this worktree at HEAD
+before these edits (the Overview path pair's before is a base build on 8,361, whose shorter checkout explains its 420 px
+path), and the after is this branch's build on 8,360.
+
+- **A failed full-log read was invisible over the live stream's tail.** With `/events` answering 500 at 360 and 1,440,
+  the page drew the 200 events the stream had delivered under **Live**, with the true window sentence "This page holds
+  the newest 200 of 481; 281 older ones are not loaded" — and **0** banners, **0** Try again. The first-read
+  `ErrorState` only existed while the buffer was empty, which the stream makes sure it is not. One `readLog` now serves
+  the first read, the reconciler and the retry; a failure over a tail keeps the rows and says so: banner **336 × 166**
+  at 360 (**296 × 199** at 320, **1,152 × 54** at 1,440), **Try again 107.7 × 44**. The list stays at 200; a successful
+  retry is **300** events (the newest 300 of 400, 81 older not loaded) with the banner gone and focus on **H2 Events**.
+  The page's own sentence is the answer: the generic **server error ×2** corner notice is **1 → 0**.
+- **A failed or stale step history left Agents' last-turn facts missing under "Live".** With `/steps` answering 500 at
+  360, the roster kept "4 turns" from `/status`, dropped every "last 27m ago" and recent-turn chart, and still said
+  **Live · Updated 1s ago**; no banner, no retry. It now says **"The turn history did not load."** (banner **336 × 208**
+  at 360, **296 × 241** at 320, **1,152 × 68** at 1,440, **Try again 44**) or, after a good read, "could not be read just
+  now" with **Read again**; the successful retry brings the last-turn sentence back and puts focus on **H2 Agents**.
+  The corner notice for the same read is **1 → 0**.
+- **Clearing a search removed the control and left the cursor on `<body>`.** At 360 the field's own clear button, the
+  toolbar's **Clear filters** and the empty state's **Clear filters** all left `activeElement` **BODY**; the next Tab was
+  Filters, not the field the person was using. `SearchField` keeps a ref and returns to the field after its own clear,
+  and `clearAll` focuses `#ev-search`; all three now land on **INPUT "Search events"** with its 2 px ring (the next Tab
+  is still Filters). The same field serves Steps, Files and Product.
+- **On a phone the delivered path was cut at its front with no whole value.** At 320 the `Delivered into` line was
+  **254 × 19.5**, its content **420** (the base build's shorter checkout; **952** for this worktree), drawn from its end
+  by `direction: rtl`, with **no title and no copy**. It now carries the whole path in `title` and a **44 × 44** copy
+  control (the clipboard reads the exact 131-character path); the line is **102 px of path + 44 px copy**, the foot
+  **39 → 44**, the card **964.4 → 969.4** and the page **1,769 → 1,774** at 320. At 360 the path is **142 + 44**; at
+  768 and 1,440 the control is not drawn, the path wraps or fits whole, and the page does not move. A compact copy
+  button also keeps its accessible name after the press (axe `button-name` on `.copy-btn` **1 → 0**).
+
+| | Before | After |
+|---|---|---|
+| `/events` 500 over the stream tail, 360: banners / retry | 0 / 0 | **1 / 107.7 × 44** |
+| The same at 1,440: banner / retry | 0 / 0 | **1,152 × 54 / 107.7 × 28** |
+| A successful Events retry: events / banner / focus | 200 / — / BODY | **300 / 0 / H2 Events** |
+| `/steps` 500 at 360: last-turn sentence / banner | absent / 0 | **returns after retry / 336 × 208** |
+| Agents after the retry: banner / focus | — | **0 / H2 Agents** |
+| Clearing a search (all three controls): active | **BODY** | **INPUT "Search events"** |
+| The delivered path at 320: box / full value | 254 / no title, no copy | **102 + 44 × 44 / title + clipboard** |
+| The Overview at 320: foot / card / page | 39 / 964.4 / 1,769 | **44 / 969.4 / 1,774** |
+| The path at 768 / 1,440 | full, no control | full, **no copy control**, page unchanged |
+| The copy button after its press: axe `button-name` | 1 | **0** |
+| Normal page heights at 360, the ten views | 858 / 780 / 1,234 / 3,208 / 780 / 1,119 / 1,544 / 1,649 / 1,917 / 1,051 | **unchanged** |
+| Axe, the changed states × 320/360/1,440 light and 360/1,440 dark | — | **0** |
+| Horizontal page scroll, 320–1,440 | 0 | **0** |
+
+Floors: `npm run typecheck` and `npm run build` clean; `npm test` **6,606 pass, 0 fail** (2 skipped); the dashboard
+suite **1,290 pass** and the build suite **250 pass** (five new rules: the Events banner and read helper, the Agents
+banners and quiet read, the search focus, the path and its copy, and the compact button's name); eslint **0** on the
+touched TypeScript (the stylesheet is outside its configuration); axe **0** in the Events and Agents failures at
+360/1,440 light and 360/1,440 dark, the Overview path at 320/1,440 light and 320 dark, the cleared search at 360 light
+and dark, and the ten normal views at 360/1,440.
+
+**Left.** The Events banner sits above the search, so the page still holds the 200-event stream tail while it asks for
+the full log; the footer continues to say exactly what the buffer is. The path on a phone still shows only its last
+~12 characters; the copy control, not the visible line, is where the whole value lives, and it is not drawn on a desk
+because the path already fits or wraps there. The `server error` corner notice is quiet for these two reads because
+their pages now carry the sentence; other reads keep their notices. Seen while measuring and untouched: the Events,
+Steps and Agents chips still say **Live** on a delivered mission (the open question above).
+
 ### 2026-11-07 — a retry keeps the cursor on the page, a thread's count says events, and a recent window says recent
 
 Surface: `src/components.tsx` (`focusAfterRetry`, the ErrorState's press), `src/evdetail.tsx` and

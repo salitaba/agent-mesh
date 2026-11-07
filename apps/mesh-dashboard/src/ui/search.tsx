@@ -1,4 +1,4 @@
-import type { InputHTMLAttributes } from "react";
+import { useRef, type InputHTMLAttributes } from "react";
 import { Icon } from "../icons";
 import { Kbd } from "./kbd";
 
@@ -11,12 +11,15 @@ import { Kbd } from "./kbd";
 export function SearchField({ label, hint, onClear, extra, value, ...rest }: Omit<InputHTMLAttributes<HTMLInputElement>, "className" | "type" | "aria-label"> & {
   label: string; hint?: string; onClear: () => void; extra?: string; value: string;
 }): React.JSX.Element {
+  const inputRef = useRef<HTMLInputElement>(null);
   return (
     <span className={`srch${value ? " filled" : ""}${extra ? ` ${extra}` : ""}`}>
       <Icon name="search" size={16} />
-      <input className="search" type="search" aria-label={label} value={value} autoComplete="off" spellCheck={false} {...rest} />
+      <input ref={inputRef} className="search" type="search" aria-label={label} value={value} autoComplete="off" spellCheck={false} {...rest} />
       {value ? (
-        <button type="button" className="srch-clear" aria-label="Clear the search" onClick={onClear}><Icon name="x" size={14} /></button>
+        // The clear button exists only while there is text, so pressing it removes the control under the cursor. Keep the
+        // keyboard in the field it just emptied rather than dropping it on <body>, where the next Tab restarts at the top.
+        <button type="button" className="srch-clear" aria-label="Clear the search" onClick={() => { onClear(); inputRef.current?.focus(); }}><Icon name="x" size={14} /></button>
       ) : hint ? <span className="srch-hint" aria-hidden="true"><Kbd>{hint}</Kbd></span> : null}
     </span>
   );
