@@ -27,7 +27,7 @@ test("the page that says the link was sent names the address, offers to send it 
   const { v } = await signedUp();
   assert.equal(v.text("title"), "Check your email");
   assert.equal(v.text(v.$("card").querySelector("strong")!), "ada@example.com", "the address it went to, as typed and without the spaces round it");
-  assert.deepEqual(v.labels("card"), ["Resend the email"]);
+  assert.deepEqual(v.labels("card"), ["Send a new link"]);
   assert.equal(v.link("card", "Use another address").getAttribute("href"), "/signup");
   assert.deepEqual(v.$("card").querySelectorAll("li").map((li) => v.text(li)), ["It can take a few minutes. Look in your spam or junk folder too.", "Check the address above for a typo. If it is wrong, use another address."]);
   assert.equal(v.text(v.$("card").querySelector("h2")!), "If it does not come");
@@ -47,7 +47,7 @@ test("the wait of a minute is said as text that counts down, is not read out at 
   v.click(press);
   await v.idle();
   assert.deepEqual(v.to("POST", "/api/verify/resend"), [], "pressed in the wait it asks for nothing");
-  assert.equal(v.text(press), "Resend the email", "and does not say it is sending");
+  assert.equal(v.text(press), "Send a new link", "and does not say it is sending");
 
   await v.advance(1000);
   assert.equal(v.text(wait), "You can ask for another in 59 seconds.");
@@ -71,7 +71,7 @@ test("asking again sends the address the link went to, says what the service sai
   assert.equal(v.text("resend"), "Sending", "while the call is out the button says what it is doing");
   await v.idle();
   assert.deepEqual(v.to("POST", "/api/verify/resend"), [{ method: "POST", path: "/api/verify/resend", body: { email: "ada@example.com" } }]);
-  assert.equal(v.text("resend"), "Resend the email");
+  assert.equal(v.text("resend"), "Send a new link");
   assert.equal(v.text("resend-status"), "If that address is waiting to be confirmed, a new link is on its way.", "the service's own words: it does not say whether there is an account, and neither does the page");
   assert.equal(v.$("resend-status").className, "note note-ok");
   assert.equal(v.text("resend-wait"), "You can ask for another in 60 seconds.");

@@ -24,7 +24,7 @@ test("a workspace says in a sentence why it is as it is and what can be done, an
   assert.equal(says(ws("running")), "", "a workspace that is ready says nothing the badge and the button do not");
   assert.equal(says(ws("running", { models: own(KEPT) })), "");
   assert.equal(says(ws("running", { models: own(null) })), "Its team has no model yet. Give it your model key to put it to work.");
-  for (const status of ["requested", "provisioning"]) assert.equal(says(ws(status)), "It starts in the background, and this page updates when it is ready.");
+  for (const status of ["requested", "provisioning"]) assert.equal(says(ws(status)), "", "the card at the top says the wait; the record says the state and offers the box");
 
   assert.equal(says(ws("suspended", { statusReason: "paused by its owner" })), "Its files are kept. Resume it to open it.");
   assert.equal(says(ws("suspended", { statusReason: "payment is overdue" })), "Stopped because the last payment did not go through. Resume it to open it.", "once the plan is paid up it can be started");

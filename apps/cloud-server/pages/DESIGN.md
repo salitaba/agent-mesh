@@ -4080,3 +4080,73 @@ the first screen after a payment. Heights are `document.documentElement.scrollHe
 - **The sign-in family is the only 200% layout this pass measured in detail.** The home, account and legal pages
   at a 32px root were checked for sideways overflow in the same browser and have none; their 200% layouts are the
   earlier entries' work.
+
+## 2026-11-07: the wait said once, one name for a new link, and the note over no cards
+
+Same harness: Chromium 1248 through `playwright-core` against this worktree's trial (`trial --port 8342`, whose plans are
+the trial's own fixtures), 320 / 360 / 390 / 768 / 1440 in light, 360 in dark and in forced colours, `prefers-reduced-motion:
+reduce`, a touch pointer below 721, and axe-core 4.14. "Before" is the base commit's own `app.js` and `index.html` served by
+the same trial through request interception in the same browser session, with the same accounts and the same answers; no
+figure is copied from an earlier record. The fixtures are a Team account with one running workspace (its `/api/me` answer
+held to `provisioning` for the starting state), a fresh account with no plan whose address wraps to two lines at 360, the
+sign-up page after the link was sent, and the home page with `/api/plans` answering 503. Heights are
+`document.documentElement.scrollHeight`; positions are `getBoundingClientRect` plus `scrollY`.
+
+- **A workspace that is starting is explained once.** The card at the top said **"This page checks every few seconds and shows
+  when it is ready."** and the record 330px below said **"It starts in the background, and this page updates when it is
+  ready."**: the same wait twice on one screen. The record now says the workspace's name, `Starting`, the phase bar and
+  `Open it when it is ready`; the wait is the card's sentence, which is also where the ten-minute message
+  ("This page has stopped checking…") and a hosting-only plan's key step live, with the rail. At 360 the record is
+  **271.6 → 220.4px**, the sentence block **65.2 → 0**, the offer to open it when ready **627.7 → 576.5**, and the account
+  **1,934 → 1,883**; at 1,440 the record is **259 → 233.4**, the sentence **39.6 → 0**, the offer **573.7 → 548.1** and the
+  page **2,051 → 2,025**. The card is unchanged (204.8 / 156.6px): removing it would take the journey rail and the
+  ten-minute message the record has no room for.
+- **One request, one name: "Send a new link".** The sign-up page's sent card offered **"Resend the email"** for the same
+  `POST /api/verify/resend` that the confirmation page and the sign-in page call **"Send a new link"** — three pages, two
+  names. It is "Send a new link" in all three now: the names on the sign-up, confirmation and sign-in pages are
+  **3 → 1**. The card and the button are otherwise unchanged (286 × 44 at 360, 382 × 44 at 1,440; page 1,408 / 934).
+- **A plan-less account's first action is on an 800px screen at 360.** With an address that wraps to two lines, the first
+  `Choose Team` was **774–818**, 18px below the screen: the step's sentence, **"A plan is one flat price for its own period,
+  and it says how many workspaces you may run at once."**, took three lines in the 328px column. It now reads **"A plan is
+  one flat price for its own period, and how many workspaces it allows."**: **76.8 → 51.2px** at 360, the button
+  **774–818 → 748–792** and the page **1,421 → 1,396**. At 1,440 the sentence is **51.2 → 25.6**, the button
+  **648 → 622** and the page **936 → 910**; at 390 the page is **1,352 → 1,327**. It still names no period word, so a
+  yearly plan on the same page is not contradicted.
+- **A failed plans read does not promise cards it did not draw.** The home page's Plans section kept its standing note —
+  "One flat price for each period, paid on the payment provider's page. **Each card lists what its price includes.**" — over
+  **0 cards**, beside "The plans could not be loaded just now, so no price is shown." The note is hidden in the failure and
+  empty-list states and returns with the cards: at 360 the note is **72px → 0**, the warning **1,015.5 → 913.5** and the page
+  **3,337 → 3,235**; at 1,440 the note **48 → 0**, the warning **716.5 → 638.5** and the page **2,194 → 2,116**. Pressing
+  Try again and taking the answer draws the two cards and the note again (page 4,269 at 360), and the empty-plan state says
+  its own sentence over no note.
+- **Widths, schemes and the floor.** 320 / 360 / 390 / 768 / 1440 in light, 360 in dark and in forced colours, on the four
+  states: no sideways page scroll (320: 320; 360: 360; 390: 390; 768: 768; 1,440: 1,440), nothing computes below **12px**,
+  and no new control is under 44 × 44 (the starting state's `tabindex="-1"` title and the 20px tick inside its 44px sentence
+  are the known ones). **28 axe-core runs** (the four states at the five widths, dark at 360 and forced colours at 360) find
+  **no violation**, and no page logs a console error but the 503 the failed read is given. The plain account is unchanged to
+  the pixel — **1,798** at 360 and **1,928** at 1,440 — and the plan-less account and the sent page move only by the
+  sentence: **1,396 / 910** and **1,408 / 934**.
+- **The budget.** `app.css` is untouched at **40,906 bytes of 40,960** (54 left): the four fixes are a sentence, a label, a
+  hidden note and one condition in the script. None of the stylesheet's rules moved.
+- **Tests.** `dist/tests/cloud/pages*.test.js` — **196 pass, 0 fail**; `dist/tests/cloud/*.test.js` — **891 pass, 0 fail**;
+  `dist/tests/build/*.test.js` — **243 pass, 0 fail**; typecheck and build clean; `npx eslint` on the touched files 0
+  errors. `pages-workspace.test.ts` and `pages-dashboard.test.ts` hold the starting record to no repeated sentence;
+  `pages-resend.test.ts` and `pages-app.test.ts` hold "Send a new link" on all three pages; `pages-stage.test.ts` and
+  `pages-app.test.ts` hold the shortened no-plan sentence and the announcement; `pages-app.test.ts` holds the home page's
+  note hidden in the failed and empty states and back with the cards.
+
+### What this pass leaves
+
+- **The starting card and the record still both name the state.** "Research is starting" is the card's title and `Starting`
+  is the record's badge; the wait itself is said once. Taking the card away would remove the rail and the ten-minute message,
+  which is the trade the 2026-10-31 record already weighed for the states whose action is in the record.
+- **At 320 the plan-less first action is still below the screen.** The shortened sentence still takes three lines in 288px
+  (the button is **820–864**); the rail's third row and the sentence are the 20px, as the 2026-11-04 and 2026-11-06 records
+  said. The 360 phone the owner uses is the one this pass brings in.
+- **The sign-up sent card's 60-second wait is still only a sentence beside the button.** It is not attached to the held
+  button with `aria-describedby`, and the countdown is not a live region (it would be read at every second); a screen-reader
+  user hears the held button and must browse to the line. The earlier passes' entries for the address strip, the prose-only
+  links and the usage read's rate limit are unchanged.
+- **With scripts off the home page still shows the note over no cards.** The page says in its `noscript` line that it needs
+  JavaScript to show the plans; the note is the markup's, and the failure state is the script's. A browser with no script
+  never reaches the branch this pass fixed.

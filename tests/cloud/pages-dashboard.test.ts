@@ -219,7 +219,8 @@ test("a workspace that is starting shows how far it is, as steps for the eye, an
   const v = await visit("account", { routes: w.routes });
   const phase = () => v.$("workspaces").querySelector(".phase");
   assert.deepEqual([phase()!.getAttribute("data-step"), phase()!.getAttribute("aria-hidden"), phase()!.children.length], ["1", "true", 3]);
-  assert.equal(v.text(v.$("workspaces").querySelector(".ws-says")!), "It starts in the background, and this page updates when it is ready.", "the words are as they were: the steps add none");
+  assert.equal(v.text(v.$("workspaces").querySelector(".ws-says")!), "", "the record says nothing more: the card above has already said the wait");
+  assert.equal(v.text("stage-text"), "This page checks every few seconds and shows when it is ready.", "the card is where a starting workspace is explained");
   assert.match(v.$("workspaces").querySelector(".row-head .badge")!.className, /\bbadge-live\b/);
 
   w.workspaces = [workspace({ status: "provisioning" })];
