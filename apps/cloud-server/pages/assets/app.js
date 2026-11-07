@@ -23,7 +23,7 @@
   const CONTACT = "mailto:ali79taba@gmail.com";
 
   const NEEDS = {
-    home: ["bar-say", "plans", "plans-note", "topups"],
+    home: ["bar-say", "plans", "plans-note", "start-note", "topups"],
     signup: ["bar-say", "card", "form", "status", "title", "lede", "email", "email-error", "password", "password-error", "agree", "agree-error"],
     login: ["bar-say", "form", "status", "email", "email-error", "password", "password-error", "resend-form", "resend", "resend-wait", "resend-status"],
     verify: ["bar-say", "status", "title", "again", "resend-form", "resend", "resend-wait", "resend-status", "resend-email-error", "email"],
@@ -828,6 +828,16 @@
   /** What the front page says where there is no credit to add: this service sells hosting, and the customer's own key pays for models. */
   const NO_USAGE_SOLD = "Curule does not resell model usage. You bring your own model key and pay your provider directly.";
 
+  /** The last entry's sentence is the reader's own next step, so it changes with the session. */
+  const START_NOTE = {
+    out: "An email and a password, then a plan. Nothing is charged until you have chosen the plan and paid for it.",
+    none: "Your account is where you choose a plan and make your first workspace.",
+    late: "Your account says what your plan needs.",
+    ended: "Your account is where you choose a plan to start again.",
+    first: "Your account is where you make your first workspace.",
+    active: "Your workspaces, your plan and your settings are in your account.",
+  };
+
   /** The cheapest way in, said with its own period: a year is compared at a month's worth, but shown as the price that is charged. */
   function fromLine(plans, currency) {
     const monthly = (plan) => (plan.period === "year" ? plan.priceMinor / 12 : plan.priceMinor);
@@ -858,6 +868,24 @@
   const planShape = () => $("plans").replaceChildren(el("div", { class: "sk sk-plan", "aria-hidden": "true" }), el("div", { class: "sk sk-plan", "aria-hidden": "true" }), el("p", { class: "sr" }, "Loading the plans."));
 
   async function homePage(me) {
+    // The last entry is the reader's next step: a customer is not told to create the account they already have, and the
+    // sentence is set before the plans are read so a read that fails still speaks to the person who is signed in.
+    const startNote = $("start-note");
+    if (startNote) {
+      const sub = me ? me.subscription : null;
+      const workspaces = me && Array.isArray(me.workspaces) ? me.workspaces.length : -1;
+      startNote.textContent = !me
+        ? START_NOTE.out
+        : !sub
+          ? START_NOTE.none
+          : sub.status === "ended"
+            ? START_NOTE.ended
+            : sub.status === "past_due"
+              ? START_NOTE.late
+              : workspaces === 0
+                ? START_NOTE.first
+                : START_NOTE.active;
+    }
     const box = $("plans");
     // The section's standing sentence describes the cards it introduces. When there are no cards to describe, the warning under it is the
     // section's sentence, and a note promising "each card" over nothing is a page telling a reader about what is not there.
@@ -1236,7 +1264,8 @@
       keyBusy: new Set(),
       drafts: new Map(),
       notes: new Map(),
-      confirming: null,
+      /** The workspace whose deletion is being confirmed, if one is: distinct from `confirming`, the payment the page is waiting for. */
+      deleting: "",
       typed: "",
       flash: null,
       /** What the notice at the top last said, so that a look at the account does not draw it — and its action — again. */
@@ -1546,7 +1575,7 @@
           go,
           button("Keep it", {
             onclick: () => {
-              state.confirming = null;
+              state.deleting = "";
               state.typed = "";
               renderWorkspaces();
               // The box that had the cursor is gone with the confirmation: the cursor goes back to the control that opened it, so the
@@ -1559,7 +1588,7 @@
       onSubmit(form, note, async () => {
         if (state.typed !== w.name) return;
         await act(w, "Deleting it.", () => call("POST", path(w, "delete"), { confirm: w.name }), () => {
-          state.confirming = null;
+          state.deleting = "";
           state.typed = "";
           state.focusStage = true;
         });
@@ -1633,7 +1662,7 @@
         kind: "danger",
         attrs: { "aria-label": `Delete this workspace: ${w.name}` },
         onclick: () => {
-          state.confirming = id;
+          state.deleting = id;
           state.typed = "";
           renderWorkspaces();
           const input = $(`confirm-${id}`);
@@ -1643,7 +1672,7 @@
       let panel = null;
       if (w.status === "failed") buttons.push(remove);
       else if (!isStarting(w)) {
-        const shown = state.more.has(id) || state.confirming === id;
+        const shown = state.more.has(id) || state.deleting === id;
         buttons.push(
           button("More", {
             id: `more-${id}`,
@@ -1722,10 +1751,10 @@
       part(card, "head", JSON.stringify([w.name, w.status]), () => [el("strong", null, w.name), el("span", { class: [kind ? `badge badge-${kind}` : "badge", isStarting(w) ? "badge-live" : ""].filter(Boolean).join(" ") }, label)]);
       part(card, "says", `${w.status}|${says}`, () => [...(isStarting(w) ? [phaseBar(w.status)] : []), ...(says ? [says] : [])]);
       part(card, "auto", String(showAuto), () => (showAuto ? [autoOpenBox(w)] : []));
-      part(card, "actions", JSON.stringify([w.name, w.status, resumable(w, view), lacksKey(w), cardOffers(id, "open"), cardOffers(id, "resume"), state.more.has(id), state.confirming === id]), () => actionsOf(w, view));
+      part(card, "actions", JSON.stringify([w.name, w.status, resumable(w, view), lacksKey(w), cardOffers(id, "open"), cardOffers(id, "resume"), state.more.has(id), state.deleting === id]), () => actionsOf(w, view));
       part(card, "plan", planShape(w, view), () => planBlock(w, view));
       part(card, "key", keyShape(w), () => keyBlock(w));
-      part(card, "confirm", String(state.confirming === id), () => (state.confirming === id ? [confirmBox(w, card.note)] : []));
+      part(card, "confirm", String(state.deleting === id), () => (state.deleting === id ? [confirmBox(w, card.note)] : []));
       // A request that is out holds the buttons without drawing them again: the one that was pressed keeps the cursor.
       const held = state.busy.has(id);
       for (const name of ["actions", "plan"]) for (const b of card.boxes[name].querySelectorAll("button")) hold(b, held);
@@ -2230,6 +2259,9 @@
 
     function renderPlan() {
       const box = $("plan");
+      // A look at the account can redraw this section while a workspace is starting. The control the person was on is
+      // drawn again with the rest: its id, or the words on it, is how the cursor finds it after the redraw.
+      const had = doc.activeElement && box.contains(doc.activeElement) ? { id: doc.activeElement.id, text: doc.activeElement.textContent.trim() } : null;
       const sub = subscription();
       const live = holdsPlan(sub);
       const plan = planOf();
@@ -2270,7 +2302,7 @@
               ? el(
                   "div",
                   { class: "btn-row" },
-                  button("Manage billing", { small: true, onclick: (event) => leaveFor(event.currentTarget, () => call("POST", "/api/portal"), failedHere) }),
+                  button("Manage billing", { id: "plan-billing", small: true, onclick: (event) => leaveFor(event.currentTarget, () => call("POST", "/api/portal"), failedHere) }),
                   others.length > 0
                     ? button("Change plan", {
                         id: "plan-change-toggle",
@@ -2291,7 +2323,7 @@
         // The plans to move to are the record's next entry, not a card drawn inside it: one plan is never a card within
         // another. A refusal of one of their Switch buttons still lands in that card, because attachStatus finds it by plan id. The
         // sentence above them says what the button does, which the workspace's own list has said since it had one.
-        if (live && others.length > 0) change = el("div", { id: "plan-change", class: "disclosed", hidden: !state.changing }, el("p", { class: "muted small plan-line" }, "Switching takes you to the payment page, and the new plan starts when it is paid."), el("div", { class: "plans" }, others.map((p) => planCard(p, state.currency, { subscription: sub, picked: state.picked === p.id, action: (x) => button(`Switch to ${x.title}`, { onclick: checkout(x) }) }))));
+        if (live && others.length > 0) change = el("div", { id: "plan-change", class: "disclosed", hidden: !state.changing }, el("p", { class: "muted small plan-line" }, "Switching takes you to the payment page, and the new plan starts when it is paid."), el("div", { class: "plans" }, others.map((p) => planCard(p, state.currency, { subscription: sub, picked: state.picked === p.id, action: (x) => button(`Switch to ${x.title}`, { id: `plan-switch-${p.id}`, onclick: checkout(x) }) }))));
       }
       if (change) parts.push(change);
       if (!state.plansKnown) {
@@ -2300,10 +2332,10 @@
             "div",
             { class: "note note-warn" },
             el("p", null, "The plans could not be loaded just now, so no price is shown. Nothing was changed."),
-            button("Try again", { onclick: retryPlans }),
+            button("Try again", { id: "plan-retry", onclick: retryPlans }),
           ),
         );
-      } else if (!live && state.plans.length > 0) parts.push(el("div", { class: "plans" }, state.plans.map((p) => planCard(p, state.currency, { subscription: sub, picked: state.picked === p.id, action: state.confirming ? null : (x) => button(`Choose ${x.title}`, { kind: "primary", onclick: checkout(x) }) }))));
+      } else if (!live && state.plans.length > 0) parts.push(el("div", { class: "plans" }, state.plans.map((p) => planCard(p, state.currency, { subscription: sub, picked: state.picked === p.id, action: state.confirming ? null : (x) => button(`Choose ${x.title}`, { id: `plan-choose-${p.id}`, kind: "primary", onclick: checkout(x) }) }))));
       // A service that offers nothing this moment leaves the section with something to read rather than a heading over an empty box. The
       // step's own sentence is the one to say while the section is the step; a subscription that ended said its sentence in the card above.
       else if (!live) parts.push(el("p", { class: "muted" }, onList ? card.text : "No plan is on offer just now, so no price is shown."));
@@ -2313,6 +2345,13 @@
       const status = $("plan-status");
       if (state.planNote) say(status, state.planNote.kind, state.planNote.text);
       else say(status, "", "");
+      if (had) {
+        const again = (had.id ? doc.getElementById(had.id) : null) || [...box.querySelectorAll("button, a")].find((node) => node.textContent.trim() === had.text);
+        const to = again && box.contains(again) ? again : $("plan-h");
+        if (to && !to.hasAttribute("tabindex")) to.setAttribute("tabindex", "-1");
+        // The cursor comes back without taking the page with it: a person who scrolled away from the control is not pulled back.
+        if (to) to.focus({ preventScroll: true });
+      }
     }
 
     function failedHere(r, planId) {
@@ -2635,7 +2674,9 @@
     if (confirmed) flash("ok", "Your address is confirmed.");
     if (cancelled && !state.cancelled) {
       // Nothing is known of what was being bought, so what is said is true of every case: nothing was charged, and what there was is as it was.
-      const said = !holdsPlan(subscription()) ? ". Choose a plan below when you are ready." : sectionsOf(viewOf()).balance ? ", and your plan and balance are as they were." : ", and your plan is as it was.";
+      // A plan is pointed at only when there is a list to point at: with the plans unread or none on offer, "below" is a place that says it has nothing.
+      const listed = state.plansKnown && state.plans.length > 0;
+      const said = !holdsPlan(subscription()) ? (listed ? ". Choose a plan below when you are ready." : ".") : sectionsOf(viewOf()).balance ? ", and your plan and balance are as they were." : ", and your plan is as it was.";
       flash("", `Checkout was cancelled. Nothing was charged${said}`);
     }
     if (paid) {
