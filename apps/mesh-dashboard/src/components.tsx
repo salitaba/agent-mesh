@@ -6,6 +6,7 @@ import { evClass, evSeverity, EventSummary } from "./events";
 import type { NameOf } from "./eventmodel";
 import { Icon, type IconName } from "./icons";
 import type { TimelineEvent, TurnStep } from "./store";
+import { plainError } from "./errorwords";
 import { Kbd } from "./ui/kbd";
 import { Tooltip } from "./ui/tooltip";
 import { useScrolls } from "./ui/scroll-stop";
@@ -640,7 +641,7 @@ export function ErrorState({ what, detail, onRetry }: { what: string; detail?: s
     <div className="empty bad" role="alert">
       <span className="empty-icon"><Icon name="alert" size={22} /></span>
       <b className="empty-title">Could not load {what}</b>
-      <p className="empty-body">{detail ?? "The mesh server did not answer. It may be restarting."}</p>
+      <p className="empty-body">{plainError(detail)}</p>
       {onRetry ? <Button variant="small" icon="refresh" onClick={onRetry}>Try again</Button> : null}
     </div>
   );

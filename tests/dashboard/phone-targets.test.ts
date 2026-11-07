@@ -68,9 +68,19 @@ test("the phone floor names every control family that was measured under 44 px",
 test("glyph-only controls get a 44 px square, not only a tall strip", () => {
   const selector = selectorsFor(/min-width:\s*44px/);
   assert.ok(selector, "a phone rule sets a 44 px minimum width");
-  for (const s of [".pj-home", ".ptab-x", ".ptab-add", ".agent-open", ".icon-btn", ".close-x", ".palette-x", ".toast-x", ".copy-btn.compact", ".srch-clear", ".menu-btn", ".st-tl-head .seg button"]) {
+  for (const s of [".pj-home", ".ptab-x", ".ptab-add", ".agent-open", ".icon-btn", ".close-x", ".palette-x", ".toast-x", ".copy-btn.compact", ".srch-clear", ".menu-btn", ".st-tl-head .seg button", ".ms-insp .chip-toggle"]) {
     assert.ok(selector.includes(s), `the 44 px minimum width covers ${s}`);
   }
+});
+
+test("the Designer inspector's shortest chip is 44 px wide on any finger, not only on a phone", () => {
+  // The Inspector's tool and seat chips took the 44 px height at every coarse width but the 44 px width only below
+  // 760, so a touch laptop at 1,440 measured "qa" 38 x 44 in both "May message" and "Also reachable by" — the only
+  // controls under 44 x 44 in the view. The width floor is in the coarse block now, with the chip's word centred.
+  const selector = selectorsFor(/min-width:\s*44px/);
+  assert.ok(selector.includes(".ms-insp .chip-toggle"), "the inspector's chip takes the width floor at a coarse pointer");
+  const body = phoneBlocks(styles).join("\n");
+  assert.match(body, /\.ms-insp \.chip-toggle \{[^}]*justify-content:\s*center/, "the shorter word is centred in the target");
 });
 
 test("an inline link that becomes a phone target takes a line of its own, or the height is ignored", () => {

@@ -86,6 +86,19 @@ export function toggleKind(hidden: ReadonlySet<string>, id: string): Set<string>
 }
 
 /**
+ * The name and tooltip of a kind's legend key, whose press shows or hides its lines.
+ *
+ * `aria-pressed` already said the kind was shown while the accessible name said "Show lines: approved" and the
+ * tooltip said "Hide the lines that approved": the name described the opposite press. A key's name says what its
+ * next press does, and the title says the same (2026-11-07).
+ */
+export function kindKeyWords(label: string, shown: boolean): { name: string; title: string } {
+  return shown
+    ? { name: `Hide lines: ${label}`, title: `Hide the lines that ${label}` }
+    : { name: `Show lines: ${label}`, title: `Show the lines that ${label}` };
+}
+
+/**
  * What pointing at a seat picks out: the lines that run to or from it, and the seats on the other end of them. Everything else is
  * context and is drawn back.
  */

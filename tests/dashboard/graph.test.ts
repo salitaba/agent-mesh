@@ -1,8 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import * as fs from "fs";
+import * as path from "path";
 
 import {
-  DRAWING_MAX, KINDS, around, capEdges, drawingWidth, edgeKey, edgeText, edgeWidth, flowingKeys, isFlowing, kindOf, kindsPresent, labelPlacement, nodeTone, pairFilter, ringLayout, seatTies, toggleKind, visibleEdges,
+  DRAWING_MAX, KINDS, around, capEdges, drawingWidth, edgeKey, edgeText, edgeWidth, flowingKeys, isFlowing, kindKeyWords, kindOf, kindsPresent, labelPlacement, nodeTone, pairFilter, ringLayout, seatTies, toggleKind, visibleEdges,
   type EdgeLike,
 } from "../../apps/mesh-dashboard/src/graph";
 import { eventHaystack, facetOne, facetValues, filterBase, parseFacets, type EventLike } from "../../apps/mesh-dashboard/src/eventmodel";
@@ -12,6 +14,7 @@ import { eventHaystack, facetOne, facetValues, filterBase, parseFacets, type Eve
  * are drawn, and which of them a recent message has travelled.
  */
 
+const SRC = path.resolve(__dirname, "..", "..", "..", "apps", "mesh-dashboard", "src");
 const W = 900, H = 480;
 const edge = (from: string, to: string, kind = "INFORM", count = 1): EdgeLike => ({ from, to, kind, count });
 
@@ -299,4 +302,18 @@ test("one seat's traffic counts both directions, adds a pair's kinds, and ignore
 
 test("a seat nobody talks to has no partners, and the list says so rather than showing a zero as a number", () => {
   assert.deepEqual(seatTies([edge("pm", "qa")], "explorer"), { sent: 0, received: 0, count: 0, partners: [] });
+});
+
+/* The legend's keys are toggles. Measured on the delivered demo at 360 and 1,440: every key carried aria-pressed="true"
+   and aria-label "Show lines: approved", while its title said "Hide the lines that approved". A screen reader heard
+   "Show lines: approved, pressed" — the name described the opposite press. */
+
+test("a legend key's name says the press it will make, and its title agrees", () => {
+  assert.deepEqual(kindKeyWords("approved", true), { name: "Hide lines: approved", title: "Hide the lines that approved" });
+  assert.deepEqual(kindKeyWords("approved", false), { name: "Show lines: approved", title: "Show the lines that approved" });
+  assert.deepEqual(kindKeyWords("asked for help", true).name, "Hide lines: asked for help", "the visible words are kept whole");
+  const view = fs.readFileSync(path.join(SRC, "views", "Graph.tsx"), "utf8");
+  assert.match(view, /const keyWords = kindKeyWords\(k\.label, !off\.has\(k\.id\)\)/, "the key reads its words from the model");
+  assert.match(view, /aria-label=\{keyWords\.name\} title=\{keyWords\.title\}/, "the name and title cannot drift apart");
+  assert.doesNotMatch(view, /aria-label=\{`Show lines: \$\{k\.label\}`\}/, "the fixed Show name is gone");
 });
