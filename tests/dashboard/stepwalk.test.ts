@@ -1,5 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import * as fs from "fs";
+import * as path from "path";
 
 import { placeLabel, placeStep } from "../../apps/mesh-dashboard/src/stepwalk";
 
@@ -45,6 +47,27 @@ test("a turn between two loaded steps goes to its nearest neighbours, whatever t
 
 test("a step that started at the same instant is neither newer nor older", () => {
   assert.deepEqual(placeStep(LIST, "tx", "2026-09-25T21:30:00.000Z"), { idx: -1, newer: "t4", older: "t2", where: "between" });
+});
+
+test("a recent window says so in the counter, not only in the title", () => {
+  // The Overview holds its latest six steps and Steps holds the store's newest 28. The same turn read "1 of 6" from the
+  // Overview and "1 of 28" from Steps: two numbers for one question, and the six looked like the whole run. "recent"
+  // names the window; the Steps page is unchanged.
+  const p = placeStep(LIST, "t4");
+  assert.equal(placeLabel(p, 4).text, "2 of 4", "a full list keeps the plain position");
+  assert.equal(placeLabel(p, 4, "recent").text, "2 of 4 recent", "a window says it is one");
+  assert.equal(placeLabel(p, 4, "recent").title, "step 2 of the 4 recent loaded, newest first", "and the title names the same window");
+});
+
+test("the Overview's latest work asks for the recent scope; Steps and the deep link do not", () => {
+  const SRC = path.resolve(__dirname, "..", "..", "..", "apps", "mesh-dashboard", "src");
+  const overview = fs.readFileSync(path.join(SRC, "views", "Overview.tsx"), "utf8");
+  const drawers = fs.readFileSync(path.join(SRC, "drawers.tsx"), "utf8");
+  const shell = fs.readFileSync(path.join(SRC, "shell.tsx"), "utf8");
+  assert.match(overview, /<StepDrawer turnId=\{t\} steps=\{steps\} scope="recent" \/>/, "the six it holds are named as recent");
+  assert.doesNotMatch(overview, /<StepDrawer turnId=\{t\} steps=\{steps\} \/>/, "and not as the whole history");
+  assert.doesNotMatch(drawers, /openDrawer\(<StepDrawer turnId=\{turnId\} steps=\{[^}]*\} scope="recent"/, "an agent's turn still walks the store's list");
+  assert.match(shell, /<StepDrawer turnId=\{detail\.id\} steps=\{steps \|\| \[\]\} routed \/>/, "a deep link still walks the store's list");
 });
 
 test("nothing to place by: no start time yet, an empty list, or entries without times", () => {

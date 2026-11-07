@@ -144,7 +144,7 @@ export function EventDetail({
 
       <section className="evd-sec" aria-labelledby="evd-thread">
         <div className="evd-sec-head">
-          <h4 id="evd-thread">Thread{thread.length ? <span className="evd-n">{thread.length}</span> : null}</h4>
+          <h4 id="evd-thread">Thread{thread.length ? <>, <span className="evd-n">{thread.length} events</span></> : null}</h4>
           {e.correlationId ? <span className="evd-zone">Times in {zoneLabel()}</span> : null}
           {turnId ? (
             <Button variant="small" onClick={() => onOpenStep(turnId)}>

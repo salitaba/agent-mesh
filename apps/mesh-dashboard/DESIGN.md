@@ -377,6 +377,75 @@ Breakpoints: **1280 1100 900 800 760 620 560**. 800 is the sidebar drawer (JS
 
 ## Pass log
 
+### 2026-11-07 — a retry keeps the cursor on the page, a thread's count says events, and a recent window says recent
+
+Surface: `src/components.tsx` (`focusAfterRetry`, the ErrorState's press), `src/evdetail.tsx` and
+`src/views/events.css` (the thread's heading), `src/stepwalk.ts`, `src/drawers.tsx` and `src/views/Overview.tsx`
+(the walker's scope), and `src/styles.css` (the drawer tab's count), with `tests/dashboard/failure-states.test.ts`,
+`events-phone.test.ts`, `stepwalk.test.ts` and `phone-type.test.ts`.
+
+Measured on the scripted demo at **Delivered** (481 events, 49.3k of 2.0M tokens, 7 checks, 9 files, 7 seats, 28 turns,
+ran 16m 6s) in the production build served by `curule console`, Chromium 1248 at 320/360/390/768/1,024/1,440 in light,
+360/1,440 in dark, a touch pointer at 800 and below, reduced motion, axe-core 4.14. The before is the base build at
+`1184c19` under the same running console and the same delivered log.
+
+- **A retry dropped the cursor on `<body>`.** Every error card that clears its failure for the re-read (Files, Cost,
+  Graph, Product, Host settings) removed the pressed `Try again` from the document, drew a skeleton and, when the
+  failure came back, a new card. At 360 with `/artifacts` answered 500, `document.activeElement` after the press was
+  `<body>` in both the failing and the succeeding retry: no visible focus, and a screen reader had no place to read
+  from. The card's page (or the drawer that holds it) outlives the card, so `ErrorState` now moves focus there before
+  the read starts: **H2 "Files"** (and **H2 "Files"** when the retry succeeds), and `DIV#drawer` (`role="dialog"`) for
+  a replay card inside the drawer; the failing answer's `role="alert"` still announces, and the next Tab is `Try
+  again` (failing) or the Search field (loaded), as before.
+- **The event's thread count was one word and one number with no unit.** The heading was `Thread<span>18</span>` with
+  a CSS gap, so its textContent was **"Thread18"** and a reader could take 18 for a thread id. It is
+  **"Thread, 18 events"** now, 80.8 → **142.4 px** at every width. The section head stays **70.2** at 360 and **64** at
+  1,440; at 320 the longer heading plus the 118 px zone needed 268.4 in 266 with the head's 8 px column gap, so the
+  phone block takes the row's 4 px there and the head stays **122.2** (its before height, with the two 44 px buttons
+  already on rows of their own).
+- **The same turn read "1 of 6" from the Overview and "1 of 28" from Steps.** The Overview holds its latest six steps
+  and hands them to the drawer, so the walker counted six while the page the reader came from would have counted 28:
+  one step, two positions, and the six looked like the run. The walker now names a recent window: Overview
+  **"1 of 6 recent"** (title "step 1 of the 6 recent loaded, newest first"), Steps **"1 of 28"** unchanged; the
+  drawer's 360 px walker is **174 → 180** wide at 320 and 360 and does not wrap. The six-step walk is still six:
+  `All steps` remains the way to the rest.
+- **A drawer's tab count was 11 px.** The agent and graph drawers' `Now 7` badge was **11 px** at 360 and at 1,440 —
+  a mixed-case figure, not the capital micro-label or glyph the 11 px step belongs to. It is **12 px** (the ramp's
+  next step): its box **22 × 19 → 22 × 20**, the tab row **93** at 320/360 and **37** at 1,440, with no wrap and
+  nothing under 44 px.
+
+| | Before | After |
+|---|---|---|
+| A failed retry at 360: activeElement | `<body>` | **H2 "Files"** |
+| A succeeding retry at 360: activeElement | `<body>` | **H2 "Files"** |
+| A retry inside the replay drawer: activeElement | `<body>` | **`DIV#drawer`** (dialog) |
+| The thread heading's textContent | "Thread18" | **"Thread, 18 events"** |
+| Its width (the same at 320, 360 and 1,440) | 80.8 | **142.4** |
+| The thread section's head, 320 / 360 / 1,440 | 122.2 / 70.2 / 64 | **122.2 / 70.2 / 64** |
+| The Overview's step walker | "1 of 6" | **"1 of 6 recent"** |
+| The same turn from Steps | "1 of 28" | 1 of 28 (unchanged) |
+| The walker's width at 320/360 | 174 | **180** |
+| The drawer tab's count, 360 / 1,440 | 11 px, 22 × 19 | **12 px, 22 × 20** |
+| The tab row at 360 / 1,440 | 93 / 37 | 93 / 37 |
+| Axe, the changed states × 320/360/1,440 light and 360/1,440 dark | 0 | **0** |
+| Horizontal page scroll, 320–1,440 | 0 | **0** |
+
+Floors: `npm run typecheck` and `npm run build` clean; `dist/tests/dashboard` **1,284 pass, 0 fail** (five new
+rules: the retry landing in `failure-states`, the thread's count in `events-phone`, the recent window and the Overview
+scope in `stepwalk`, and the tab count in `phone-type`); `dist/tests/build` **248 pass, 0 fail**; eslint **0** on the
+touched TypeScript (the two stylesheets are outside its configuration); axe **0** in the event detail at 320/360/1,440,
+the agent drawer at 360/1,440, the step drawer at 320/360, the Files and Graph failures at 360, and 360/1,440 dark; no
+page scrolls sideways; no control is under 44 × 44 at 320/360/390 beyond the raw switch inside its 44 px label; the
+views' smallest text is the 11 px avatar initials.
+
+**Left.** A recent window still walks six steps and stops; its counter says so, and `All steps` is still the door to the
+other 22. The thread heading fits at 320 by 1.6 px with the phone's 4 px column gap, so a longer translation wraps the
+zone to a second row, which the head already supports. A retry still draws the skeleton while the re-read is in flight
+(it no longer takes the cursor with it); a failure that returns announces the same sentence on the new card. Seen while
+measuring and untouched: the Events, Steps and Agents chips still say **Live** while the bar says **Delivered** (the
+open question above), and a deep-linked old step still reads its position among the store's loaded list, not the
+mission's whole history.
+
 ### 2026-11-07 — a phone's notice takes a row, a failed workspace is not a missing one, and a phone's link is a door
 
 Surface: `src/styles.css` (the phone notice track), `src/views/Product.tsx` and `src/product.ts` (`workspacePill`, the quiet

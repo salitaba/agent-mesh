@@ -632,6 +632,19 @@ export function TabPanel({ idPrefix, id, children }: { idPrefix: string; id: str
   );
 }
 
+/**
+ * Where the keyboard goes when the card a retry was pressed on is replaced by the read's answer. The answer
+ * usually clears the failure first, so the button that was pressed leaves the document and focus falls to
+ * `<body>`: nothing visible is focused, and a screen reader has nowhere to read from. The page's own heading
+ * (or the drawer that holds the card) outlives the card, so focus lands there before the press: a failed
+ * answer's `role="alert"` announces itself, and a good one leaves the reader at the top of what arrived.
+ */
+function focusAfterRetry(from: HTMLElement): void {
+  const dialog = from.closest<HTMLElement>('[role="dialog"]');
+  const page = document.querySelector<HTMLElement>("#view h2[tabindex]");
+  (dialog ?? page ?? document.getElementById("view"))?.focus({ preventScroll: true });
+}
+
 /** The one failed-to-load state. Views used to swallow fetch errors and then
  *  render their empty state, which reads as "the mesh has nothing" when the
  *  truth is "the console never heard back" — an operator cannot tell a quiet
@@ -642,7 +655,7 @@ export function ErrorState({ what, detail, onRetry }: { what: string; detail?: s
       <span className="empty-icon"><Icon name="alert" size={22} /></span>
       <b className="empty-title">Could not load {what}</b>
       <p className="empty-body">{plainError(detail)}</p>
-      {onRetry ? <Button variant="small" icon="refresh" onClick={onRetry}>Try again</Button> : null}
+      {onRetry ? <Button variant="small" icon="refresh" onClick={(e) => { focusAfterRetry(e.currentTarget); onRetry(); }}>Try again</Button> : null}
     </div>
   );
 }
