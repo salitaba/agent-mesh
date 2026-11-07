@@ -1322,3 +1322,55 @@ test("a notice's words run the panel's width on a phone", () => {
   assert.ok(pricing.includes('class="notice mt-m"><b>Planned, not included:</b>'), "so is the pricing page's roadmap caveat");
   assert.ok(security.includes('class="notice neutral mt-m" data-cloud-only'), "and the security page's");
 });
+
+/**
+ * The chosen plan's name moved when it was chosen. The dot was added inside the name only in the checked state, so the
+ * name started 12px further right: at 360 "Business" went from x=29 to x=41 (and "Team" at 390), while its neighbours
+ * stayed at 29; the six view labels' numbers moved 194 -> 206 under the same press, and at 320 the chosen "Live events"
+ * gained a second line. The dot sits in the chip's own padding now (2px from its border), empty until chosen: the plan
+ * names are 197/29 at 360 in both states, the view numbers 194, the chip stays 62px (plan) and 44px (view), and no label
+ * takes a line it did not take before.
+ */
+test("a chosen plan or view keeps its label where it was: the dot takes the chip's padding", () => {
+  const css = fs.readFileSync(path.join(SITE, "assets", "site.css"), "utf8");
+  assert.match(css, /\n  \.choice-name::before \{ content: ""; position: absolute; left: 2px; top: 50%; width: 6px; height: 6px; margin-top: -3px; border-radius: 50%; background: transparent; \}/, "the plan's dot has a place in the chip's padding, clear of the name");
+  assert.match(css, /\n  \.choice-input:checked \+ label \.choice-name::before \{ background: currentColor; \}/, "and the chosen chip only paints it");
+  assert.match(css, /\n  \.view-n::before \{ content: ""; position: absolute; left: 2px; top: 50%; width: 6px; height: 6px; margin-top: -3px; border-radius: 50%; background: transparent; \}/, "so does the view's dot, in its chip's padding");
+  assert.match(css, /\n  \.view-input:checked \+ label \.view-n::before \{ background: currentColor; \}/, "the chosen view paints it");
+  assert.ok(!/\.choice-input:checked \+ label \.choice-name::before \{[^}]*content: ""/.test(css), "the dot is not created only when chosen");
+  assert.ok(!/\.view-input:checked \+ label \.view-n::before \{[^}]*content: ""/.test(css), "nor the view's");
+  const pricing = page(pages, "pricing/index.html").markup;
+  const home = page(pages, "index.html").markup;
+  assert.match(pricing, /<fieldset class="plan-choice">/, "the pricing page has the plan chooser");
+  assert.match(home, /<fieldset class="view-choice">/, "the home page has the view chooser");
+});
+
+/**
+ * The footer's two legal lines are the last prose on the site that ran past 68ch: at 1,024 and 1,440 they were 879px
+ * and 688px on the 1,120px column (13px text), while every note and answer takes the page's measure. They take it too
+ * now: 544px, two lines each, and the footer grows 20px at 768 and 42px at 1,024/1,440; nothing moves at 320–390.
+ */
+test("the footer's legal lines take the page's prose measure", () => {
+  const css = fs.readFileSync(path.join(SITE, "assets", "site.css"), "utf8");
+  assert.match(css, /\n\.foot-legal p \{ margin: 0; max-width: 68ch; \}/, "the footer's legal paragraphs take 68ch");
+  assert.ok(!/\.foot-legal p \{[^}]*max-width: 60rem/.test(css), "not the 60rem the footer used to have");
+  const home = page(pages, "index.html").markup;
+  assert.match(home, /<div class="foot-legal">/, "the footer has the legal block");
+});
+
+/**
+ * A closed disclosure printed only its summary: the home page's ten questions printed without answers (print height
+ * 11,840 at 794) and the documentation page's "What each label means" without its four rows (4,671), because a closed
+ * <details> hides its ::details-content. The printed page opens the main disclosures: the home page is 13,278 and the
+ * docs page 5,171, and a <details> hidden in the page (the menu, the other Cloud state) is still display:none.
+ */
+test("a closed disclosure prints its answer, not only its question", () => {
+  const css = fs.readFileSync(path.join(SITE, "assets", "site.css"), "utf8");
+  const print = css.slice(css.indexOf("@media print"));
+  assert.match(print, /details::details-content \{ content-visibility: visible !important; height: auto !important; \}/, "print shows the content a closed details hides");
+  assert.match(print, /\.faq summary::after, \.legend-more summary::after \{ display: none; \}/, "and does not print the on-screen chevron");
+  const home = page(pages, "index.html").markup;
+  const docs = page(pages, "docs/index.html").markup;
+  assert.match(home, /<div class="faq">[\s\S]*?<details>/, "the home page's answers are details");
+  assert.match(docs, /<details class="legend-more mt-l">/, "so is the documentation page's label legend");
+});
