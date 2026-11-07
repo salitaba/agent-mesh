@@ -52,6 +52,14 @@ test("the goal id under the wordmark is a word at 12 px, like every other captio
   assert.match(phoneBlocks(styles), /\.brand \.sub \{ font-size: 12px; \}/, "the goal id takes the phone's 12 px caption step");
 });
 
+test("a drawer's tab count is a figure at 12 px, not an 11 px glyph", () => {
+  // Measured at 360 on the agent and graph drawers: the count beside "Now" was 11 px, a mixed-case-free figure rather than
+  // the capital micro-label or glyph the 11 px step belongs to. The same 22 x 19 badge at 1,440. 12 is the ramp's next step.
+  const tabn = /\.tab-n \{([^}]*)\}/.exec(styles);
+  assert.ok(tabn, "the tab count's rule is read");
+  assert.match(tabn![1]!, /font:\s*600 12px/, "the count is 12 px");
+});
+
 test("a status word and a clock tick are 12 px, not 11: the designer's seat flags and the timeline's axis", () => {
   // Measured on the delivered demo: the Designer's seat list drew "Starts" and "Service" at 11 px (mixed case, a chip a person
   // reads), and the Steps timeline's clock ticks ("23:39:30") were 11 px figures at 768 and 1,440. The 11 px step belongs to a

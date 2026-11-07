@@ -50,11 +50,20 @@ export function placeStep(list: readonly StepLike[], turnId: string, startedAt?:
 }
 
 /** The walker's counter: a position when listed, and otherwise where the
- *  turn stands relative to what is loaded, rather than a bare dash. */
-export function placeLabel(p: StepPlace, loaded: number): { text: string; title: string } {
+ *  turn stands relative to what is loaded, rather than a bare dash.
+ *
+ *  `scope` names a list that is a window rather than the history. The Overview
+ *  holds its latest six steps, so the same turn read "1 of 6" here and "1 of 28"
+ *  from Steps: two answers to one question, and the smaller one looked like the
+ *  whole run. A recent window says so in the counter itself, not only the title. */
+export function placeLabel(p: StepPlace, loaded: number, scope?: "recent"): { text: string; title: string } {
+  const recent = scope === "recent";
   switch (p.where) {
     case "listed":
-      return { text: `${p.idx + 1} of ${loaded}`, title: `step ${p.idx + 1} of the ${loaded} loaded, newest first` };
+      return {
+        text: `${p.idx + 1} of ${loaded}${recent ? " recent" : ""}`,
+        title: `step ${p.idx + 1} of the ${loaded}${recent ? " recent" : ""} loaded, newest first`,
+      };
     case "older-than-list":
       return { text: "older than loaded", title: `this step started before all ${loaded} loaded steps; ‹ goes to the oldest of them` };
     case "newer-than-list":

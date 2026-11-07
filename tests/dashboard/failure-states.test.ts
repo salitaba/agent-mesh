@@ -83,6 +83,18 @@ test("a failed read of the step history is said, whether or not a list is alread
   assert.match(stepsView, /if \(!retrying \|\| stepsStale \|\| !stepsLoaded\) return;\s*\n\s*setRetrying\(false\);\s*\n\s*const row = ledgerRef\.current\?\.querySelector<HTMLElement>\("\.st-row"\)/, "and the answer puts the cursor on the newest turn, not <body>");
 });
 
+test("a retry that replaces its card puts the cursor on the page, not <body>", () => {
+  // Measured at 360 with /artifacts answering 500: pressing Try again cleared the error for the retry, so the pressed
+  // button left the document, the skeleton took its place, and the failure came back as a new card. activeElement was
+  // <body>: no visible focus, and the screen reader had nothing to read from until the alert arrived. The page's own
+  // heading (or the drawer that holds the card) outlives the card, so the press lands there first.
+  const components = fs.readFileSync(path.join(SRC, "components.tsx"), "utf8");
+  assert.match(components, /function focusAfterRetry\(from: HTMLElement\): void/, "the landing rule is a named function");
+  assert.match(components, /from\.closest<HTMLElement>\('\[role="dialog"\]'\)/, "a card inside a drawer stays in the drawer");
+  assert.match(components, /#view h2\[tabindex\]/, "a page's card lands on the page's heading");
+  assert.match(components, /onClick=\{\(e\) => \{ focusAfterRetry\(e\.currentTarget\); onRetry\(\); \}\}/, "Try again moves focus before the read replaces the card");
+});
+
 test("an empty tool-gate page offers the Designer it names", () => {
   // "No gated seats" named `mesh.yaml` as the place to hold a tool but had no way there: 0 controls in the empty state.
   // The Designer is where the seat's tools are edited, so it is one 44 px press from the sentence.

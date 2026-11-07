@@ -644,7 +644,7 @@ export { matchOpEffects, type OpRow } from "./ledger";
  * detail layer, so moving the URL would change a panel nobody can see; there
  * the walk stays local to this drawer.
  */
-export function StepDrawer({ turnId: openedId, steps, routed }: { turnId: string; steps: any[]; routed?: boolean }): React.JSX.Element {
+export function StepDrawer({ turnId: openedId, steps, routed, scope }: { turnId: string; steps: any[]; routed?: boolean; scope?: "recent" }): React.JSX.Element {
   const { openDrawer, openDetail, closeDrawer, drawerDepth, view, setView, events, client, stepLimit, setStepLimit, refreshSteps } = useMesh();
   const { streams } = useMeshStreams();
   const bufferNames = useNameOf(events);
@@ -833,7 +833,7 @@ export function StepDrawer({ turnId: openedId, steps, routed }: { turnId: string
   // yet; "not in list" would be a verdict on a question not yet asked.
   const where = place.where === "unplaced" && data?.id !== turnId && list.length
     ? { text: "…", title: "placing this step among the loaded ones" }
-    : placeLabel(place, list.length);
+    : placeLabel(place, list.length, scope);
   const walker = (
     <div className="sv-walk">
       <Button variant="ghost" disabled={!place.newer} onClick={() => goStep(-1)} title="Newer step (k)" aria-label="Newer step">‹</Button>

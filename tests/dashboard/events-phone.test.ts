@@ -77,6 +77,15 @@ test("the title row is outside the head, which is what lets it stick for the who
   assert.match(css, /\.evd-title \{[^}]*margin-bottom: calc\(var\(--s2\) - var\(--s4\)\);/, "the wider rhythm it inherits is cancelled back to the head's 8");
 });
 
+test("a thread's count is a count of events, and it is spaced like two words", () => {
+  // Measured at 360: the heading's textContent was "Thread18" — the number sat in a span with a 6 px CSS gap and no word
+  // between it and "Thread", so a screen reader read one word and a sighted reader could take 18 for a thread id. It now
+  // reads "Thread, 18 events" (the span keeps the quiet ink; the gap comes from the text, not a margin).
+  assert.match(detail, /<h4 id="evd-thread">Thread\{thread\.length \? <>, <span className="evd-n">\{thread\.length\} events<\/span><\/> : null\}<\/h4>/,
+    "the heading carries the comma, a space and the unit");
+  assert.doesNotMatch(css, /\.evd-n \{[^}]*margin-left/, "the gap is a space in the words, not a margin on the number");
+});
+
 test("the way back is still one named control", () => {
   assert.match(detail, /<IconButton icon="x" label="Close event detail"/, "the close keeps its name");
   assert.match(tsx, /onClose=\{closeDetail\}/, "the pane still closes back to the log");

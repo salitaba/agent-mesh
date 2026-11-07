@@ -121,7 +121,7 @@
 .evd-sec h4, .jt-head h4 { margin: 0 0 var(--s2); font: 600 14px/1.3 var(--sans); letter-spacing: var(--k-track-tight); text-transform: none; color: var(--text); }
 .evd-sec-head { display: flex; align-items: center; flex-wrap: wrap; gap: var(--s2); margin-bottom: var(--s2); }
 .evd-sec-head h4 { margin: 0; margin-right: auto; }
-.evd-n { margin-left: var(--s1-5); color: var(--text-dim); }
+.evd-n { color: var(--text-dim); }
 .evd-zone { font: var(--tx-meta); color: var(--muted); }
 /* An absent cause is a fact about the emitter, not a fault in this pane, so it reads as a sentence. */
 .evd-note { margin: 0; font-size: 13px; line-height: 1.5; color: var(--text-dim); max-width: 64ch; }
@@ -231,6 +231,10 @@
   .evc-fold-do { margin-left: auto; }
   .evd { --evd-x: var(--s3-5); --evd-y: var(--s3-5); padding: var(--evd-y) var(--evd-x); }
   .evd-id .k { min-width: 92px; }
+  /* The thread's heading now carries its unit — "Thread, 18 events" is 142.4 px — and beside the 118 px zone the head's
+     8 px gap put the zone on a row of its own at 320, growing the head 122.2 → 147.6. The row's 4 px column gap keeps
+     them together, so the head is 122.2 as it was. */
+  .evd-sec-head { column-gap: var(--s1); }
 }
 
 /* A touch tablet is a thumb's width too: at 768 the seven facets took 112 px of an 836 px view and left the log 491 px.
