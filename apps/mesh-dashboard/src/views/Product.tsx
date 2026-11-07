@@ -22,6 +22,7 @@ import {
   parseCommits,
   readPackage,
   runOutcome,
+  workspacePill,
   type PackageState,
   type ScriptInfo,
 } from "../product";
@@ -203,7 +204,7 @@ export default function Product(): React.JSX.Element {
     setQ("");
     setDir("");
     setWsErr(null);
-    client.api("GET", "/workspace/info").then(({ json, timeout }) => {
+    client.api("GET", "/workspace/info", undefined, { quiet: true }).then(({ json, timeout }) => {
       if (dead) return;
       if (timeout || !json || json.error) {
         setWsErr(timeout ? "The request timed out. The server may be busy." : String(json?.error ?? "The mesh server did not answer."));
@@ -233,7 +234,7 @@ export default function Product(): React.JSX.Element {
     let dead = false;
     setTreeErr(null);
     setTreeLimit(TREE_WINDOW);
-    client.api("GET", `/workspace/tree?path=${encodeURIComponent(dir)}`).then(({ json, timeout }) => {
+    client.api("GET", `/workspace/tree?path=${encodeURIComponent(dir)}`, undefined, { quiet: true }).then(({ json, timeout }) => {
       if (dead) return;
       if (Array.isArray(json)) {
         setTree(json as TreeEntry[]);
@@ -379,6 +380,7 @@ export default function Product(): React.JSX.Element {
   const noRepo = info?.gitRepo === "false";
   const dirty = info?.gitClean === "false";
   const treeTone: PillTone = wsErr || noRepo ? "failed" : dirty ? "waiting" : "completed";
+  const pill = workspacePill(info, Boolean(wsErr));
   const empty = noScriptsCopy(pkg.state);
   const listedChanges = showAllChanges ? changes : changes.slice(0, 40);
   const entries = tree ?? [];
@@ -387,7 +389,7 @@ export default function Product(): React.JSX.Element {
     <>
       <PageHeader
         title="Product"
-        status={info || wsErr ? <Pill tone={treeTone}>{wsErr ? "No workspace" : noRepo ? "No repository" : info?.gitBranch || "No branch"}</Pill> : null}
+        status={pill ? <Pill tone={treeTone}>{pill}</Pill> : null}
         lede="The code the team delivered. Read it, run its scripts, open it."
       />
 

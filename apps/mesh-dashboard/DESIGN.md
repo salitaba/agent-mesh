@@ -377,6 +377,67 @@ Breakpoints: **1280 1100 900 800 760 620 560**. 800 is the sidebar drawer (JS
 
 ## Pass log
 
+### 2026-11-07 — a phone's notice takes a row, a failed workspace is not a missing one, and a phone's link is a door
+
+Surface: `src/styles.css` (the phone notice track), `src/views/Product.tsx` and `src/product.ts` (`workspacePill`, the quiet
+workspace reads), `src/views/Graph.tsx` (the phone link's press, the empty roster's action), with
+`tests/dashboard/notices-phone.test.ts`, `product.test.ts` and `graph-phone.test.ts`.
+
+Measured on the scripted demo at **Delivered** (479 events, 49.3k of 2.0M tokens, 7 checks, 9 files, 7 seats, 28 turns,
+ran 3m 25s) in the production build served by `curule console`, Chromium 1248 at 320/360/390/768/801/1,440 in light,
+360/1,440 in dark, reduced motion, axe-core 4.14. The before is the base build at `5190cc5` under the same running console,
+with the same delivered log; the delivery notice is reproduced with the page clock fixed 15s after `goal.completed`, which is
+the state the console itself decides is news (`TOAST_FRESH_MS`).
+
+- **The delivery notice covered the page, not the scrolled part of it.** At 360 its 336 × 85 box sat at y 72, exactly on the
+  page's title: Files' h2 (14–73.4 × 78–105.6) hit the toast, and on Events its 44 px close button was exactly on Pause updates
+  (both 302–346 × 78–122), so a press meant to pause dismissed the notice. The notice now has its own frame row between the bar
+  and the view (`#app:has(#toasts .toast)`), the empty container keeps `main`, and the Designer and an open drawer keep their
+  fixed foot (placing a fixed notice in the new row resolved its `bottom` against that row and put it at y = −123). The Files h2
+  is at y 170.6 and hits itself; Events' pause at 171–215 hits its own button; the view starts at 157 instead of 64
+  (its title at 171 instead of 78). At 768 the
+  row is 66 px; 801+ keeps the corner. The page gains no row when no notice is up.
+- **A failed workspace read said the workspace did not exist, and said it twice.** With `/workspace/info` answered 500, the
+  header read **"No workspace"** (126 × 22, failed tone) over a body that read "Could not load the workspace", and a generic
+  **"server error /workspace/info -> 500"** notice was raised in the corner as well: one failure, two answers, one of them a
+  claim the console cannot make. `workspacePill` says **"Not loaded"** (106 × 22, the word Tool gates uses), and the info and
+  folder reads pass `quiet: true` because their errors are already sentences on the page. The corner notice is **1 → 0**; the
+  page error is unchanged.
+- **A phone's ranked link was a pin with no drawing.** On the phone layout the Graph draws no ring, but the 268 × 60 link row
+  was still a toggle: pressing it set `aria-pressed` and changed **0** edges — there was no drawing to light and the route did
+  not move; the 44 px arrow was the only way on. The row is now the door on a phone (as the seat rows are): it opens its
+  messages in Events and says so in hidden words. At 390 a press goes to `#/events` with the pair's 7 matching events, search
+  "qa" and Filters (2); the desk keeps the pin that lights the line.
+- **An empty Graph named the Designer but held no door to it.** With no seats the empty state was 296 × 195 at 320 with
+  **0** buttons, 0 links and no Next row; the one action that changes it was behind the menu. It now carries the same
+  **Open the Designer** button as Tool gates: 202 × 44, and the state is 296 × 255. A press lands on `#/designer`.
+
+| | Before | After |
+|---|---|---|
+| Delivery notice at 360: box / y | 336 × 85 / 72 | **336 × 85 / 72** (its own row) |
+| Files h2: y / what its centre hits | 78 / the toast | **170.6 / the h2** |
+| Events Pause updates: box / what its centre hits | 302–346 × 78–122 / the toast's close | **302–346 × 171–215 / the button** |
+| The view at 360: top / height with a notice | 64 / 780 | **157 / 687** |
+| A notice at 768 / at 801 | row / corner | **66 px row / corner** |
+| `/workspace/info` 500: header chip | No workspace, 126 × 22 | **Not loaded, 106 × 22** |
+| The same read: corner notices | 1 (server error /workspace/info -> 500) | **0** |
+| Graph link row at 390: box / press | 268 × 60 / aria-pressed, route unchanged, 0 edges lit | **268 × 60 / opens #/events, 7 events, search "qa"** |
+| Empty Graph at 320: state / controls | 296 × 195 / 0 buttons, 0 links | **296 × 255 / 1 button, 202 × 44** |
+
+Floors: `npm run typecheck` and `npm run build` clean; `dist/tests/dashboard` **1,279 pass, 0 fail** (the new
+`notices-phone` and the changed `product` and `graph-phone` rules); eslint **0** on the touched TypeScript (the stylesheet is
+outside its configuration); axe **0** in the notice at 360/768 light and 360 dark, the workspace failure at 360/1,440, the empty
+Graph at 320/1,440 and the phone link at 360/390; no page scrolls sideways at 320–1,440 in light or 360/1,440 in dark; no
+control under 44 × 44 at 320/360 beyond the recorded raw switch inside its 44 px label.
+
+**Left.** The notice now moves the page down by its own height while it is up (85 px at 360, 66 at 390+), so a live mission's
+notice arriving while someone is reading shifts the page once; the alternative was a control under a finger. The Product chip
+says "Not loaded", not why; the error state under it carries the sentence and the retry. On a phone the Graph row and its 44 px
+arrow now do the same thing (open Events); the arrow stays because it is the visible affordance on a row that also carries the
+count. The empty roster's button repeats the Designer the navigation already has, which is the point of an empty state's one
+action. Seen while measuring and untouched: the 320 Events head still puts Pause updates on a row of its own between the title
+and the lede, and the delivery notice still stacks if several arrive at once.
+
 ### 2026-11-07 — an empty command is not a request, a failed read is a sentence, and a legend key says the press it makes
 
 Surface: `src/views/Playground.tsx` and `src/playground.ts` (`canRun`, the empty-command refusal), `src/components.tsx`
