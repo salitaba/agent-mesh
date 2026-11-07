@@ -552,7 +552,7 @@ main:has(.hero) .section-head .eyebrow::before { counter-increment: sec; content
 @media (max-width: 719px) {
   .view-choice { display: block; min-width: 0; margin: 0 0 12px; padding: 0; border: 0; }
   .view-choice-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
-  .view-choice label { display: flex; align-items: center; gap: 8px; min-height: 44px; padding: 0 10px; border: 1px solid var(--k-line-control); border-radius: var(--k-r-sm); background: var(--panel); color: var(--ink2); font-size: 13px; font-weight: 600; line-height: 1.25; overflow-wrap: anywhere; cursor: pointer; }
+  .view-choice label { position: relative; display: flex; align-items: center; gap: 8px; min-height: 44px; padding: 0 10px; border: 1px solid var(--k-line-control); border-radius: var(--k-r-sm); background: var(--panel); color: var(--ink2); font-size: 13px; font-weight: 600; line-height: 1.25; overflow-wrap: anywhere; cursor: pointer; }
   /* The label keeps its 13px layout size and the number its 12px, as the bar's chips and the header's controls do: at a 32px
      user default the label grew to 26px, "Approvals" could not break in a 161px chip, and the page was 25px wider than a
      360px window. The floor is respected (12px) and the chip stays 44px at every text size. */
@@ -560,7 +560,11 @@ main:has(.hero) .section-head .eyebrow::before { counter-increment: sec; content
   /* The chosen view is a dot, a rule and a tint, so it is not colour alone, and the rule survives High Contrast. */
   .view-input:checked + label { border-color: var(--accent); background: var(--soft); color: var(--link); box-shadow: inset 0 0 0 1px var(--accent); }
   .view-input:checked + label .view-n { color: var(--link); }
-  .view-input:checked + label .view-n::before { content: ""; display: inline-block; width: 6px; height: 6px; margin-right: 6px; border-radius: 50%; background: currentColor; vertical-align: middle; }
+  /* The dot is in the chip's padding, not in the number's flow: creating it inside the label only when chosen moved
+     the chosen number and name 12px to the right (at 360 the number went from 27 to 39), so a press made the control
+     jump. The padding has room for the 6px dot; the number, the name and the line breaks do not move. */
+  .view-n::before { content: ""; position: absolute; left: 2px; top: 50%; width: 6px; height: 6px; margin-top: -3px; border-radius: 50%; background: transparent; }
+  .view-input:checked + label .view-n::before { background: currentColor; }
   .view-input:focus-visible + label { outline: 2px solid var(--accent); outline-offset: 2px; }
   /* One card is the page's card: the six share one grid cell and the chosen one is visible, so the row's height is its
      tallest view and switching one moves nothing below the section. Nothing is clipped and no capture is off the page. */
@@ -794,7 +798,10 @@ main:has(.hero) .section-head .eyebrow::before { counter-increment: sec; content
 }
 @media (min-width: 640px) { .foot-grid { grid-template-columns: 1.4fr repeat(3, minmax(0, 1fr)); gap: 40px 24px; } .foot-brand { grid-column: auto; max-width: none; } }
 .foot-legal { display: grid; gap: 6px; margin-top: clamp(32px, 5vw, 64px); padding-top: 20px; border-top: 1px solid var(--line); font-size: .8125rem; line-height: 1.6; }
-.foot-legal p { margin: 0; max-width: 60rem; }
+/* The footer's two legal lines are prose, not the footer's width: at 1,440 they ran 879px and 688px (about 132 and
+   106 characters at 13px) on the page's 1,120px column, the longest prose on the site. They take the page's 68ch
+   measure (552px at 13px) now; at 1,440 each is two lines and the footer grows 42px. */
+.foot-legal p { margin: 0; max-width: 68ch; }
 
 /* inner pages */
 .page-head { padding: clamp(32px, 5vw, 64px) 0 clamp(28px, 4vw, 40px); border-bottom: 1px solid var(--line); }
@@ -997,17 +1004,21 @@ body:has(#billing-monthly:checked) .head-price-monthly { display: inline; }
 @media (max-width: 719px) {
   .plans-hint { display: block; margin: 0 0 12px; }
   .plan-choice { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin: 0 0 16px; }
-  .plan-choice label { display: flex; flex-direction: column; justify-content: center; gap: 1px; min-height: 58px; padding: 8px 12px; border: 1px solid var(--line2); border-radius: var(--k-r-md); background: var(--panel); box-shadow: var(--lift); cursor: pointer; }
+  .plan-choice label { position: relative; display: flex; flex-direction: column; justify-content: center; gap: 1px; min-height: 58px; padding: 8px 12px; border: 1px solid var(--line2); border-radius: var(--k-r-md); background: var(--panel); box-shadow: var(--lift); cursor: pointer; }
   /* A plan's name is a control's label, and it keeps its layout size at a reader's own text size, as the six-view chooser's
      13px name and the billing sub-label's 12px do: at a 32px user default it computed 24px, "COMMUNITY" needed 184px in a
      134px chip and "ENTERPRISE" 183 in 134, so the pricing page was 380px wide on a 360 screen (40px over at 320) and the
      name ran under the chip beside it at 24px; the name may break as a last resort, so no font can widen the page. */
   .choice-name { color: var(--muted); font-size: 12px; font-weight: 600; letter-spacing: var(--k-track-caps); text-transform: uppercase; overflow-wrap: anywhere; }
   .choice-amount { color: var(--ink); font-size: 1.125rem; font-weight: 650; line-height: 1.3; font-variant-numeric: tabular-nums; }
-  /* The chosen plan is a dot and a rule as well as a tint: never colour alone, and the dot survives High Contrast. */
+  /* The chosen plan is a dot and a rule as well as a tint: never colour alone, and the dot survives High Contrast.
+     The dot sits in the chip's padding, not in the name's flow: creating it only when chosen moved the name 12px to
+     the right (at 360, 29 → 41), so a press made the label jump under the thumb. The text and the line breaks do not
+     move; the unchosen chips carry an invisible dot in the same place. */
+  .choice-name::before { content: ""; position: absolute; left: 2px; top: 50%; width: 6px; height: 6px; margin-top: -3px; border-radius: 50%; background: transparent; }
   .choice-input:checked + label { border-color: var(--accent); background: var(--soft); box-shadow: inset 0 0 0 1px var(--accent); }
   .choice-input:checked + label .choice-name { color: var(--link); }
-  .choice-input:checked + label .choice-name::before { content: ""; display: inline-block; width: 6px; height: 6px; margin-right: 6px; border-radius: 50%; background: currentColor; vertical-align: middle; }
+  .choice-input:checked + label .choice-name::before { background: currentColor; }
   .choice-input:focus-visible + label { outline: 2px solid var(--accent); outline-offset: 2px; }
   .choice-monthly { display: none; }
   body:has(#billing-monthly:checked) .choice-annual { display: none; }
@@ -1304,6 +1315,12 @@ body:has(#billing-monthly:checked) .head-price-monthly { display: inline; }
 }
 @media print {
   .site-header, .skip, .tabs, .billing, .copy, .copy-note, .doc-filter, .foot-grid, .frame-bar, .hero::before, .hero::after, .cta::after, .to-top-dock { display: none; }
+  /* A closed disclosure is a reader's choice on a screen and a missing answer on paper: the home page's ten questions
+     and the documentation page's label legend printed their summaries only, because a closed <details> hides its
+     content (print height 11,840 on the home page with 0 answers; 13,254 when they are open). The content is printed
+     open here; a <details> that is hidden in the page (the menu, the other Cloud state) is not printed at all. */
+  details::details-content { content-visibility: visible !important; height: auto !important; }
+  .faq summary::after, .legend-more summary::after { display: none; }
   /* A sheet has no view switcher: the plate prints the view chosen on screen, with its caption and the bar left off. The
      tabs are inside the bar now, so hiding the bar hides them without the specificity rule the old three-label trough
      needed (`.hero-visual .tabs` outranked `.tabs` here and printed a dead switcher on the sheet). */

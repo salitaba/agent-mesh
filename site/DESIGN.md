@@ -3453,6 +3453,7 @@ copied from an earlier pass. The absolute heights are this container's system fo
   12,583 / 10,026 / 9,102**; documentation **8,960 / 8,173 / 7,930 / 5,132 / 4,445**; security **12,258 / 11,076 / 10,519 /
   7,738 / 7,444**; contact **4,639 / 4,282 / 4,141 / 3,413 / 2,833**; legal **5,464 / 4,887 / 4,641 / 3,420 / 3,262**; 404
   **2,266 / 2,065 / 2,021 / 1,437 / 1,516** at 320 / 360 / 390 / 768 / 1,440.
+- All three are CSS, and `assets/site.js` is unchanged: the choosers are radios and CSS and work with no script, the footer measure is static, and a printed disclosure opens with CSS alone. Reduced motion has no transition here; the chosen dot is painted, not animated. At 360 without a script the two choosers still show one card each, and the pages are the heights above.
 - No page scrolls sideways at 320, 360, 390, 768, 1,024 or 1,440 in light or dark (**0** on all 84 page/width/theme pairs),
   and the dark sweep confirms the page's ground is `rgb(19, 18, 17)` on every one. No page error is reported.
 - The site's own suites are **158** tests, all passing (155 before: the three new tests are the twin's markup, the twin's
@@ -3875,3 +3876,86 @@ from an earlier pass.
   `site/ux/` was not edited; this pass's frames are in the report's folder
   (`/tmp/opencode/ux1107/site/shots/`), not in that page's record.
 - `npm run site:check` still exits 1 on the owner's `TODO(owner)` for the terms at `site/legal/index.html:134`.
+
+## 2026-11-07, second pass: the chosen chip stays put, the footer's legal lines take the measure, and a closed answer prints
+
+Measured with the same probe (Chrome 156 over CDP; reduced motion; light unless said; touch at 320/360/390, a mouse at
+768/1,024/1,440; dark at 360/1,440; print at 794; forced colours at 360; a 24px and a 32px root at 320/360/720). The before
+column is the site at `5190cc5`, exported with `git archive` and served on 8347 while this worktree served the after on 8341;
+both halves and both sets of frames are from the same run; no number is copied from an earlier pass.
+
+### What changed
+
+- **A chosen plan or view keeps its label where it was.** The chosen chip's dot was created only in the checked state, inside
+  the name, so choosing moved the label 12px to the right: at 360 "Team" went from **197 to 209** and "Business" from **29 to
+  41**, while its neighbours stayed at 197/29; the six views' numbers did the same, "Events" **194 → 206**. The 6px dot is in
+  the chip's own padding now (2px from its border, clear of the name), transparent until chosen; it takes no label width.
+  At 360 Team is **197 in both states**, Business **29**, Events **194**; at 320 (177/29/174) and 390 (212/29/209) the same
+  12px is removed. The plan chip stays **62px** and the view chip **44**; at 320 the old dot pushed the chosen "Live events"
+  label from one line to two, and it is one line now. The three phone widths' pages do not move.
+- **The footer's two legal lines are prose, not the footer's width.** At 1,440 they ran **879px and 688px** in 960px boxes —
+  about 132 and 106 characters at 13px, the longest prose on the site, while every note and answer takes 68ch. They take it:
+  the box is **544px**, the first is **528 + 347px on two lines** and the second **497 + 187px on two lines**. The legal block
+  is **69 → 110px** at 1,440 and the footer (and every page with it) **+42px** at 1,024/1,440, **+20/+21px** at 768, and
+  unchanged at 320/360/390. The 2026-11-06 pass had left these two lines as the footer's own surface; measured as the last
+  prose past the page's measure, they are the one paragraph this pass takes.
+- **A closed disclosure prints its answer.** The home page's ten questions printed only their summaries (print **11,840** at
+  794, 0 answers), the documentation page's label legend only its summary (4,671), and the pricing page's questions the same
+  (10,073). A closed `<details>` hides its content on paper too. The printed page opens the main disclosures: home **11,840 →
+  13,227** with **10 of 10** answers, documentation **4,671 → 5,171** with the four label rows, pricing **10,073 → 10,708**;
+  the on-screen chevrons are not printed, and the two hidden Cloud/self-host alternatives remain `display:none` and are not.
+  The screen is unchanged.
+
+### Measurements after this pass
+
+| Page, height at 360 / 768 / 1,024 / 1,440 (touch) | Before | After |
+|---|---|---|
+| Home | 12,624 / 12,113 / 11,495 / 11,282 | **12,624 / 12,134 / 11,536 / 11,324** |
+| Pricing | 13,537 / 10,250 / 9,461 / 9,344 | **13,537 / 10,271 / 9,502 / 9,386** |
+| Documentation | 8,403 / 5,288 / 5,000 / 4,499 | **8,403 / 5,308 / 5,041 / 4,541** |
+| Security | 11,572 / 7,888 / 7,906 / 7,690 | **11,572 / 7,909 / 7,948 / 7,731** |
+| Contact | 4,402 / 3,413 / 2,858 / 2,905 | **4,402 / 3,434 / 2,900 / 2,947** |
+| Legal | 5,034 / 3,419 / 3,568 / 3,361 | **5,034 / 3,439 / 3,610 / 3,402** |
+| 404 | 2,110 / 1,441 / 1,502 / 1,568 | **2,110 / 1,461 / 1,544 / 1,610** |
+
+| The chosen chip at 360 | Before | After |
+|---|---|---|
+| Team's name, unselected → selected | 197 → **209** | **197 → 197** |
+| Business's name, unselected → selected | 29 → **41** | **29 → 29** |
+| The Events view's number, unselected → selected | 194 → **206** | **194 → 194** |
+| The chosen Live events label, 320 | 1 line → **2** | **1 → 1** |
+| Plan chip / view chip height | 62 / 44 | **62 / 44** |
+
+| The footer's legal block at 1,440 | Before | After |
+|---|---|---|
+| Its box / its height | 960 / 69 | **544 / 110** |
+| The two paragraphs' lines | 879 / 688 | **528 + 347 / 497 + 187** |
+| The page it is on | 11,226 | **11,268** |
+
+- No page scrolls sideways at 320, 360, 390, 768, 1,024 or 1,440 in light or dark (**0** on all 84 page/width/theme pairs),
+  the probe reports **0** console errors, **0** axe-core WCAG 2.0–2.2 A/AA violations on all seven at 360 and 1,440 in dark,
+  and the smallest computed text is **12px**. The chooser labels keep the lines they had (at 320 the chosen Live events is
+  one line now where the old dot made it two); the selected dot is `Highlight` in a forced-colour mode and transparent in
+  the unchosen chips; every chip is still 44/62 high and the dot spends no label width at any text size. At a 24px root and
+  a 32px root every page is **0px over** at 320, 360 and 720.
+- Print at 794: every page **0px over**; the home page is 13,227 (13,264 in the capture run) and the docs page 5,171; the FAQ
+  answers and the label legend print, the chevrons do not.
+- Tests: `site.test.ts` holds the two dot rules and the reason, the footer's `68ch` (not `60rem`), and the print rules that
+  open `details::details-content` and hide the chevrons. The site's own suites are **170** tests, all passing; `site-chrome
+  --check`, `pricing:check`, `npm run typecheck` and `npx eslint` on the touched test file are clean. `npm run site:check`
+  still exits 1 on the owner's `TODO(owner)` for the terms at `site/legal/index.html:134`, as before.
+
+### What this pass deliberately left
+
+- **The footer's legal block is 41px taller at 1,024/1,440 and 20px at 768.** That is the cost of the measure; the 320/360/390
+  phones are unchanged because their column is already under 68ch.
+- **The dot sits in the chip's padding and spends no label width.** The four plan names stay one line and the six view
+  labels keep the lines they had; at 320 the chosen Live events was pushed from one line to two by the old dot and is one
+  line now. The chip heights do not change.
+- **A printed FAQ is 1,387px longer on the home page and 635px on pricing, and the docs map 500px.** A reader who wants the
+  questions only cannot print them closed; a printed answer is worth the paper.
+- **The six console captures and the graph still show the light pictures in dark, the phone plan stack still repeats each
+  plan's limits and support, the pricing page's cards still state their figures twice, and the documentation row still cuts
+  its third chip at 360.** None of these changed.
+- **The notices at a desk (900–1,047px) and Curule Cloud's prices** are as the last pass left them. `site/ux/` was not edited;
+  this pass's frames are in `/tmp/opencode/ux1107b/marketing/shots/`, not in that page's record.
