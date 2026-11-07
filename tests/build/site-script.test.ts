@@ -14,6 +14,9 @@ import { FakeNode, parsePage, type FakeDocument } from "../cloud/pages-support";
 import { SITE, decode, page, sitePages } from "./site-pages";
 
 const SCRIPT = fs.readFileSync(path.join(SITE, "assets", "site.js"), "utf8");
+// The same script with Curule Cloud closed: the one switch the pages carry (scripts/set-domain.mjs writes it). What it
+// hides is still in the markup, so the script's own part has to leave the hidden half out of what it counts and marks.
+const SELFHOST = SCRIPT.replace(/^var CLOUD_URL = "https:\/\/app\.curule\.dev";.*$/m, 'var CLOUD_URL = "";');
 const CSS = fs.readFileSync(path.join(SITE, "assets", "site.css"), "utf8");
 const pages = sitePages();
 
@@ -123,13 +126,29 @@ interface Reading {
 }
 
 /** A page with the script run on it, in a window `height` pixels tall whose observer, timers and events the test drives. */
-function read(rel: string, height = 800, reduce = true): Reading {
+function read(rel: string, height = 800, reduce = true, options: { script?: string; cloudOff?: boolean } = {}): Reading {
   FakeObserver.made = [];
   const doc = parsePage(page(pages, rel).html);
+  if (options.cloudOff) {
+    // The state the pages are written in when Curule Cloud is closed: the other half is still in the markup, hidden.
+    for (const n of doc.querySelectorAll("[data-cloud-only]")) n.hidden = true;
+    for (const n of doc.querySelectorAll("[data-selfhost-only]")) n.hidden = false;
+  }
   const bar = doc.querySelector(".toc-bar")!;
   const row = bar.querySelector(".toc") as Placed;
-  const chips = row.querySelectorAll("a") as Placed[];
+  const hiddenIn = (node: FakeNode | null): boolean => {
+    for (let n: FakeNode | null = node; n; n = n.parent) if (n.hidden) return true;
+    return false;
+  };
+  const allChips = row.querySelectorAll("a") as Placed[];
+  // A hidden chip is not on the page: the bar the test drives is the one a reader can see.
+  const chips = allChips.filter((a) => !hiddenIn(a));
   const sections = chips.map((a) => doc.getElementById(a.getAttribute("href")!.slice(1)) as Placed);
+  // A hidden section has no box on the page; a browser reports its top as 0. The script has to leave it out, not
+  // mark it: this is the box it would find if it looked at every <a> in the row.
+  allChips.map((a) => doc.getElementById(a.getAttribute("href")!.slice(1)) as Placed | null).forEach((s) => {
+    if (s && s.getBoundingClientRect === undefined) s.getBoundingClientRect = () => ({ top: 0, bottom: 0, left: 0, right: 0 });
+  });
   let tops = sections.map(() => 5000);
   sections.forEach((s, i) => (s.getBoundingClientRect = () => ({ top: tops[i]!, bottom: tops[i]! + 600, left: 0, right: 1280 })));
   // The row is 390 wide and each chip 160, so that from the third on a chip is out of view until the row is scrolled.
@@ -159,7 +178,7 @@ function read(rel: string, height = 800, reduce = true): Reading {
     setTimeout: (fn: () => void) => timers.push(fn),
     clearTimeout: () => undefined,
   };
-  vm.runInNewContext(SCRIPT, { document: doc, navigator: {}, window }, { filename: "site.js" });
+  vm.runInNewContext(options.script ?? SCRIPT, { document: doc, navigator: {}, window }, { filename: "site.js" });
   const observer = (): FakeObserver => FakeObserver.made[FakeObserver.made.length - 1]!;
   return {
     doc,
@@ -276,6 +295,19 @@ test("on a page, the bar is made to stay and the chip of the section being read 
   assert.deepEqual(r.marked(), ["Reporting a problem=true"]);
   r.at([300, 500, 2000, 2700, 3800, 4600, 5300]);
   assert.deepEqual(r.marked(), [], "and back at the top, none");
+});
+
+test("a chip the Cloud switch hides is not one of the bar's chips: the pricing page marks The plans, not a hidden section", () => {
+  assert.notEqual(SELFHOST, SCRIPT, "the test's script has Curule Cloud closed");
+  const r = read("pricing/index.html", 800, true, { script: SELFHOST, cloudOff: true });
+  assert.equal(r.chips.length, 6, "the hidden Who runs it chip is not a chip");
+  assert.ok(!r.chips.some((a) => a.textContent.includes("Who runs it")));
+  assert.equal(r.observer().observed.length, 6, "and its section is not watched");
+  r.at([200, 900, 1800, 2700, 3600, 4500]);
+  assert.deepEqual(r.marked(), ["The plans=true"], "the reader is in The plans, and the bar says so");
+  assert.equal(r.doc.querySelectorAll(".toc [hidden] a[aria-current]").length, 0, "nothing hidden carries the mark");
+  r.at([-400, 200, 1000, 1900, 2800, 3700]);
+  assert.deepEqual(r.marked(), ["Compare=true"], "the next visible chip takes over");
 });
 
 test("the marked chip is scrolled into view in its row, and only when it is not in view already", () => {
@@ -643,10 +675,10 @@ interface Filtered {
 const event = (target: FakeNode, extra: Record<string, unknown> = {}) => ({ type: "", target, currentTarget: target, defaultPrevented: false, preventDefault() { this.defaultPrevented = true; }, ...extra });
 
 /** The documentation page with the script run on it. Its timers wait until the test runs them, as a pause in the typing would. */
-function docsPage(): Filtered {
+function docsPage(script = SCRIPT): Filtered {
   const doc = parsePage(page(pages, "docs/index.html").html);
   const timers: Array<() => void> = [];
-  vm.runInNewContext(SCRIPT, { document: doc, navigator: {}, window: { setTimeout: (fn: () => void) => timers.push(fn), clearTimeout: () => undefined } }, { filename: "site.js" });
+  vm.runInNewContext(script, { document: doc, navigator: {}, window: { setTimeout: (fn: () => void) => timers.push(fn), clearTimeout: () => undefined } }, { filename: "site.js" });
   const field = doc.getElementById("doc-filter-input")!;
   const visible = (n: FakeNode): boolean => {
     for (let x: FakeNode | null = n; x; x = x.parent) if (x.hidden) return false;
@@ -772,6 +804,30 @@ test("the filter is for the map and leaves the cards at the top alone: they are 
   for (const a of r.doc.querySelectorAll(".start a")) {
     if (a.hasAttribute("data-doc")) assert.match(a.href, /^https:\/\/github\.com\/salitaba\/agent-mesh\/blob\/main\/docs\/[\w/.#-]+$/, "the script gave the title its address");
   }
+});
+
+test("a document the Cloud switch hides is not in the map's count, and typing does not bring it back", () => {
+  assert.notEqual(SELFHOST, SCRIPT, "the test's script has Curule Cloud closed");
+  const r = docsPage(SELFHOST);
+  const cloud = r.doc.getElementById("cloud-docs")!;
+  assert.equal(cloud.hidden, true, "the Cloud card is hidden with the other half of the state");
+  const all = r.doc.querySelectorAll(".doc-list li").filter((li) => {
+    for (let x: FakeNode | null = li; x; x = x.parent) if (x.hidden) return false;
+    return true;
+  }).length;
+  assert.equal(all, 15, "the map of the software you run has fifteen documents, not the sixteen of both states");
+  assert.equal(r.count(), `All ${all} documents`);
+  r.type("guide");
+  assert.equal(r.count(), `6 of ${all} documents`, "the hidden guide is not counted");
+  assert.equal(cloud.hidden, true, "typing does not unhide the card the Cloud switch hid");
+  assert.deepEqual(r.shown(), ["README", "Try it in a minute", "Deploying Curule", "Operating Curule", "Licences and plan limits", "Name, voice and look"]);
+  r.type("cloud");
+  assert.deepEqual(r.shown(), [], "a word that only the hidden Cloud document has finds nothing");
+  assert.equal(cloud.hidden, true);
+  assert.equal(r.count(), `0 of ${all} documents`);
+  assert.equal(r.doc.getElementById("doc-filter-none")!.hidden, false);
+  r.runTimers();
+  assert.match(r.announce(), /No document matches/);
 });
 
 // ---------------------------------------------------------------- a capture's full size, in the visitor's scheme

@@ -300,8 +300,21 @@ var IMAGE_NAME = "ghcr.io/salitaba/curule";
   var tocBar = document.querySelector(".toc-bar");
   var row = tocBar && tocBar.querySelector(".toc");
   if (row && typeof window.IntersectionObserver === "function") {
-    var chips = within(row, "a").filter(function (a) { return /^#./.test(a.getAttribute("href") || ""); });
-    var sections = chips.map(function (a) { return document.getElementById(a.getAttribute("href").slice(1)); });
+    // A chip the Curule Cloud switch hides is not a chip. The pricing page's "Who runs it" chip and its section are
+    // hidden together while the service is closed, but they are still in the DOM, so a list built from every <a> had a
+    // seventh chip with no section on the page: it was marked as the section being read at the top of the page (the
+    // hidden section's top is 0), and the bar showed no mark at all while the reader was in "The plans". Both ends are
+    // checked, so a hidden chip and a chip whose section is hidden are left out of the same list the observer watches.
+    var hiddenIn = function (node) {
+      for (var n = node; n; n = n.parentNode) if (n.hidden) return true;
+      return false;
+    };
+    var pairs = within(row, "a")
+      .filter(function (a) { return /^#./.test(a.getAttribute("href") || ""); })
+      .map(function (a) { return { chip: a, section: document.getElementById(a.getAttribute("href").slice(1)) }; })
+      .filter(function (pair) { return pair.section && !hiddenIn(pair.chip) && !hiddenIn(pair.section); });
+    var chips = pairs.map(function (pair) { return pair.chip; });
+    var sections = pairs.map(function (pair) { return pair.section; });
     var current = -1;
     var held = -1;
     var holding = 0;
@@ -467,7 +480,12 @@ var IMAGE_NAME = "ghcr.io/salitaba/curule";
     var announce = document.getElementById("doc-filter-announce");
     var none = document.getElementById("doc-filter-none");
     var said = document.getElementById("doc-filter-said");
-    var groups = all(".doc-card").map(function (card) {
+    var groups = all(".doc-card").filter(function (card) {
+      // A card the Curule Cloud switch hid is not part of this page's map. The Cloud card is still in the DOM while
+      // the service is closed (it is the same markup in both states); counting it said "All 16 documents" above 15
+      // rows, and the first apply() — any keystroke, or Clear — set its hidden to false and brought it back.
+      return !card.hidden;
+    }).map(function (card) {
       var name = card.querySelector("h2, h3");
       var about = card.querySelector("p");
       var group = (name ? name.textContent : "") + " " + (about ? about.textContent : "");

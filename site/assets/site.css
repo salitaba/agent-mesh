@@ -1381,3 +1381,26 @@ body:has(#billing-monthly:checked) .head-price-monthly { display: inline; }
   #compare .plan-stack .period-annual,
   #compare .plan-stack .period-monthly { visibility: visible !important; grid-area: auto !important; }
 }
+
+/* A sheet is white paper in either colour scheme. A dark-scheme browser kept its dark palette in print: the plan
+   cards, the On this page chips and the footer measured #1b1a18 while the page around them was turned white, and a
+   printer that leaves background graphics off (the default) then printed their #d6d2c9 words on white paper at 1.5:1.
+   The print block restates the light palette after every dark one, so the same page prints in either scheme, and turns
+   the page's own colour-scheme off so form controls and the paper agree. Nothing on the screen changes. */
+@media print {
+  :root {
+    color-scheme: light;
+    --bg: #fff; --panel: #fff; --ink: #000; --muted: #5d5a55; --line: #e4e0d9; --accent: #2b5fd9; --accent-ink: #fff;
+    --edge: rgba(28, 27, 26, .2);
+    --ink2: #3d3a36; --panel2: #fff; --line2: #d3cdc2; --link: #1f47a8; --soft: #eaf0fc; --code: #f1eee8;
+    --viz: #c9c4ba; --band: #f7f5f1; --deep: #fff; --on-deep: #000; --lift: none;
+    --k-bg: #fff; --k-surface: #fff; --k-surface-2: #f7f5f1; --k-sunken: #f1eee8;
+    --k-line: #e4e0d9; --k-line-strong: #d3cdc2; --k-line-control: #837d72;
+    --k-ink: #000; --k-ink-2: #3d3a36; --k-muted: #5d5a55;
+    --k-accent: #2b5fd9; --k-accent-hover: #2655ca; --k-accent-press: #1f47a8; --k-accent-ink: #2150bd;
+    --k-accent-soft: #eaf0fc; --k-on-accent: #fff;
+    --k-ok: #0a6b49; --k-warn: #7c5808; --k-bad: #a53349; --k-info: #24676e;
+    --k-shadow-1: none; --k-shadow-2: none; --k-shadow-3: none; --k-shadow-4: none; --k-shadow-5: none;
+    --k-hl: none; --k-scrim: transparent;
+  }
+}
