@@ -23,7 +23,7 @@
   const CONTACT = "mailto:ali79taba@gmail.com";
 
   const NEEDS = {
-    home: ["bar-say", "plans", "topups"],
+    home: ["bar-say", "plans", "plans-note", "topups"],
     signup: ["bar-say", "card", "form", "status", "title", "lede", "email", "email-error", "password", "password-error", "agree", "agree-error"],
     login: ["bar-say", "form", "status", "email", "email-error", "password", "password-error", "resend-form", "resend", "resend-wait", "resend-status"],
     verify: ["bar-say", "status", "title", "again", "resend-form", "resend", "resend-wait", "resend-status", "resend-email-error", "email"],
@@ -270,7 +270,7 @@
         if (view.cancelled) return { tone: "", title: "Choose a plan", text: "Checkout was cancelled, so nothing was charged.", action };
         // The step's sentence is the plan section's own lede (the card is not drawn for this state), so it says what a plan is and stops:
         // the cards under it name what each one includes and carry the button that chooses it.
-        const what = "A plan is one flat price for its own period, and it says how many workspaces you may run at once.";
+        const what = "A plan is one flat price for its own period, and how many workspaces it allows.";
         // A service that offers no plan at all says what the section under it says, so the page and its announcement agree.
         if (view.plans.length === 0) return { tone: "", title: "Choose a plan", text: "No plan is on offer just now, so no price is shown.", action };
         return { tone: "", title: "Choose a plan", text: stage.byok ? `${what} You bring your own model key and pay your model provider yourself.` : what, action };
@@ -393,7 +393,9 @@
         return lacksKey(w) ? "Its team has no model yet. Give it your model key to put it to work." : "";
       case "requested":
       case "provisioning":
-        return "It starts in the background, and this page updates when it is ready.";
+        // The card at the top is where a starting workspace is explained, with the steps it is at; the record says its name, its
+        // state and the box that opens it when it is ready, so the same wait is not written twice on one screen.
+        return "";
       case "suspended": {
         // The state's word is the one the button and the stage use: a workspace its owner paused is Paused, and one the service
         // stopped for a reason says Stopped and the reason. Saying "Stopped" beside "Paused by you" named one state two ways.
@@ -857,12 +859,16 @@
 
   async function homePage(me) {
     const box = $("plans");
+    // The section's standing sentence describes the cards it introduces. When there are no cards to describe, the warning under it is the
+    // section's sentence, and a note promising "each card" over nothing is a page telling a reader about what is not there.
+    const note = $("plans-note");
     if (!box.querySelector(".sk")) planShape();
     const r = await plans();
     if (!r.ok || r.data.plans.length === 0) {
       // Nothing about model usage is known here, so the page falls back to the neutral sentence rather than to one arrangement.
       paintModel("neutral");
       $("topups").textContent = "";
+      if (note) note.hidden = true;
       for (const node of doc.querySelectorAll("[data-from-price]")) node.textContent = "";
       box.replaceChildren(
         el("div", { class: "note note-warn" },
@@ -872,6 +878,7 @@
       );
       return;
     }
+    if (note) note.hidden = false;
     const { currency, topups } = r.data;
     paintModel(topups === null ? "byok" : "sold");
     // Said at the top and again at the foot of the page, where the decision is: both are the same reading of the same plans.
@@ -975,7 +982,7 @@
       }
       const card = $("card");
       retitle("Check your email", "");
-      const press = button("Resend the email", { type: "submit", id: "resend", attrs: { "data-busy": "Sending" } });
+      const press = button("Send a new link", { type: "submit", id: "resend", attrs: { "data-busy": "Sending" } });
       const wait = el("p", { id: "resend-wait", class: "muted small" });
       const answer = el("div", { id: "resend-status", class: "note", role: "status", "aria-live": "polite" });
       const again = el("form", { id: "resend-form", class: "resend", novalidate: true }, el("div", { class: "btn-row" }, press, el("a", { id: "another", class: "btn btn-ghost", href: "/signup", onclick: () => store.set(SIGNUP_ADDRESS, address) }, "Use another address")), answer, wait);

@@ -98,9 +98,9 @@ test("the card says one thing for each stage, in a sentence, with the one action
   // A person with no plan reads this sentence as the plan section's own lede, under the rail, so it says what a plan is and stops: the cards
   // under it name what each includes and carry the button that chooses it, and the sentence used to end on "Choose one below and pay on the
   // next page", which the button that led to the list below said a second time.
-  assert.deepEqual(card(view({ subscription: null })), { tone: "", title: "Choose a plan", text: "A plan is one flat price for its own period, and it says how many workspaces you may run at once.", action: link });
+  assert.deepEqual(card(view({ subscription: null })), { tone: "", title: "Choose a plan", text: "A plan is one flat price for its own period, and how many workspaces it allows.", action: link });
   assert.doesNotMatch(card(view({ subscription: null })).text, /\b(month|monthly|year|yearly)\b/, "the step's sentence names no period: the plans on offer may be either");
-  assert.deepEqual(card(hostingView([], { subscription: null })), { tone: "", title: "Choose a plan", text: "A plan is one flat price for its own period, and it says how many workspaces you may run at once. You bring your own model key and pay your model provider yourself.", action: link });
+  assert.deepEqual(card(hostingView([], { subscription: null })), { tone: "", title: "Choose a plan", text: "A plan is one flat price for its own period, and how many workspaces it allows. You bring your own model key and pay your model provider yourself.", action: link });
   assert.deepEqual(card(view({ subscription: null, plans: [], plansKnown: false })), { tone: "warn", title: "The plans could not be loaded", text: "No plan or price is shown just now, and nothing was changed.", action: { kind: "retry", label: "Try again" } }, "a plan is promised only when one was read");
   assert.equal(card(view({ subscription: null, plans: [] })).text, "No plan is on offer just now, so no price is shown.", "and a service that offers none promises none");
   assert.deepEqual(card(view({ subscription: { plan: "team", title: "Team", status: "ended" } })), {
@@ -271,7 +271,7 @@ test("each stage is said on the page: its title and sentence, the steps while a 
   assert.equal(s.v.doc.getElementById("plan-steps")!.querySelectorAll("li").filter((li) => li.getAttribute("aria-current") === "step").length, 1, "one step is the current one, for what reads the page aloud");
   assert.ok(s.v.doc.getElementById("plan-steps")!.querySelectorAll("span").filter((n) => n.className === "num").every((n) => n.getAttribute("aria-hidden") === "true"), "and the numbers are for the eye: the words say it all");
   assert.equal(s.v.$("plan-steps").getAttribute("aria-label"), "Where you are");
-  assert.equal(s.v.text("plan-lede"), "A plan is one flat price for its own period, and it says how many workspaces you may run at once.", "and the section says what a plan is, once");
+  assert.equal(s.v.text("plan-lede"), "A plan is one flat price for its own period, and how many workspaces it allows.", "and the section says what a plan is, once");
 
   assert.deepEqual([s.v.$("stage").getAttribute("role"), s.v.$("stage").getAttribute("aria-labelledby")], ["group", "stage-title"], "the card is a group named by what it says, and not a landmark: the sections below it are the page's landmarks");
   assert.equal(s.v.$("stage-title").getAttribute("tabindex"), "-1", "its title can be given the cursor, and is not a stop of the tab key");
@@ -403,7 +403,7 @@ test("the card that arrived is announced, a card that says something else is ann
   await v.until("the page to say it is waiting", () => /being confirmed|confirms a payment/.test(v.text("notice")));
   assert.equal(
     v.text("stage-live"),
-    "Choose a plan. A plan is one flat price for its own period, and it says how many workspaces you may run at once.",
+    "Choose a plan. A plan is one flat price for its own period, and how many workspaces it allows.",
     "what arrived with the account is announced, so the skeleton's 'Loading your account.' is answered by what is there now",
   );
   v.type("current", "typing in the password form while the page waits");

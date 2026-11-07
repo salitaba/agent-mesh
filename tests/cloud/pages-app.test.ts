@@ -211,6 +211,7 @@ test("a front page that cannot get the plans says so, claims nothing about model
   });
   const v = await visit("home", { routes: w.routes });
   assert.equal(v.text(v.$("plans").querySelector("p")!), "The plans could not be loaded just now, so no price is shown.");
+  assert.equal(v.shows(v.$("plans-note")), false, "the section's standing note promises cards it is not drawing, so it is not drawn");
   assert.equal(v.text(v.doc.querySelector("main .price-line")!), "", "no price is claimed when none was read");
   // Before this, the hero said "Plans and prices below" in the same view as "no price is shown": the page contradicted itself.
   assert.doesNotMatch(v.text("main"), /Plans and prices below/, "and it does not promise prices below while saying below that there are none");
@@ -225,6 +226,7 @@ test("a front page that cannot get the plans says so, claims nothing about model
   v.click(retry);
   await v.idle();
   assert.equal(v.$("plans").querySelectorAll("article").length, 2);
+  assert.equal(v.shows(v.$("plans-note")), true, "and the note that describes the cards comes back with them");
   assert.deepEqual(v.doc.querySelectorAll("[data-from-price]").map((n) => n.textContent), ["From $149.00 a month", "From $149.00 a month"], "and both lines take the price once it is read");
   assert.match(v.text("main"), /\$20\.00 of model usage each month/);
 
@@ -235,6 +237,7 @@ test("a front page that cannot get the plans says so, claims nothing about model
   });
   const empty = await visit("home", { routes: none.routes });
   assert.equal(empty.text(empty.$("plans").querySelector("p")!), "No plan is on offer just now, so no price is shown.");
+  assert.equal(empty.shows(empty.$("plans-note")), false, "and a service that offers no plan does not describe cards either");
   for (const routes of [
     (c: any) => (c.path === "/api/plans" ? { fail: true } : { json: { account: null } }),
     (c: any) => (c.path === "/api/plans" ? { status: 200, raw: "<html>a proxy's page</html>" } : { json: { account: null } }),
@@ -371,7 +374,8 @@ test("sign-up sends the address as typed (trimmed) and the password as typed, on
   v.submit(v.$("form"));
   await v.idle();
   assert.deepEqual(v.to("POST", "/api/signup"), [{ method: "POST", path: "/api/signup", body: { email: "Ada@Example.com", password: " a password with edges " } }], "a second submit while the first is out is not a second request");
-  assert.equal(v.text("card"), "We sent the link to Ada@Example.com. Open it: it confirms your address and signs you in to your account. It works once and expires in 24 hours. Resend the email Use another address You can ask for another in 60 seconds. If it does not come It can take a few minutes. Look in your spam or junk folder too. Check the address above for a typo. If it is wrong, use another address.");
+  assert.equal(v.text("card"), "We sent the link to Ada@Example.com. Open it: it confirms your address and signs you in to your account. It works once and expires in 24 hours. Send a new link Use another address You can ask for another in 60 seconds. If it does not come It can take a few minutes. Look in your spam or junk folder too. Check the address above for a typo. If it is wrong, use another address.");
+  assert.equal(v.text("resend"), "Send a new link", "the same request has one name here, on the sign-in page and on the confirmation page");
   const sentAside = v.doc.querySelector(".auth-main .aside")!;
   assert.equal(v.text(sentAside), "Already confirmed? Sign in.", "the door beside the form is for a confirmed account, not for this one before it has opened the link");
   assert.equal(sentAside.querySelector("a")!.getAttribute("href"), "/login");
@@ -495,6 +499,7 @@ test("a link that is no good says so, offers a way on, and also leaves the addre
   assert.equal(v.text("status"), "That link is not valid, or it has expired. Ask for a new one.");
   assert.equal(v.$("status").className, "note note-bad");
   assert.equal(v.$("again").hidden, false);
+  assert.equal(v.text("resend"), "Send a new link", "one request keeps one name across the three pages that ask for it");
   assert.equal(v.doc.activeElement, v.$("resend"), "the way out is what there is to do, so it has the cursor: a rubber-stamped failure is not a place to leave a keyboard");
   assert.deepEqual(v.history, ["/verify"]);
   assert.deepEqual(v.navigations, []);
@@ -804,6 +809,7 @@ test("asking for a new link with no address says which field to fill, instead of
   v.click(v.button("form", "Sign in"));
   await v.idle();
   assert.equal(v.shows(v.$("resend-form")), true, "a refusal offers the way to a new link");
+  assert.equal(v.text("resend"), "Send a new link", "and names it as the sign-up and confirmation pages do");
   v.type("email", "");
   v.click(v.$("resend"));
   await v.idle();
@@ -921,8 +927,8 @@ test("a new account sees what to do first: the plan section is the step, and not
   assert.equal(v.shows(v.$("stage")), false, "the block above is not drawn: the section is the step, and it says it once");
   assert.equal(v.shows(v.$("plan-steps")), true, "the section carries the rail");
   assert.equal(v.text("plan-steps"), "02 Choose a plan (you are here) 03 Make a workspace (still to do) 04 Describe your team (still to do)");
-  assert.equal(v.text("plan-lede"), "A plan is one flat price for its own period, and it says how many workspaces you may run at once.");
-  assert.equal(v.text("stage-live"), "Choose a plan. A plan is one flat price for its own period, and it says how many workspaces you may run at once.", "and what arrived is announced as what the section says");
+  assert.equal(v.text("plan-lede"), "A plan is one flat price for its own period, and how many workspaces it allows.");
+  assert.equal(v.text("stage-live"), "Choose a plan. A plan is one flat price for its own period, and how many workspaces it allows.", "and what arrived is announced as what the section says");
   assert.equal(v.shows(v.$("workspaces-panel")), false, "there is no workspace to list");
   assert.equal(v.shows(v.$("create")), false);
   assert.equal(v.text("plan-h"), "Plans");
@@ -1196,7 +1202,7 @@ test("the plans being unavailable leaves the rest of the account usable, says wh
   await n.idle();
   assert.deepEqual(n.labels("plan"), ["Choose Team", "Choose Business"], "the list is drawn in place, without a reload");
   assert.equal(n.$("plan-lede").hidden, false);
-  assert.equal(n.text("plan-lede"), "A plan is one flat price for its own period, and it says how many workspaces you may run at once.");
+  assert.equal(n.text("plan-lede"), "A plan is one flat price for its own period, and how many workspaces it allows.");
   assert.equal(n.doc.activeElement, n.$("plan-h"), "the cursor is on the heading of the section that answered, not on a button that went");
   assert.deepEqual(n.consoleErrors, []);
 
@@ -1228,7 +1234,7 @@ test("each workspace shows its state in words, with only what can be done to it 
   assert.equal(rows.length, 4);
   assert.equal(v.text(rows[0]!), "Alpha Running Open it to describe your team and start a mission. Open Pause More Plan Team Change plan Address alpha.ws.example.com", "a workspace that is ready says what the card used to say, and offers what can be done");
   assert.equal(v.text(rows[1]!), "Beta Stopped Stopped because the last payment did not go through. Resume it to open it. Resume More Plan Team Change plan Address beta.ws.example.com", "the plan is paid up, so it can be started");
-  assert.equal(v.text(rows[2]!), "Gamma Starting It starts in the background, and this page updates when it is ready. Open it when it is ready Plan Team Address gamma.ws.example.com", "a workspace that is starting cannot be moved to another plan yet: there is no host to make again");
+  assert.equal(v.text(rows[2]!), "Gamma Starting Open it when it is ready Plan Team Address gamma.ws.example.com", "a workspace that is starting cannot be moved to another plan yet: there is no host to make again");
   assert.equal(v.text(rows[3]!), "Delta Could not start The container did not start. Delete it and make a new one. If it fails again, contact the operator. Contact the operator Delete this workspace Plan Team Address delta.ws.example.com");
   const boxes = (row: FakeNode) => row.querySelectorAll("input").filter((i) => i.getAttribute("type") === "checkbox");
   assert.deepEqual(rows.map((r) => boxes(r).length), [0, 0, 1, 0], "only a workspace that is starting offers to be opened when it is ready");
