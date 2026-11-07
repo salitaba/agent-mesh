@@ -221,6 +221,38 @@ test("a page can be read and used by anyone: a language, a title, one heading, a
   }
 });
 
+test("the front page is a ledger with a contents line, and every entry in it is a numbered section of the page", () => {
+  // A phone reads 4,200px of front page; until this pass the only way to the plans or the billing rules was the scroll. The
+  // contents line is the account's and the documents' own component, with the record's numbers, not a second navigation design.
+  const { all } = pages().find((p) => p.name === "index")!;
+  const nav = all.find((n) => n.tag === "nav" && n.className === "subnav home-nav")!;
+  assert.ok(nav, "the front page has its contents line");
+  assert.equal(attr(nav, "aria-label"), "On this page");
+  const links = nav.querySelectorAll("a").map((a) => [a.textContent.trim(), attr(a, "href"), attr(a, "data-entry")]);
+  assert.deepEqual(links, [
+    ["Plans", "#plans-h", "01"],
+    ["What you get", "#facts-h", "02"],
+    ["How it works", "#how-h", "03"],
+    ["Billing", "#billing-h", "04"],
+    ["Start", "#start-h", "05"],
+  ]);
+  for (const [, href, entry] of links) {
+    const h = all.find((n) => attr(n, "id") === href.slice(1))!;
+    assert.equal(h.tag, "h2", `${href} names a section heading`);
+    assert.equal(h.parent!.className, "section-head", `${href} is the head of a section`);
+    assert.equal(attr(h.parent!.querySelector(".entry-no")!, "aria-hidden"), "true", "the number is for the eye");
+    assert.equal(h.parent!.querySelector(".entry-no")!.textContent, entry, `${href} carries the number the contents line gives it`);
+  }
+
+  // At a desk the heading is the section's margin and the content is one column of the record; on a phone they stack as they did.
+  const rules = cssRules(read(path.join(ASSETS, "app.css")));
+  const ledger = rules.find((r) => r.at.includes("min-width: 1000px") && r.selectors.includes(".home .section") && declared(r, "display") !== undefined)!;
+  assert.equal(declared(ledger, "display"), "grid", "the section is a margin and a body at 1000 and wider");
+  assert.equal(declared(ledger, "grid-template-columns"), "17rem minmax(0, 1fr)", "the heading keeps the record's margin");
+  const facts = rules.find((r) => r.at.includes("min-width: 1000px") && r.selectors.includes(".home .section .facts") && declared(r, "grid-template-columns") !== undefined)!;
+  assert.equal(declared(facts, "grid-template-columns"), "1fr", "the five facts are five ruled entries, not a grid with a hole in its last row");
+});
+
 test("the front page's note about its plan cards waits for the cards, and a browser with no script is told why the plans are not there", () => {
   // Without a script the plans box held nothing while the standing note over it promised "Each card lists what its price includes."
   // The note is drawn with the cards, and the empty box says in its own words why it is empty.

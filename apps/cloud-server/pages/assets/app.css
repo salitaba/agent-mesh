@@ -529,9 +529,21 @@ font-weight:650;
 .facts li{ display: grid; align-content: start; gap: 6px; padding: 14px 0; border-top: 1px solid var(--k-line); }
 .section{ margin-top: clamp(40px, 6vw, 64px); }
 .section .facts, .section .how{ margin-top: 8px; border-bottom: 1px solid var(--k-line); }
+.home-nav{ margin: 32px 0 0; }
+.home .section-head h2{ scroll-margin-top: 84px; }
+@media (max-width: 720px){ .home .section-head h2{ scroll-margin-top: 24px; } }
 @media (min-width: 1000px){
-.section .facts{ grid-template-columns: repeat(3, minmax(0, 1fr)); }
-.section .how{ grid-template-columns: 1fr 1fr; column-gap: 40px; max-width: none; }
+.home .section{ display: grid; grid-template-columns: 17rem minmax(0, 1fr); column-gap: 48px; align-items: start; padding-top: 16px; border-top: 1px solid var(--k-line-strong); }
+.home .section-head{ grid-column: 1; grid-row: 1; padding-top: 0; border-top: 0; }
+.home .section > :not(.section-head){ grid-column: 2; }
+.home .section-note{ margin-top: 0; }
+.home .section .facts{ grid-template-columns: 1fr; }
+.home .section .facts li{ grid-template-columns: 15rem minmax(0, 1fr); column-gap: 24px; align-items: baseline; }
+.home .section .how{ grid-template-columns: 1fr; max-width: none; }
+.home .section .how li{ grid-template-columns: 2rem 15rem minmax(0, 1fr); column-gap: 24px; }
+.home .section .how li::before{ grid-row: auto; }
+.home .section .how strong{ grid-column: 2; }
+.home .section .how span{ grid-column: 3; }
 }
 /* account */
 .account-head{
@@ -589,7 +601,7 @@ font-size:.75rem;
 .steps .done .num{ border-color: transparent; background: var(--k-accent-soft); color: var(--k-accent-ink); }
 .steps .now{ color: var(--k-ink); }
 .steps .now .num{ border-color: var(--k-accent); background: var(--k-accent); color: var(--k-on-accent); }
-.glance dl{ display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); margin: 40px 0 0; border-bottom: 1px solid var(--k-line); }
+.glance dl{ display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); margin: 24px 0 0; border-bottom: 1px solid var(--k-line); }
 .stat{ padding: 12px 0; border-top: 1px solid var(--k-line); }
 .stat dd{ margin: 0; }
 .stat-v{ display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; margin-top: 6px !important; }
