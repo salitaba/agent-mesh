@@ -1404,6 +1404,31 @@ test("the footer's legal lines take the page's prose measure", () => {
  * <details> hides its ::details-content. The printed page opens the main disclosures: the home page is 13,278 and the
  * docs page 5,171, and a <details> hidden in the page (the menu, the other Cloud state) is still display:none.
  */
+test("a printed page is the light page in either colour scheme", () => {
+  const css = fs.readFileSync(path.join(SITE, "assets", "site.css"), "utf8");
+  const block = /@media print \{\n  :root \{\n([\s\S]*?)\n  \}\n\}/.exec(css);
+  assert.ok(block, "the print sheet restates its own palette");
+  const tokens = block[1]!;
+  assert.match(tokens, /color-scheme: light;/, "paper has no dark scheme to follow");
+  for (const token of [
+    "--bg: #fff",
+    "--panel: #fff",
+    "--ink: #000",
+    "--muted: #5d5a55",
+    "--line: #e4e0d9",
+    "--k-bg: #fff",
+    "--k-surface: #fff",
+    "--k-ink: #000",
+    "--k-line: #e4e0d9",
+    "--k-sunken: #f1eee8",
+  ])
+    assert.ok(tokens.includes(token), `the printed page's ${token}`);
+  assert.ok(
+    css.indexOf("@media print {\n  :root {") > css.lastIndexOf("@media (prefers-color-scheme: dark)"),
+    "after every dark block, so the light values win on paper",
+  );
+});
+
 test("a closed disclosure prints its answer, not only its question", () => {
   const css = fs.readFileSync(path.join(SITE, "assets", "site.css"), "utf8");
   const print = css.slice(css.indexOf("@media print"));
