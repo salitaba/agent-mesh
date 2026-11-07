@@ -188,6 +188,18 @@ export function hasManifest(entries: ReadonlyArray<{ name: string; type: string 
   return Array.isArray(entries) && entries.some((e) => e.name === "package.json" && e.type === "file");
 }
 
+/**
+ * What the Product page's header chip says about the checkout. A read that failed is not a workspace that is missing: the pill
+ * said "No workspace" in the failed tone while the body said "Could not load the workspace", which is two answers to one state and
+ * one of them a claim the console cannot make. "Not loaded" is the same word Tool gates uses for the same situation.
+ */
+export function workspacePill(info: { gitRepo?: string; gitBranch?: string } | null, failed: boolean): string | null {
+  if (failed) return "Not loaded";
+  if (!info) return null;
+  if (info.gitRepo === "false") return "No repository";
+  return info.gitBranch || "No branch";
+}
+
 const OFFERED = "build, test, typecheck, lint, dev, start, serve and preview";
 
 /** What the Run card says when there is nothing to run: why, and what would make buttons appear. */

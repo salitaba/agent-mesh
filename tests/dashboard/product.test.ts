@@ -20,6 +20,7 @@ import {
   parseScripts,
   readPackage,
   runOutcome,
+  workspacePill,
 } from "../../apps/mesh-dashboard/src/product";
 
 /**
@@ -235,4 +236,22 @@ test("the playground is offered only when the checkout holds the page the server
   assert.equal(hasPlayground([]), false, "an empty or missing folder lists as nothing");
   assert.equal(hasPlayground(null), false);
   assert.ok(TREE_WINDOW >= 100, "a folder window is a screenful or more");
+});
+
+test("a workspace read that failed is not a workspace that is missing", () => {
+  // Measured with /workspace/info answered 500: the header said "No workspace" (126 × 22, failed) over a body that said
+  // "Could not load the workspace", so the page answered one failure twice and one answer was a claim about the checkout.
+  assert.equal(workspacePill(null, true), "Not loaded");
+  assert.equal(workspacePill({ gitRepo: "false", gitBranch: "" }, true), "Not loaded", "a failure outranks what an older read said");
+  assert.equal(workspacePill({ gitRepo: "true", gitBranch: "main" }, false), "main");
+  assert.equal(workspacePill({ gitRepo: "false", gitBranch: "" }, false), "No repository");
+  assert.equal(workspacePill({ gitRepo: "true", gitBranch: "" }, false), "No branch");
+  assert.equal(workspacePill(null, false), null, "before the first answer the header carries no chip at all");
+});
+
+test("the workspace and its folder are read quietly: their errors are already sentences on the page", () => {
+  const src = fs.readFileSync(path.resolve(__dirname, "..", "..", "..", "apps", "mesh-dashboard", "src", "views", "Product.tsx"), "utf8");
+  assert.match(src, /client\.api\("GET", "\/workspace\/info", undefined, \{ quiet: true \}\)/, "a 5xx does not also raise the generic corner notice");
+  assert.match(src, /client\.api\("GET", `\/workspace\/tree\?path=\$\{encodeURIComponent\(dir\)\}`, undefined, \{ quiet: true \}\)/, "the Files card shows its own error");
+  assert.doesNotMatch(src, /No workspace/, "the failed-read chip no longer claims the workspace is missing");
 });

@@ -139,7 +139,10 @@ export default function Graph(): React.JSX.Element {
     return (
       <>
         {header()}
-        <EmptyState icon="graph" title="No agents in this mesh yet">Add seats in the Designer and the graph draws itself.</EmptyState>
+        <EmptyState icon="graph" title="No agents in this mesh yet"
+          action={<Button variant="soft" icon="designer" onClick={() => setView("designer")}>Open the Designer</Button>}>
+          Add seats in the Designer and the graph draws itself.
+        </EmptyState>
       </>
     );
   }
@@ -318,12 +321,13 @@ export default function Graph(): React.JSX.Element {
               const k = kindOf(e.kind);
               return (
                 <li key={key} className="gr-row">
-                  {/* A button, so a line can be reached and highlighted from the keyboard. */}
+                  {/* A button, so a line can be reached and highlighted from the keyboard. On a phone there is no drawing to
+                      highlight: the row is the whole width of the link and opens its messages, as its own hidden words say. */}
                   <button
                     type="button"
                     className={`gr-link ${k.id}`}
-                    aria-pressed={pin === key}
-                    onClick={() => setPin(pin === key ? null : key)}
+                    aria-pressed={phone ? undefined : pin === key}
+                    onClick={() => (phone ? openMessages(e) : setPin(pin === key ? null : key))}
                     onMouseEnter={() => setHover(key)}
                     onMouseLeave={() => setHover((h) => (h === key ? null : h))}
                     onFocus={() => setHover(key)}
@@ -333,6 +337,7 @@ export default function Graph(): React.JSX.Element {
                     <span className="gr-what"><b>{e.from}</b> <span className="muted">{k.verb}</span> <b>{e.to}</b></span>
                     <span className="gr-bar" aria-hidden="true"><i style={{ width: `${Math.max(4, Math.round((e.count / maxCount) * 100))}%` }} /></span>
                     <span className="gr-n">{e.count.toLocaleString("en-US")}</span>
+                    {phone ? <span className="sr-only"> Open its messages in Events.</span> : null}
                   </button>
                   <Button
                     variant="small" extra="gr-open" icon="arrow-right" aria-label={`See messages from ${e.from} to ${e.to} in Events`}

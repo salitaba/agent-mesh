@@ -62,3 +62,23 @@ test("the ring is still drawn where there is room and the seat rows are a phone 
   assert.match(tsx, /phone \? \(/, "the two presentations are chosen by width");
   assert.match(css, /\.gr-seat-row \{[^}]*min-height:\s*(?:[4-9]\d|\d{3,})px/, "a seat row is a thumb target");
 });
+
+/* On a phone there is no drawing to highlight. The ranked row was still a toggle: pressing the 238 × 60 row set aria-pressed and
+ * changed nothing else (0 hot edges, no drawing, no route); the only way on was the 44 px arrow. The row is now the whole-width
+ * door to the messages it names, and says that in its own hidden words. The desk keeps the pin that lights the line. */
+test("a phone's ranked link is a door to its messages, not a pin with no drawing", () => {
+  assert.match(tsx, /aria-pressed=\{phone \? undefined : pin === key\}/, "a phone has no pressed state to show");
+  assert.match(tsx, /onClick=\{\(\) => \(phone \? openMessages\(e\) : setPin\(pin === key \? null : key\)\)\}/, "the phone row opens the messages");
+  assert.match(tsx, /Open its messages in Events\./, "and says what its press does");
+  const arrow = /aria-label=\{`See messages from \$\{e\.from\} to \$\{e\.to\} in Events`\}/.exec(tsx);
+  assert.ok(arrow, "the 44 px arrow keeps its own name as well");
+});
+
+/* The empty roster named the Designer but held no door to it, while the same empty state on Tool gates has "Open the Designer".
+ * At 320 the state was 296 × 195 with 0 buttons, 0 links and no Next row: the one action that changes it was behind the menu. */
+test("an empty graph offers the Designer it tells you to use", () => {
+  const empty = /title="No agents in this mesh yet"[\s\S]{0,220}?Open the Designer[\s\S]{0,200}?<\/EmptyState>/.exec(tsx);
+  assert.ok(empty, "the empty state carries an action");
+  assert.match(empty![0], /onClick=\{\(\) => setView\("designer"\)\}/, "and it opens the Designer");
+  assert.match(empty![0], /<Button variant="soft" icon="designer"/, "the same button the Tool gates empty state uses");
+});

@@ -1183,14 +1183,23 @@ ul.errs { margin: var(--s1-5) 0; padding-left: 18px; font-size: 14px; color: var
 .toast-act:hover { border-color: var(--k-accent); }
 @keyframes toastdrop { from { transform: translateY(-8px); opacity: 0; } }
 /* Where notices span the width (a phone, a tablet held upright) they sat at the foot of the screen, on what the person was about to
-   press there: a decision card's "Send answer and resume", a form's Send. They sit under the top bar instead, over the part of the
-   page already scrolled past, as a grid item in the view's own cell, so they follow the bar's height. Two places keep the foot: an
+   press there: a decision card's "Send answer and resume", a form's Send. They sit under the top bar instead, in a track of their
+   own above the view, so they follow the bar's height. Two places keep the foot: an
    open drawer, which covers the bar and starts with its title and first fields, and the Designer, whose undo, redo and checks are
    in its header and whose own notices answer them (designer.css lifts them over its save bar). The action is a 44px target there. */
 @media (max-width: 800px) {
   #toasts { position: static; grid-area: main; align-self: start; z-index: var(--z-notice); max-width: none; margin: var(--s2) var(--s3) 0; }
   #toasts .toast { animation-name: toastdrop; }
-  #drawer:not(.hidden) ~ #toasts, body:has(.ms-bar) #toasts { position: fixed; left: 12px; right: 12px; margin: 0; z-index: var(--z-toasts); }
+  /* A notice with nowhere scrolled past it covers the page, so it gets a track of its own between the bar and the view while it is
+     up. Measured at 360 with the delivery notice: its 336 × 85 box sat over the page title (Files' h2 at 78–105.6), and on Events
+     its close button was exactly on Pause updates (both 302–346 × 78–122), so a press meant to pause dismissed the notice. The
+     empty container keeps `main`, so a page with no notice has no extra row and no shift. The two fixed places below are excluded
+     from the track: a fixed notice with `bottom` set resolves its top against the empty row, and the Designer's notice landed at
+     y = -123, off screen. */
+  #app:has(#toasts .toast) { grid-template-rows: auto auto 1fr; grid-template-areas: "side top" "side toasts" "side main"; }
+  #app:has(#toasts .toast):not(:has(.ms-bar)):not(:has(#drawer:not(.hidden))) #toasts { grid-area: toasts; }
+  #app.with-tabs:has(#toasts .toast) { grid-template-rows: auto auto auto 1fr; grid-template-areas: "tabs tabs" "side top" "side toasts" "side main"; }
+  #drawer:not(.hidden) ~ #toasts, body:has(.ms-bar) #toasts { position: fixed; grid-area: main; left: 12px; right: 12px; margin: 0; z-index: var(--z-toasts); }
   #drawer:not(.hidden) ~ #toasts .toast, body:has(.ms-bar) #toasts .toast { animation-name: rise-in; }
   .toast-act { width: 100%; min-height: 44px; }
 }
