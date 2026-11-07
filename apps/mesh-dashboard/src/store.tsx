@@ -510,7 +510,8 @@ export function MeshProvider({ children, projectId = null, background = false }:
     if (inflight && inflight.limit === limit) return inflight.p;
     const p = (async () => {
       try {
-        const { json, status: code, timeout } = await clientRef.current.api("GET", `/steps?limit=${limit}`);
+        // Steps and Agents both draw this failure in place; a generic corner notice would be a second answer.
+        const { json, status: code, timeout } = await clientRef.current.api("GET", `/steps?limit=${limit}`, undefined, { quiet: true });
         // A reply for a limit the view has since moved off would shrink the list.
         if (Array.isArray(json) && limit === stepLimitRef.current) {
           setStepsState(json);
@@ -642,7 +643,7 @@ export function MeshProvider({ children, projectId = null, background = false }:
       lastSeqRef.current = 0;
       setLastSeq(0);
       setEvents([]);
-      clientRef.current.api("GET", "/events?limit=400", undefined, { timeoutMs: 30000 }).then(({ json }) => {
+      clientRef.current.api("GET", "/events?limit=400", undefined, { timeoutMs: 30000, quiet: true }).then(({ json }) => {
         if (Array.isArray(json)) for (const raw of json) ingestEvent(raw);
       }).catch(() => undefined);
     };
@@ -703,7 +704,7 @@ export function MeshProvider({ children, projectId = null, background = false }:
         // seen by seq/id, so the refill merges instead of duplicating the tail.
         void refreshStatus();
         void refreshSteps(true);
-        clientRef.current.api("GET", "/events?limit=400", undefined, { timeoutMs: 30000 }).then(({ json }) => {
+        clientRef.current.api("GET", "/events?limit=400", undefined, { timeoutMs: 30000, quiet: true }).then(({ json }) => {
           if (Array.isArray(json)) for (const raw of json) ingestEvent(raw);
         }).catch(() => undefined);
       },
@@ -723,7 +724,7 @@ export function MeshProvider({ children, projectId = null, background = false }:
     droppedRef.current = false;
     let dead = false;
     clientRef.current
-      .api("GET", `/events?limit=${retainCap(false)}`, undefined, { timeoutMs: 30000 })
+      .api("GET", `/events?limit=${retainCap(false)}`, undefined, { timeoutMs: 30000, quiet: true })
       .then(({ json }) => {
         if (dead || !Array.isArray(json)) return;
         // seqSeen dedupes against what survived the cap, so the refill merges

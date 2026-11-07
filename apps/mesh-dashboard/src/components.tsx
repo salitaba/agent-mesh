@@ -639,7 +639,7 @@ export function TabPanel({ idPrefix, id, children }: { idPrefix: string; id: str
  * (or the drawer that holds the card) outlives the card, so focus lands there before the press: a failed
  * answer's `role="alert"` announces itself, and a good one leaves the reader at the top of what arrived.
  */
-function focusAfterRetry(from: HTMLElement): void {
+export function focusAfterRetry(from: HTMLElement): void {
   const dialog = from.closest<HTMLElement>('[role="dialog"]');
   const page = document.querySelector<HTMLElement>("#view h2[tabindex]");
   (dialog ?? page ?? document.getElementById("view"))?.focus({ preventScroll: true });
@@ -955,12 +955,15 @@ export function CopyButton({ text, label = "Copy", what, compact, title }: { tex
   const shown = state === "done" ? "Copied" : state === "fail" ? "Can't copy" : label;
   // An icon-only button says what it does in a tooltip, and what happened in the same place once it has.
   const tip = state === "fail" ? "The browser would not allow copying here. Select the text and copy it by hand." : state === "done" ? "Copied" : title ?? (compact ? name : undefined);
+  // A compact button has no text to name it, so its name must survive the press that turns its icon into a tick. Dropping the
+  // label with the idle state left the button that had just copied with no accessible name at all.
+  const compactName = `${name}${state === "done" ? ", copied" : state === "fail" ? ", could not copy" : ""}`;
   const button = (
     <button
       type="button"
       className={compact ? "copy-btn compact" : "small copy-btn"}
       onClick={() => void go()}
-      aria-label={state === "idle" && (compact || what) ? name : undefined}
+      aria-label={compact ? compactName : state === "idle" && what ? name : undefined}
       title={compact ? undefined : tip}
     >
       <Icon name={icon} size={14} />

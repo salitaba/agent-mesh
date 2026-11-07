@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { fmt, localTime, plainLifecycle, pillCls, zoneLabel, RUNNING } from "../format";
 import { useMesh, type TurnStep } from "../store";
-import { AgentAvatar, Button, EmptyState, ErrorState, NextLinks, PageHeader, Pill, Progress, Segmented, Skeleton, Sparkline, agentColor, useNow } from "../components";
+import { AgentAvatar, Banner, Button, EmptyState, ErrorState, NextLinks, PageHeader, Pill, Progress, Segmented, Skeleton, Sparkline, agentColor, focusAfterRetry, useNow } from "../components";
 import { Icon } from "../icons";
 import { agentAction, confirmPause } from "../drawers";
 import { vitalsOf, type Vitals } from "../vitals";
@@ -253,7 +253,7 @@ const readMode = (): Mode | null => {
 };
 
 export default function Agents(): React.JSX.Element {
-  const { status, statusError, toast, openDetail, refreshStatus, steps, stepsLoaded, refreshSteps, serverDown, client, confirm, setView } = useMesh();
+  const { status, statusError, toast, openDetail, refreshStatus, steps, stepsLoaded, stepsError, stepsStale, refreshSteps, serverDown, client, confirm, setView } = useMesh();
   const { facts } = useMission();
   const now = useNow(1000);
   // Live turns are what make a card say anything useful, and they arrive with /steps: the roster alone has no turn timing.
@@ -330,6 +330,26 @@ export default function Agents(): React.JSX.Element {
   return (
     <>
       {header}
+      {/* The roster and its turn counts come from /status; the last turn, its chart and how long it ran come from /steps. A failed
+          or stale step history used to leave those facts missing under "Live · Updated just now", with no way to ask again. */}
+      {stepsStale && stepsLoaded ? (
+        <Banner
+          tone="warn"
+          title="The turn history could not be read just now."
+          actions={<Button variant="banner-act" icon="refresh" onClick={(e) => { focusAfterRetry(e.currentTarget); void refreshSteps(true); }}>Read again</Button>}
+        >
+          Each seat&rsquo;s last turn may be older than it looks. Reading it again failed at {localTime(new Date(stepsStale.at).toISOString())}. {stepsStale.why}
+        </Banner>
+      ) : null}
+      {stepsError && !stepsLoaded ? (
+        <Banner
+          tone="warn"
+          title="The turn history did not load."
+          actions={<Button variant="banner-act" icon="refresh" onClick={(e) => { focusAfterRetry(e.currentTarget); void refreshSteps(true); }}>Try again</Button>}
+        >
+          Each seat&rsquo;s turn count is from the roster, but its last turn and recent-turn chart are missing. {stepsError}
+        </Banner>
+      ) : null}
       {groups.map((g) => (
         <section key={g.id} className="ag-group" aria-labelledby={`ag-g-${g.id}`}>
           <div className="ag-group-head">

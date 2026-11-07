@@ -83,6 +83,34 @@ test("a failed read of the step history is said, whether or not a list is alread
   assert.match(stepsView, /if \(!retrying \|\| stepsStale \|\| !stepsLoaded\) return;\s*\n\s*setRetrying\(false\);\s*\n\s*const row = ledgerRef\.current\?\.querySelector<HTMLElement>\("\.st-row"\)/, "and the answer puts the cursor on the newest turn, not <body>");
 });
 
+test("Events says a failed full-log read even when the live stream already put rows on screen", () => {
+  // Measured at 360 and 1440 with /events answering 500: the page drew the 200 events the stream had delivered and the window
+  // sentence "This page holds the newest 200 of 481" — true of the buffer, silent about the read that failed. The first-read
+  // ErrorState only existed while the buffer was empty, which the stream makes sure it is not.
+  assert.match(events, /focusAfterRetry/, "the banner's retry uses the same landing rule as every error card");
+  assert.match(events, /const readLog = useCallback\(async \(\): Promise<void> => \{[\s\S]*?setLoadErr\(/, "one read reports its failure");
+  assert.match(events, /reconcileTries\.current\+\+;\s*void readLog\(\);/, "the reconciler's read reports too");
+  assert.match(events, /if \(events\.length > 0\) return;\s*setLoadErr\(null\);\s*void readLog\(\);/, "a first visit still reads");
+  assert.match(events, /loadErr && !firstLoad \? \(\s*<Banner/, "a read that failed over a tail keeps the rows and says so");
+  assert.match(events, /The full log did not load\./, "the banner names what failed");
+  assert.match(events, /Showing the newest \{plural\(events\.length, "event"\)\} the live stream delivered\./, "and how much is on screen");
+  assert.match(events, /focusAfterRetry\(e\.currentTarget\); void readLog\(\);/, "Try again asks for the same read");
+  assert.match(events, /timeoutMs: 30000, quiet: true/, "the page's sentence is the answer, not also a generic corner notice");
+});
+
+test("Agents says a missing or stale turn history, and offers the read again", () => {
+  // Measured at 360 with /steps answering 500: the roster kept "4 turns" from /status, dropped "last 27m ago" and every
+  // recent-turn chart, and still said "Live · Updated just now". Nothing on the page named the read that failed.
+  assert.match(agents, /steps, stepsLoaded, stepsError, stepsStale, refreshSteps/, "the page reads the history's own state");
+  assert.match(agents, /stepsStale && stepsLoaded \? \(\s*<Banner/, "a stale history is said over the rows it kept");
+  assert.match(agents, /stepsError && !stepsLoaded \? \(\s*<Banner/, "a first read that failed is said too");
+  assert.match(agents, /The turn history could not be read just now\./, "the stale banner says which read failed");
+  assert.match(agents, /The turn history did not load\./, "the missing banner says which read failed");
+  assert.match(agents, /Each seat&rsquo;s last turn may be older than it looks\./, "and what the reader loses");
+  assert.match(agents, /focusAfterRetry\(e\.currentTarget\); void refreshSteps\(true\);/, "the action asks again and keeps the cursor on the page");
+  assert.match(store, /`\/steps\?limit=\$\{limit\}`, undefined, \{ quiet: true \}/, "the store's read is quiet, so Agents and Steps are the one answer");
+});
+
 test("a retry that replaces its card puts the cursor on the page, not <body>", () => {
   // Measured at 360 with /artifacts answering 500: pressing Try again cleared the error for the retry, so the pressed
   // button left the document, the skeleton took its place, and the failure came back as a new card. activeElement was

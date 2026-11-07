@@ -26,7 +26,12 @@ test("a newest-first tail is read as incomplete, and one read's worth is what th
   assert.match(tsx, /const EVENT_LIMIT = 400;/, "the page names the size of one read");
   assert.match(tsx, /const behind = logIncomplete\(newest, events\.length, logLength, EVENT_LIMIT\);/, "the count decides, not the newest seq");
   assert.doesNotMatch(tsx, /logLength > newest/, "the newest-seq-only test is gone");
-  assert.equal((tsx.match(/\/events\?limit=\$\{EVENT_LIMIT\}/g) ?? []).length, 2, "both reads ask for the same window");
+  // One read helper names the window; the first visit and the reconciler both use it, so the two can never ask for different
+  // sizes. Before the failure banner, the reconciler used to swallow that read's answer.
+  assert.equal((tsx.match(/\/events\?limit=\$\{EVENT_LIMIT\}/g) ?? []).length, 1, "one read names the window");
+  assert.match(tsx, /const readLog = useCallback\(async \(\): Promise<void> => \{[\s\S]*?\/events\?limit=\$\{EVENT_LIMIT\}/, "the helper asks for a full read");
+  assert.match(tsx, /if \(events\.length > 0\) return;\s*setLoadErr\(null\);\s*void readLog\(\);/, "the first visit reads through it");
+  assert.match(tsx, /reconcileTries\.current\+\+;\s*void readLog\(\);/, "the reconciler reads through it");
 });
 
 test("the window is the newest events, not the first 300 of the buffer's ingestion order", () => {

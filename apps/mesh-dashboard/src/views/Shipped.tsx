@@ -1,6 +1,6 @@
 import { useMemo } from "react";
 import { artifactCls, plainArtifact } from "../format";
-import { Button, IconTile, Pill, Skeleton, type PillTone } from "../components";
+import { Button, CopyButton, IconTile, Pill, Skeleton, type PillTone } from "../components";
 import { CLOSED_REVIEW, repoPathOf } from "../files";
 import type { LoadState } from "../inbox-model";
 import { fileIcon, sortFiles, workspaceOf } from "../overview-model";
@@ -161,7 +161,13 @@ export function Shipped({ arts, state, onRetry, openArt, onOpenFiles, fold, deli
               </div>
             );
           })}
-          {ws ? <p className="ov-foot">Delivered into <span className="mono"><bdi>{ws}</bdi></span></p> : null}
+          {ws ? (
+            <p className="ov-foot ov-where">
+              <span className="ov-where-k">Delivered into</span>
+              <span className="mono" title={ws}><bdi>{ws}</bdi></span>
+              <span className="ov-where-copy"><CopyButton compact text={ws} what="the workspace path" /></span>
+            </p>
+          ) : null}
         </>
       ) : null}
     </Panel>
