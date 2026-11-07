@@ -311,9 +311,8 @@ test("the way through a sign-in page's job is on the page at every width, not on
   const css = read(path.join(ASSETS, "app.css"));
   const rail = [...css.matchAll(/\.auth-side\b[^{]*\{([^}]*)\}/g)].map((m) => m[1]!);
   assert.ok(rail.length > 0 && rail.every((rule) => !/display:\s*none/.test(rule)), "no rule takes the rail off the page");
-  const base = css.slice(css.indexOf(".auth-side { margin-top"), css.indexOf("\n.card {", css.indexOf(".auth-side { margin-top")));
-  assert.ok(base.includes(".auth-points li[aria-current=\"step\"]"), "its steps are styled where the rail is, unconditionally");
-  assert.ok(!base.includes("@media"), "and not only inside a width that a phone never reaches");
+  const rules = cssRules(css);
+  assert.ok(rules.some((r) => r.at === "" && r.selectors.includes('.auth-points li[aria-current="step"]')), "its steps are styled where the rail is, unconditionally");
 });
 
 test("every page opens the same way: the record's caption names the part of Curule Cloud it is, and the title sits under it", () => {
@@ -421,7 +420,7 @@ test("a document ends on the way back to the product, marked for whoever is read
     assert.equal(attr(end, "aria-label"), "After this document");
     assert.deepEqual(
       end.querySelectorAll("a").map((a) => [a.textContent, attr(a, "href"), attr(a, "data-when")]),
-      [["Create an account", "/signup", "out"], ["Sign in", "/login", "out"], ["Go to your account", "/account", "in"], ["See the plans and prices", "/", ""]],
+      [["Create your account", "/signup", "out"], ["Sign in", "/login", "out"], ["Go to your account", "/account", "in"], ["See the plans and prices", "/", ""]],
       `${name}: the same doors the header offers for each state, and the plans`,
     );
   }
@@ -610,7 +609,7 @@ test("a name a person typed cannot widen the page: the cards that show one break
   assert.equal(own(".figures dd", "font-size", "max-width: 720px"), "min(1.375rem, 9vw)", "and an amount on a phone is capped against its column rather than widening the page");
   assert.equal(own(".bar", "gap", "max-width: 380px"), "8px");
   assert.equal(own(".bar nav", "gap", "max-width: 380px"), "0");
-  assert.equal(own(".bar nav a", "padding", "max-width: 380px"), "0 7px");
+  assert.equal(own(".bar nav a", "padding", "max-width: 380px"), "0 8px");
   assert.equal(own(".bar nav a", "font-size", "max-width: 380px"), ".875rem");
   assert.equal(own(".logo", "height", "max-width: 380px"), "20px");
   // At 320 the caption's line has 189px left for a 238px address, so it broke through the domain ("…@exampl" / "e.com"). The identity is a
