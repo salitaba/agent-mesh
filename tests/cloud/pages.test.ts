@@ -565,6 +565,31 @@ test("a button's edge is a control's edge, and the contents line wraps at 320 ra
   assert.ok(narrow.some((r) => r.selectors.includes(".subnav a") && declared(r, "padding") === "0 4px"), "at 360 the 4px padding is the row's own and is unchanged");
 });
 
+test("a tick box is a finger's target even where the drawn box stays small", () => {
+  // The tick inside a consent sentence was a 20 × 20 target at 320 and 360: a thumb aimed at the box, not at the sentence beside it,
+  // had 20px to land on. The control is 44 square now and the box it draws is still 20, inset by 12 on every side.
+  const rules = cssRules(read(path.join(ASSETS, "app.css")));
+  const box = rules.find((r) => r.selectors.includes('input[type="checkbox"]') && declared(r, "width") !== undefined)!;
+  assert.equal(declared(box, "width"), "44px", "the control is a finger's width");
+  assert.equal(declared(box, "height"), "44px");
+  assert.equal(declared(box, "border"), "0", "the control has no box of its own: the drawn box is inside it");
+  const drawn = rules.find((r) => r.selectors.includes('input[type="checkbox"]::before') && declared(r, "inset") !== undefined)!;
+  assert.equal(declared(drawn, "inset"), "12px", "so the box a person sees is still 20 × 20");
+  assert.equal(declared(drawn, "border"), "1px solid var(--k-line-control)", "and it is drawn in the control's token");
+  const check = rules.find((r) => r.selectors.includes('.check input[type="checkbox"]') && declared(r, "margin-top") !== undefined)!;
+  assert.equal(declared(check, "margin-top"), "0", "the taller control is not pushed down the sentence it belongs to");
+});
+
+test("a document is set at a reading measure, not the width of the column it could fill", () => {
+  // At 1,440 the terms' article was 672px, about 86 characters a line; the record asks for a measure near 68. 34rem is 544px, about
+  // 70 characters in the page's own face, and the column is centred rather than stretched to the wrap.
+  const rules = cssRules(read(path.join(ASSETS, "app.css")));
+  const doc = rules.find((r) => r.at.includes("min-width: 1000px") && r.selectors.includes(".doc") && declared(r, "grid-template-columns") !== undefined)!;
+  assert.equal(declared(doc, "grid-template-columns"), "13rem minmax(0, 34rem)", "the article is a reading column beside its contents");
+  const prose = rules.find((r) => r.selectors.includes(".prose") && declared(r, "max-width") !== undefined)!;
+  assert.equal(declared(prose, "max-width"), "34rem", "and at every width the article is that column, centred");
+});
+
 test("the account's two rows of actions fit one line on a 320 phone", () => {
   // At 320 the record's line is 278px: Open 92.8 + Pause 75.7 + More 94.2 and two 8px gaps are 278.7, so More fell to a second row and
   // the record was 100px; the plan's Manage billing 130.1 + Change plan 137.3 and a 12px gap are 279.4. The 4px the row can give up

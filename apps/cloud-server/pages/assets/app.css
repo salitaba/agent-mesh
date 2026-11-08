@@ -785,7 +785,7 @@ animation:sweep 1.4s linear infinite;
 .sk-card{ height: 200px; margin-top: 40px; }
 .sk-plan{ height: 360px; }
 .doc{ display: grid; gap: 32px; padding-top: clamp(32px, 6vh, 64px); }
-.prose{ max-width: 36rem; margin-inline: auto; }
+.prose{ max-width: 34rem; margin-inline: auto; }
 .doc-end{ margin-top: 48px; padding-top: 24px; border-top: 1px solid var(--k-line); }
 .doc-end p{ margin-bottom: 12px; }
 .toc, .toc-phone{ display: none; }
@@ -797,7 +797,7 @@ animation:sweep 1.4s linear infinite;
 .toc-phone a{ display: block; min-height: 44px; padding: 11px 0; }
 }
 @media (min-width: 1000px){
-.doc{ grid-template-columns: 13rem minmax(0, 36rem); justify-content: center; gap: 56px; }
+.doc{ grid-template-columns: 13rem minmax(0, 34rem); justify-content: center; gap: 56px; }
 .toc{ position: sticky; top: 92px; display: block; align-self: start; }
 }
 .toc-h{ margin: 0 0 12px; }

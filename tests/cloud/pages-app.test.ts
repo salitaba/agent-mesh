@@ -867,7 +867,7 @@ test("a main button says what it is doing while the call is out, and is itself a
   assert.equal(main.disabled, false);
   assert.equal(main.getAttribute("aria-busy"), null, "and is not busy any more");
 
-  for (const [page, label, busy] of [["signup", "Create account", "Creating account"], ["forgot", "Send the link", "Sending"], ["reset", "Save password", "Saving"], ["account", "Change password", "Changing"], ["account", "Pay", "One moment"], ["account", "Create workspace", "Creating"]] as const) {
+  for (const [page, label, busy] of [["signup", "Create your account", "Creating your account"], ["forgot", "Send the link", "Sending"], ["reset", "Save password", "Saving"], ["account", "Change password", "Changing"], ["account", "Pay", "One moment"], ["account", "Create workspace", "Creating"]] as const) {
     const html = fs.readFileSync(`${PAGES_DIR}/${page}.html`, "utf8");
     assert.match(html, new RegExp(`data-busy="${busy}"[^>]*>${label}<`), `${page}: ${label} says "${busy}" while it works`);
   }
