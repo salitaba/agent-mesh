@@ -24,7 +24,7 @@ const stepsView = fs.readFileSync(path.join(SRC, "views", "Steps.tsx"), "utf8");
 const toolAccess = fs.readFileSync(path.join(SRC, "views", "ToolAccess.tsx"), "utf8");
 
 test("a failed status poll is not stored as a status", () => {
-  assert.match(store, /const \{ json, status: code, timeout \} = await clientRef\.current\.api\("GET", "\/status"\)/, "the poll reads the HTTP status as well as the body");
+  assert.match(store, /const \{ json, status: code, timeout \} = await clientRef\.current\.api\("GET", "\/status", undefined, \{ quiet: true \}\)/, "the poll reads the HTTP status as well as the body, quietly: the page says it in place");
   assert.match(store, /if \(!json \|\| code >= 400\) \{[\s\S]*?setStatusError\(/, "a failed answer sets the failure and returns before setStatus");
   const guard = store.indexOf("if (!json || code >= 400)");
   const setStatus = store.indexOf("setStatus(json);", guard);
@@ -96,6 +96,16 @@ test("Events says a failed full-log read even when the live stream already put r
   assert.match(events, /Showing the newest \{plural\(events\.length, "event"\)\} the live stream delivered\./, "and how much is on screen");
   assert.match(events, /focusAfterRetry\(e\.currentTarget\); void readLog\(\);/, "Try again asks for the same read");
   assert.match(events, /timeoutMs: 30000, quiet: true/, "the page's sentence is the answer, not also a generic corner notice");
+});
+
+test("a read a page draws in place does not also raise the route-and-code notice", () => {
+  // Measured at 360 with /status answering 500: Agents drew "Could not load the agent list — The server answered 500 instead of
+  // the status — Try again" and the corner raised "server error /status -> 500" as well. The same happened on Product and
+  // Playground with /playground/commands: two answers to one refusal, the second one machinery rather than words.
+  assert.match(store, /api\("GET", "\/status", undefined, \{ quiet: true \}\)/, "the status read is drawn by the views");
+  assert.match(yourProduct, /api\("GET", "\/playground\/commands", undefined, \{ quiet: true \}\)/, "the product card's page probe is drawn by the card");
+  const playground = fs.readFileSync(path.join(SRC, "playground.ts"), "utf8");
+  assert.match(playground, /api\("GET", "\/playground\/commands", undefined, \{ quiet: true \}\)/, "the Playground's command list is drawn by its own card");
 });
 
 test("Agents says a missing or stale turn history, and offers the read again", () => {

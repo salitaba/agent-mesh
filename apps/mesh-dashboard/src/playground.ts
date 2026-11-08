@@ -267,7 +267,8 @@ export function createPlayground(opts: PlaygroundOptions = {}): Playground {
 
   const loadCommands = async (client: ProjectClient): Promise<void> => {
     try {
-      const { json, timeout } = await client.api("GET", "/playground/commands");
+      // The page draws this failure in its own card, with a retry: the generic corner notice would be a second answer.
+      const { json, timeout } = await client.api("GET", "/playground/commands", undefined, { quiet: true });
       const commands = parseCommands(json);
       if (commands) {
         set({ commands, commandsLoaded: true, commandsError: null });

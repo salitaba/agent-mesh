@@ -490,6 +490,14 @@ test("the view offers Stop on the output it would end, and brings that output to
   assert.match(view, /id="pg-out"/);
 });
 
+test("the caveats open under the one line a person acts on", () => {
+  // At 360 the whole paragraph was 183 px of the first screen, before the output or the product could begin. The two facts
+  // a person acts on stay on the line; the time limit and the withheld keys are a 44 px disclosure under it.
+  assert.match(view, /className="pg-note pg-how"/, "the caveats have their own block");
+  assert.match(view, /<details className="disc">\s*<summary>What it can see, and the time limit<\/summary>/, "the rest is one disclosure");
+  assert.match(view, /One command runs at a\s+time\./, "the fact that changes what a person does stays on the line");
+});
+
 test("the terminal leads, and the product follows the answer", () => {
   assert.match(view, /<YourProduct client=\{client\} projectId=\{projectId\} \/>/, "the page it ships, and its own UI running, are still on the page");
   assert.ok(view.indexOf('className="pg-form"') < view.indexOf("<YourProduct"), "the command box is the page's own action, so it comes first");

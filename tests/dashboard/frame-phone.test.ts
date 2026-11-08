@@ -53,6 +53,15 @@ const narrow = (): string => blocks(styles, /max-width:\s*800px/);
 /** A thumb's blocks: the phone width or a coarse pointer, the reader phone-targets.test.ts uses for the 44 px floor. */
 const touch = (): string => blocks(styles, /pointer:\s*coarse|max-width:\s*(?:620|760)px/);
 
+test("the wordmark names the workspace, not the goal's opaque id", () => {
+  // Measured at 360: the line under the wordmark was 247 px of `goal-M6W5VH6Y00370…`, the last thing on the drawer a person
+  // could not read. A host knows the project's name; a single-mesh server reports the mesh's id in `/status`. The goal id
+  // remains a fallback and stays in the title.
+  assert.match(shell, /const workspaceName = projectName/, "the registry's name wins");
+  assert.match(shell, /typeof status\?\.meshId === "string" && status\.meshId/, "a single-mesh server's mesh id is next");
+  assert.match(shell, /<span id="mesh-id" className="sub" title=\{goalId \? `\$\{workspaceName \|\| "This project"\} · goal \$\{goalId\}` : undefined\}>\s*\{workspaceName\}/, "the line draws the name, and the title keeps the goal id");
+});
+
 test("the phone bar is one row: the goal and the telemetry leave it, and the actions no longer wrap", () => {
   const css = phone();
   assert.match(css, /#goal-strip \{ display: none; \}/, "the goal is not a row of chrome on a phone");

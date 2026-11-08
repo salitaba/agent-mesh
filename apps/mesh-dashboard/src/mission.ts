@@ -111,6 +111,11 @@ export interface MissionFacts {
    * project. Any status the console holds for it is from before, so this outranks the mission.
    */
   projectDown: { label: string; hint: string; severe: boolean } | null;
+  /**
+   * The first `/status` read failed and no status has ever landed. "Connecting" is a promise the console cannot keep: it was
+   * refused, not delayed, and every view that needs a status draws its own error. The bar says that instead.
+   */
+  statusFailed?: boolean;
   /** CREATED, ACTIVE, PAUSED, BLOCKED, CONVERGING, COMPLETED, FAILED or ESCALATED; empty when there is no goal. */
   goalStatus: string;
   /** The process is parked: it answers questions and runs nothing on its own. */
@@ -208,7 +213,7 @@ const DELIVERED_NEXT: NextStep[] = [
 /** The reading of one `/status` payload (plus what only the console knows) that `describeMission` works from. */
 export function factsFromStatus(
   status: any,
-  extra: { serverDown?: boolean; projectDown?: MissionFacts["projectDown"]; hostCeilingTripped?: boolean; runningSteps?: number; hasHistory?: boolean } = {},
+  extra: { serverDown?: boolean; projectDown?: MissionFacts["projectDown"]; statusFailed?: boolean; hostCeilingTripped?: boolean; runningSteps?: number; hasHistory?: boolean } = {},
 ): MissionFacts {
   const agents: any[] = (status?.agents ?? []).filter((a: any) => a.id !== "human");
   const decisions: any[] = status?.openEscalations ?? [];
@@ -217,6 +222,7 @@ export function factsFromStatus(
     hasStatus: Boolean(status),
     serverDown: extra.serverDown === true,
     projectDown: extra.projectDown ?? null,
+    statusFailed: extra.statusFailed === true,
     goalStatus: String(status?.goal?.status ?? ""),
     parked: Boolean(status?.uiOnly) || status?.mode === "parked",
     blockingDecisions: blocking.length,
@@ -279,6 +285,15 @@ function describePhase(f: MissionFacts): Omit<MissionState, "next"> & { next?: N
     return { ...base, phase: "down", tone: f.projectDown.severe ? "bad" : "neutral", label: word, primary: null, headline: f.projectDown.hint };
   }
   if (!f.hasStatus) {
+    // A first read that failed is not a connection in progress. The bar said "Connecting" for ever, while every page below it
+    // said "The server answered 500 instead of the status"; the one word was the only thing on the screen that was not true.
+    if (f.statusFailed) {
+      return {
+        ...base, phase: "offline", tone: "bad", label: "No status",
+        headline: "The console could not read the mission's status. It may be restarting; each page says what it can still show.",
+        primary: null,
+      };
+    }
     return { ...base, phase: "loading", tone: "neutral", label: "Connecting", headline: "Connecting to the mission.", primary: null };
   }
   if (!f.goalStatus) {

@@ -218,6 +218,13 @@ export function Shell({ viewNode }: { viewNode: React.ReactNode }): React.JSX.El
   const kind = serverKind(projectsCtx ? { hasRegistry: projectsCtx.hasRegistry, loaded: projectsCtx.loaded, projectCount: projectsCtx.projects.length } : null);
   const activeProject = projectsCtx?.projects.find((p) => p.id === projectsCtx.activeId) ?? null;
   const projectName = activeProject?.name ?? null;
+  // The word under the wordmark is the workspace's own name. A host knows it from the registry; a single-mesh server
+  // (`curule console`, which is what the owner runs) reports it as `meshId` in its status. Only if neither exists does the
+  // opaque goal id stand in, cut to its first characters, because a blank line is worse than an id.
+  const workspaceName = projectName
+    ?? (typeof status?.meshId === "string" && status.meshId ? status.meshId : null)
+    ?? mesh.projectId
+    ?? (goalId ? goalId.slice(0, 14) : "");
   // The view area waits while the project it would show is starting (navmodel.ts), and so does everything that asks the project something.
   const holdView = holdsForProject(kind, view, { chosen: mesh.projectId !== null, status: activeProject?.status ?? null });
   const auth = useAuthOptional();
@@ -768,7 +775,12 @@ export function Shell({ viewNode }: { viewNode: React.ReactNode }): React.JSX.El
         ) : null}
         <div className="brand">
           <Wordmark height={22} />
-          <span id="mesh-id" className="sub" title={goal.id ? `Goal ${goal.id}` : undefined}>{goal.id ? goal.id.slice(0, 14) : ""}</span>
+          {/* The name of the workspace, not its goal's opaque id: a 247 px line of `goal-M6W5VH6Y00370…` told a reader
+              nothing they could use. The id stays in the title for support, and the goal itself is one line under the bar
+              on a desk and the Overview's headline in the hand. */}
+          <span id="mesh-id" className="sub" title={goalId ? `${workspaceName || "This project"} · goal ${goalId}` : undefined}>
+            {workspaceName}
+          </span>
         </div>
         {/* The palette was chord-only: the fastest route to every view, agent and action in the product, discoverable
             solely by already knowing it existed. */}

@@ -82,6 +82,14 @@ test("for every state with a primary action the hero offers that one action, as 
   }
 });
 
+test("a first status read that failed is No status, not a connection that is still coming", () => {
+  const s = describeMission(facts({ hasStatus: false, statusFailed: true }));
+  assert.equal(s.phase, "offline");
+  assert.equal(s.label, "No status");
+  assert.match(s.headline, /could not read the mission's status/);
+  assert.equal(s.primary, null, "nothing can be started on a mission the console has not read");
+});
+
 test("a state with nothing to press offers nothing in the hero either", () => {
   for (const f of [facts({ serverDown: true }), facts({ hasStatus: false }), facts({ goalStatus: "" }), facts({ projectDown: { label: "closed", hint: "Closed.", severe: false } })]) {
     const s = describeMission(f);

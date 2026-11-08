@@ -460,7 +460,9 @@ export function MeshProvider({ children, projectId = null, background = false }:
   const refreshStatus = useCallback(async () => {
     if (statusInflight.current) return statusInflight.current;
     statusInflight.current = (async () => {
-      const { json, status: code, timeout } = await clientRef.current.api("GET", "/status");
+      // Every view draws this failure in place (and the bar says it has no status), so the generic corner notice would be a
+      // second, machine-worded answer to the same read: "server error /status -> 500" beside "Could not load the agent list".
+      const { json, status: code, timeout } = await clientRef.current.api("GET", "/status", undefined, { quiet: true });
       // A gateway's 502 body is `{error}` — truthy, so the old check stored it as the status. Every
       // `status?.agents` then read an empty roster and Agents announced a project it had never seen.
       // Keep the last good status; when there is none, statusError is what the view renders instead.

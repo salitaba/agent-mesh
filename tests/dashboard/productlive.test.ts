@@ -361,6 +361,16 @@ test("the view offers Stop wherever the UI is up or coming up, and the frame is 
   assert.doesNotMatch(view, /setLiveSrc\(/, "the view no longer holds a second copy of the frame's link");
 });
 
+test("a product with no page and no running UI is one sentence and one press, not a form over the checkout", () => {
+  // Measured at 360: the no-page card was 487 px and The checkout began at y=674, so the first screen was a start form for a
+  // UI that did not exist. The card is compact when there is nothing to show; the full block stays one press away.
+  assert.match(view, /const \[detailed, setDetailed\] = useState\(false\)/, "the full block is a choice, not gone");
+  assert.match(view, /const compact = noPage && quiet && !detailed/, "compact only when there is no page, no UI and no log");
+  assert.match(view, /className=\{`card prod-pg\$\{compact \? " prod-pg-compact" : ""\}`\}/, "the card says it is compact");
+  assert.match(view, /<Button variant="soft" icon="play" onClick=\{\(\) => setDetailed\(true\)\}>Start its own UI<\/Button>/, "one press opens the command box");
+  assert.match(view, /useEffect\(\(\) => \{ if \(detailed\) document\.getElementById\("yp-cmd"\)\?\.focus\(\); \}, \[detailed\]\)/, "the press removes its own button, so the box it reveals takes the cursor");
+});
+
 test("the Product page and the Playground both open the product through the one card, and neither re-implements it", () => {
   const product = read("views/Product.tsx");
   assert.match(product, /import \{ YourProduct \} from "\.\/YourProduct";/);

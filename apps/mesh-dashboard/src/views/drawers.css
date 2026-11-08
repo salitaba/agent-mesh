@@ -111,7 +111,7 @@ span.caret { color: var(--ok); animation: blink 1s steps(1) infinite; }
 }
 .sv-sec { scroll-margin-top: calc(var(--sv-head-h, 150px) + var(--s3)); }
 .sv-sec-h { display: flex; align-items: baseline; justify-content: space-between; gap: var(--s2-5); margin-bottom: var(--s3); }
-#drawer .sv-sec-h h4 { margin: 0; font: 650 16px/1.3 var(--sans); letter-spacing: var(--k-track-title); color: var(--text); }
+#drawer .sv-sec-h h4 { margin: 0; font: 600 15px/1.3 var(--sans); letter-spacing: var(--k-track-tight); color: var(--text); }
 .sv-sec-n { font: 500 12px var(--sans); color: var(--muted); font-variant-numeric: tabular-nums; }
 .sv-sec-n.part { color: var(--warn); }
 

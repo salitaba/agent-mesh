@@ -66,6 +66,10 @@ export function YourProduct({ client, projectId, refreshKey = 0 }: {
   const [probeAttempt, setProbeAttempt] = useState(0);
   const [pg, setPg] = useState<PageFrame>(CLOSED_PAGE);
   const wasOpen = useRef(false);
+  // A product with no page and no running UI has one useful sentence and one press, not a 337 px explanation of a form.
+  // The full block is kept one press away, so nothing is hidden; what it stops doing is pushing the checkout, the scripts
+  // and the files below the first screen (measured at 360: the card was 487 px and The checkout began at y=674).
+  const [detailed, setDetailed] = useState(false);
 
   // Ask the host what it has, on arrival and every time the project changes. This is the call the panel never made: a UI
   // started in another tab, or before a reload, was invisible, and pressing Start answered "already running" — true, and
@@ -83,12 +87,17 @@ export function YourProduct({ client, projectId, refreshKey = 0 }: {
 
   // The box opens with the command this product's UI was last started with; a UI started elsewhere fills it in.
   useEffect(() => { setText((t) => (t.trim() ? t : state.command)); }, [state.command]);
+  // Opening the compact card removes the button that was pressed, which would drop a keyboard user on <body>. The box the
+  // press exists to reveal takes the cursor, as the Playground's empty Run does.
+  useEffect(() => { if (detailed) document.getElementById("yp-cmd")?.focus(); }, [detailed]);
 
   // Which page the console would open, asked of the server rather than guessed from a path: it looks in apps/playground/
   // first and then where products put their own UI (public/, dist/, build/, a root index.html), and names what it found.
   useEffect(() => {
     let dead = false;
-    client.api("GET", "/playground/commands").then(({ json, status, timeout }) => {
+    // The card says this failed itself, with its own Try again. A generic corner notice would name the route and the code,
+    // which is not a sentence a person can act on.
+    client.api("GET", "/playground/commands", undefined, { quiet: true }).then(({ json, status, timeout }) => {
       if (dead) return;
       // A 502 body is `{error}`, and it used to be read as an answer: `page` became "it ships no page", a claim about the
       // product made by a server that never looked at it. A failed probe says it failed.
@@ -117,9 +126,9 @@ export function YourProduct({ client, projectId, refreshKey = 0 }: {
     }
     live.close();
     setPg({ open: true, src: null, failed: false });
-    client.api("GET", "/playground/").then(async ({ status, timeout }) => {
+    client.api("GET", "/playground/", undefined, { quiet: true }).then(async ({ status, timeout }) => {
       if (timeout || status >= 400) { setPg((p) => ({ ...p, failed: true })); return; }
-      const minted = await client.api("POST", "/playground/session", dir ? { dir } : {});
+      const minted = await client.api("POST", "/playground/session", dir ? { dir } : {}, { quiet: true });
       const link = typeof minted.json?.path === "string" ? (minted.json.path as string) : null;
       if (minted.status >= 400 || !link) { setPg((p) => ({ ...p, failed: true })); return; }
       setPg({ open: true, src: projectPath(projectId, link), failed: false });
@@ -142,8 +151,11 @@ export function YourProduct({ client, projectId, refreshKey = 0 }: {
   }, [state.open]);
 
   const startable = state.phase === "idle" || state.phase === "ended";
+  const noPage = page.got && !page.file;
+  const quiet = state.phase !== "live" && state.phase !== "starting" && !state.log;
+  const compact = noPage && quiet && !detailed;
   return (
-    <section className="card prod-pg" aria-labelledby="yp-h">
+    <section className={`card prod-pg${compact ? " prod-pg-compact" : ""}`} aria-labelledby="yp-h">
       <div className="prod-h">
         <h3 id="yp-h">Your product</h3>
         <span className="grow" />
@@ -154,6 +166,15 @@ export function YourProduct({ client, projectId, refreshKey = 0 }: {
         ) : null}
       </div>
 
+      {compact ? (
+        <div className="prod-compact">
+          <p className="prod-note">
+            It ships no page to open. Its own UI starts from a command.
+          </p>
+          <Button variant="soft" icon="play" onClick={() => setDetailed(true)}>Start its own UI</Button>
+        </div>
+      ) : (
+      <>
       {page.got && page.file ? (
         <div className="prod-have">
           <span className="prod-have-ic" aria-hidden="true"><Icon name="files" size={14} /></span>
@@ -173,8 +194,7 @@ export function YourProduct({ client, projectId, refreshKey = 0 }: {
         </div>
       ) : page.got ? (
         <p className="prod-note">
-          It ships no page for this console to open. Run its build from the Product page if it has one, or start its own
-          UI below.
+          It ships no page for this console to open. Start its own UI below, or run a build from the checkout.
         </p>
       ) : (
         <p className="prod-note" role="status">Looking for a page this product ships…</p>
@@ -243,8 +263,8 @@ export function YourProduct({ client, projectId, refreshKey = 0 }: {
         ) : pg.open ? (
           pg.failed ? (
             <p className="prod-note" role="alert">
-              The host would not serve {page.file ?? "the product's page"}. If the product builds one, run its build from
-              the Product page, then open it again.
+              The host would not serve {page.file ?? "the product's page"}. If the product builds one, run its build,
+              then open it again.
             </p>
           ) : pg.src ? (
             <iframe title="The product's page" src={pg.src} sandbox="allow-scripts allow-forms allow-popups allow-modals" className="playframe" />
@@ -253,6 +273,8 @@ export function YourProduct({ client, projectId, refreshKey = 0 }: {
           )
         ) : null}
       </div>
+      </>
+      )}
     </section>
   );
 }
