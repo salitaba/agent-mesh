@@ -911,6 +911,8 @@ test("the account page says the service cannot be reached, offers the same read 
   const down = await visit("account", { routes: (c) => (c.path === "/api/session" ? failure(503, "unavailable", "Changes cannot be saved just now. Try again in a few minutes.") : undefined) });
   assert.equal(down.text("notice"), "Changes cannot be saved just now. Try again in a few minutes. Nothing was changed.");
   assert.deepEqual(down.navigations, []);
+  assert.equal(down.shows(down.doc.querySelector('[data-nav="login"]')!), false, "a session that could not be read does not offer Sign in to a customer who may still be signed in");
+  assert.equal(down.shows(down.doc.querySelector('[data-nav="account"]')!), false, "nor the account door, which the answer has not proved");
   const again = down.button("retry-row", "Try again");
   assert.equal(down.shows(down.$("retry-row")), true, "the action the sentence used to only name is a control");
   down.click(again);
@@ -1240,8 +1242,16 @@ test("the plans being unavailable leaves the rest of the account usable, says wh
   });
   const z = await visit("account", { routes: offeredNothing.routes });
   assert.equal(z.$("plan-lede").hidden, true, "no sentence promises a list that is not on the page");
-  assert.equal(z.text("plan"), "No plan is on offer just now, so no price is shown.");
-  assert.deepEqual(z.labels("plan"), [], "and there is nothing to press, because nothing is on offer");
+  assert.match(z.text("plan"), /No plan is on offer just now, so no price is shown\./);
+  assert.equal(z.shows(z.$("plan-steps")), false, "and no rail marks a step there is no plan to take");
+  assert.deepEqual(z.labels("plan"), ["Try again"], "the read can be asked again, as the front page's same state asks for it");
+  assert.equal(z.text("stage-live"), "Plans. No plan is on offer just now, so no price is shown.", "the announcement does not ask for a plan that is not on offer");
+  offeredNothing.plans = { json: PLANS };
+  z.click(z.button("plan", "Try again"));
+  await z.idle();
+  assert.deepEqual(z.labels("plan"), ["Choose Team", "Choose Business"], "and the list is drawn in place when it comes");
+  assert.equal(z.shows(z.$("plan-steps")), true);
+  assert.equal(z.doc.activeElement, z.$("plan-h"), "the cursor is on the section that answered, not a button that went");
 });
 
 test("a cancelled checkout points below only when there is a list below: a failed or empty read is not called a choice", async () => {

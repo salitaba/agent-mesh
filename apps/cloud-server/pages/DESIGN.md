@@ -4479,3 +4479,88 @@ pass deliberately changed the words. Each new assertion fails alone against `48a
 - **The sticky header, the prose-only 18–19px links, the checkout stand-in, the usage read's limit, the key
   form's height and the stage card's duplicate for the states that keep it are the earlier entries**, unchanged
   and still true.
+
+## 2026-11-08: the empty plan's one action, the unknown session's doors, and the 320 choice
+
+Same harness: Chromium 1248 through `playwright-core` 1.64 and axe-core 4.14 against this worktree's trial on
+`localhost:8082`, 320 / 360 / 390 / 768 / 1,024 / 1,440, light and dark, forced colours at 360, scripts off,
+`prefers-reduced-motion: reduce`, a touch pointer below 721. "Before" is the base commit's own page files
+(`f90c36b`), rendered by the same browser in the same session through a stand-in that serves either copy of the
+pages and puts the trial's API behind them; the two states the trial cannot be put in from outside — an empty
+plan list and a session read that fails — were answered by that stand-in on both halves. Heights are
+`document.documentElement.scrollHeight`; positions are `getBoundingClientRect` or `ux-render`'s box tree.
+
+- **A service with no plan on offer now says so once and leaves one action.** With `/api/plans` read and the list
+  empty, a customer with no plan met the rail `02 Choose a plan (you are here)` (328 × 51.97 at 360, 1,080 ×
+  21.98 at 1,440) over a single 51.19px sentence — **no control in the plan section at any width**. The rail
+  named a step that could not be taken, and the announcement said `Choose a plan` immediately before `No plan is
+  on offer`. The rail is hidden when the list is empty, the live line names the section (`Plans. No plan is on
+  offer just now, so no price is shown.`), and the sentence is the front page's own warning with a **106 × 44
+  Try again** at 360 (106 × 40 for a pointer): at 360 it is at y = 337.11; at 1,440 at 314.56. The page is 800 /
+  900 before and after; the button is the section's only action. Pressing it still draws an empty answer in
+  place and leaves the cursor on the new **Try again**; an answer with plans draws the two cards and moves the
+  cursor to `#plan-h`.
+- **A session that could not be read no longer offers the wrong door.** On `/account` with `/api/session`
+  answering 503, the bar drew **Plans and Sign in** (the Sign in link at x = 280 on a 360 phone) over "The
+  service is unavailable just now. Nothing was changed." and a **106 × 44 Try again** at y = 249.42: a customer
+  who is still signed in and has only lost the answer was offered a sign-in page. Both session doors stay hidden,
+  as they do while the read is out, so the bar is **Plans** only; the notice and the retry did not move, and the
+  page is 800 both halves. A 401 still goes to `/login?next=/account&signedout=1`, and a read that answers still
+  shows Account and Sign out.
+- **A 320 phone's plan-less page puts the choice before the journey.** At 320 the rail's three steps are three
+  23px rows — **82px** — so the first plan's `Choose Team` was at **835.42–879.42**, 35.42px below an 800px
+  screen, while the page could not show the action it is for. Below 360 the plan-less section is a column in the
+  order heading, sentence, cards, rail: the first card begins at **390** (was 484), `Choose Team` is
+  **741.47–785.47** and wholly on the screen, and the rail is still drawn at **1233** with its current step
+  marked. The page is **1,529 → 1,549** (the rail's 20px gap); at 360 / 390 / 768 / 1,024 / 1,440 it is
+  **1,378 / 1,330 / 951 / 914 / 914**, unchanged. A cancelled checkout at 320, whose sentence is one line
+  shorter, puts its first button at **715.88**, also inside.
+- **The same state, in the same shape, on both pages** (the coherence change): the account's empty plan list now
+  uses the `.note note-warn` sentence and one Try again that the front page's empty and failed states already
+  use, and neither page promises a card or a step it did not draw. A reader who moves between them meets one
+  grammar for "nothing is on offer just now".
+- **Widths, schemes and the floor.** 320 / 360 / 390 / 768 / 1,024 / 1,440 in light, 360 in dark, forced colours
+  at 360, and scripts off: no sideways page scroll (320: 320; 360: 360; 390: 390; 768: 768; 1,024: 1,024; 1,440:
+  1,440), nothing computes below **12px**, and no control is under 44 × 44 below 721. **Axe-core finds no
+  violation** on the normal, empty-plan and failed-session account at 320 / 360 / 768 / 1,440 in light and dark;
+  the 503 is the state's own request. Every page and state this pass did not name is the same height to the
+  pixel: account **1,962 / 1,772 / 1,750 / 1,896 / 1,911**, sign-up **1,548 / 1,373**, sign-in **1,381 / 1,255**,
+  forgot **1,185 / 1,161**, reset **1,021 / 973**, verify **1,249 / 1,199**, terms **4,229 / 3,818**, privacy
+  **3,210 / 2,855** and the 404 **800** at 320 / 360.
+- **The budget.** `app.css` is **40,518 → 40,801 bytes of 40,960** (159 left): the 320 column rule costs 283
+  bytes; the empty-plan warning, the hidden rail, the live line and the session doors are markup and script.
+- **Tests.** `node --test dist/tests/cloud/pages*.test.js` — **205 pass, 0 fail**; the cloud suite — **900 pass,
+  0 fail**; the build tests — **250 pass, 0 fail**; `npm run typecheck` clean; `npx eslint` on the touched files
+  0 errors. `pages.test.ts` holds the 320 column and its four orders, and that no wider width takes them;
+  `pages-app.test.ts` holds the empty plan's one action, the hidden rail, the live sentence, the retry's two
+  answers and cursors, and the failed session's two hidden doors; `pages-stage.test.ts` holds the empty list's
+  section title.
+
+| measured | before | after |
+| --- | --- | --- |
+| An empty plan list, 360: the rail / controls | 328 × **51.97px** at y = 261.11 / **0** | **not drawn** / **1** (Try again 106 × 44 at y = 337.11) |
+| … at 1,440 | 1,080 × **21.98** / **0** | **not drawn** / **1** (106 × 40 at y = 314.56) |
+| … the live line | `Choose a plan. No plan is on offer…` | **`Plans. No plan is on offer…`** |
+| … a retry that is still empty / one that answers | — | cursor **Try again** / cards and cursor **`#plan-h`** |
+| A failed `/api/session`, 360: the bar | **Plans, Sign in** (x = 280) | **Plans** |
+| … the notice / the retry / the page | 249.42 / 106 × 44 / 800 | **the same** |
+| The plan-less account at 320: the first card | y = **484**; button **835.42–879.42** | **390; 741.47–785.47** |
+| … the rail / the page | y = 297, 82 / **1,529** | **y = 1,233, 82 / 1,549** |
+| … at 360 / 390 / 768 / 1,024 / 1,440 | 1,378 / 1,330 / 951 / 914 / 914 | **the same** |
+| `app.css` | 40,518 bytes | **40,801** |
+
+### What this pass leaves
+
+- **A 320 phone's plan-less page is 20px taller.** The rail moved below the cards and keeps the section rhythm's
+  20px gap; the action is inside the first screen and the rail is still visible. At 360 and up the order is the
+  one it was.
+- **An empty plan list still has no plan to buy.** The one action is the read again; a service that truly offers
+  none will answer with the same sentence, and the reader has the operator's Contact in the footer.
+- **A failed session read is still unknown.** The bar cannot know whether the person is signed in, so it offers
+  neither door; the page's Try again is the way to ask, and a 401 still goes to the sign-in page.
+- **The 320 consent refusal is unchanged.** On sign-up with the tick missing, the 74px note still puts Create
+  account at 810–854 (its top 10px below an 800px screen, its bottom 54px below); the tick's spacing is the
+  earlier entry and was not this pass's drawing.
+- **At 200% text the account's one action is still below the first screen** (the statement above the record
+  grows); the normal first screen is the one this pass measured. The checkout stand-in, the prose-only 18–19px
+  links, the usage read's limit and the key form's height are the earlier entries.

@@ -272,7 +272,8 @@
         // the cards under it name what each one includes and carry the button that chooses it.
         const what = "A plan is one flat price for its own period, and how many workspaces it allows.";
         // A service that offers no plan at all says what the section under it says, so the page and its announcement agree.
-        if (view.plans.length === 0) return { tone: "", title: "Choose a plan", text: "No plan is on offer just now, so no price is shown.", action };
+        // The title is the section's, not the step's: there is no plan to choose, so the announcement does not ask for one.
+        if (view.plans.length === 0) return { tone: "", title: "Plans", text: "No plan is on offer just now, so no price is shown.", action };
         return { tone: "", title: "Choose a plan", text: stage.byok ? `${what} You bring your own model key and pay your model provider yourself.` : what, action };
       }
       case "late": {
@@ -2276,9 +2277,10 @@
         // The button went with the answer it asked for, so the cursor goes to what the section says now: its heading, or, when the read
         // failed again, the way to ask again — not the first button in the section, which can be another plan's action.
         if (fromPlan) {
-          const back = state.plansKnown ? $("plan-h") : $("plan").querySelector(".note button");
+          // An answer with a list puts the cursor on the section; an answer that still has none leaves it on the way to ask again.
+          const back = state.plansKnown && state.plans.length > 0 ? $("plan-h") : $("plan").querySelector(".note button");
           if (back) {
-            if (state.plansKnown && !back.hasAttribute("tabindex")) back.setAttribute("tabindex", "-1");
+            if (state.plansKnown && state.plans.length > 0 && !back.hasAttribute("tabindex")) back.setAttribute("tabindex", "-1");
             back.focus();
           }
         } else if (fromBalance) {
@@ -2322,9 +2324,12 @@
       const stage = stageOf(view);
       const card = nextStepOf(stage, view);
       const onList = chooseOnList(stage);
+      const none = state.plansKnown && state.plans.length === 0;
       const rail = $("plan-steps");
-      rail.hidden = !onList;
+      // The rail marks the step of choosing a plan. A service that offers none has no step to mark: the sentence below says so.
+      rail.hidden = !onList || none;
       rail.replaceChildren(...(onList ? stage.steps.map(stepItem) : []));
+      dress($("plan-panel"), "choosing-plan", onList);
       // The sentence says what a plan is and points at the list under it, so it is drawn only when there is a list: a service that offers
       // none says so in one line instead, rather than promising cards that are not there.
       const offered = state.plansKnown && state.plans.length > 0;
@@ -2386,8 +2391,10 @@
           ),
         );
       } else if (!live && state.plans.length > 0) parts.push(el("div", { class: "plans" }, state.plans.map((p) => planCard(p, state.currency, { subscription: sub, picked: state.picked === p.id, action: state.confirming ? null : (x) => button(`Choose ${x.title}`, { id: `plan-choose-${p.id}`, kind: "primary", onclick: checkout(x) }) }))));
-      // A service that offers nothing this moment leaves the section with something to read rather than a heading over an empty box. The
-      // step's own sentence is the one to say while the section is the step; a subscription that ended said its sentence in the card above.
+      // A service that offers nothing this moment leaves the section with something to read and something to do, not a heading over an
+      // empty box. The read is asked again in place, as the front page's same state asks for it; a step whose list is empty is not drawn.
+      else if (!live && none) parts.push(el("div", { class: "note note-warn" }, el("p", null, "No plan is on offer just now, so no price is shown."), button("Try again", { id: "plan-retry", onclick: retryPlans })));
+      // A subscription that ended said its sentence in the card above; with a list absent for another service reason it keeps the one line.
       else if (!live) parts.push(el("p", { class: "muted" }, onList ? card.text : "No plan is on offer just now, so no price is shown."));
       box.replaceChildren(...parts);
       // A sentence already in the panel about an action goes back with that action, wherever the panel was drawn again.
@@ -2815,6 +2822,10 @@
       skeleton(false);
       if (signedOut(reply)) location.replace(SIGN_IN);
       else {
+        // A session that could not be read is not a session that ended. The bar keeps both doors hidden, as it does while the read is
+        // out: "Sign in" is the wrong door for a customer who is still signed in and has only lost the answer, and the page's own retry
+        // is the one way to ask again.
+        for (const node of doc.querySelectorAll(".bar [data-when]")) node.hidden = true;
         say($("notice"), "bad", readFailed(reply.error));
         offerRetry();
       }
