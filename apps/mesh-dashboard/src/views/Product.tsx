@@ -3,7 +3,7 @@ import type { FormEvent } from "react";
 import "./product.css";
 import { dur } from "../format";
 import { useMesh } from "../store";
-import { Button, CopyButton, ErrorState, NextLinks, PageHeader, Pill, SearchField, Skeleton, useNow, type PillTone } from "../components";
+import { Banner, Button, CopyButton, ErrorState, focusAfterRetry, NextLinks, PageHeader, Pill, SearchField, Skeleton, useNow, type PillTone } from "../components";
 import { Icon } from "../icons";
 import { FileView, type DiffPayload, type FileKind } from "../fileview";
 import { fmtSize } from "../files";
@@ -167,6 +167,7 @@ export default function Product(): React.JSX.Element {
   const [wsErr, setWsErr] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
   const [changes, setChanges] = useState<Change[]>([]);
+  const [changesErr, setChangesErr] = useState<string | null>(null);
   const [showAllChanges, setShowAllChanges] = useState(false);
   const [pkg, setPkg] = useState<{ state: PackageState; scripts: Record<string, string> | null }>({ state: "unknown", scripts: null });
   const [dir, setDir] = useState("");
@@ -174,9 +175,11 @@ export default function Product(): React.JSX.Element {
   const [treeErr, setTreeErr] = useState<string | null>(null);
   const [treeLimit, setTreeLimit] = useState(TREE_WINDOW);
   const [file, setFile] = useState<OpenFile | null>(null);
+  const [fileErr, setFileErr] = useState<{ path: string; why: string } | null>(null);
   const [fileDiff, setFileDiff] = useState<DiffPayload | null>(null);
   const [q, setQ] = useState("");
   const [hits, setHits] = useState<SearchHit[] | null>(null);
+  const [searchErr, setSearchErr] = useState<string | null>(null);
   const [searching, setSearching] = useState(false);
   const [run, setRun] = useState<RunState | null>(null);
   const [builtCheck, setBuiltCheck] = useState(0);
@@ -199,11 +202,14 @@ export default function Product(): React.JSX.Element {
   useEffect(() => {
     let dead = false;
     setFile(null);
+    setFileErr(null);
     setFileDiff(null);
     setHits(null);
+    setSearchErr(null);
     setQ("");
     setDir("");
     setWsErr(null);
+    setChangesErr(null);
     client.api("GET", "/workspace/info", undefined, { quiet: true }).then(({ json, timeout }) => {
       if (dead) return;
       if (timeout || !json || json.error) {
@@ -212,9 +218,28 @@ export default function Product(): React.JSX.Element {
       }
       setInfo(json as WorkspaceInfo);
     }).catch((e: unknown) => { if (!dead) setWsErr(e instanceof Error ? e.message : String(e)); });
-    client.api("GET", "/workspace/changes").then(({ json }) => {
-      if (!dead && Array.isArray(json)) setChanges(json as Change[]);
-    }).catch(() => { if (!dead) setChanges([]); });
+    client.api("GET", "/workspace/changes", undefined, { quiet: true }).then(({ json, status, timeout }) => {
+      if (dead) return;
+      if (timeout || status !== 200 || !Array.isArray(json)) {
+        // A dirty checkout whose list could not be read is not a clean one: the tree fact above says it has changes and this
+        // page has no rows for them. Say that at the checkout, with the read offered again, instead of a route-and-code notice
+        // in the corner and an empty gap where the list belongs.
+        setChanges([]);
+        setChangesErr(timeout
+          ? "The request timed out. The server may be busy."
+          : status !== 200
+            ? `The server answered ${status} instead of the changes.`
+            : "The server sent something this page could not read.");
+        return;
+      }
+      setChanges(json as Change[]);
+      setChangesErr(null);
+    }).catch((e: unknown) => {
+      if (!dead) {
+        setChanges([]);
+        setChangesErr(e instanceof Error ? e.message : String(e));
+      }
+    });
     // What the scripts do is in the product's own package.json; reading it is how a button can say so without guessing.
     // The root listing says first whether there is one to read; a listing that does not come back falls through to reading the file.
     client.api("GET", "/workspace/tree?path=").then(async ({ json: root }) => {
@@ -293,12 +318,24 @@ export default function Product(): React.JSX.Element {
 
   const openFile = async (p: string): Promise<void> => {
     const req = ++fileReq.current;
-    const { json } = await client.api("GET", `/workspace/file?path=${encodeURIComponent(p)}`);
+    const { json, status, timeout } = await client.api("GET", `/workspace/file?path=${encodeURIComponent(p)}`, undefined, { quiet: true });
     if (req !== fileReq.current) return;
-    if (!json || json.error) {
-      toast("Could not open the file", String(json?.error ?? "The server did not answer."), "warn");
+    if (timeout || status !== 200 || !json || json.error) {
+      // The failure belongs at the preview the press was for, not in a corner notice that also names the route and the code
+      // (it used to arrive twice) and leaves "Choose a file" in the panel, which reads as if nothing had been asked.
+      const why = timeout
+        ? "The request timed out. The server may be busy."
+        : status !== 200
+          ? `The server answered ${status}${typeof json?.error === "string" ? `: ${json.error}` : "."}`
+          : String(json?.error ?? "The server sent something this page could not read.");
+      setFileErr({ path: p, why });
+      setFile(null);
+      setFileDiff(null);
+      // Below two columns the preview is under the list: bring the failure to the person who pressed the row.
+      if (!wide) requestAnimationFrame(() => previewRef.current?.scrollIntoView({ block: "start" }));
       return;
     }
+    setFileErr(null);
     setFile({
       path: json.path,
       content: typeof json.content === "string" ? json.content : undefined,
@@ -319,14 +356,28 @@ export default function Product(): React.JSX.Element {
     const t = term.trim();
     if (t.length < 2) {
       setHits(null);
+      setSearchErr(null);
       return;
     }
     const req = ++searchReq.current;
     setSearching(true);
-    const { json } = await client.api("GET", `/workspace/search?q=${encodeURIComponent(t)}`, undefined, { timeoutMs: 30000 });
+    setSearchErr(null);
+    const { json, status, timeout } = await client.api("GET", `/workspace/search?q=${encodeURIComponent(t)}`, undefined, { timeoutMs: 30000, quiet: true });
     if (req !== searchReq.current) return;
     setSearching(false);
-    setHits(json && Array.isArray(json.results) ? (json.results as SearchHit[]) : []);
+    if (timeout || status !== 200 || !json || json.error || !Array.isArray(json.results)) {
+      // A failed read is not an empty result. The page used to print "0 matches" and "Nothing in the workspace matched" over
+      // the same 500 that the corner named as a server error: the one answer a person trusts — that the file is not there —
+      // was the one the console could not know.
+      setHits(null);
+      setSearchErr(timeout
+        ? "The request timed out. The server may be busy."
+        : status !== 200
+          ? `The server answered ${status}${typeof json?.error === "string" ? `: ${json.error}` : " instead of the search results."}`
+          : String(json?.error ?? "The server sent something this page could not read."));
+      return;
+    }
+    setHits(json.results as SearchHit[]);
   };
 
   // A run the person just started brings its output into view and takes focus: the button they pressed is disabled the moment
@@ -433,6 +484,16 @@ export default function Product(): React.JSX.Element {
             )}
           </section>
 
+          {dirty && changesErr ? (
+            <Banner
+              tone="warn"
+              title="The uncommitted changes could not be read."
+              actions={<Button variant="banner-act" icon="refresh" onClick={(e) => { focusAfterRetry(e.currentTarget); setAttempt((n) => n + 1); }}>Try again</Button>}
+            >
+              The checkout says it has changes, but this page could not list them. {changesErr}
+            </Banner>
+          ) : null}
+
           <section className="card prod-run" aria-labelledby="run-h">
             <div className="prod-h"><h3 id="run-h">Run a script</h3></div>
             {!info ? (
@@ -513,14 +574,17 @@ export default function Product(): React.JSX.Element {
                   value={q}
                   onChange={(e) => {
                     setQ(e.target.value);
+                    setSearchErr(null);
                     if (!e.target.value.trim()) setHits(null);
                   }}
-                  onClear={() => { setQ(""); setHits(null); }}
+                  onClear={() => { setQ(""); setHits(null); setSearchErr(null); }}
                 />
                 <Button variant="small" type="submit">{searching ? "Searching…" : "Search"}</Button>
               </form>
               {q.trim().length === 1 ? <p className="prod-note" role="status">Type at least two characters to search.</p> : null}
-              {hits ? (
+              {searchErr ? (
+                <ErrorState what="the workspace search" detail={searchErr} onRetry={() => void runSearch(q)} />
+              ) : hits ? (
                 <div className="ptree">
                   <div className="prod-note ptree-count" role="status">{hits.length} {hits.length === 1 ? "match" : "matches"}{hits.length >= 200 ? ", the most the server returns" : ""}</div>
                   {hits.map((h, i) => (
@@ -576,7 +640,9 @@ export default function Product(): React.JSX.Element {
             </section>
             <section className="card" aria-labelledby="preview-h" ref={previewRef}>
               <div className="prod-h"><h3 id="preview-h">File preview</h3></div>
-              {file ? (
+              {fileErr ? (
+                <ErrorState what={`the file ${fileErr.path}`} detail={fileErr.why} onRetry={() => void openFile(fileErr.path)} />
+              ) : file ? (
                 <FileView
                   path={file.path}
                   content={file.content}

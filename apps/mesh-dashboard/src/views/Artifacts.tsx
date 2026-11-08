@@ -276,7 +276,7 @@ export default function Artifacts(): React.JSX.Element {
               ) : (
                 groups.map((g) => (
                   <section className="files-group" key={g.id} aria-labelledby={`fg-${g.id}`}>
-                    <h3 className="files-group-h" id={`fg-${g.id}`}>{groupText(g, "label")}<span className="files-group-n">{g.items.length}</span></h3>
+                    <h3 className="files-group-h" id={`fg-${g.id}`}>{groupText(g, "label")}{" "}<span className="files-group-n">{g.items.length} file{g.items.length === 1 ? "" : "s"}</span></h3>
                     <ul className="file-rows">
                       {g.items.map((a) => {
                         index += 1;

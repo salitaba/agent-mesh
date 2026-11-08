@@ -386,6 +386,66 @@ Breakpoints: **1280 1100 900 800 760 620 560**. 800 is the sidebar drawer (JS
 
 ## Pass log
 
+### 2026-11-08 (second pass) — a failed workspace read is a sentence at the field, and a group's count is part of its name
+
+Surface: `src/views/Product.tsx` (the workspace search, open-file and changes reads), `src/views/Events.tsx` and
+`src/views/Artifacts.tsx` (the group headings), with `tests/dashboard/product.test.ts` and `panel-headings.test.ts`.
+
+Measured on the scripted demo at **Delivered** (481 events, 49.3k of 2.0M tokens, 7 checks, 9 files, 7 seats, 28 turns) in the
+production build served by `curule console`, Chromium 1248 at 320/360/390/768/1024/1440 in light and dark. Every failed read
+was forced with `page.route`; the before is this worktree at `f90c36b` and the after is this branch's build, on the same
+delivered log.
+
+- **A failed workspace search was a zero.** With `/workspace/search` answering 500 at 390 and 1,440, "payment" drew **"0
+  matches" (45.3 px)** and **"Nothing in the workspace matched “payment”." (64.6 px)**, while the corner raised the route
+  notice. The page now draws one **ErrorState "Could not load the workspace search" (324 × 267.6 at 390; 371.1 × 230.8 at
+  1,440)** with **Try again (44 at 390)**, the false zero and the false empty are **0**, and the corner notice is **1 → 0**.
+  The page is 1,214 → 1,370 at 390 and 849 → 988 at 1,440 (the failure's own card).
+- **A file that could not be opened was said twice in the corner, and not at the preview.** Clicking `README.md` with
+  `/workspace/file` answering 500 left the preview at **"Choose a file"** and put **2** notices in the corner ("server error
+  /workspace/file?path=README.md -> 500" and "Could not open the file"). The preview now draws **"Could not load the file
+  README.md" (324 × 267.6 at 390; 680.9 × 209.8 at 1,440)** with **Try again**; corner notices **2 → 0**, retries **0 → 1**,
+  and the successful retry shows README at 390. The page is 1,215 → 1,422 and 854 → 919.
+- **A dirty checkout's changes read failed silently.** With `/workspace/info` reporting a dirty tree and
+  `/workspace/changes` answering 500, the Tree chip said **"uncommitted changes"**, the changes card was **0**, the page said
+  **nothing**, there was **no retry**, and the corner said the route. One Banner at the checkout fact now says **"The
+  uncommitted changes could not be read." (366 × 187 at 390; 1,152 × 68 at 1,440)** with **Try again (108 × 44 at 390)**;
+  page errors **0 → 1**, retries **0 → 1**, corner notices **1 → 0** (2 → 0 at 1,440). The page is 1,271 → 1,486 and 854 → 950.
+- **A group heading's count was part of its name.** Events' bucket joined its label and count with no separator
+  (**"30 minutes to 2 hours ago200 events"**) and Files' groups read **"Approved and merged3"** and **"Closed without a
+  verdict6"**, and the Files figure did not say what it counted. They read **"30 minutes to 2 hours ago 300 events"** and
+  **"Approved and merged 3 files" / "Closed without a verdict 6 files"** now; the Files count pill is **22 → 48 px**, the
+  headings keep their line (**17 px** inside the Events bucket, **20 px** on Files), and no page scrolls sideways at
+  320–1,440. The space is a text node in the flex row, so the 12 px Events gap and the 8 px Files gap do not move. This is
+  also the pass's coherence improvement: a group heading now reads label, then a figure with its unit, in both ledgers. (The
+  Events bucket's count follows the clock and moved from 200 to 300 between the two captures; the separator is the change.)
+
+| | Before | After |
+|---|---|---|
+| Search 500, 390: "0 matches" / "Nothing…" / error / retry / corner | 45.3 / 64.6 / 0 / 0 / 1 | **0 / 0 / 324 × 267.6 / 1 / 0** |
+| Search 500, 1,440: error / retry / corner | 0 / 0 / 1 | **371.1 × 230.8 / 1 / 0** |
+| File 500, 390: preview / corner / retry | "Choose a file" / 2 / 0 | **"Could not load the file README.md" 324 × 267.6 / 0 / 1** |
+| File 500, 1,440: preview / corner / retry | "Choose a file" / 2 / 0 | **680.9 × 209.8 / 0 / 1** |
+| Changes 500 on a dirty tree, 390: page / retry / corner | 0 / 0 / 1 | **1 banner 366 × 187 / 1 / 0** |
+| Changes 500 on a dirty tree, 1,440: page / retry / corner | 0 / 0 / 2 | **1 banner 1,152 × 68 / 1 / 0** |
+| Events bucket name | "30 minutes to 2 hours ago200 events" | **"30 minutes to 2 hours ago 300 events"** |
+| Files group names / count pill | "Approved and merged3", 22 px | **"Approved and merged 3 files", 48 px** |
+| Product page, 390 / 1,440 (normal) | 1,215 / 854 | **unchanged** |
+| Horizontal scroll, 320–1,440; targets under 44 at 320/390/768 (coarse) | 0 / 0 | **0 / 0** |
+| Axe, the changed views and the three failure states, 320–1,440 light and 390/1,440 dark | 0 | **0** |
+
+Floors: `npm run typecheck` and `npm run build` clean; the dashboard and build suites **1,553 pass, 0 fail**; eslint **0** on
+the touched TypeScript; axe **0** in 15 reads over the three changed views and 12 over the three failure states.
+
+**Left.** The search's `ErrorState` is **267.6 px** at 390 and pushes the Files card down; it is a page-level read, so it takes
+the shared shape, and the folder returns on retry. The file failure replaces a previously open file in the preview; the tree row
+is the way back, and a successful retry shows the file. The changes banner is drawn only when `/workspace/info` says the tree is
+dirty: on a clean tree a failed changes read has nothing to list and stays quiet. The Events bucket's long label still takes two
+lines at 320 (**51 px**); it did before the space (removing the text node measured the same 51), so the label's length, not the
+separator, is the next question. These three workspace reads now join the checkout and folder reads in drawing their failure in
+place with a retry; `/workspace/diff` remains an extra whose failure leaves the file readable without its uncommitted delta and
+still raises the corner notice.
+
 ### 2026-11-08 — the first screen belongs to the page, a failed read says it once, and host settings is not a project's
 
 Surface: `src/views/YourProduct.tsx`, `src/views/Playground.tsx`, `src/views/Product.tsx` (call site), `src/playground.ts`,

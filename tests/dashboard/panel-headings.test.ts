@@ -18,6 +18,8 @@ const stepview = fs.readFileSync(path.join(SRC, "stepview.tsx"), "utf8");
 const filesCss = fs.readFileSync(path.join(SRC, "views", "files.css"), "utf8");
 const drawersCss = fs.readFileSync(path.join(SRC, "views", "drawers.css"), "utf8");
 const markdown = fs.readFileSync(path.join(SRC, "markdown.ts"), "utf8");
+const events = fs.readFileSync(path.join(SRC, "views", "Events.tsx"), "utf8");
+const artifacts = fs.readFileSync(path.join(SRC, "views", "Artifacts.tsx"), "utf8");
 
 test("both markdown surfaces render under the panel's level", () => {
   assert.match(markdown, /export const PANEL_HEADING_BASE = 4;/, "one named level for every panel");
@@ -44,4 +46,12 @@ test("the document's first heading is no larger than the reader's own title", ()
   // it had at h5: the outline is what this pass fixed.
   assert.match(drawersCss, /#drawer h3, #drawer h4 \{[^}]*font: 600 14px/, "the sheet flattens its headings, so the h4 → h3 shift keeps the drawing");
   assert.match(drawersCss, /\.sv-md h1, \.sv-md h2, \.sv-md h4, \.sv-md h5 \{ font-size: 16px; \}/, "the drawer's top levels stay 16 px");
+});
+
+test("a group heading's name is its label and its count, not one fused word", () => {
+  // Measured at 390 and 1440: the Events bucket's textContent was "30 minutes to 2 hours ago200 events" and the Files
+  // groups' were "Approved and merged3" and "Closed without a verdict6". A screen reader read the label and the figure as
+  // one word, and the Files figure never said what it counted. Both draw a flex row with a gap, so a space costs no layout.
+  assert.match(events, /<span>\{r\.label\}<\/span>\{" "\}\s*\n\s*<span className="evc-bucket-n">/, "the bucket keeps a space between its label and its count");
+  assert.match(artifacts, /\{groupText\(g, "label"\)\}\{" "\}<span className="files-group-n">\{g\.items\.length\} file\{g\.items\.length === 1 \? "" : "s"\}<\/span>/, "the file count carries its unit and a space after the label");
 });
