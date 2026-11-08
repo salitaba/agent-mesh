@@ -97,7 +97,7 @@ const FOOTER = [
 ];
 
 const TRADEMARK =
-  "Curule runs Claude Code. Claude and Anthropic are trademarks of Anthropic PBC; Curule is not affiliated with or endorsed by Anthropic.";
+  "Curule can run Claude Code. Claude and Anthropic are trademarks of Anthropic PBC; Curule is not affiliated with or endorsed by Anthropic.";
 
 /** The markers that fence a block, in the one form scripts/export-pricing.mjs uses too. */
 export function fence(name) {

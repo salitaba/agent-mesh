@@ -169,7 +169,7 @@ test("the voice of docs/brand.md holds on every page: plain, no hype, no exclama
 test("every page carries the trademark line, and Claude and Anthropic appear only as what Curule runs on", () => {
   const line = "Claude and Anthropic are trademarks of Anthropic PBC; Curule is not affiliated with or endorsed by Anthropic.";
   for (const p of pages) {
-    assert.ok(p.copy.includes(`Curule runs Claude Code. ${line}`), `${p.rel}: the trademark line`);
+    assert.ok(p.copy.includes(`Curule can run Claude Code. ${line}`), `${p.rel}: the trademark line`);
     assert.match(p.copy, /Prices are in US dollars and exclude taxes\./, `${p.rel}: and what the prices are`);
   }
   for (const p of pages) {

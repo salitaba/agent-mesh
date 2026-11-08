@@ -10,7 +10,7 @@
 <link rel="apple-touch-icon" href="../assets/apple-touch-icon.png">
 <meta name="theme-color" content="#fbfaf8" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#131211" media="(prefers-color-scheme: dark)">
-<link rel="stylesheet" href="../assets/site.css?v=2ef52b9242">
+<link rel="stylesheet" href="../assets/site.css?v=d63f57231e">
 <meta property="og:type" content="website">
 <link rel="canonical" href="https://curule.dev/contact/">
 <meta property="og:url" content="https://curule.dev/contact/">
@@ -60,15 +60,25 @@
 
 <main id="main" tabindex="-1">
 
-<section class="page-head">
+<section class="page-head has-toc">
   <div class="wrap">
     <p class="eyebrow">Contact</p>
     <h1>Write to a person, not to a form.</h1>
     <p class="lede">Curule is sold and supported by email: pick the address that fits. Each one is a plain link to your own mail program, and nothing on this page sends anything anywhere.</p>
   </div>
 </section>
+<nav class="toc-bar" aria-label="On this page">
+  <input class="toc-toggle" type="checkbox" id="toc-open" aria-labelledby="toc-label">
+  <label class="toc-summary" for="toc-open" id="toc-label"><span class="toc-kicker">On this page</span> <span class="toc-now">Contents</span><span class="toc-chevron" aria-hidden="true"></span></label>
+  <ul class="toc">
+    <li class="toc-close"><span>On this page</span><label for="toc-open">Close</label></li>
+    <li><a href="#addresses">Which address</a></li>
+    <li><a href="#message">What to say</a></li>
+    <li><a href="#help">What we help with</a></li>
+  </ul>
+</nav>
 
-<section class="section">
+<section class="section" id="addresses">
   <div class="wrap">
     <h2 class="legend-title">Which address, for what</h2>
     <ul class="addresses mt-s">
@@ -85,8 +95,12 @@
         <p class="address"><a data-mail="security" href="mailto:ali79taba@gmail.com">ali79taba@gmail.com</a></p>
       </li>
     </ul>
+  </div>
+</section>
 
-    <h2 class="legend-title mt-xl">What to put in the message</h2>
+<section class="section" id="message">
+  <div class="wrap">
+    <h2 class="legend-title">What to put in the message</h2>
     <div class="grid grid-3 mt-s">
       <article class="card contact">
         <svg class="mark" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M20.5 13.2 13.2 20.5a2 2 0 0 1-2.8 0L3.5 13.6V3.5h10.1l6.9 6.9a2 2 0 0 1 0 2.8Z"/><circle cx="8.2" cy="8.2" r="1.2"/></svg>
@@ -129,7 +143,7 @@
   </div>
 </section>
 
-<section class="section band">
+<section class="section band" id="help">
   <div class="wrap cols">
     <div>
       <h2 class="legend-title">What we can help with</h2>
@@ -195,12 +209,12 @@
       </nav>
     </div>
     <div class="foot-legal">
-      <p>Curule runs Claude Code. Claude and Anthropic are trademarks of Anthropic PBC; Curule is not affiliated with or endorsed by Anthropic.</p>
+      <p>Curule can run Claude Code. Claude and Anthropic are trademarks of Anthropic PBC; Curule is not affiliated with or endorsed by Anthropic.</p>
       <p>Prices are in US dollars and exclude taxes. The source is available under the Business Source License 1.1.</p>
     </div>
   </div>
 </footer>
 <!-- generated:chrome-footer:end -->
-<script src="../assets/site.js?v=e5954f4ff3" defer></script>
+<script src="../assets/site.js?v=b029f64988" defer></script>
 </body>
 </html>

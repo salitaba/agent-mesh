@@ -52,7 +52,6 @@ interface Pure {
   withClass(names: string, name: string, on: boolean): string;
   withoutArrival(names: string): string;
   copyName(label: string, shown: string): string;
-  tocEdges(left: number, client: number, total: number): { back: boolean; more: boolean };
   shotHref(light: string, dark: string, darkNow: boolean): string;
   needsTabStop(scrollWidth: number, clientWidth: number, scrollHeight: number, clientHeight: number): boolean;
 }
@@ -216,12 +215,12 @@ function click(r: Reading, i: number): void {
 
 test("the long pages carry an On this page bar right under their heading, and each chip names a section of the page, in order", () => {
   const withBar = pages.filter((p) => p.markup.includes('class="toc-bar"'));
-  assert.deepEqual(withBar.map((p) => p.rel), ["index.html", "docs/index.html", "legal/index.html", "pricing/index.html", "security/index.html"]);
+  assert.deepEqual(withBar.map((p) => p.rel), ["index.html", "contact/index.html", "docs/index.html", "legal/index.html", "pricing/index.html", "security/index.html"]);
   for (const p of withBar) {
     // The bar follows the page's opening block inside <main>, so that it can stay under the header through the whole of the page
     // (a sticky element never leaves the box it is in), and it is one navigation landmark with a name. The document pages open on a
     // page-head; the home page opens on its hero, and its bar is the index that used to stand there as four rows of chips.
-    assert.match(p.markup, /<main id="main" tabindex="-1">\s*<section class="(?:page-head has-toc|hero)"[\s\S]*?<\/section>\s*<nav class="toc-bar" aria-label="On this page"[^>]*>\s*<ul class="toc">/, p.rel);
+    assert.match(p.markup, /<main id="main" tabindex="-1">\s*<section class="(?:page-head has-toc|hero)"[\s\S]*?<\/section>\s*<nav class="toc-bar" aria-label="On this page"[^>]*>\s*<input class="toc-toggle" type="checkbox" id="toc-open"[^>]*>\s*<label class="toc-summary" for="toc-open"[^>]*>[\s\S]*?<\/label>\s*<ul class="toc">/, p.rel);
     const nav = /<nav class="toc-bar"[\s\S]*?<\/nav>/.exec(p.markup)![0];
     const chips = [...nav.matchAll(/<li([^>]*)><a href="#([\w-]+)">(?:<span class="n">\d\d<\/span> )?[^<]+<\/a><\/li>/g)].map((m) => ({ attrs: m[1]!, id: m[2]! }));
     assert.equal(chips.length, (nav.match(/<a /g) ?? []).length, `${p.rel}: every chip is a plain link to a place on the page`);
@@ -258,15 +257,15 @@ test("the stylesheet's heights for the header and the bar are the heights it giv
   const head = Number(/--head-h: (\d+)px;/.exec(CSS)![1]);
   const toc = Number(/--toc-h: (\d+)px;/.exec(CSS)![1]);
   assert.equal(head, Number(/\n\.bar \{[^}]*min-height: (\d+)px/.exec(CSS)![1]) + 1, "the header: its row and its line");
-  const chip = Number(/\n\.toc a \{[^}]*min-height: (\d+)px/.exec(CSS)![1]);
-  const room = Number(/\n\.toc \{[^}]*padding: (\d+)px /.exec(CSS)![1]);
-  assert.ok(chip >= 44, "a chip is a 44 pixel target");
-  assert.equal(toc, chip + 2 * room + 1, "the bar: a chip, the room above and below it, and its line");
+  const control = Number(/\n\.toc-summary \{[^}]*min-height: (\d+)px/.exec(CSS)![1]);
+  const room = Number(/\n\.toc-bar \{[^}]*padding-block: (\d+)px/.exec(CSS)![1]);
+  assert.ok(control >= 44, "the contents control is a 44 pixel target");
+  assert.equal(toc, control + 2 * room + 1, "the bar: the control, the room above and below it, and its line");
   assert.match(CSS, /\nhtml \{[^}]*scroll-padding-top: calc\(var\(--head-h\) \+ \d+px\);/, "a page without the bar: below the header");
   assert.match(CSS, /\nhtml:has\(\.toc-bar\) \{ scroll-padding-top: calc\(var\(--head-h\) \+ var\(--toc-h\) \+ \d+px\); \}/, "a page with it: below both");
   assert.match(CSS, /\n\.toc-bar\.is-live \{ position: sticky; top: var\(--head-h\);/, "it stays right under the header, and only once the script says so");
-  assert.match(CSS, /\n\.toc \{[^}]*overflow-x: auto;/, "one row, scrolled sideways when it does not fit");
-  assert.ok(!/\n\.toc \{[^}]*flex-wrap: wrap/.test(CSS), "never wrapped onto more rows, which would make it taller when it stays");
+  assert.match(CSS, /\n\.toc \{ display: none; position: absolute; top: 100%;/, "the list is a panel under the control, not a row that scrolls");
+  assert.match(CSS, /\n\.toc-toggle:checked ~ \.toc \{ display: grid; gap: 2px; \}/, "the checkbox is the open state, so it works without a script");
 });
 
 test("the section being read is the last one whose top has passed the line, and none before the first has", () => {
@@ -310,62 +309,21 @@ test("a chip the Cloud switch hides is not one of the bar's chips: the pricing p
   assert.deepEqual(r.marked(), ["Compare=true"], "the next visible chip takes over");
 });
 
-test("the marked chip is scrolled into view in its row, and only when it is not in view already", () => {
+test("the contents control names the section being read, and a chosen section closes the list", () => {
   const r = read("security/index.html");
-  r.at([-900, -300, 1200, 1900, 3000, 3800, 4500]);
-  assert.deepEqual(r.rowScrolls, [], "the second chip is in view in a 390 pixel row");
+  const now = r.doc.querySelector(".toc-now")!;
+  assert.equal(now.textContent, "Contents", "at the top, no section is being read");
+  r.at([200, 700, 2200, 2900, 4000, 4800, 5500]);
+  assert.equal(now.textContent, "At a glance", "the summary says the section being read");
   r.at([-1900, -1300, 200, 900, 2000, 2800, 3500]);
-  // The third chip spans 352 to 512: the row scrolls to show it with 24 pixels to spare (512 + 24 - 390).
-  assert.deepEqual(r.rowScrolls, [146]);
-  r.at([-900, -300, 1200, 1900, 3000, 3800, 4500]);
-  // Back to the second (184 to 344, less the 146 scrolled): it is in view, so the row stays where it is.
-  assert.deepEqual(r.rowScrolls, [146]);
-  r.at([-900, 500, 2200, 2900, 4000, 4800, 5500]);
-  assert.deepEqual(r.rowScrolls, [146, 0], "the first chip, back at the start of the row");
-});
-
-test("a chip that takes the keyboard's focus is brought wholly into the row, and one already in view is left alone", () => {
-  const r = read("security/index.html");
-  r.focus(1);
-  assert.deepEqual(r.rowScrolls, [], "the second chip is wholly in the row, so focusing it does not move the row");
-  r.focus(2);
-  // The third chip spans 352 to 512 in the 390px row: the browser made 38px of it visible when it took the focus, and
-  // the row scrolls 146 to show all of it with 24 to spare. At 360 the same chip was 42 of 277px.
-  assert.deepEqual(r.rowScrolls, [146], "the third chip is scrolled wholly into view");
-  r.focus(2);
-  assert.deepEqual(r.rowScrolls, [146], "focusing the same chip again moves nothing");
-  r.focus(0);
-  assert.deepEqual(r.rowScrolls, [146, 0], "the first chip, out of view after the scroll, comes back");
-});
-
-test("the row says at which edge it has more, from its own widths, and the bar draws the shadow there", () => {
-  const { tocEdges } = pure();
-  const edges = (left: number, client: number, total: number): boolean[] => {
-    const edge = tocEdges(left, client, total);
-    return [edge.back, edge.more];
-  };
-  assert.deepEqual(edges(0, 360, 908), [false, true], "at the start there is more to the right");
-  assert.deepEqual(edges(300, 360, 908), [true, true], "in the middle there is more at both edges");
-  assert.deepEqual(edges(548, 360, 908), [true, false], "at the end only the left");
-  assert.deepEqual(edges(0, 360, 360), [false, false], "a row that fits says nothing");
-  assert.deepEqual(edges(0, 0, 0), [false, false], "no widths yet is not an edge");
-  assert.deepEqual(edges(1, 360, 908), [false, true], "a pixel of slack is not an edge");
-  const r = read("security/index.html");
-  const bar = r.doc.querySelector(".toc-bar")!;
-  assert.match(bar.className, /\bis-more\b/, "the security page's seven chips are 1,333px in a 390px row");
-  assert.ok(!/\bis-back\b/.test(bar.className));
-  r.scrollRow(300);
-  assert.match(bar.className, /\bis-back\b/, "scrolled into the row, both edges have content beyond them");
-  assert.match(bar.className, /\bis-more\b/);
-  r.scrollRow(943);
-  assert.ok(!/\bis-more\b/.test(bar.className), "at the end the right edge has nothing beyond it");
-  assert.match(bar.className, /\bis-back\b/);
-  r.scrollRow(0);
-  assert.match(bar.className, /\bis-more\b/);
-  assert.ok(!/\bis-back\b/.test(bar.className), "back at the start the left edge has nothing behind it");
-  // The shadow is a background: a forced-colour mode gets a 2px line instead, and a printed row gets none.
-  assert.match(CSS, /@media \(forced-colors: active\) \{[\s\S]*?\.toc-bar\.is-back::before, \.toc-bar\.is-more::after \{ forced-color-adjust: none; width: 2px; background: CanvasText; \}/, "the edge is a line of the system's ink in High Contrast");
-  assert.match(CSS, /@media print \{[\s\S]*?\.toc-bar::before, \.toc-bar::after \{ display: none; \}/, "a printed page has no row to scroll and no edge");
+  assert.equal(now.textContent, "What leaves your environment");
+  r.at([300, 500, 2000, 2700, 3800, 4600, 5300]);
+  assert.equal(now.textContent, "Contents", "and back at the top it says so");
+  const toggle = r.doc.querySelector(".toc-toggle") as FakeNode & { checked: boolean };
+  toggle.checked = true;
+  click(r, 2);
+  assert.equal(toggle.checked, false, "a chosen section closes the list");
+  assert.match(SCRIPT, /landing\.setAttribute\("tabindex", "-1"\);/, "and the heading of the section chosen takes the focus next");
 });
 
 /**
@@ -383,23 +341,18 @@ test("the six views are a choice, not a scroll: the chosen view is the styleshee
   assert.match(CSS, /body:has\(#show-overview:checked\) #view-overview/, "the checked view is the one on the page");
 });
 
-test("a jump that passes whole sections at once (Back to top under reduced motion) clears the mark and brings the row back to its first chips", () => {
+test("a jump that passes whole sections at once (Back to top under reduced motion) clears the mark", () => {
   const r = read("security/index.html");
   r.at([-5100, -4500, -3000, -2300, -1200, -400, 260]);
   assert.deepEqual(r.marked(), ["Reporting a problem=true"]);
-  assert.ok(r.chips[0]!.getBoundingClientRect!().left < 0, "the row was scrolled to the last chips");
   // The observer is told when a top crosses the line; nothing crosses it from where the last section is to the top in one step.
   r.jumpTo([300, 500, 2000, 2700, 3800, 4600, 5300]);
   assert.deepEqual(r.marked(), [], "the bar does not say the reader is in the last section at the top of the page");
-  assert.equal(r.rowScrolls[r.rowScrolls.length - 1], 0, "and the row shows its first chips again");
-  assert.ok(r.chips[0]!.getBoundingClientRect!().left >= 0);
-  // With the row already at its start there is nothing to bring back: reading the first section and then going to the top moves nothing.
+  assert.equal(r.doc.querySelector(".toc-now")!.textContent, "Contents", "and the control says no section is being read");
   r.jumpTo([-900, -300, 1200, 1900, 3000, 3800, 4500]);
   assert.deepEqual(r.marked(), ["What it protects=true"]);
-  const scrolled = r.rowScrolls.length;
   r.jumpTo([300, 500, 2000, 2700, 3800, 4600, 5300]);
   assert.deepEqual(r.marked(), []);
-  assert.equal(r.rowScrolls.length, scrolled, "the row is not scrolled when it is at its start");
   // A jump the other way, from the top to a section in the middle, is marked as well.
   r.jumpTo([-1900, -1300, 200, 900, 2000, 2800, 3500]);
   assert.deepEqual(r.marked(), ["What leaves your environment=true"]);
