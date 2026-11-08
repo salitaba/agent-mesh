@@ -439,6 +439,12 @@ the same page at the same scroll position.
   Agents ("Idle or finished") and the Designer ("Team") drew **16/650**, Files' groups **14/600** and Host settings'
   cards **16/650**. All four are the shared 15/600 card-title recipe now (measured 16/650 → 15/600, height 21 → 20),
   so one screen no longer has three sizes for the same job.
+- **The project switcher's name is the project and state it draws.** Axe reported label-content-name-mismatch (serious)
+  on `.pj-switch` at 360 and 1440 on both host pages: its name was "Project in front: Demo Mesh (stub agents). Switch
+  project" while the button drew the name over **Locked**, so the state word was outside the contiguous name. It is
+  "`${name} ${state}. Switch project`" now (and "No project. Choose a project" with no project); the four failing reads
+  are **0**, and the final axe sweep is **56 reads** (the 12 single-mesh views and the 2 host pages, at 360 and 1440, in
+  both themes) with **0 violations**.
 
 | | Before | After |
 |---|---|---|
@@ -458,10 +464,13 @@ the same page at the same scroll position.
 | Under-44 controls, 360, the changed views | 0 | **0** |
 | Horizontal page scroll, 320/360/1440 | 0 | **0** |
 | Axe, the eight changed views at 320/360/1440 light and 360/1440 dark; the other four at 360/1440 light | 0 | **0** |
+| Axe, `.pj-switch` on both host pages, 360/1440 × both themes | 4 violations | **0** |
+| Axe, 56 reads over the 12 single-mesh views and 2 host pages at 360/1440 × both themes | — | **0** |
 
-Floors: `npm run typecheck` and `npm run build` clean; the full suite **6,620 tests, 6,618 pass, 2 skipped, 0 fail**
-(dashboard **1,298**, build **253**); axe **0** in the eight changed views at 320/360/1440 light and 360/1440 dark, and
-in the other four at 360/1440 light; no page scrolls sideways at 320, 360 or 1440; no control under 44 × 44 at 360 beyond the 1 × 1 skip link
+Floors: `npm run typecheck` and `npm run build` clean; the full suite **6,621 tests, 6,619 pass, 2 skipped, 0 fail**
+(dashboard **1,299**, build **253**); axe **0** in the 56 reads over the 12 single-mesh views and 2 host pages at 360/1440
+in both themes (and in the changed views at 320/360/1440 light and 360/1440 dark); no page scrolls sideways at 320, 360
+or 1440; no control under 44 × 44 at 360 beyond the 1 × 1 skip link
 and the raw switch inside its 44 px label.
 
 **Left.** The Playground's compact product card hides the start command until one press; the full block is the same card,
