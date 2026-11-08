@@ -103,6 +103,7 @@ test("the card says one thing for each stage, in a sentence, with the one action
   assert.deepEqual(card(hostingView([], { subscription: null })), { tone: "", title: "Choose a plan", text: "A plan is one flat price for its own period, and how many workspaces it allows. You bring your own model key and pay your model provider yourself.", action: link });
   assert.deepEqual(card(view({ subscription: null, plans: [], plansKnown: false })), { tone: "warn", title: "The plans could not be loaded", text: "No plan or price is shown just now, and nothing was changed.", action: { kind: "retry", label: "Try again" } }, "a plan is promised only when one was read");
   assert.equal(card(view({ subscription: null, plans: [] })).text, "No plan is on offer just now, so no price is shown.", "and a service that offers none promises none");
+  assert.equal(card(view({ subscription: null, plans: [] })).title, "Plans", "and its announcement names the section, not a step there is no plan to take");
   assert.deepEqual(card(view({ subscription: { plan: "team", title: "Team", status: "ended" } })), {
     tone: "warn",
     title: "Choose a plan to start again",

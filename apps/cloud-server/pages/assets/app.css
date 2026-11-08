@@ -885,6 +885,7 @@ text-decoration:none;
 }
 @media (max-width: 389px){ .subnav a { padding: 0 4px; font-size: max(12px, min(.75rem, 3.8vw)); } }
 @media (max-width: 359px){ .subnav a { padding: 0 10px } .plan .price small { display: block; margin-left: 0 } .row .btn-row { gap: 4px } .row .btn-small { padding-inline: 8px } #who { display: flex; flex-wrap: wrap; gap: 0 4px } }
+@media (max-width: 359px){#plan-panel.choosing-plan{display:flex;flex-direction:column}#plan-panel.choosing-plan #plan-lede{order:1}#plan-panel.choosing-plan #plan-status{order:2}#plan-panel.choosing-plan #plan{order:3}#plan-panel.choosing-plan #plan-steps{order:4;margin-top:20px}}
 @media (forced-colors: active){
 input[type="checkbox"]{ appearance: auto; }
 input[type="checkbox"]::before, input[type="checkbox"]::after{ display: none; }

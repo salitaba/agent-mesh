@@ -606,6 +606,24 @@ test("the account's two rows of actions fit one line on a 320 phone", () => {
   assert.ok(!rules.some((r) => !r.at.includes("max-width: 359px") && r.selectors.includes(".row .btn-row") && declared(r, "gap") !== undefined), "and only a 320 phone takes it: 360 keeps the 8 and 12 the rows are drawn with");
 });
 
+test("a 320 phone's plan-less page puts the choice before the journey", () => {
+  // At 320 the rail's three names take three 23px rows (82px), and the first plan's Choose Team was at 835-879, 35px below an 800px
+  // screen. Below 360 the plan section becomes the column its parts already read as: heading, sentence, cards, then the rail. The
+  // first button is at 741-785 and the rail is still drawn, at 1233, with its current step marked.
+  const rules = cssRules(read(path.join(ASSETS, "app.css")));
+  const narrow = rules.filter((r) => r.at.includes("max-width: 359px"));
+  const panel = narrow.find((r) => r.selectors.includes("#plan-panel.choosing-plan") && declared(r, "flex-direction") !== undefined);
+  assert.ok(panel, "the plan-less panel is a column on a 320 phone");
+  assert.equal(declared(panel!, "display"), "flex");
+  assert.equal(declared(panel!, "flex-direction"), "column");
+  const steps = narrow.find((r) => r.selectors.includes("#plan-panel.choosing-plan #plan-steps") && declared(r, "order") !== undefined);
+  assert.equal(declared(steps!, "order"), "4", "the rail follows the list");
+  assert.equal(declared(steps!, "margin-top"), "20px", "with the section rhythm's gap");
+  const plan = narrow.find((r) => r.selectors.includes("#plan-panel.choosing-plan #plan") && declared(r, "order") !== undefined);
+  assert.equal(declared(plan!, "order"), "3", "and the cards come before it");
+  assert.ok(!rules.some((r) => !r.at.includes("max-width: 359px") && r.selectors.some((s) => s.includes("choosing-plan"))), "only a 320 phone takes this order: 360 keeps the rail above the cards");
+});
+
 test("the loading skeleton has the shape of the account it stands in for: the two facts the glance carries, not three", () => {
   const account = pages().find((p) => p.name === "account")!;
   const tiles = account.all.find((n) => n.className === "sk-tiles")!;
