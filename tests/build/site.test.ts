@@ -944,7 +944,7 @@ test("the plate's captions fit the height they share, and the three steps' words
  */
 test("on a phone the four plans are read one at a time, chosen by name and figure, and nothing widens the page", () => {
   const pricing = page(pages, "pricing/index.html").html;
-  assert.match(pricing, /<p class="eyebrow">Plans<\/p>\n      <h2 class="title plans-title">The licence plans\.<\/h2>\n      <p class="small muted plans-hint">Four plans\. Choose one to read it; the comparison below lists the price, the limits and the support of each\.<\/p>/, "the section keeps its heading and says what the chooser does");
+  assert.match(pricing, /<p class="eyebrow">Plans<\/p>\n      <h2 class="title plans-title">The licence plans\.<\/h2>\n      <p class="small muted plans-hint">Four plans\. Choose one to read; the comparison lists price, limits and support\.<\/p>/, "the section keeps its heading and says what the chooser does");
   const css = fs.readFileSync(path.join(SITE, "assets", "site.css"), "utf8");
   assert.match(css, /@media \(max-width: 719px\) \{\n  \.plans-hint \{ display: block; margin: 0 0 12px; \}\n  \.plan-choice \{ display: grid; grid-template-columns: repeat\(2, minmax\(0, 1fr\)\);/, "the four names and figures are a 2 x 2 chooser");
   assert.match(css, /\.plans \{ grid-template-columns: minmax\(0, 1fr\); gap: 0; \}/, "the cards are a column, not a row to swipe");

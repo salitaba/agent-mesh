@@ -4076,9 +4076,8 @@ measured in the same run; no number is copied from an earlier pass.
   section's 7px), and its copy is unchanged.
 - **The pricing hint no longer promises more than the comparison has.** It said the table "lists every line"; the table has the
   price, the three limits, the usage export and support, not the two Business support lines the cards carry. It now says what
-  it lists: "the comparison below lists the price, the limits and the support of each." The sentence is one line longer at a
-  phone width, which is the **+23px** on the pricing page at 320/360/390; at 768 and up the hint is not shown and the page is
-  unchanged.
+  it lists: "the comparison lists price, limits and support." The sentence keeps its two lines at 360 and 390 and takes a third
+  at 320, which is the **+23px** on the pricing page there and nowhere else.
 - **The footer says what the product can do.** "Curule runs Claude Code" is one runtime, not the product: the native runtime runs
   any OpenAI-compatible provider or the Anthropic API, and the FAQ says so. The trademark line now reads "Curule can run Claude
   Code"; no claim about Anthropic changed.
@@ -4091,7 +4090,7 @@ measured in the same run; no number is copied from an earlier pass.
 | Page, height at 320 / 360 / 390 / 768 / 1,024 / 1,440 | Before | After |
 |---|---|---|
 | Home | 13,447 / 12,621 / 12,204 / 12,126 / 11,480 / 11,289 | unchanged |
-| Pricing | 14,535 / 13,449 / 12,970 / 10,271 / 9,478 / 9,414 | **14,558 / 13,472 / 12,992 / 10,271 / 9,478 / 9,414** |
+| Pricing | 14,535 / 13,449 / 12,970 / 10,271 / 9,478 / 9,414 | **14,558** / 13,449 / 12,970 / 10,271 / 9,478 / 9,414 |
 | Documentation | 8,970 / 8,379 / 8,125 / 5,329 / 4,993 / 4,511 | unchanged |
 | Security | 12,449 / 11,524 / 10,827 / 7,905 / 7,920 / 7,655 | unchanged |
 | Contact | 4,748 / 4,402 / 4,256 / 3,434 / 2,828 / 2,899 | **4,816 / 4,470 / 4,324 / 3,499 / 2,888 / 2,984** |
@@ -4120,7 +4119,7 @@ measured in the same run; no number is copied from an earlier pass.
   has the same control as the rest.
 - Tests: the site's own suites are **168** (was 168; five tests changed with the component, two new assertions), all passing;
   `site-chrome --check` and `pricing:check` pass; typecheck and build are clean. `npm run site:check` still exits 1 on the owner's
-  `TODO(owner)` for the terms at `site/legal/index.html:134`.
+  `TODO(owner)` for the terms at `site/legal/index.html:137`.
 
 ### What this pass deliberately left
 
@@ -4129,8 +4128,8 @@ measured in the same run; no number is copied from an earlier pass.
   away at every width, and the desktop panel is two columns of the same names.
 - **The phone's sheet is 631px of a 700px window.** It is the screen under the header, with the header still there; the Close
   row is at the top, and a tap outside/Escape/Tab leaving closes it. A shorter list would hide names again.
-- **The pricing page is 23px taller at a phone** for the honest hint, and the contact page 68px taller for its bar and the
-  section split. Nothing else moved; the home page, the page the pass is about, is the same height to the pixel.
+- **The contact page is 68px taller at a phone** for its bar and the section split, and the pricing page 23px at 320 for the
+  honest hint. Nothing else moved; the home page is the same height to the pixel.
 - **The bar's blur is gone; the header's is kept.** A 61px bar with a solid ground is what the contents control needs, and the
   header still gives the page its line and blur once it has moved.
 - **The captures were not retaken, Curule Cloud's prices are still in the app, and `site/ux/` was not edited.** This pass's

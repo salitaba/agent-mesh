@@ -107,7 +107,7 @@
   --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   --c2: repeat(2, minmax(0, 1fr)); --c3: repeat(3, minmax(0, 1fr)); --c4: repeat(4, minmax(0, 1fr));
   --max: 1120px; --gutter: clamp(16px, 4vw, 32px); --section: clamp(48px, 7vw, 104px);
-  /* Header: 68 and its line. On this page bar: a 44 chip, 8 around it, its line. A followed heading lands below both. */
+  /* Header: 68 and its line. On this page bar: a 44 control, 8 around it, its line. A followed heading lands below both. */
   --head-h: 69px; --toc-h: 61px;
   /* Grounds the kit lacks: the alternate band, the deep closing band. */
   --lift: var(--k-hl), var(--k-shadow-1); --link: var(--k-accent-ink); --soft: var(--k-accent-soft); --ink2: var(--k-ink-2); --panel2: var(--k-surface-2); --line2: var(--k-line-strong);
