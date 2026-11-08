@@ -52,7 +52,9 @@ test("the tiles are on the page for an account that has a plan, in words that ar
   assert.equal(running.text("glance-h"), "At a glance");
   assert.equal(running.$("glance-h").className, "sr", "the heading is for a reader who has not the tiles in front of them");
   const blocks = running.doc.querySelector("main .wrap")!.children;
-  assert.ok(blocks.indexOf(running.$("workspaces-panel")) < blocks.indexOf(running.$("glance")), "the glance follows the workspaces record, which is the page's statement");
+  const head = running.doc.querySelector(".account-head")!;
+  assert.ok(blocks.indexOf(head) < blocks.indexOf(running.$("glance")), "the glance is the account's statement, directly under its head");
+  assert.ok(blocks.indexOf(running.$("glance")) < blocks.indexOf(running.$("workspaces-panel")), "and it comes before the record it summarises");
 
   const late = await visit("account", { routes: world((x) => { x.subscription = LATE; x.workspaces = [workspace()]; }).routes });
   assert.match(late.text("glance-list"), /Plan Team Payment overdue \$149\.00 per month/);

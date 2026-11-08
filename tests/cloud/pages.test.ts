@@ -221,6 +221,38 @@ test("a page can be read and used by anyone: a language, a title, one heading, a
   }
 });
 
+test("the front page is a ledger with a contents line, and every entry in it is a numbered section of the page", () => {
+  // A phone reads 4,200px of front page; until this pass the only way to the plans or the billing rules was the scroll. The
+  // contents line is the account's and the documents' own component, with the record's numbers, not a second navigation design.
+  const { all } = pages().find((p) => p.name === "index")!;
+  const nav = all.find((n) => n.tag === "nav" && n.className === "subnav home-nav")!;
+  assert.ok(nav, "the front page has its contents line");
+  assert.equal(attr(nav, "aria-label"), "On this page");
+  const links = nav.querySelectorAll("a").map((a) => [a.textContent.trim(), attr(a, "href"), attr(a, "data-entry")]);
+  assert.deepEqual(links, [
+    ["Plans", "#plans-h", "01"],
+    ["What you get", "#facts-h", "02"],
+    ["How it works", "#how-h", "03"],
+    ["Billing", "#billing-h", "04"],
+    ["Start", "#start-h", "05"],
+  ]);
+  for (const [, href, entry] of links) {
+    const h = all.find((n) => attr(n, "id") === href.slice(1))!;
+    assert.equal(h.tag, "h2", `${href} names a section heading`);
+    assert.equal(h.parent!.className, "section-head", `${href} is the head of a section`);
+    assert.equal(attr(h.parent!.querySelector(".entry-no")!, "aria-hidden"), "true", "the number is for the eye");
+    assert.equal(h.parent!.querySelector(".entry-no")!.textContent, entry, `${href} carries the number the contents line gives it`);
+  }
+
+  // At a desk the heading is the section's margin and the content is one column of the record; on a phone they stack as they did.
+  const rules = cssRules(read(path.join(ASSETS, "app.css")));
+  const ledger = rules.find((r) => r.at.includes("min-width: 1000px") && r.selectors.includes(".home .section") && declared(r, "display") !== undefined)!;
+  assert.equal(declared(ledger, "display"), "grid", "the section is a margin and a body at 1000 and wider");
+  assert.equal(declared(ledger, "grid-template-columns"), "17rem minmax(0, 1fr)", "the heading keeps the record's margin");
+  const facts = rules.find((r) => r.at.includes("min-width: 1000px") && r.selectors.includes(".home .section .facts") && declared(r, "grid-template-columns") !== undefined)!;
+  assert.equal(declared(facts, "grid-template-columns"), "1fr", "the five facts are five ruled entries, not a grid with a hole in its last row");
+});
+
 test("the front page's note about its plan cards waits for the cards, and a browser with no script is told why the plans are not there", () => {
   // Without a script the plans box held nothing while the standing note over it promised "Each card lists what its price includes."
   // The note is drawn with the cards, and the empty box says in its own words why it is empty.
@@ -311,9 +343,8 @@ test("the way through a sign-in page's job is on the page at every width, not on
   const css = read(path.join(ASSETS, "app.css"));
   const rail = [...css.matchAll(/\.auth-side\b[^{]*\{([^}]*)\}/g)].map((m) => m[1]!);
   assert.ok(rail.length > 0 && rail.every((rule) => !/display:\s*none/.test(rule)), "no rule takes the rail off the page");
-  const base = css.slice(css.indexOf(".auth-side { margin-top"), css.indexOf("\n.card {", css.indexOf(".auth-side { margin-top")));
-  assert.ok(base.includes(".auth-points li[aria-current=\"step\"]"), "its steps are styled where the rail is, unconditionally");
-  assert.ok(!base.includes("@media"), "and not only inside a width that a phone never reaches");
+  const rules = cssRules(css);
+  assert.ok(rules.some((r) => r.at === "" && r.selectors.includes('.auth-points li[aria-current="step"]')), "its steps are styled where the rail is, unconditionally");
 });
 
 test("every page opens the same way: the record's caption names the part of Curule Cloud it is, and the title sits under it", () => {
@@ -421,7 +452,7 @@ test("a document ends on the way back to the product, marked for whoever is read
     assert.equal(attr(end, "aria-label"), "After this document");
     assert.deepEqual(
       end.querySelectorAll("a").map((a) => [a.textContent, attr(a, "href"), attr(a, "data-when")]),
-      [["Create an account", "/signup", "out"], ["Sign in", "/login", "out"], ["Go to your account", "/account", "in"], ["See the plans and prices", "/", ""]],
+      [["Create your account", "/signup", "out"], ["Sign in", "/login", "out"], ["Go to your account", "/account", "in"], ["See the plans and prices", "/", ""]],
       `${name}: the same doors the header offers for each state, and the plans`,
     );
   }
@@ -534,6 +565,31 @@ test("a button's edge is a control's edge, and the contents line wraps at 320 ra
   assert.ok(narrow.some((r) => r.selectors.includes(".subnav a") && declared(r, "padding") === "0 4px"), "at 360 the 4px padding is the row's own and is unchanged");
 });
 
+test("a tick box is a finger's target even where the drawn box stays small", () => {
+  // The tick inside a consent sentence was a 20 × 20 target at 320 and 360: a thumb aimed at the box, not at the sentence beside it,
+  // had 20px to land on. The control is 44 square now and the box it draws is still 20, inset by 12 on every side.
+  const rules = cssRules(read(path.join(ASSETS, "app.css")));
+  const box = rules.find((r) => r.selectors.includes('input[type="checkbox"]') && declared(r, "width") !== undefined)!;
+  assert.equal(declared(box, "width"), "44px", "the control is a finger's width");
+  assert.equal(declared(box, "height"), "44px");
+  assert.equal(declared(box, "border"), "0", "the control has no box of its own: the drawn box is inside it");
+  const drawn = rules.find((r) => r.selectors.includes('input[type="checkbox"]::before') && declared(r, "inset") !== undefined)!;
+  assert.equal(declared(drawn, "inset"), "12px", "so the box a person sees is still 20 × 20");
+  assert.equal(declared(drawn, "border"), "1px solid var(--k-line-control)", "and it is drawn in the control's token");
+  const check = rules.find((r) => r.selectors.includes('.check input[type="checkbox"]') && declared(r, "margin-top") !== undefined)!;
+  assert.equal(declared(check, "margin-top"), "0", "the taller control is not pushed down the sentence it belongs to");
+});
+
+test("a document is set at a reading measure, not the width of the column it could fill", () => {
+  // At 1,440 the terms' article was 672px, about 86 characters a line; the record asks for a measure near 68. 34rem is 544px, about
+  // 70 characters in the page's own face, and the column is centred rather than stretched to the wrap.
+  const rules = cssRules(read(path.join(ASSETS, "app.css")));
+  const doc = rules.find((r) => r.at.includes("min-width: 1000px") && r.selectors.includes(".doc") && declared(r, "grid-template-columns") !== undefined)!;
+  assert.equal(declared(doc, "grid-template-columns"), "13rem minmax(0, 34rem)", "the article is a reading column beside its contents");
+  const prose = rules.find((r) => r.selectors.includes(".prose") && declared(r, "max-width") !== undefined)!;
+  assert.equal(declared(prose, "max-width"), "34rem", "and at every width the article is that column, centred");
+});
+
 test("the account's two rows of actions fit one line on a 320 phone", () => {
   // At 320 the record's line is 278px: Open 92.8 + Pause 75.7 + More 94.2 and two 8px gaps are 278.7, so More fell to a second row and
   // the record was 100px; the plan's Manage billing 130.1 + Change plan 137.3 and a 12px gap are 279.4. The 4px the row can give up
@@ -610,7 +666,7 @@ test("a name a person typed cannot widen the page: the cards that show one break
   assert.equal(own(".figures dd", "font-size", "max-width: 720px"), "min(1.375rem, 9vw)", "and an amount on a phone is capped against its column rather than widening the page");
   assert.equal(own(".bar", "gap", "max-width: 380px"), "8px");
   assert.equal(own(".bar nav", "gap", "max-width: 380px"), "0");
-  assert.equal(own(".bar nav a", "padding", "max-width: 380px"), "0 7px");
+  assert.equal(own(".bar nav a", "padding", "max-width: 380px"), "0 8px");
   assert.equal(own(".bar nav a", "font-size", "max-width: 380px"), ".875rem");
   assert.equal(own(".logo", "height", "max-width: 380px"), "20px");
   // At 320 the caption's line has 189px left for a 238px address, so it broke through the domain ("…@exampl" / "e.com"). The identity is a

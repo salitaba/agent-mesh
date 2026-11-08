@@ -125,7 +125,7 @@ test("the header and the front page: a visitor is offered the way in, a customer
   const nav = v.doc.querySelector("header nav")!;
   assert.equal(v.text(nav), "Plans Sign in");
   assert.equal(v.doc.querySelector('[data-nav="home"]')!.getAttribute("aria-current"), "page");
-  assert.equal(v.text(v.doc.querySelector("main .btn-row")!), "Create an account Sign in");
+  assert.equal(v.text(v.doc.querySelector("main .btn-row")!), "Create your account Sign in");
   const contact = v.doc.querySelector("[data-contact]")!;
   assert.deepEqual([contact.hidden, contact.getAttribute("href")], [false, "mailto:ali79taba@gmail.com"], "the footer's Contact link is the operator's own address");
   const none = await visit("home", { routes: w.routes, script: (src) => src.replace(/const CONTACT = "[^"]*";/, 'const CONTACT = "";') });
@@ -143,7 +143,7 @@ test("the header and the front page: a visitor is offered the way in, a customer
   // The page ends where the decision is: a person who read to the foot of a 3,700 px phone page is not left without an action.
   const start = v.$("start");
   assert.equal(v.text(start.querySelector(".section-note")!), "An email and a password, then a plan. Nothing is charged until you have chosen the plan and paid for it.");
-  assert.equal(v.link(start, "Create an account").getAttribute("href"), "/signup");
+  assert.equal(v.link(start, "Create your account").getAttribute("href"), "/signup");
   assert.equal(v.link(start, "Sign in").getAttribute("href"), "/login");
   assert.deepEqual(v.doc.querySelectorAll("[data-from-price]").map((n) => n.textContent), ["From $149.00 a month", "From $149.00 a month"], "the price is said at the top and again at the foot");
 });
@@ -639,7 +639,7 @@ test("a reset link that has been used sends the person to a new one; a password 
 test("the page for a wrong address offers a visitor the plans and the way in, and a customer their account", async () => {
   const out = world((x) => (x.signedIn = false));
   const v = await visit("404", { routes: out.routes });
-  assert.equal(v.text("main"), "Curule Cloud · not found That page is not here The address may have changed, or it may never have existed. These pages do exist. See the plans and prices Sign in Create an account");
+  assert.equal(v.text("main"), "Curule Cloud · not found That page is not here The address may have changed, or it may never have existed. These pages do exist. See the plans and prices Sign in Create your account");
   assert.deepEqual(v.doc.querySelectorAll("a").filter((a) => v.shows(a) && !a.className.includes("brand") && a.getAttribute("href") !== "#main" && !v.doc.querySelector("footer")!.contains(a)).map((a) => a.getAttribute("href")), ["/", "/login", "/", "/login", "/signup"], "the header's two, then the page's three");
   const filled = (x: typeof v): string[] => x.doc.querySelectorAll(".btn-primary").filter((a) => x.shows(a)).map((a) => a.textContent!);
   assert.deepEqual(filled(v), ["See the plans and prices"], "a signed-out visitor is offered one filled answer");
@@ -867,7 +867,7 @@ test("a main button says what it is doing while the call is out, and is itself a
   assert.equal(main.disabled, false);
   assert.equal(main.getAttribute("aria-busy"), null, "and is not busy any more");
 
-  for (const [page, label, busy] of [["signup", "Create account", "Creating account"], ["forgot", "Send the link", "Sending"], ["reset", "Save password", "Saving"], ["account", "Change password", "Changing"], ["account", "Pay", "One moment"], ["account", "Create workspace", "Creating"]] as const) {
+  for (const [page, label, busy] of [["signup", "Create your account", "Creating your account"], ["forgot", "Send the link", "Sending"], ["reset", "Save password", "Saving"], ["account", "Change password", "Changing"], ["account", "Pay", "One moment"], ["account", "Create workspace", "Creating"]] as const) {
     const html = fs.readFileSync(`${PAGES_DIR}/${page}.html`, "utf8");
     assert.match(html, new RegExp(`data-busy="${busy}"[^>]*>${label}<`), `${page}: ${label} says "${busy}" while it works`);
   }

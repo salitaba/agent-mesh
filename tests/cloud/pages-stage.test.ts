@@ -190,6 +190,7 @@ test("the account opens with one statement: the card, or the record that has tak
     assert.equal(blocks[0]!.className, "account-head", `${what}: the heading is first`);
     assert.ok(blocks[0]!.contains(v.doc.querySelector("h1")));
     assert.ok(at("stage") > 0 && blocks.slice(0, at("stage")).every((n) => n.className === "account-head" || n.tag === "noscript" || n.id === "notice"), `${what}: nothing but the heading, the notice and what a browser with no script is told comes before the card`);
+    assert.ok(at("glance") > at("stage") && at("glance") < at("subnav"), `${what}: the statement follows the page's one action, and comes before the index`);
     for (const panel of blocks.filter((n) => n.tag === "section" && n.className.split(/\s+/).includes("panel"))) assert.ok(blocks.indexOf(panel) > at("stage"), `${what}: ${panel.id} is after the card`);
     const first = mainFocusable(v)[0]!;
     assert.ok(v.$("stage").contains(first), `${what}: the first thing a keyboard reaches is in the card, and is ${first.tag} ${first.id || first.textContent}`);
