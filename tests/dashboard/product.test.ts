@@ -255,3 +255,41 @@ test("the workspace and its folder are read quietly: their errors are already se
   assert.match(src, /client\.api\("GET", `\/workspace\/tree\?path=\$\{encodeURIComponent\(dir\)\}`, undefined, \{ quiet: true \}\)/, "the Files card shows its own error");
   assert.doesNotMatch(src, /No workspace/, "the failed-read chip no longer claims the workspace is missing");
 });
+
+test("a failed workspace search is a failure, not a zero-match result", () => {
+  // Measured at 390 and 1440 with /workspace/search answering 500: typing "payment" drew "0 matches" and "Nothing in the
+  // workspace matched “payment”." while the corner said "server error /workspace/search?q=payment -> 500". The one answer a
+  // person trusts — that the file is not in the workspace — was the one the page could not know.
+  const src = fs.readFileSync(path.resolve(__dirname, "..", "..", "..", "apps", "mesh-dashboard", "src", "views", "Product.tsx"), "utf8");
+  assert.match(src, /client\.api\("GET", `\/workspace\/search\?q=\$\{encodeURIComponent\(t\)\}`, undefined, \{ timeoutMs: 30000, quiet: true \}\)/, "the search reads its status quietly; its own card answers");
+  assert.match(src, /if \(timeout \|\| status !== 200 \|\| !json \|\| json\.error \|\| !Array\.isArray\(json\.results\)\) \{[\s\S]*?setSearchErr\(/, "a timeout, a non-200 or an unreadable body sets the failure instead of empty hits");
+  assert.match(src, /setHits\(null\);\s*\n\s*setSearchErr\(/, "the false result is cleared when the read fails");
+  const error = src.indexOf("{searchErr ? (");
+  const hits = src.indexOf(") : hits ? (", error);
+  assert.ok(error > -1 && hits > error, "the search's own ErrorState comes before the hits block");
+  assert.match(src, /<ErrorState what="the workspace search" detail=\{searchErr\} onRetry=\{\(\) => void runSearch\(q\)\} \/>/, "it names what failed and offers the same read again");
+});
+
+test("a file that could not be opened says so at the preview, once, with a retry", () => {
+  // Measured at 390 and 1440 with /workspace/file answering 500: clicking README.md left the preview saying "Choose a file"
+  // and put two notices in the corner — "server error /workspace/file?path=README.md -> 500" and "Could not open the file".
+  // The field the press was for said nothing, and there was no retry at it.
+  const src = fs.readFileSync(path.resolve(__dirname, "..", "..", "..", "apps", "mesh-dashboard", "src", "views", "Product.tsx"), "utf8");
+  assert.match(src, /client\.api\("GET", `\/workspace\/file\?path=\$\{encodeURIComponent\(p\)\}`, undefined, \{ quiet: true \}\)/, "the read is quiet, so one failure is said once");
+  assert.match(src, /if \(timeout \|\| status !== 200 \|\| !json \|\| json\.error\) \{[\s\S]*?setFileErr\(\{ path: p, why \}\)/, "the failure names the file and the reason");
+  assert.match(src, /setFileErr\(null\);\s*\n\s*setFile\(\{/, "a successful read clears it");
+  assert.match(src, /fileErr \? \(\s*<ErrorState what=\{`the file \$\{fileErr\.path\}`\} detail=\{fileErr\.why\} onRetry=\{\(\) => void openFile\(fileErr\.path\)\} \/>/, "the preview draws the failure and the same read again");
+  assert.match(src, /previewRef\.current\?\.scrollIntoView\(\{ block: "start" \}\)[\s\S]*?return;/, "the phone brings the preview to the person, as it does on a successful open");
+});
+
+test("a checkout that says it has changes never leaves the missing list unsaid", () => {
+  // Measured at 390 and 1440 with /workspace/info reporting a dirty tree and /workspace/changes answering 500: the Tree chip
+  // said "uncommitted changes", the changes card was absent, and the only word was one corner notice naming the route.
+  const src = fs.readFileSync(path.resolve(__dirname, "..", "..", "..", "apps", "mesh-dashboard", "src", "views", "Product.tsx"), "utf8");
+  assert.match(src, /client\.api\("GET", "\/workspace\/changes", undefined, \{ quiet: true \}\)/, "the page's banner is the one answer");
+  assert.match(src, /if \(timeout \|\| status !== 200 \|\| !Array\.isArray\(json\)\) \{[\s\S]*?setChangesErr\(/, "a timeout, a non-200 or a non-list sets the failure");
+  assert.match(src, /dirty && changesErr \? \(\s*<Banner[\s\S]*?title="The uncommitted changes could not be read\."/, "it is said at the checkout fact, where the dirty chip is");
+  assert.match(src, /The checkout says it has changes, but this page could not list them\./, "and it does not claim the tree is clean");
+  assert.match(src, /onClick=\{\(e\) => \{ focusAfterRetry\(e\.currentTarget\); setAttempt\(\(n\) => n \+ 1\); \}\}>Try again<\/Button>/, "the read is offered again, and the press keeps the cursor on the page");
+});
+

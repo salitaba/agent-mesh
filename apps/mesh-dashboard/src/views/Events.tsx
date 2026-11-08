@@ -385,7 +385,7 @@ export default function Events(): React.JSX.Element {
                   if (r.kind === "bucket") {
                     return (
                       <h3 key={r.key} className="evc-bucket">
-                        <span>{r.label}</span>
+                        <span>{r.label}</span>{" "}
                         <span className="evc-bucket-n">{plural(inBucket.get(r.key) ?? 0, "event")}</span>
                       </h3>
                     );
