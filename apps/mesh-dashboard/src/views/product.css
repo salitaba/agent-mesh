@@ -14,6 +14,10 @@
 .prod-count { margin-left: var(--s1-5); font: 500 12px var(--sans); letter-spacing: 0; font-variant-numeric: tabular-nums; color: var(--muted); }
 .prod-note { margin: 0 0 var(--s3); font: var(--tx-value); color: var(--text-dim); max-width: 72ch; }
 .prod-note:last-child { margin-bottom: 0; }
+/* A product with no page and no running UI: one sentence and the one press that opens the full block. The row is the
+   same shape on a phone (the sentence gets the line, the button follows) and on a desk (they share it). */
+.prod-compact { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s2) var(--s4); }
+.prod-compact .prod-note { flex: 1 1 20rem; margin: 0; min-width: 0; }
 /* A failed probe is not an answer about the product: the note keeps its place, says the question failed, and offers it again. */
 .prod-page-failed { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s2) var(--s3); }
 .prod-page-failed p { margin: 0; }
@@ -42,7 +46,7 @@
 
 /* ---------- the scripts ---------- */
 .run-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: var(--s2-5); }
-.run-btn { display: grid; align-content: start; gap: var(--s0); min-width: 0; padding: var(--s3) var(--s3-5); background: var(--panel); border: 1px solid var(--line-strong); border-radius: var(--r); box-shadow: var(--k-hl), var(--k-shadow-1); color: var(--text); text-align: left; cursor: pointer; transition: border-color var(--k-dur-1) var(--k-ease), background-color var(--k-dur-1) var(--k-ease), box-shadow var(--k-dur-1) var(--k-ease); }
+.run-btn { display: grid; align-content: start; gap: var(--s0); min-width: 0; padding: var(--s3) var(--s3-5); background: var(--panel); border: 1px solid var(--line-control); border-radius: var(--r); box-shadow: var(--k-hl), var(--k-shadow-1); color: var(--text); text-align: left; cursor: pointer; transition: border-color var(--k-dur-1) var(--k-ease), background-color var(--k-dur-1) var(--k-ease), box-shadow var(--k-dur-1) var(--k-ease); }
 .run-btn:is(:hover, .is-hover):not(:disabled) { border-color: var(--line-control); background: var(--panel-2); box-shadow: var(--k-hl), var(--k-shadow-2); }
 .run-btn:active:not(:disabled) { background: var(--sunken); box-shadow: none; }
 .run-btn:disabled { opacity: .5; cursor: not-allowed; }

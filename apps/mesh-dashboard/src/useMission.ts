@@ -11,7 +11,7 @@ import { tabStatus } from "./tabmodel";
  * startup events, has been run before.
  */
 export function useMission(): { facts: MissionFacts; state: MissionState } {
-  const { status, serverDown, steps } = useMesh();
+  const { status, statusError, serverDown, steps } = useMesh();
   const projects = useProjectsOptional();
   // The registry's word on the project this store follows. A crashed, locked or unopenable project has no mission to read: say
   // what is wrong with the project, in the words its tab uses, rather than "Starting" or a goal that is not there.
@@ -20,6 +20,7 @@ export function useMission(): { facts: MissionFacts; state: MissionState } {
   const facts = factsFromStatus(status, {
     serverDown,
     projectDown: stopped ? { label: stopped.label, hint: stopped.hint, severe: stopped.status !== "closed" } : null,
+    statusFailed: !!statusError,
     hostCeilingTripped: projects?.hostSpend?.ceilingTripped === true,
     runningSteps: (steps || []).filter((s: { status?: string }) => s.status === "running").length,
     hasHistory: (steps?.length ?? 0) > 0 || (status?.eventCount ?? 0) > 15,

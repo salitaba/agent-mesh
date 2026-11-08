@@ -10,10 +10,15 @@
 .pg-form .pg-cmd { flex: 1 1 320px; min-width: 0; }
 .pg-note { margin: 0 0 var(--s4); font: var(--tx-value); color: var(--text-dim); max-width: 72ch; }
 .pg-note code { font: 12px var(--mono); color: var(--text); }
+/* The one line a reader acts on; the caveats open under it. */
+.pg-how { display: grid; gap: var(--s1); }
+.pg-how > p { margin: 0; }
+.pg-how details { margin: 0; }
+.pg-how details p { margin: var(--s2) 0 0; }
 
 /* ---------- what the product says it is ---------- */
 .pg-quick { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: var(--s2-5); margin: 0 0 var(--s4); }
-.pg-quick-btn { display: grid; align-content: start; gap: var(--s0); min-width: 0; padding: var(--s2-5) var(--s3); background: var(--panel); border: 1px solid var(--line-strong); border-radius: var(--r); box-shadow: var(--k-hl), var(--k-shadow-1); color: var(--text); text-align: left; cursor: pointer; transition: border-color var(--k-dur-1) var(--k-ease), background-color var(--k-dur-1) var(--k-ease), box-shadow var(--k-dur-1) var(--k-ease); }
+.pg-quick-btn { display: grid; align-content: start; gap: var(--s0); min-width: 0; padding: var(--s2-5) var(--s3); background: var(--panel); border: 1px solid var(--line-control); border-radius: var(--r); box-shadow: var(--k-hl), var(--k-shadow-1); color: var(--text); text-align: left; cursor: pointer; transition: border-color var(--k-dur-1) var(--k-ease), background-color var(--k-dur-1) var(--k-ease), box-shadow var(--k-dur-1) var(--k-ease); }
 .pg-quick-btn:is(:hover, .is-hover):not(:disabled) { border-color: var(--line-control); background: var(--panel-2); box-shadow: var(--k-hl), var(--k-shadow-2); }
 .pg-quick-btn:active:not(:disabled) { background: var(--sunken); box-shadow: none; }
 .pg-quick-btn:disabled { opacity: .5; cursor: not-allowed; }

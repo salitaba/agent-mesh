@@ -18,7 +18,7 @@ import { Banner, Button, Dialog, Tooltip } from "./components";
 import { Icon } from "./icons";
 import { useProjects, type ProjectSummary } from "./projects";
 import { useMesh } from "./store";
-import { hashFor, isHostView, parseHash } from "./route";
+import { hashFor, isHostView, parseHash, type View } from "./route";
 import { formatRss, moveTab, orderTabs, reorderTabs, tabStatus } from "./tabmodel";
 import { attentionCount, cardActions, cardState, displayNames, failureDetail, landAfterClose, problemTitle, tabLook } from "./projectsmodel";
 import { NewProjectDialog, Welcome } from "./newproject";
@@ -208,9 +208,13 @@ export function HostEmptyState(): React.JSX.Element {
   return <Welcome />;
 }
 
-export function ProjectTabs({ parked, parkedId, inert }: { parked?: boolean; parkedId?: string | null; inert?: boolean }): React.JSX.Element | null {
+export function ProjectTabs({ parked, parkedId, inert, pageView }: { parked?: boolean; parkedId?: string | null; inert?: boolean; pageView?: View }): React.JSX.Element | null {
   const { projects, activeId, setActive, openProject, closeProject, loaded, hostDown, notice, dismissNotice } = useProjects();
-  const { view } = useMesh();
+  // The shell knows the page in front; the per-project store keeps the last *project* view, which on a host page
+  // (`#/hostsettings`, outside `/p/:id`) is still the project one. The strip's own decisions (which page is in front,
+  // whether a project failure belongs on it) read the shell's answer.
+  const { view: storeView } = useMesh();
+  const view = pageView ?? storeView;
   const [order, setOrder] = useState<string[]>(readOrder);
   const [adding, setAdding] = useState(false);
   // A phone cannot carry a sideways row of tabs: one row names the project in front and opens the full list as a sheet.
@@ -335,7 +339,10 @@ export function ProjectTabs({ parked, parkedId, inert }: { parked?: boolean; par
         className="pj-switch"
         aria-haspopup="dialog"
         aria-expanded={switcher}
-        aria-label={frontName ? `Project in front: ${frontName}. Switch project` : "Choose a project"}
+        // The name must contain the words drawn inside it: the project's name and the state word under it. "Project in front:"
+        // before the name and a period after the state broke the contiguous drawn text (axe label-content-name-mismatch on
+        // both host pages at 360 and 1440). The action follows the drawn words instead.
+        aria-label={frontName ? `${frontName} ${frontLook?.word ?? ""}. Switch project` : "No project. Choose a project"}
         onClick={() => setSwitcher(true)}
       >
         <span className="pj-switch-ico" data-tone={frontLook?.tone}><Icon name={frontLook?.icon ?? "folder"} size={16} /></span>
@@ -435,7 +442,10 @@ export function ProjectTabs({ parked, parkedId, inert }: { parked?: boolean; par
         </Tooltip>
       </nav>
       {hostDown ? <HostDownBanner loaded={loaded} /> : null}
-      {!hostDown && crashed ? <CrashBanner project={crashed} name={names.get(crashed.id) ?? crashed.name} /> : null}
+      {/* A project's own failure belongs to its pages. Projects already draws the same state on the project's card, and Host
+          settings is a host-wide form that does not need the project at all: at 360 the locked banner was 296 px of its first
+          screen (the page title at y=385) for a project the page never reads. */}
+      {!hostDown && crashed && !isHostView(view) ? <CrashBanner project={crashed} name={names.get(crashed.id) ?? crashed.name} /> : null}
       {notice ? (
         <Banner tone="warn" className="ptabs-notice" title={notice.title} actions={<Button variant="banner-act" onClick={dismissNotice}>Dismiss</Button>}>
           {notice.text}

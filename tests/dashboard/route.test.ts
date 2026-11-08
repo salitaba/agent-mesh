@@ -15,6 +15,7 @@ import {
   singleStreamUrl,
   streamUrl,
 } from "../../apps/mesh-dashboard/src/route";
+import { HOST_VIEWS as NAVIGATION_HOST_VIEWS } from "../../apps/mesh-dashboard/src/navmodel";
 
 test("parseHash reads the project segment", () => {
   const r = parseHash("#/p/acme/steps/step/turn-ab12");
@@ -121,9 +122,14 @@ test("projectPath prefixes only when a project is named", () => {
 
 test("the Projects page is a host page: its address never names a project, and it is not a legacy link to redirect", () => {
   assert.ok(VIEWS.includes("projects"));
-  assert.deepEqual([...HOST_VIEWS], ["projects"]);
+  // Host settings is host-wide too: its address never names a project, and a bare `#/hostsettings` must not be
+  // rewritten onto whichever project happens to be in front. This list had only Projects, while navmodel's had both, so
+  // the two disagreed about the page the shell was on (and a locked project's banner sat over Host settings).
+  assert.deepEqual([...HOST_VIEWS], ["projects", "hostsettings"]);
   assert.equal(isHostView("projects"), true);
+  assert.equal(isHostView("hostsettings"), true);
   assert.equal(isHostView("overview"), false);
+  assert.deepEqual([...HOST_VIEWS].sort(), [...NAVIGATION_HOST_VIEWS].sort(), "the router and the navigation agree on the host's pages");
 
   const r = parseHash("#/projects");
   assert.equal(r.projectId, null);
@@ -137,6 +143,13 @@ test("the Projects page is a host page: its address never names a project, and i
   assert.equal(hashFor(null, "projects"), "#/projects");
   assert.equal(hashFor("acme", "projects", { kind: "step", id: "x" }), "#/projects", "a host page has no detail");
   assert.deepEqual(parseHash(hashFor("acme", "projects")), { projectId: null, view: "projects" });
+
+  // Host settings is the other host-wide page: the same address with or without a project, and never rewritten onto one.
+  const hs = parseHash("#/hostsettings");
+  assert.deepEqual(hs, { projectId: null, view: "hostsettings" });
+  assert.equal(needsProjectRedirect(hs), false);
+  assert.equal(hashFor("acme", "hostsettings"), "#/hostsettings");
+  assert.equal(hashFor(null, "hostsettings"), "#/hostsettings");
 });
 
 test("a host page ignores a detail written after it, and a project link to it still reads as the page", () => {

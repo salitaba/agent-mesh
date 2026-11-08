@@ -8,7 +8,7 @@
 .ag-group { margin-top: var(--s5); }
 .ag-group:first-of-type { margin-top: 0; }
 .ag-group-head { display: flex; align-items: center; flex-wrap: wrap; gap: var(--s1) var(--s2-5); margin: 0 var(--s0) var(--s2-5); }
-.ag-group-head h3 { margin: 0; font: 650 16px/1.3 var(--sans); letter-spacing: var(--k-track-title); color: var(--text); }
+.ag-group-head h3 { margin: 0; font: 600 15px/1.3 var(--sans); letter-spacing: var(--k-track-tight); color: var(--text); }
 .ag-group-hint { font: var(--tx-meta); color: var(--muted); }
 
 .ag-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr)); gap: var(--s3); }

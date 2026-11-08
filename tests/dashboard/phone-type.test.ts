@@ -46,10 +46,10 @@ test("a project card's dt captions are 12 px on a phone", () => {
   assert.match(phoneBlocks(projects), /\.pj-facts dt \{ font-size: 12px; \}/, "the project caption step is 12");
 });
 
-test("the goal id under the wordmark is a word at 12 px, like every other caption on a phone", () => {
-  // Measured at 360: the `.sub` span was 11 px and 247 px wide, the last off-ladder word on the page (the 22 px avatar initials
-  // and the 18 px key chips are glyphs and stay). A name set at 11 px is a caption that got smaller than the caption floor.
-  assert.match(phoneBlocks(styles), /\.brand \.sub \{ font-size: 12px; \}/, "the goal id takes the phone's 12 px caption step");
+test("the workspace name under the wordmark is a word at 12 px, like every other caption on a phone", () => {
+  // Measured at 360: the `.sub` span was 11 px and 247 px wide (it used to print the goal id), the last off-ladder word on the
+  // page (the 22 px avatar initials and the 18 px key chips are glyphs and stay). A name set at 11 px is a caption below the floor.
+  assert.match(phoneBlocks(styles), /\.brand \.sub \{ font-size: 12px; \}/, "the workspace name takes the phone's 12 px caption step");
 });
 
 test("a drawer's tab count is a figure at 12 px, not an 11 px glyph", () => {

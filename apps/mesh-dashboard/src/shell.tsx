@@ -218,6 +218,13 @@ export function Shell({ viewNode }: { viewNode: React.ReactNode }): React.JSX.El
   const kind = serverKind(projectsCtx ? { hasRegistry: projectsCtx.hasRegistry, loaded: projectsCtx.loaded, projectCount: projectsCtx.projects.length } : null);
   const activeProject = projectsCtx?.projects.find((p) => p.id === projectsCtx.activeId) ?? null;
   const projectName = activeProject?.name ?? null;
+  // The word under the wordmark is the workspace's own name. A host knows it from the registry; a single-mesh server
+  // (`curule console`, which is what the owner runs) reports it as `meshId` in its status. Only if neither exists does the
+  // opaque goal id stand in, cut to its first characters, because a blank line is worse than an id.
+  const workspaceName = projectName
+    ?? (typeof status?.meshId === "string" && status.meshId ? status.meshId : null)
+    ?? mesh.projectId
+    ?? (goalId ? goalId.slice(0, 14) : "");
   // The view area waits while the project it would show is starting (navmodel.ts), and so does everything that asks the project something.
   const holdView = holdsForProject(kind, view, { chosen: mesh.projectId !== null, status: activeProject?.status ?? null });
   const auth = useAuthOptional();
@@ -248,7 +255,9 @@ export function Shell({ viewNode }: { viewNode: React.ReactNode }): React.JSX.El
   // A host with no project, and the Projects page, belong to the host and not to a mission: no mission chip, goal, numbers or
   // mission actions on them, and with no project at all no project views to go to. They used to show "Connecting", 0 working and
   // 0/0 tokens around the welcome page, and a sidebar of views that led nowhere.
-  const hostLevel = noProjects || view === "projects";
+  // Both of the host's own pages are host-level. Host settings was left out, so its bar carried the project in front: a
+  // "Locked" chip, Working 0 and Tokens 0 over a host-wide form, and a `p` key that paused a project the page never shows.
+  const hostLevel = noProjects || isHostView(view);
   const decisions = facts.blockingDecisions + facts.advisoryDecisions;
   // Tool requests do not ride the event stream, so the badge polls for them (inbox.ts).
   const toolRequests = useToolRequests(client, !serverDown && !noProjects && registry === "known" && !holdView);
@@ -744,7 +753,7 @@ export function Shell({ viewNode }: { viewNode: React.ReactNode }): React.JSX.El
       {/* Host-level, so it sits above the per-project chrome and survives every
           project switch. Rendered only under a ProjectsProvider: `curule serve`
           runs one mesh with no registry and has no tabs to show. */}
-      {hasProjects ? <ProjectTabs parked={parked} parkedId={mesh.projectId} inert={navModal} /> : null}
+      {hasProjects ? <ProjectTabs parked={parked} parkedId={mesh.projectId} inert={navModal} pageView={view} /> : null}
       {navModal ? <div id="nav-scrim" aria-hidden="true" onClick={closeMenu} /> : null}
       {/* A div, not an <aside>: the off-canvas sheet is a modal dialog, and `role="dialog"` on an <aside> is a role ARIA in HTML
           does not allow there (axe: `aria-allowed-role`, one node, every time the phone menu was open). A div carries the same
@@ -768,7 +777,12 @@ export function Shell({ viewNode }: { viewNode: React.ReactNode }): React.JSX.El
         ) : null}
         <div className="brand">
           <Wordmark height={22} />
-          <span id="mesh-id" className="sub" title={goal.id ? `Goal ${goal.id}` : undefined}>{goal.id ? goal.id.slice(0, 14) : ""}</span>
+          {/* The name of the workspace, not its goal's opaque id: a 247 px line of `goal-M6W5VH6Y00370…` told a reader
+              nothing they could use. The id stays in the title for support, and the goal itself is one line under the bar
+              on a desk and the Overview's headline in the hand. */}
+          <span id="mesh-id" className="sub" title={goalId ? `${workspaceName || "This project"} · goal ${goalId}` : undefined}>
+            {workspaceName}
+          </span>
         </div>
         {/* The palette was chord-only: the fastest route to every view, agent and action in the product, discoverable
             solely by already knowing it existed. */}

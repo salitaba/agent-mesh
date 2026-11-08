@@ -81,6 +81,25 @@ test("a card's title is a sentence on every page, and the gallery draws one", ()
   assert.match(read("kit.tsx"), /<Card title="A block with its own job"/);
 });
 
+test("a section head is the card title on every page, not a second, larger recipe", () => {
+  // Measured across the delivered demo: Overview, Cost, Graph, Product and Playground set a card's title at 15/600, while Agents
+  // ("Idle or finished") and the Designer ("Team") drew 16/650 and Files' groups 14/600. One screen with three sizes for the same
+  // job reads as three products; the shared recipe is the one in styles.css.
+  const heads: Array<[string, string]> = [
+    ["views/agents.css", ".ag-group-head h3"],
+    ["views/files.css", ".files-group-h"],
+    ["designer/topology.css", ".ms-seats-head h3"],
+    ["views/drawers.css", "#drawer .sv-sec-h h4"],
+    ["views/settings.css", ".hs-card .hs-head h3"],
+  ];
+  for (const [file, selector] of heads) {
+    const css = read(file);
+    const body = new RegExp(`${selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")} \\{([^}]*)\\}`).exec(css)?.[1] ?? "";
+    assert.match(body, /font: 600 15px\/1\.3 var\(--sans\)/, `${selector} is the card's sentence tier`);
+    assert.doesNotMatch(body, /650 16px|600 14px/, `${selector} has no second title size`);
+  }
+});
+
 test("a wide dialog is the same dialog, 640 wide, and it is the panel that says so", () => {
   assert.match(bodyOf(components, "DialogPanel"), /className=\{`confirm\$\{wide \? " wide" : ""\}`\}/);
   assert.match(live, /\.confirm\.wide \{ width: min\(640px, 92vw\); \}/);

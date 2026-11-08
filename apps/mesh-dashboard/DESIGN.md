@@ -351,7 +351,9 @@ Breakpoints: **1280 1100 900 800 760 620 560**. 800 is the sidebar drawer (JS
 2. Whether the Designer's bottom stays its own: the save bar and the dock cannot both own that edge, and the workbench is
    the one screen that is not a brief.
 3. The events page's "Live" chip says what the stream is doing while the mission is delivered; decide whether one word can
-   say both, or whether the chip should read the mission's state here as it does in the bar.
+   say both, or whether the chip should read the mission's state here as it does in the bar. Measured 2026-11-08:
+   "Following" grows the chip 63.7 → 86.8 px and wraps the Events head at 360 (89 → 126 px) and moves the meta line at 320,
+   so the word is not free; shortening the meta or the title row is the first question.
 4. Whether the hero's `…` and the frame's `…` should both offer `Reopen with feedback` on a phone, and whether a pointer's
    press on a figure's number doing nothing is the right price for being able to select it (2026-10-31).
 5. The Designer's 320 header is two rows now (168.59 px with its lede; 89.6 on the first-run guide, which has no lede). The save bar's
@@ -374,8 +376,112 @@ Breakpoints: **1280 1100 900 800 760 620 560**. 800 is the sidebar drawer (JS
 14. Decide whether the inbox's note field and "Clear this card" should also be on the first screen: the action is there now (688–732 at
     360), but the card is 1,242 px and the field is at 764. The card's answer can be one press while its note needs a scroll; the host-spend
     card's primary opens host settings, so the note is written on the way back, not on the way out.
+15. Watch the compact "Your product" card (2026-11-08): a person who arrives to start its UI now presses once before the command box
+    appears. If real use shows that press is the common path, the form can lead and the sentence can follow; the measurement is the
+    card's 487 → 158 px and the checkout's 674 → 345 at 360.
+16. Host settings still uses 1,080 px of a 1,440 page. The right margin is 104 px now, not a third; a two-column group grid would fit
+    two cards but stack each row's label and control. Measure it with a real host before changing the row shape.
+17. Decide whether "No status" is enough for a first failed read: every view already draws its own sentence and Try again, and the bar
+    now says the console has not read the mission, but a person may still want the bar's chip to be a door to the page that says why.
 
 ## Pass log
+
+### 2026-11-08 — the first screen belongs to the page, a failed read says it once, and host settings is not a project's
+
+Surface: `src/views/YourProduct.tsx`, `src/views/Playground.tsx`, `src/views/Product.tsx` (call site), `src/playground.ts`,
+`src/views/playground.css`, `src/views/product.css`, `src/views/agents.css`, `src/views/files.css`, `src/views/settings.css`,
+`src/views/drawers.css`, `src/designer/topology.css`, `src/designer/assistant.css`, `src/styles.css`, `src/shell.tsx`,
+`src/tabs.tsx`, `src/route.ts`, `src/store.tsx`, `src/mission.ts`, `src/useMission.ts`, with
+`tests/dashboard/failure-states.test.ts`, `frame-phone.test.ts`, `mission.test.ts`, `route.test.ts`, `primitives-a11y.test.ts`,
+`playground.test.ts`, `productlive.test.ts` and `phone-type.test.ts`.
+
+Measured on the scripted demo at **Delivered** (507 events, 52.9k of 2.0M tokens, 7 checks, 9 files, 7 seats, 30 turns,
+6 review files) in the production build served by `curule console`, Chromium 1248 at 320/360/1440 in light (and 360/1440 in
+dark for axe). The before is the branch's base `48ac1c2` built in a second worktree and served beside it with the same
+delivered log; the after is this branch's build. Each pair opens the same state (the toast dismissed), and every reading is
+the same page at the same scroll position.
+
+**What changed.**
+
+- **The Product page's first screen is the checkout, not a start form for a UI the product does not have.** The no-page
+  "Your product" card was **487 px** at 360 and "The checkout" began at **y = 674**; the page's own purpose (read the code,
+  run a script, open it) was below the fold. With no page and no running UI the card is one sentence and **158 px**, and the
+  full block is one press away ("Start its own UI", which focuses the command box it reveals). The checkout is at **345**
+  (was 674) and "Run a script" at **621** (was 950); the page is **1,789 → 1,460**. At 1440 the card is **334 → 102**, the
+  checkout **508 → 276**, the scripts **696 → 464**, and the page **1,236 → 1,004**. When a page or a UI does exist the
+  full card is drawn, so the product path is unchanged.
+- **The Playground's caveats are a disclosure, not a first screen of prose.** The paragraph under the command box was
+  **183 px** at 360 (plus a 41 px empty-commands sentence), before the output or the product could begin. It is one line of
+  the two facts a person acts on (**61 px**) and a 44 px "What it can see, and the time limit" disclosure; the block is
+  **109 px**, the product card **487 → 158**, and the page **1,093 → 836**. The terminal still leads and the command box is
+  still the page's first action.
+- **A failed read is said once.** With `/status` answering 500, the bar said **"Connecting"** while the page said "Could
+  not load the agent list — The server answered 500" and the corner added **"server error /status -> 500"**. The status read
+  is quiet now (every page draws it), the first-read failure is the mission state **"No status"** (not a connection still
+  coming), and the corner notice is **1 → 0**. `/playground/commands` 500 on Product and Playground did the same:
+  **1 → 0** corner notices, with the page's own sentence and Try again kept.
+- **A control's edge is visible.** The secondary and small buttons, the search field, the graph keys, the file filters,
+  the quick-command and run buttons and the designer's starter chips drew a `--line-strong` hairline at **1.43:1** (on
+  `--bg`) and **1.52:1** (on `--bg-2`), below the 3:1 boundary floor. They use `--line-control` now: **#837d72** on the
+  light page, **3.68–4.08:1** on the three surfaces. The `kbd` keycap and the cards' decorative rules stay `--line-strong`
+  on purpose: they are not the only edge of a control.
+- **A project failure is not the host's page, and a host page's bar is the host's.** `route.ts`'s `HOST_VIEWS` had only
+  `projects` while `navmodel.ts` had `projects` and `hostsettings`, so a bare `#/hostsettings` was read as a project page:
+  the router rewrote it onto the project in front, the project strip laid a **296 px** locked-project banner over it
+  (page title **y = 365** at 360, **220** at 1440), and the bar drew that project's **Locked** chip and Working/Tokens
+  telemetry (its `p` key could pause a project the page never shows). Both host pages are host-level now: the banner is
+  gone, the bar is bare, the title is **131** at 360 and **73** at 1440, and the first field at 1440 is **481 → 313**.
+  Projects still draws the same lock on the project's own card, with its Restart.
+- **The drawer's wordmark names the workspace.** The line under `Curule` printed the first 14 characters of the goal's
+  opaque id (`goal-M6W5VH6Y00370…`), a 247 px caption a person could not use. It is the project's name on a host and the
+  mesh's id (`demo-stub`) on a single-mesh server; the goal id moved to the title.
+- **One section-head tier.** Overview, Cost, Graph, Product, Playground and the drawer already set a section at 15/600;
+  Agents ("Idle or finished") and the Designer ("Team") drew **16/650**, Files' groups **14/600** and Host settings'
+  cards **16/650**. All four are the shared 15/600 card-title recipe now (measured 16/650 → 15/600, height 21 → 20),
+  so one screen no longer has three sizes for the same job.
+- **The project switcher's name is the project and state it draws.** Axe reported label-content-name-mismatch (serious)
+  on `.pj-switch` at 360 and 1440 on both host pages: its name was "Project in front: Demo Mesh (stub agents). Switch
+  project" while the button drew the name over **Locked**, so the state word was outside the contiguous name. It is
+  "`${name} ${state}. Switch project`" now (and "No project. Choose a project" with no project); the four failing reads
+  are **0**, and the final axe sweep is **56 reads** (the 12 single-mesh views and the 2 host pages, at 360 and 1440, in
+  both themes) with **0 violations**.
+
+| | Before | After |
+|---|---|---|
+| Product, 360: Your product card / The checkout / Run a script | 487 / 674 / 950 | **158 / 345 / 621** |
+| Product, 360: page height | 1,789 | **1,460** |
+| Product, 1440: card / checkout / scripts / page | 334 / 508 / 696 / 1,236 | **102 / 276 / 464 / 1,004** |
+| Playground, 360: caveat block / product card / page | 224 / 487 / 1,093 | **109 / 158 / 836** |
+| Playground, 1440: product card y | 363 | **334** (the page fits at 836) |
+| `/status` 500, 360: bar chip / corner notices / page error | Connecting / **1** / 1 | **No status / 0 / 1** |
+| `/playground/commands` 500, 360: corner notices / page error | **1** / 1 | **0 / 1** |
+| Soft button and search edge on `--bg` / `--bg-2` | 1.43:1 / 1.52:1 | **3.68:1 / 3.92:1** |
+| Host settings with a locked project, 360: banner / title y | 296 px / 365 | **0 / 131** |
+| Host settings, 1440: title y / first field y | 220 / 481 | **73 / 313** |
+| Host settings bar: Locked chip and telemetry | drawn | **bare** |
+| Section heads: Agents / Files / Designer / Host settings | 16/650 / 14/600 / 16/650 / 16/650 | **15/600 each** |
+| Wordmark caption, 360 | `goal-M6W5VH6Y00370…` | **`demo-stub`** (name in the title) |
+| Under-44 controls, 360, the changed views | 0 | **0** |
+| Horizontal page scroll, 320/360/1440 | 0 | **0** |
+| Axe, the eight changed views at 320/360/1440 light and 360/1440 dark; the other four at 360/1440 light | 0 | **0** |
+| Axe, `.pj-switch` on both host pages, 360/1440 × both themes | 4 violations | **0** |
+| Axe, 56 reads over the 12 single-mesh views and 2 host pages at 360/1440 × both themes | — | **0** |
+
+Floors: `npm run typecheck` and `npm run build` clean; the full suite **6,621 tests, 6,619 pass, 2 skipped, 0 fail**
+(dashboard **1,299**, build **253**); axe **0** in the 56 reads over the 12 single-mesh views and 2 host pages at 360/1440
+in both themes (and in the changed views at 320/360/1440 light and 360/1440 dark); no page scrolls sideways at 320, 360
+or 1440; no control under 44 × 44 at 360 beyond the 1 × 1 skip link
+and the raw switch inside its 44 px label.
+
+**Left.** The Playground's compact product card hides the start command until one press; the full block is the same card,
+and the press puts the cursor in the command box. The Product page's checkout has an uncommitted-changes card in this
+run (the demo's own workspace), so its page height is compared with the same log, not across a clean tree. The
+`#/hostsettings` route on a single-mesh server already fell back to "This server runs one mesh" through `navmodel`; the
+router's list now agrees with it, so a bare address is never rewritten onto a project. The "Live" chip still describes
+the stream on a delivered mission: measured, "Following" grows the chip **63.7 → 86.8 px**, wraps the Events head from
+**89 to 126 px** at 360 and moves the meta line at 320, so the word stays. Host settings still uses 1,080 px of a 1,440
+page; the right margin is now 104 px and the form is not a third-empty page, but a two-column group grid would make each
+row's label/control stack and is a question for real use.
 
 ### 2026-11-07 — a failed log read is said over the rows it kept, a clear keeps the field, and the delivered path can be copied
 

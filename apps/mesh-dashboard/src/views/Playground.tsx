@@ -117,12 +117,22 @@ export default function Playground(): React.JSX.Element {
           {state.starting ? "Starting…" : "Run"}
         </Button>
       </form>
-      <p className="pg-note">
-        The command runs in the product&apos;s own checkout on the host, and what it prints appears below exactly as it
-        printed it. One command runs at a time; if one does not finish by itself, the console stops it after
-        {" "}{RUN_CEILING_MS / 60_000} minutes — the longest any command may run here. It cannot see this console&apos;s
-        own settings or keys: every <code>MESH_</code> variable and the model keys are withheld from it.
-      </p>
+      {/* What the page is for, then the caveats. At 360 the whole paragraph was 183 px of the first screen, before the
+          output or the product could begin; the two facts a person acts on stay on the line and the rest is a disclosure. */}
+      <div className="pg-note pg-how">
+        <p>
+          Runs in the product&apos;s own checkout on the host, and prints exactly what it printed. One command runs at a
+          time.
+        </p>
+        <details className="disc">
+          <summary>What it can see, and the time limit</summary>
+          <p>
+            If a command does not finish by itself, the console stops it after{" "}
+            {RUN_CEILING_MS / 60_000} minutes — the longest any command may run here. It cannot see this console&apos;s
+            own settings or keys: every <code>MESH_</code> variable and the model keys are withheld from it.
+          </p>
+        </details>
+      </div>
 
       {state.commandsError ? (
         <ErrorState what="the product's commands" detail={state.commandsError} onRetry={() => void pg.loadCommands(client)} />
