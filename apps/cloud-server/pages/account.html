@@ -36,11 +36,6 @@
   <noscript><p class="note note-warn">This page needs JavaScript to show your account and act on it, and it loads nothing from another site.</p></noscript>
   <div id="notice" class="note" role="status" aria-live="polite"></div>
 
-  <section class="glance" id="glance" aria-labelledby="glance-h" hidden>
-    <h2 class="sr" id="glance-h">At a glance</h2>
-    <dl id="glance-list"></dl>
-  </section>
-
   <div class="stage" id="stage" role="group" aria-labelledby="stage-title" hidden>
     <ol class="steps" id="stage-steps" aria-label="Where you are" hidden></ol>
     <div class="stage-body">
@@ -54,10 +49,15 @@
   <div class="btn-row" id="retry-row" hidden></div>
 
   <div class="skel" id="skeleton" aria-hidden="true" hidden>
-    <div class="sk-tiles"><div class="sk"></div><div class="sk"></div></div>
     <div class="sk sk-stage"></div>
+    <div class="sk-tiles"><div class="sk"></div><div class="sk"></div></div>
     <div class="sk sk-card"></div>
   </div>
+
+  <section class="glance" id="glance" aria-labelledby="glance-h" hidden>
+    <h2 class="sr" id="glance-h">At a glance</h2>
+    <dl id="glance-list"></dl>
+  </section>
 
   <nav class="subnav" id="subnav" aria-label="On this page" hidden>
     <a href="#workspaces-panel" data-entry="01">Workspaces</a>
