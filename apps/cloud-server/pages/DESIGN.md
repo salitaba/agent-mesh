@@ -4345,3 +4345,137 @@ positions are `getBoundingClientRect`.
   has the cursor; only the button's word returns from "Trying again" to "Try again".
 - **The empty confirmation card and the no-script home note are the two places a script was assumed;**
   the account's skeleton, the usage and plan retries and the address strip are the earlier entries' work.
+
+## 2026-11-08: the contents line, the statement, and one type system
+
+Same harness: Chromium 156 through `playwright-core` 1.64 (the workspace image's renderer, `ux-render`) against
+two copies of this surface served by the same stand-in control plane: `48ac1c2`'s own pages on one port and this
+pass's on another, on the same fixtures — a Team plan at $149.00 a month with one running workspace named
+Research, a fresh account with no plan, a paid account with no workspace, a workspace while it is starting, a
+four-day usage answer, `/api/me` and `/api/session` answering 503, `/api/plans` answering 503, and a signed-out
+visitor. 320 / 360 / 768 / 1000 / 1440 in light, 320 / 360 / 1440 in dark, and 360 with the page at
+`prefers-reduced-motion: reduce`. Heights are `document.documentElement.scrollHeight`; positions are
+`getBoundingClientRect` (the renderer prints the page-absolute `y`); sizes are `getComputedStyle`. Nothing below
+is an impression, and no figure is copied from an earlier record.
+
+### The bugs, before and after
+
+| measured | before | after |
+| --- | --- | --- |
+| A consent tick's own target, sign-up 360 / 1440 | **20 × 20** | **44 × 44** (the drawn box stays 20, inset 12) |
+| The account's auto-open tick, 360 | **20 × 20** | **44 × 44** |
+| Settings' heading, account 360 / 1440 | **16px** beside four 18px headings | **18px** |
+| Type weights a page draws | **5** (400/500/600/650/700) | **4** (400/500/600/650) |
+| The home's lede, 360 / 1440 | **16.28px / 19px** | **16 / 18** |
+| A plan's name / the record's log / the record's caption | **17 / 13 / 13px** | **18 / 14 / 12** |
+| The terms' article at 1440 | **672px**, ~86 characters a line | **544px**, ~70 |
+| The account's statement (Plan and Balance), 360 | at **y = 687**, after the record | at **y = 207**, under the head |
+| … at 1440 | **640** | **208** |
+| The account's first action (`Open`), 360 / 1440 | **409 / 403** | **553 / 535** (inside 800 / 900) |
+| The balance's first figure beside the glance's | **36px / 30px** | **30 / 30** |
+| A phone's way to the plans, billing rules and Start | **none** (4,129px of scroll) | a **44px contents line** at y = 840 |
+| "Create an account" vs "Create your account" | **5 / 2** names for one action | **0 / 7** |
+
+The tick box was the one control under the 44px floor that was not a link in prose: the label was 44 tall, but a
+thumb aimed at the box had 20px. The control is 44 square now; its ::before draws the same 20px box at inset 12,
+so the picture is unchanged and the target is not. Forced colours still hands the box back to the browser, with
+both drawn pseudo-elements off.
+
+The account's five panel headings were not one family: `.panel-quiet summary h2` set 1rem while the other four
+were 1.125rem. They are 1.125rem. The type census also found `strong` drawn at the browser's 700 while every
+heading was 650; `strong, b { font-weight: 650 }` takes the fifth weight off every page, and the eight stray
+sizes (17, 16.28, 13) were moved onto the steps the record already names: plan names 18, the record's log 14,
+its caption 12, the lede 16 at a phone and 18 at a desk.
+
+The terms and the privacy notice were set at 42rem — 672px, 86 characters at the page's own face — while the
+direction asks for a measure near 68. The article is 34rem (544px, about 70 characters) and is centred at every
+width; the side contents and the phone contents are unchanged. At 360 nothing moves (the article already filled
+the gutter); at 768 the terms go **2,630 → 2,930**, at 1440 **2,635 → 2,853**, and privacy **1,885 → 2,156**
+at 768 and **1,889 → 2,079** at 1440. That is the whole cost, and it is the reading.
+
+### The front page is a ledger with a contents line
+
+The page is **4,129 → 4,223** at 360, **3,039 → 3,122** at 768 and **2,643 → 2,734** at 1440. The 94px at 360 is
+the contents line: five of the account's own `.subnav` links at 12px, each 44 tall, in 87px (two rows) at 360,
+one row at 768 and wider. It sits at y = **840** at 360, 788 at 768, 538 at 1000 and 551 at 1440, and every link
+names a section heading that exists. The hero's price line does not move at 360 (**425**) and moves up at 1440
+(**499 → 463**) because the lede now takes three lines instead of four. The first plan moves **1,049 → 1,136**
+at 360; at 1440 it is still at **769**.
+
+At 1000 and wider a section is a margin and a body: a 17rem left column holds the number and the heading on the
+section's own rule, and the body takes the rest. The five facts are five ruled entries with a 15rem name column
+(the last row no longer leaves two cells of a three-column grid empty), and the four steps are four rows of
+number, name and sentence. At 1440 the content column is 760px; the facts are 337px and the steps 333px, against
+290 and 230 as a three-column/four-cell grid. The headings are one line at 1000 and 1440. Below 1000 the page
+stacks exactly as it did, which is why 768 grows only by the contents line.
+
+### The account opens on its statement
+
+The glance (Plan and Balance) was drawn **after** the workspaces record: at 360 it began at **687**, at 1440 at
+**640**. It now sits under the account's head when there is nothing else to do — the head ends at 184, the
+glance is at **207** — and after the page's one action when there is one: the empty account's card is 183–744,
+the glance **767**, the contents line **889**. In a path, the stage is first; then the statement; then the
+index; then the record. The first action is still in the first screen: the paid account's `Open` is
+**409 → 553** at 360 (of 800) and **403 → 535** at 1440 (of 900); the empty account's `Create workspace` is
+**667–715**; the starting account's auto-open tick is in its card. The account is **1,798 → 1,772** at 360,
+**1,928 → 1,911** at 1440, and the plan panel moves **852 → 831**. The skeleton keeps the order of the states it
+stands in for (card, two facts, record); a paid account with a workspace still sees its two facts move up when
+they arrive, the trade the 2026-11-04 record named, and no new shape was invented for it.
+
+The balance's first figure was 36px while the glance's same figure was 30; it is 30 now, and the panel is 7px
+shorter. The account's identity, the glance's notes and the allowance's measure are 12px captions; the hints and
+the Show control are 14; no 13px text is left on any page.
+
+### The way in, the documents and the page that is not there
+
+The five way-in pages keep their form and rail; their heights are **unchanged or 8px shorter** (sign-up
+**1,378 → 1,373** at 360, sign-in **1,263 → 1,255**, forgot **1,169 → 1,161**, reset **981 → 973**, verify
+**1,207 → 1,199**), because the 650 weight takes one wrap out of a rail step. The action is in the first screen
+at 360 (sign-up's submit 618–662; sign-in's 447; forgot's 460) and at 320 sign-up's submit is 720–764. The
+consent tick is 44 and its sentence is still 68px at 360 and 92px at 320; the page is 1,373 at 360 and 1,548 at
+320, nothing scrolls sideways. The 404 is 800 at 320 and 360 and 900 at 1440, as it was; "Create your account"
+is its own row at 320 and shares one with "Sign in" at 360 and wider.
+
+**Widths, schemes and the floor.** 320 / 360 / 768 / 1000 / 1440 in light and 320 / 360 / 1440 in dark: no view
+scrolls sideways (320: 320; 360: 360; 768: 768; 1000: 1000; 1440: 1440), the smallest computed type is **12px**
+on every page, and the only controls under 44 × 44 below 721 are the prose links the record already names. The
+renderer finds no tap-target, text-contrast or overflow failure on any of the ten views at 360 in either scheme;
+the boundary-contrast notes are the stylesheet's 1.26–1.52:1 decorative hairlines, the existing pairs the
+record has described since 2026-10-23, and not a control's edge.
+
+**The budget.** `app.css` is **40,925 → 40,518 bytes of 40,960** (442 left). The rules this pass adds — the
+contents line, the section ledger, the 44px tick, the reading measure — cost about 900 bytes; the rest of the
+file was written the way the site's is (one rule per line, one declaration on a short line) and then the
+redundant spaces around its punctuation were removed, which gave back about 1.5KB without changing a
+declaration a test reads. The kit's own block is untouched and still generated.
+
+**Tests.** `npm run typecheck`; `npm run build`; `node --test "dist/tests/**/*.test.js"` — **6,615 tests, 6,613
+pass, 0 fail, 2 skipped**; the six page suites (`pages*.test.js`) — **204 pass, 0 fail**. `pages.test.ts` has
+two new tests (the front page's contents line and its five numbered sections; the tick's 44px control with its
+20px drawn box; the documents' 34rem measure); its old string-slice of the rail was replaced with a structural
+lookup, because the stylesheet's punctuation is no longer a place to find a rule. `pages-dashboard.test.ts` and
+`pages-stage.test.ts` now hold the statement under the head (and, when there is a card, after it) rather than
+after the record. The action-name test, the header's 8px and the sign-up button's name were updated where this
+pass deliberately changed the words. Each new assertion fails alone against `48ac1c2`'s files.
+
+### What this pass leaves
+
+- **The contents line costs 87px on a 360 phone.** Five names in 12px type and 4px of padding are 342px in 328,
+  so Settings' neighbour — Start — takes a second row. Shortening "What you get" or "How it works" would buy
+  the row and lose the heading's words; the line is five 44px targets instead.
+- **The tick's visual gap is 24px.** The 44px control carries 12px of transparent inset on each side, so the
+  drawn 20px box sits 24px from the label where it was 12. The alternative is a negative margin that pulls the
+  focus ring into the card's padding; the target was the defect, not the gap.
+- **The account's skeleton still promises a card a paid running account does not draw.** It is the shape of the
+  most common landing with a workspace to make; the glance arrives 136px above where the tiles sat. The skeleton
+  cannot know the plan or the list before the read.
+- **The home's ledger is denser at 1000 than at 1200.** A 616px content column makes a fact's sentence three
+  lines; at 1200 it is 760 and two. The page still shortens from 768 to 1000 (3,122 → 3,062), and the 1000
+  laptop gets the margin grammar rather than a third drawing.
+- **The legal measure costs 306px at 768.** A 544px column on a 768 screen leaves 112px margins and a longer
+  scroll; the record's direction asks for the measure, not the width.
+- **"Create your account" makes the 404's third button its own row at 320.** At 360 the two secondary actions
+  still share a row; at 320 the page is the same 800px and the footer is below both.
+- **The sticky header, the prose-only 18–19px links, the checkout stand-in, the usage read's limit, the key
+  form's height and the stage card's duplicate for the states that keep it are the earlier entries**, unchanged
+  and still true.
