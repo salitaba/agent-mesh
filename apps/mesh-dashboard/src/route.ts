@@ -17,7 +17,7 @@ export const DEFAULT_VIEW: View = "overview";
  * (`#/projects`), so a link to one is the same link whichever project happens to be in front, and it is not
  * a "legacy bare link" that has to be rewritten onto the active project.
  */
-export const HOST_VIEWS: readonly View[] = ["projects"];
+export const HOST_VIEWS: readonly View[] = ["projects", "hostsettings"];
 export const isHostView = (view: View): boolean => HOST_VIEWS.includes(view);
 
 export interface RouteDetail {

@@ -751,7 +751,7 @@ export function Shell({ viewNode }: { viewNode: React.ReactNode }): React.JSX.El
       {/* Host-level, so it sits above the per-project chrome and survives every
           project switch. Rendered only under a ProjectsProvider: `curule serve`
           runs one mesh with no registry and has no tabs to show. */}
-      {hasProjects ? <ProjectTabs parked={parked} parkedId={mesh.projectId} inert={navModal} /> : null}
+      {hasProjects ? <ProjectTabs parked={parked} parkedId={mesh.projectId} inert={navModal} pageView={view} /> : null}
       {navModal ? <div id="nav-scrim" aria-hidden="true" onClick={closeMenu} /> : null}
       {/* A div, not an <aside>: the off-canvas sheet is a modal dialog, and `role="dialog"` on an <aside> is a role ARIA in HTML
           does not allow there (axe: `aria-allowed-role`, one node, every time the phone menu was open). A div carries the same

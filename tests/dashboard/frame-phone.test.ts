@@ -62,6 +62,13 @@ test("the wordmark names the workspace, not the goal's opaque id", () => {
   assert.match(shell, /<span id="mesh-id" className="sub" title=\{goalId \? `\$\{workspaceName \|\| "This project"\} · goal \$\{goalId\}` : undefined\}>\s*\{workspaceName\}/, "the line draws the name, and the title keeps the goal id");
 });
 
+test("a project's failure is not laid over a host page that does not read the project", () => {
+  // Measured at 360 on Host settings with a locked project in front: a 296 px banner ("Another process holds this project's
+  // state folder") sat above the top bar, pushing the page title to y=385 and out of the first screen. Projects already draws
+  // the same state on the project's card, and Host settings is host-wide.
+  assert.match(tabs, /\{!hostDown && crashed && !isHostView\(view\) \? <CrashBanner project=\{crashed\}/, "the crash notice is drawn only on a project page");
+});
+
 test("the phone bar is one row: the goal and the telemetry leave it, and the actions no longer wrap", () => {
   const css = phone();
   assert.match(css, /#goal-strip \{ display: none; \}/, "the goal is not a row of chrome on a phone");
