@@ -10,7 +10,7 @@
 <link rel="apple-touch-icon" href="../assets/apple-touch-icon.png">
 <meta name="theme-color" content="#fbfaf8" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#131211" media="(prefers-color-scheme: dark)">
-<link rel="stylesheet" href="../assets/site.css?v=2ef52b9242">
+<link rel="stylesheet" href="../assets/site.css?v=18f9f65247">
 <meta property="og:type" content="website">
 <link rel="canonical" href="https://curule.dev/security/">
 <meta property="og:url" content="https://curule.dev/security/">
@@ -67,8 +67,11 @@
     <p class="lede">Curule runs agents that execute shell commands and write code, so a prompt is not a sandbox: the box is the container, and the unit of isolation is one instance per team. This page says what is built around that, and where it ends.</p>
   </div>
 </section>
-<nav class="toc-bar" aria-label="On this page" data-toc-long>
+<nav class="toc-bar" aria-label="On this page">
+  <input class="toc-toggle" type="checkbox" id="toc-open" aria-labelledby="toc-label">
+  <label class="toc-summary" for="toc-open" id="toc-label"><span class="toc-kicker">On this page</span> <span class="toc-now">Contents</span><span class="toc-chevron" aria-hidden="true"></span></label>
   <ul class="toc">
+    <li class="toc-close"><span>On this page</span><label for="toc-open">Close</label></li>
     <li><a href="#glance">At a glance</a></li>
     <li><a href="#protects">What it protects</a></li>
     <li><a href="#leaves">What leaves your environment</a></li>
@@ -274,12 +277,12 @@
       </nav>
     </div>
     <div class="foot-legal">
-      <p>Curule runs Claude Code. Claude and Anthropic are trademarks of Anthropic PBC; Curule is not affiliated with or endorsed by Anthropic.</p>
+      <p>Curule can run Claude Code. Claude and Anthropic are trademarks of Anthropic PBC; Curule is not affiliated with or endorsed by Anthropic.</p>
       <p>Prices are in US dollars and exclude taxes. The source is available under the Business Source License 1.1.</p>
     </div>
   </div>
 </footer>
 <!-- generated:chrome-footer:end -->
-<script src="../assets/site.js?v=e5954f4ff3" defer></script>
+<script src="../assets/site.js?v=b029f64988" defer></script>
 </body>
 </html>

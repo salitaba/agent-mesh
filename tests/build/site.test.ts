@@ -525,6 +525,7 @@ test("nothing is hidden by the stylesheet to be shown later: what arrives as the
     ".tab-input, .billing-input, .choice-input",
     ".view-input",
     ".tiles > .tile",
+    ".toc-toggle",
     ".billing-input:nth-of-type(1):checked ~ .plans .price-monthly, .billing-input:nth-of-type(2):checked ~ .plans .price-annual",
     ".plans > .plan",
     "body:has(#billing-monthly:checked) #compare .plan-stack .period-annual, body:has(#billing-annual:checked) #compare .plan-stack .period-monthly",
@@ -534,7 +535,7 @@ test("nothing is hidden by the stylesheet to be shown later: what arrives as the
   // A browser does not print backgrounds unless it is told to: the primary button's white label and the closing band's light one would
   // be white on white. On paper a button is black text in a black line, and the band is black text on the paper.
   const print = /@media print \{[\s\S]*?\n\}/.exec(css)![0];
-  assert.match(print, /\.toc \{ flex-wrap: wrap; \}/, "the On this page row lays its chips out on paper, where the security page's seven are 1,365px in 794 and would not print whole on one line");
+  assert.match(print, /\.toc \{ display: flex !important; flex-wrap: wrap;/, "the printed contents are a wrapped list, so every section name prints whole");
   assert.match(print, /\.btn \{ background: none !important; border-color: #000 !important; color: #000 !important; \}/);
   assert.match(print, /\.cta, \.cta \.lede \{ background: none; color: #000; \}/);
   assert.match(css, /\n  \.rv \{ opacity: 0; transform: translateY\(8px\);/, "a rise of eight pixels and a fade");
@@ -551,7 +552,7 @@ test("the header is pinned and shows its line and its blur only by the classes t
   assert.match(css, /\n\.site-header \{ position: relative;[^}]*border-bottom: 1px solid transparent; \}/, "at rest it is part of the page, and its line is there but clear, so that it does not change the height of the header");
   assert.match(css, /\n\.site-header\.is-live \{ position: sticky; top: 0; \}/);
   assert.match(css, /\n\.site-header\.is-scrolled \{ border-bottom-color: var\(--line\); background: var\(--bg\); \}/, "with a plain ground where the blur is not supported");
-  assert.match(css, /@supports \(backdrop-filter: blur\(1px\)\) and \(background: color-mix\([^)]*\)\) \{\s*\.site-header\.is-scrolled, \.toc-bar \{[^}]*backdrop-filter: saturate\(1\.4\) blur\(16px\);/);
+  assert.match(css, /@supports \(backdrop-filter: blur\(1px\)\) and \(background: color-mix\([^)]*\)\) \{\s*\.site-header\.is-scrolled \{[^}]*backdrop-filter: saturate\(1\.4\) blur\(16px\);/);
   for (const p of pages) assert.match(p.markup, /<header class="site-header">/, `${p.rel}: written at rest`);
 });
 
@@ -624,66 +625,37 @@ test("the home page puts the price, then the proof and the demo, and the argumen
   // Every entry is a thumb's height, the bar keeps the page's ground with a rule under it, and its numbers keep the ledger's
   // 12px figure (they do not grow with the reader's root, and they are not a second size of type).
   const css = fs.readFileSync(path.join(SITE, "assets", "site.css"), "utf8");
-  assert.match(css, /\n\.toc-bar \{ position: relative; border-bottom: 1px solid var\(--line\); background: var\(--bg\); \}/, "the bar's own ground and rule");
-  assert.match(css, /\n\.toc a \{[^}]*min-height: 44px;/, "a chip is a 44px target");
-  assert.match(css, /\n\.toc \.n \{[^}]*min-width: 2ch; margin-right: 8px;[^}]*font-size: \.75rem;[^}]*font-variant-numeric: tabular-nums;/, "the entry's number is the ledger's 12px tabular figure");
+  assert.match(css, /\n\.toc-bar \{ position: relative; padding-block: 8px; border-bottom: 1px solid var\(--line\); background: var\(--bg\); \}/, "the bar's own ground and rule");
+  assert.match(css, /\n\.toc-summary \{[^}]*min-height: 44px;/, "the contents control is a 44px target");
+  assert.match(css, /\n\.toc \.n \{[^}]*min-width: 2ch; margin-right: 2px;[^}]*font-size: \.75rem;[^}]*font-variant-numeric: tabular-nums;/, "the entry's number is the ledger's 12px tabular figure");
   assert.match(css, /\n\.page-head \+ \.section, \.toc-bar \+ \.section, \.toc-bar \+ \[hidden\] \+ \.section \{ padding-top: clamp\(32px, 4vw, 48px\); \}/, "the price does not open with a whole section's gap under the strip");
   assert.ok(!/\.index\b/.test(css), "the strip it replaces is gone, not kept beside the bar");
 });
 
 /**
- * The bar's row is as wide as its page and scrolls sideways where the chips do not fit. Two things were wrong at its edges.
- * A page with three sections (the documentation page's Start here / The documents / Something missing) could not show them:
- * at 360 the chips were 114.6 + 154.9 + 185 + two 8px gaps + the row's 32px of padding = 502px in 360, the third began at
- * 301 and only 59px of its 185 were on screen; at 320, 19. And a row whose chips did fit could still scroll: the row's end
- * padding was the centred column inset (160px at 1,440), which a scroll container counts as content, so at 1,440 the home
- * page's 1,215px of chips in a 160px inset read 1,535px of scroll, the script shadowed an edge with nothing behind it, and a
- * drag moved the row 95px into blank. The three names now share the row below 540; the row's right padding is the gutter; and
- * a row that fits says nothing. The measured numbers are in site/DESIGN.md (2026-11-03).
+ * The On this page bar is one control, not a row that scrolls. At 360 the home page's eight chips were 1,247px in 360
+ * (887 hidden) and the security page's seven were 1,333px (973 hidden); at 900 the security row still hid 465px. The
+ * control says which section is being read and opens a list of all of them, so every name is one press away and whole.
  */
-test("a bar of three sections fits a phone's row, and a row with room no longer scrolls into its own padding", () => {
-  const docs = page(pages, "docs/index.html").html;
-  const pricing = page(pages, "pricing/index.html").html;
+test("the On this page bar is a contents control that opens every section, at every width", () => {
   const css = fs.readFileSync(path.join(SITE, "assets", "site.css"), "utf8");
-  assert.equal((/<nav class="toc-bar"[\s\S]*?<\/nav>/.exec(docs)![0].match(/<a href="#/g) ?? []).length, 3, "the documentation page's bar is the three-section row");
-  assert.match(docs, /<section class="section" id="documents">/, "and #documents is the section the rule is scoped by");
-  assert.ok(!/id="documents"/.test(pricing), "a page without that section is untouched by the sharing rule");
-  // Three chips share the 540px-and-below row; the names wrap inside the 44px chip instead of being cut by it, at 14px (the
-  // bar's size) and 12px at 320 (the floor: "documents" is 87px at 14 and 74.6 at 12).
-  assert.match(css, /@media \(max-width: 540px\) \{\n  html:has\(#documents\) \.toc li \{ flex: 1 1 0; min-width: 0; \}\n  html:has\(#documents\) \.toc a \{ display: flex; justify-content: center; min-width: 0; padding: 0 6px; white-space: normal; text-align: center; line-height: 1\.15; font-size: 14px; \}\n  html:has\(#documents\) \.toc a\[aria-current="true"\] \{ padding: 0 6px; text-decoration: underline; text-decoration-thickness: 1\.5px; text-underline-offset: \.22em; \}\n  html:has\(#documents\) \.toc a\[aria-current="true"\]::before \{ display: none; \}\n\}/, "three chips share the row and every name is whole");
-  assert.match(css, /@media \(max-width: 340px\) \{ html:has\(#documents\) \.toc a \{ font-size: 12px; \} \}/, "at 320 the labels take the 12px floor");
-  // The mark is the current-page line, not the dot: the dot's 22px of padding would leave 70.7px for "documents" at 320.
-  assert.match(css, /text-decoration: underline; text-decoration-thickness: 1\.5px; text-underline-offset: \.22em;/, "the section being read is marked with the line the header gives the current page");
-  // The right padding is the gutter (what a chip needs when the row is read to its end), not the column inset: the inset is
-  // counted as scrollable overflow and made a row that fit claim 95px more at 1,440. The left stays the page's column.
-  assert.match(css, /\n\.toc \{ display: flex; gap: 8px; padding: 8px var\(--gutter\) 8px max\(var\(--gutter\), \(100% - var\(--max\)\) \/ 2\); overflow-x: auto; scrollbar-width: none; \}/, "a row's end padding is the gutter, so a row that fits has no scroll range");
-});
-
-/**
- * The security page's seven names are the one row wider than the page's column. At 1,440 the chips were 1,504px in the
- * window, so the row scrolled and "Reporting a problem" ended at 1,472: 32px of it past the edge, with only the edge shadow
- * to say the rest was there, and a desktop mouse has no swipe to give it. From 1,200 that row keeps 11px of air a side and a
- * 6px gap instead of 16 and 8 — 82px less — and the seven end at 1,390 in a 1,440px window, a whole chip inside it. The
- * marked chip is inset by the same 22px (16 before the dot, 6 after), so the current section still does not move the row,
- * and the bar stays one row and 61px, so nothing under it moves. Only that row carries the attribute: the rows that fit
- * keep the measure the 2026-11-03 pass gave them.
- */
-test("the security page's On this page row fits a desktop's column, and only that row is tightened", () => {
-  const css = fs.readFileSync(path.join(SITE, "assets", "site.css"), "utf8");
+  const home = page(pages, "index.html").html;
   const security = page(pages, "security/index.html").html;
-  assert.match(security, /<nav class="toc-bar" aria-label="On this page" data-toc-long>/, "the security page's bar is the long row");
-  for (const p of pages) {
-    if (p.rel === "security/index.html") continue;
-    assert.ok(!/\sdata-toc-long\b/.test(p.markup), `${p.rel}: a bar whose chips fit is not tightened`);
+  assert.match(home, /<nav class="toc-bar" aria-label="On this page">\s*<input class="toc-toggle" type="checkbox" id="toc-open"[^>]*>\s*<label class="toc-summary" for="toc-open"[^>]*>/, "the bar is a checkbox and its label");
+  assert.match(home, /<span class="toc-kicker">On this page<\/span> <span class="toc-now">Contents<\/span>/, "the control says what it is and what is being read");
+  assert.equal((home.match(/id="toc-open"/g) ?? []).length, 1, "one toggle per page");
+  assert.match(home, /<li class="toc-close"><span>On this page<\/span><label for="toc-open">Close<\/label><\/li>/, "the phone's sheet has a way out that needs no script");
+  assert.match(css, /\.toc \{ position: fixed; top: var\(--head-h\); bottom: 0; left: 0; right: 0;/, "on a phone the list is the screen under the header, not a dropdown past the bottom of it");
+  for (const p of pages.filter((q) => q.markup.includes('class="toc-bar"'))) {
+    assert.match(p.markup, /<input class="toc-toggle" type="checkbox" id="toc-open"[^>]*>\s*<label class="toc-summary" for="toc-open"[^>]*>[\s\S]*?<\/label>\s*<ul class="toc">/, `${p.rel}: the control comes before the list it opens`);
   }
-  assert.match(
-    css,
-    /@media \(min-width: 1200px\) \{\n  \[data-toc-long\] \.toc \{ gap: 6px; \}\n  \[data-toc-long\] \.toc a \{ padding: 0 11px; \}\n  \[data-toc-long\] \.toc a\[aria-current="true"\] \{ padding: 0 6px 0 16px; \}\n\}/,
-    "the wide row keeps 11px a side and a 6px gap, and the marked chip the same 22px so the row does not move"
-  );
-  // The base chip is still a thumb's target and still does not wrap its name; the wide row changes only its air.
-  assert.match(css, /\n\.toc a \{[^}]*min-height: 44px;[^}]*white-space: nowrap;/, "a chip is a 44px target whatever the row");
-  assert.ok(!/\[data-toc-long\] \.toc a \{[^}]*min-height/.test(css), "the wide row takes no height off the target");
+  assert.match(css, /\n\.toc \{ display: none; position: absolute; top: 100%;/, "the list is a panel, closed by default");
+  assert.match(css, /\n\.toc-toggle:checked ~ \.toc \{ display: grid; gap: 2px; \}/, "the checkbox opens it with no script");
+  assert.match(css, /\n\.toc-toggle:focus-visible ~ \.toc-summary \{ outline: 2px solid var\(--accent\); outline-offset: 2px; \}/, "the keyboard sees the control");
+  assert.match(css, /\n\.toc-summary \{[^}]*width: min\(40rem, 100% - 2 \* var\(--gutter\)\); min-height: 44px;/, "the control is the page's column and a thumb's height");
+  assert.match(css, /@media \(min-width: 720px\) \{ \.toc-toggle:checked ~ \.toc \{ grid-template-columns: repeat\(2, minmax\(0, 1fr\)\); column-gap: 6px; \} \}/, "a desk reads the index in two columns");
+  assert.ok(!security.includes("data-toc-long"), "the long-row exception is gone with the row");
+  assert.ok(!/\[data-toc-long\]/.test(css), "and its rule with it");
 });
 
 test("on a phone the four plans are one rate card read in rows, with how buying starts before the buttons", () => {
@@ -972,7 +944,7 @@ test("the plate's captions fit the height they share, and the three steps' words
  */
 test("on a phone the four plans are read one at a time, chosen by name and figure, and nothing widens the page", () => {
   const pricing = page(pages, "pricing/index.html").html;
-  assert.match(pricing, /<p class="eyebrow">Plans<\/p>\n      <h2 class="title plans-title">The licence plans\.<\/h2>\n      <p class="small muted plans-hint">Four plans\. Choose one to read it; the comparison below lists every line\.<\/p>/, "the section keeps its heading and says what the chooser does");
+  assert.match(pricing, /<p class="eyebrow">Plans<\/p>\n      <h2 class="title plans-title">The licence plans\.<\/h2>\n      <p class="small muted plans-hint">Four plans\. Choose one to read it; the comparison below lists the price, the limits and the support of each\.<\/p>/, "the section keeps its heading and says what the chooser does");
   const css = fs.readFileSync(path.join(SITE, "assets", "site.css"), "utf8");
   assert.match(css, /@media \(max-width: 719px\) \{\n  \.plans-hint \{ display: block; margin: 0 0 12px; \}\n  \.plan-choice \{ display: grid; grid-template-columns: repeat\(2, minmax\(0, 1fr\)\);/, "the four names and figures are a 2 x 2 chooser");
   assert.match(css, /\.plans \{ grid-template-columns: minmax\(0, 1fr\); gap: 0; \}/, "the cards are a column, not a row to swipe");
@@ -1204,11 +1176,11 @@ test("at a reader's 200% text a phone's page keeps its width and the Enterprise 
   const css = fs.readFileSync(path.join(SITE, "assets", "site.css"), "utf8");
   const home = page(pages, "index.html").html;
   const pricing = page(pages, "pricing/index.html").html;
-  // The index is the On this page bar now (2026-11-01): one row that scrolls sideways, whose numbers keep their 12px when the
-  // root grows and whose chips keep their 44px cell. The entry's own wrap rules went with the four-row strip they were written
-  // for; the row's scrollWidth grows instead of the page's (0px over at a 24px and at a 32px root).
+  // The index is the On this page control now (2026-11-08): its number keeps its 12px when the root grows, and the
+  // control and its list keep their layout sizes, so the page does not widen.
   assert.match(css, /\n\.toc \.n \{[^}]*font-size: \.75rem;/, "the contents entry's number keeps its 12px when the reader's root grows");
-  assert.match(css, /\n\.toc \{[^}]*overflow-x: auto;/, "and the row scrolls rather than pushing the page sideways");
+  assert.match(css, /\n\.toc-summary \{[^}]*font-size: 14px;/, "and the control keeps the bar's 14px");
+  assert.match(css, /\n\.toc a \{[^}]*font-size: \.9375rem;/, "and each name in the list keeps its 15px");
   // The six views' chooser is a two-column grid whose chips may shrink: its labels keep their 13px and its numbers their 12px,
   // as the bar's chips and the header's controls do, so a 26px label cannot run out of a 161px chip; and the six cards share
   // one cell so no card is wider than the column.

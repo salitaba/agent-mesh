@@ -59,11 +59,6 @@ var IMAGE_NAME = "ghcr.io/salitaba/curule";
   var copyName = function (label, shown) {
     return shown === "Copy" ? label : shown + ": " + String(label).replace(/^Copy /, "");
   };
-  // Which edges of the On this page row have content beyond them: the row scrolls sideways where its chips do not fit, and a
-  // reader is otherwise left with a word cut at the edge and no sign that there is more. A pixel of slack is not an edge.
-  var tocEdges = function (left, client, total) {
-    return { back: left > 1, more: total - client > 1 && left + client < total - 1 };
-  };
   // The file a Full size link opens: the capture the page is showing. A capture with a dark twin is shown in the visitor's
   // scheme, so the link opens that twin; without one, or with no scheme to read, it opens the light file the markup names.
   var shotHref = function (light, dark, darkNow) {
@@ -79,7 +74,7 @@ var IMAGE_NAME = "ghcr.io/salitaba/curule";
 
   // The pure parts, for the tests, when the file is loaded as a module; in a browser nothing is exported.
   if (typeof module === "object" && module !== null && typeof module.exports === "object") {
-    module.exports = { readingAt: readingAt, docMatches: docMatches, scrolledOff: scrolledOff, staggerOf: staggerOf, startsHidden: startsHidden, withClass: withClass, withoutArrival: withoutArrival, copyName: copyName, tocEdges: tocEdges, shotHref: shotHref, needsTabStop: needsTabStop };
+    module.exports = { readingAt: readingAt, docMatches: docMatches, scrolledOff: scrolledOff, staggerOf: staggerOf, startsHidden: startsHidden, withClass: withClass, withoutArrival: withoutArrival, copyName: copyName, shotHref: shotHref, needsTabStop: needsTabStop };
   }
   if (typeof document === "undefined") return;
 
@@ -292,19 +287,20 @@ var IMAGE_NAME = "ghcr.io/salitaba/curule";
     all(".section").forEach(function (section) { within(section, ".wrap").forEach(arrive); });
   }
 
-  // On this page: on a long page the row of its sections stays under the header while the page is read, and the chip of the
-  // section being read is marked. The line a section's top has to pass is a third of the way down the window, and never above
-  // where a followed section lands (the page's scroll padding), or a section that was followed would not count as read. The
-  // observer's root is the window above that line, so it says when a top crosses it, which is when the section being read can
-  // change. A browser without one keeps the row where it is, a row of plain links, as it is without a script.
+  // On this page: the page's sections are one control. A 44px summary under the heading says which section is being read
+  // and opens a list of all of them; the list is a checkbox and a label, so it works with no script. The script marks the
+  // section whose top has passed the reading line, names it in the summary, and closes the list when a section is chosen,
+  // the reader taps away, Escape is pressed, or Tab leaves it. The old row of chips scrolled sideways: at 360 the home
+  // page's eight were 1,247px in 360 (887 hidden) and the security page's seven 1,333 (973 hidden), so most of a page's
+  // sections could only be reached by a sideways drag. A list is one press and every name is whole.
   var tocBar = document.querySelector(".toc-bar");
   var row = tocBar && tocBar.querySelector(".toc");
+  var tocToggle = tocBar && tocBar.querySelector(".toc-toggle");
+  var tocNow = tocBar && tocBar.querySelector(".toc-now");
   if (row && typeof window.IntersectionObserver === "function") {
     // A chip the Curule Cloud switch hides is not a chip. The pricing page's "Who runs it" chip and its section are
-    // hidden together while the service is closed, but they are still in the DOM, so a list built from every <a> had a
-    // seventh chip with no section on the page: it was marked as the section being read at the top of the page (the
-    // hidden section's top is 0), and the bar showed no mark at all while the reader was in "The plans". Both ends are
-    // checked, so a hidden chip and a chip whose section is hidden are left out of the same list the observer watches.
+    // hidden together while the service is closed, but they are still in the DOM, so a list built from every <a> would
+    // have a seventh chip with no section: it would be marked at the top of the page (the hidden section's top is 0).
     var hiddenIn = function (node) {
       for (var n = node; n; n = n.parentNode) if (n.hidden) return true;
       return false;
@@ -320,23 +316,7 @@ var IMAGE_NAME = "ghcr.io/salitaba/curule";
     var holding = 0;
     var line = 0;
     var watcher = null;
-    var resizing = 0;
-    // The marked chip is kept in view in the row, with a little of its neighbours, without scrolling the page.
-    var reveal = function (chip) {
-      var box = row.getBoundingClientRect();
-      var at = chip.getBoundingClientRect();
-      var room = 24;
-      var to = at.left - room < box.left ? row.scrollLeft + at.left - box.left - room : at.right + room > box.right ? row.scrollLeft + at.right - box.right + room : null;
-      if (to === null) return;
-      if (typeof row.scrollTo === "function") row.scrollTo({ left: Math.max(0, to), behavior: reducedMotion() ? "auto" : "smooth" });
-      else row.scrollLeft = Math.max(0, to);
-    };
-    // Nothing being read (the reader is back at the top): the row goes back to its first chips, as it is at rest.
-    var rewind = function () {
-      if (!row.scrollLeft) return;
-      if (typeof row.scrollTo === "function") row.scrollTo({ left: 0, behavior: reducedMotion() ? "auto" : "smooth" });
-      else row.scrollLeft = 0;
-    };
+    var nameOf = function (chip) { return String(chip ? chip.textContent : "").replace(/^\s*\d\d\s*/, "").replace(/\s+/g, " ").trim(); };
     var mark = function (i) {
       if (i === current) return;
       current = i;
@@ -344,8 +324,7 @@ var IMAGE_NAME = "ghcr.io/salitaba/curule";
         if (j === i) a.setAttribute("aria-current", "true");
         else a.removeAttribute("aria-current");
       });
-      if (i >= 0) reveal(chips[i]);
-      else rewind();
+      if (tocNow) tocNow.textContent = i >= 0 ? nameOf(chips[i]) : "Contents";
     };
     // A chip that is followed is the section being read from the moment it is chosen: the sections a smooth scroll passes on the
     // way there are not marked one after another. The hold ends when the page gets there, or when the scroll ends anywhere else
@@ -365,25 +344,44 @@ var IMAGE_NAME = "ghcr.io/salitaba/curule";
       spy();
     };
     row.addEventListener("click", function (event) {
-      var i = chips.indexOf(event.target && event.target.closest ? event.target.closest("a") : null);
+      var chip = event.target && event.target.closest ? event.target.closest("a") : null;
+      var i = chips.indexOf(chip);
       if (i < 0) return;
       mark(i);
       held = i;
       window.clearTimeout(holding);
       holding = window.setTimeout(release, 3000);
+      // The list closes under the keyboard: carry the focus to the section it chose, so Tab continues from there rather
+      // than from the document's start. The browser still follows the fragment and the page's scroll padding.
+      var target = chip && document.getElementById(chip.getAttribute("href").slice(1));
+      var landing = target && (target.querySelector("h1, h2, h3") || target);
+      if (landing && typeof landing.focus === "function") {
+        landing.setAttribute("tabindex", "-1");
+        // After the link's own action has run: the browser follows the fragment, and focusing the heading before that
+        // leaves the focus on the body.
+        window.setTimeout(function () { landing.focus({ preventScroll: true }); }, 0);
+      }
     });
-    // A chip reached with the keyboard is brought wholly into the row. The browser only scrolls a focused element the
-    // smallest distance that makes any part of it visible, so at 360 the third chip of the security page ("What leaves
-    // your environment", 277px wide) stayed at x=318 with 42px of it in the row, its name cut mid-word. The same
-    // reveal the mark uses keeps the chip and 24px of its neighbour in view, and does not move a chip already in view.
-    row.addEventListener("focusin", function (event) {
-      var chip = event.target && event.target.closest ? event.target.closest("a") : null;
-      if (chip && chips.indexOf(chip) >= 0) reveal(chip);
-    });
+    if (tocToggle) {
+      // The list is a menu: choosing a section closes it, and so does a tap outside, Escape, or Tab leaving it.
+      var close = function () { tocToggle.checked = false; };
+      row.addEventListener("click", function (event) {
+        if (event.target && event.target.closest && event.target.closest("a")) close();
+      });
+      document.addEventListener("pointerdown", function (event) {
+        if (tocToggle.checked && !tocBar.contains(event.target)) close();
+      });
+      tocBar.addEventListener("focusout", function (event) {
+        if (tocToggle.checked && event.relatedTarget && !tocBar.contains(event.relatedTarget)) close();
+      });
+      document.addEventListener("keydown", function (event) {
+        if (event.key === "Escape" && tocToggle.checked) { close(); tocToggle.focus(); }
+      });
+    }
     window.addEventListener("scrollend", function () { if (held >= 0) release(); });
-    // The observer says when a section's top crosses the line, which is not said when a jump passes whole sections at once (Back to top
-    // under reduced motion goes from the last section to the top in one step), so the reading position is looked at as the window
-    // scrolls too, once a frame, and the bar never says the reader is somewhere they are not.
+    // The observer says when a section's top crosses the line, which is not said when a jump passes whole sections at once (Back
+    // to top under reduced motion goes from the last section to the top in one step), so the reading position is looked at as the
+    // window scrolls too, once a frame, and the bar never says the reader is somewhere they are not.
     var checking = false;
     window.addEventListener("scroll", function () {
       if (checking) return;
@@ -400,21 +398,9 @@ var IMAGE_NAME = "ghcr.io/salitaba/curule";
       watcher = new window.IntersectionObserver(spy, { rootMargin: "0px 0px " + (line - window.innerHeight) + "px 0px" });
       sections.forEach(function (s) { if (s) watcher.observe(s); });
     };
-    // The row's edges are read from its own widths, not from the number of chips: at 360 the pricing row is 908px and the
-    // security row 1,333px, and at 1,440 the security row still has 181px beyond the fold. The classes draw the shadow and
-    // are taken off at the end, so a row that fits or has been read to its end says nothing.
-    var edgesNow = function () {
-      var edge = tocEdges(row.scrollLeft || 0, row.clientWidth || 0, row.scrollWidth || 0);
-      tocBar.className = withClass(withClass(tocBar.className, "is-back", edge.back), "is-more", edge.more);
-    };
-    row.addEventListener("scroll", edgesNow, { passive: true });
-    window.addEventListener("resize", function () {
-      window.clearTimeout(resizing);
-      resizing = window.setTimeout(function () { watch(); edgesNow(); }, 150);
-    });
+    window.addEventListener("resize", watch);
     watch();
     tocBar.className += " is-live";
-    edgesNow();
   }
 
   // Back to top: once the reader is about two screens down a page and turns back (scrolls up), or has come to the end of the content,

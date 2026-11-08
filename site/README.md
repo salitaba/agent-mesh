@@ -12,16 +12,16 @@ python3 -m http.server --directory site 8080      # then open http://127.0.0.1:8
 
 | File | Address | What it holds |
 |---|---|---|
-| `index.html` | `/` | The tagline, what Curule is and a picture of it beside the first actions (a product frame: overview, events, designer), a numbered *On this page* bar (the eight sections, each keeping its ledger number), the plans in a line (four rows of one rate card on a phone), the two ways in (we run it, or you do), then the proof: a tour of the console in six views (one at a time on a phone, chosen by number and name) and the commands that run the demo today, then why it is not a group chat, how a mission goes, security in brief, and the questions |
+| `index.html` | `/` | The tagline, what Curule is and a picture of it beside the first actions (a product frame: overview, events, designer), a numbered *On this page* control (the eight sections, each keeping its ledger number), the plans in a line (four rows of one rate card on a phone), the two ways in (we run it, or you do), then the proof: a tour of the console in six views (one at a time on a phone, chosen by number and name) and the commands that run the demo today, then why it is not a group chat, how a mission goes, security in brief, and the questions |
 | `pricing/index.html` | `/pricing/` | The four licence figures in a ruled line at the head, in the billing period the switch below chooses (so the price is on the first screen), then the two ways to pay (while Curule Cloud is open), the plans with the Annual/Monthly choice — one plan at a time on a phone, chosen by name and figure — the comparison table, what a plan pays for, a calculator, how licences work, and questions |
-| `docs/index.html` | `/docs/` | "Start here": a card for each thing a visitor comes to do (run the demo, deploy it, describe a team and its rules, use Curule Cloud), each naming the one document to open first; then a map of the documents in the repository: what each is for, and whether it is reference, a guide, short, or a log, with a filter over them. An On this page row under the heading names the three sections, as on the other long pages |
+| `docs/index.html` | `/docs/` | "Start here": a card for each thing a visitor comes to do (run the demo, deploy it, describe a team and its rules, use Curule Cloud), each naming the one document to open first; then a map of the documents in the repository: what each is for, and whether it is reference, a guide, short, or a log, with a filter over them. An On this page control under the heading names the three sections, as on the other long pages |
 | `security/index.html` | `/security/` | An At a glance box (what it protects, what leaves your environment, what it does not do: one line each, from the page's own sentences, each linking to its section, with a mark that says what kind of answer it is), then the three in full, a hardening checklist, assurance, and how to report a problem |
-| `contact/index.html` | `/contact/` | Which address is for what, in three rows (the place the links to sales, support and security land, each with a copy button that the script adds), and what to put in the message |
+| `contact/index.html` | `/contact/` | Which address is for what, in three rows (the place the links to sales, support and security land, each with a copy button that the script adds), what to put in the message, and what we can help with; an On this page control names the three sections |
 | `legal/index.html` | `/legal/` | The source licence in plain words, privacy (this site collects nothing), and the terms |
 | `404.html` | any address that is not found | A short list of the pages a person was probably looking for, each with what it is for (and the account, while Curule Cloud is open), and the way home; written with addresses from the root, because a host shows it at the address that was not found |
 | `ux/` | `/ux/` | Not one of the site's pages: the record of the UX passes, with each pass's before and after. It is `noindex, nofollow` and unlinked, draws itself with its own styles and pictures, and every script and test that reads or writes a page of the site skips it (`UNPUBLISHED` in `scripts/site-chrome.mjs`, `scripts/set-domain.mjs` and `tests/build/site-pages.ts`) |
 | `assets/site.css` | | The one stylesheet: the generated UI kit block, the brand's colours under the names the pages use, the system fonts, and every component |
-| `assets/site.js` | | Sets the links that leave the site, the copy buttons on the commands, the phone menu, the header's line and blur once the page has moved, the arrival of what is below the first screen, the On this page bar of the long pages, Back to top, and the documentation page's filter; nothing else |
+| `assets/site.js` | | Sets the links that leave the site, the copy buttons on the commands, the phone menu, the header's line and blur once the page has moved, the arrival of what is below the first screen, the On this page control of the long pages, Back to top, and the documentation page's filter; nothing else |
 | `assets/pricing.js` | | The calculator on the pricing page |
 | `assets/shots/` | | The product screenshots, under stable names (see below) |
 | `assets/favicon.svg`, `apple-touch-icon.png`, `social-card.png` | | Copies of the files in [`brand/`](../brand/README.md); a test fails if one stops matching the kit |
@@ -43,24 +43,20 @@ the plan cards and tables are in the markup, and the contact addresses are text.
 copy buttons, and the links to the documents and the source (which live on GitHub, so they cannot be written into the pages: see
 the next section).
 
-The long pages (the home page, pricing, documentation, security, legal) have an *On this page* bar under their heading: a row of
-chips, one for each section — the security page's summary box, the pricing page's two ways in and the documentation page's map
-included, and a section the Curule Cloud switch hides takes its chip with it, so the bar never marks a section the reader is not
-in or offers a link to something that is not there. The home page's bar is the contents index it opens with, under the hero: its
-eight chips keep the ledger numbers the sections' eyebrows use ("01 Plans and prices" … "08 Questions"), and it is the only
-navigation a phone's header does not keep, since the header's four links are hidden below 600.
-Without a script it is a row of plain links. With one, the bar stays under the header while the page is read, and the chip of the
-section being read is marked (`aria-current`, and a filled chip with a dot). It is one row at every width, scrolled sideways when
-the chips do not fit, so it is as tall where it rests as where it stays and nothing moves when it starts to stay. Where the
-chips do not fit (the pricing page's seven are 908px at 360, the security page's 1,333), the script shadows the edge that has
-more behind it and moves the shadow to the other edge once the row is scrolled; a row that fits has no shadow, and a printed
-row wraps instead of scrolling. The reading
-position is looked at when a section's top crosses the line (an IntersectionObserver) and as the window scrolls, once a frame, so a
-jump that passes whole sections at once (Back to top under reduced motion) clears the mark and brings the row back to its first chips. A followed link
+The long pages (the home page, pricing, documentation, security, contact, legal) have an *On this page* control under their
+heading: one 44px line that names the section being read and opens the list of every section — the security page's summary box,
+the pricing page's two ways in and the documentation page's map included, and a section the Curule Cloud switch hides is left out
+with its chip, so the list never offers a link to something that is not there. The home page's list is the contents index it
+opens with, under the hero: its eight entries keep the ledger numbers the sections' eyebrows use ("01 Plans and prices" … "08
+Questions"), and it is the only navigation a phone's header does not keep, since the header's four links are hidden below 600.
+The control is a checkbox and its label, so it opens and closes with no script. On a phone the list is the whole screen under the
+header, one 48px row per section and a Close row at its top; from 720 it is a panel under the control in two columns. With a
+script the bar stays under the header while the page is read, the section being read is marked (`aria-current`, a tint and a
+dot) and named in the control, and choosing a section, a tap outside, Escape, or Tab leaving the list closes it. A followed link
 lands below the header and the bar: `--head-h` and `--toc-h` in `assets/site.css` are their heights, and
-`tests/build/site-script.test.ts` checks them against the rules that make them. A chip that takes the keyboard's focus is
-brought wholly into the row, with 24px beside it, rather than the sliver the browser leaves when it considers a partly
-visible chip to be in view.
+`tests/build/site-script.test.ts` checks them against the rules that make them. The reading position is looked at when a
+section's top crosses the line (an IntersectionObserver) and as the window scrolls, once a frame, so a jump that passes whole
+sections at once (Back to top under reduced motion) clears the mark and the control says no section is being read.
 
 Wherever the script finds a clipboard it adds a Copy button to each block of commands, and one beside each address on the
 contact page (`a[data-mail]`, when the text is an address): one click writes it to the clipboard and says "Copied", to a

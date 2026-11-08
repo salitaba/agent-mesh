@@ -4050,3 +4050,88 @@ root at 320/360/720). The before column is the site at `1184c19`, served on 8347
   in the app.** None of these changed.
 - **The captures were not retaken** and `site/ux/` was not edited; this pass's frames are in
   `/tmp/opencode/ux1107c/marketing/shots/`, not in that page's record.
+
+## 2026-11-08: the contents are one control, and the page you are reading is its name
+
+Measured with the workspace image's Chrome (156) over CDP at 320, 360, 390, 768, 1,024 and 1,440 in both schemes; touch at
+320/360/390 and 719; print at 360 and 794; forced colours at 360; no script at 360; a 24px and a 32px root at 320 and 360;
+axe-core WCAG 2.0–2.2 A and AA in 56 runs. The before column is the site at this branch's start, served on the same port and
+measured in the same run; no number is copied from an earlier pass.
+
+### What changed
+
+- **The On this page bar is a contents control, not a row that scrolls.** At 360 the home page's eight chips were **1,247px in
+  360** (887 hidden: five of the eight sections could only be reached by a sideways drag) and the security page's seven
+  **1,333px** (973 hidden). The bar is now one 44px line — "On this page · *the section being read*" — that opens every section
+  in one press. The list is a checkbox and its label, so it opens and closes with no script: on a phone it is the screen under
+  the header (360 × 631 in a 700px window), one 48px row per section and a 44px Close row at the top; from 720 it is a 640px
+  panel under the control in two columns (640 × 219 at 1,440). The page's sections are all whole, in the page's order.
+- **The control says where the reader is.** The script already marked the section whose top had passed the reading line; it now
+  also writes that section's name into the control. Choosing a section, a tap outside, Escape, or Tab leaving the list closes it;
+  a followed section lands at **150** under the 69px header and the 61px bar at 320, 360, 768 and 1,440, and the heading of the
+  section chosen takes the keyboard's focus next, so Tab continues from there instead of from the top of the document.
+- **The contact page has the same control as the other long pages.** It was the one long page (4,402px at 360) with three
+  sections and no in-page navigation. Its "What to put in the message" is now a section of its own (`#message`) beside
+  `#addresses` and `#help`, so the three are in the list. The page is **68px taller at 320/360/390** (the 61px bar and the
+  section's 7px), and its copy is unchanged.
+- **The pricing hint no longer promises more than the comparison has.** It said the table "lists every line"; the table has the
+  price, the three limits, the usage export and support, not the two Business support lines the cards carry. It now says what
+  it lists: "the comparison below lists the price, the limits and the support of each." The sentence is one line longer at a
+  phone width, which is the **+23px** on the pricing page at 320/360/390; at 768 and up the hint is not shown and the page is
+  unchanged.
+- **The footer says what the product can do.** "Curule runs Claude Code" is one runtime, not the product: the native runtime runs
+  any OpenAI-compatible provider or the Anthropic API, and the FAQ says so. The trademark line now reads "Curule can run Claude
+  Code"; no claim about Anthropic changed.
+- **The bar no longer blurs what is behind it.** A `backdrop-filter` on the bar makes it the containing block for a fixed
+  descendant, which pinned the phone's sheet to the bar (measured: a fixed panel asked for `top: 69px` and landed at 510.5).
+  The header keeps its blur; the bar uses its solid ground, which is what a 61px control needs over the text it covers.
+
+### Measurements after this pass
+
+| Page, height at 320 / 360 / 390 / 768 / 1,024 / 1,440 | Before | After |
+|---|---|---|
+| Home | 13,447 / 12,621 / 12,204 / 12,126 / 11,480 / 11,289 | unchanged |
+| Pricing | 14,535 / 13,449 / 12,970 / 10,271 / 9,478 / 9,414 | **14,558 / 13,472 / 12,992 / 10,271 / 9,478 / 9,414** |
+| Documentation | 8,970 / 8,379 / 8,125 / 5,329 / 4,993 / 4,511 | unchanged |
+| Security | 12,449 / 11,524 / 10,827 / 7,905 / 7,920 / 7,655 | unchanged |
+| Contact | 4,748 / 4,402 / 4,256 / 3,434 / 2,828 / 2,899 | **4,816 / 4,470 / 4,324 / 3,499 / 2,888 / 2,984** |
+| Legal | 5,582 / 5,034 / 4,785 / 3,439 / 3,562 / 3,354 | unchanged |
+| 404 | 2,307 / 2,110 / 2,087 / 1,457 / 1,492 / 1,558 | unchanged |
+
+| The On this page row at 360 | Before | After |
+|---|---|---|
+| Home | 1,247 in 360 (887 hidden) | **one 328 × 44 control; the list is 360 × 631** |
+| Pricing | 908 (548 hidden) | **one 328 × 44 control; the list is 360 × 631** |
+| Security | 1,333 (973 hidden) | **one 328 × 44 control; the list is 360 × 631** |
+| Security at 900 | 1,365 (465 hidden) | **one 708 × 44 control; the list is 640 × 221** |
+| At 1,440 | home 1,440, security 1,440 | **640 × 44 control; 640 × 219 panel, two columns** |
+
+- The control is **44px** and the list rows **48px** at 320/360/390; the control is the page's column (328px at 360, 640px at
+  1,440), the list 640px at 720 and up. The hidden checkbox is 1 × 1, as the site's other radios are; its label is the target.
+- No page scrolls sideways at 320, 360, 390, 768, 1,024 or 1,440 in light or dark (**0** on all 84 page/width/theme pairs); the
+  probe reports **0** console errors and **0** axe-core WCAG 2.0–2.2 A/AA violations on all seven pages at 320/360/768/1,440 in
+  both schemes. The smallest computed text is **12px**; the worst text pair is unchanged (5.61:1 light, 6.57:1 dark).
+- With no script the control opens and closes the same list (the checkbox is the state), the summary says "On this page
+  Contents", and every page is 0px over; the contact page is 4,469 at 360. Print at 794 is 0px over on all seven pages and
+  prints the wrapped contents (home 13,220; pricing 10,695; docs 5,165; security 7,457; contact 3,139; legal 3,082; 404 1,114).
+  At a 24px and a 32px root every page is 0px over at 320 and 360. At `forcedColors: active` the control keeps its 2px outline
+  and the sheet is 0px over.
+- `ux-render` at 360 now reports **0** horizontal-overflow notes on the home page (the row's chips were 14), and the contact page
+  has the same control as the rest.
+- Tests: the site's own suites are **168** (was 168; five tests changed with the component, two new assertions), all passing;
+  `site-chrome --check` and `pricing:check` pass; typecheck and build are clean. `npm run site:check` still exits 1 on the owner's
+  `TODO(owner)` for the terms at `site/legal/index.html:134`.
+
+### What this pass deliberately left
+
+- **The control spends no row of section links on a desktop.** The old row showed two or three of a page's seven or eight
+  names at rest and the rest behind a swipe; the control shows one name and opens the list. The at-a-glance index is one press
+  away at every width, and the desktop panel is two columns of the same names.
+- **The phone's sheet is 631px of a 700px window.** It is the screen under the header, with the header still there; the Close
+  row is at the top, and a tap outside/Escape/Tab leaving closes it. A shorter list would hide names again.
+- **The pricing page is 23px taller at a phone** for the honest hint, and the contact page 68px taller for its bar and the
+  section split. Nothing else moved; the home page, the page the pass is about, is the same height to the pixel.
+- **The bar's blur is gone; the header's is kept.** A 61px bar with a solid ground is what the contents control needs, and the
+  header still gives the page its line and blur once it has moved.
+- **The captures were not retaken, Curule Cloud's prices are still in the app, and `site/ux/` was not edited.** This pass's
+  frames are in `/tmp/opencode/ux1108/`.
