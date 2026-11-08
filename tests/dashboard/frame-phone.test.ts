@@ -62,6 +62,13 @@ test("the wordmark names the workspace, not the goal's opaque id", () => {
   assert.match(shell, /<span id="mesh-id" className="sub" title=\{goalId \? `\$\{workspaceName \|\| "This project"\} · goal \$\{goalId\}` : undefined\}>\s*\{workspaceName\}/, "the line draws the name, and the title keeps the goal id");
 });
 
+test("a host page's bar is the host's, not the project in front", () => {
+  // Measured at 360 and 1440 on Host settings: the bar still drew the active project's "Locked" chip and its Working/Tokens
+  // telemetry over a host-wide form (and its `p` shortcut paused that project). Projects was host-level; Host settings was not.
+  assert.match(shell, /const hostLevel = noProjects \|\| isHostView\(view\);/, "both host pages are host-level");
+  assert.match(shell, /<header id="topbar" className=\{hostLevel \? "bare" : undefined\}/, "and the bar draws bare");
+});
+
 test("a project's failure is not laid over a host page that does not read the project", () => {
   // Measured at 360 on Host settings with a locked project in front: a 296 px banner ("Another process holds this project's
   // state folder") sat above the top bar, pushing the page title to y=385 and out of the first screen. Projects already draws

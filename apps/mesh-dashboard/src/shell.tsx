@@ -255,7 +255,9 @@ export function Shell({ viewNode }: { viewNode: React.ReactNode }): React.JSX.El
   // A host with no project, and the Projects page, belong to the host and not to a mission: no mission chip, goal, numbers or
   // mission actions on them, and with no project at all no project views to go to. They used to show "Connecting", 0 working and
   // 0/0 tokens around the welcome page, and a sidebar of views that led nowhere.
-  const hostLevel = noProjects || view === "projects";
+  // Both of the host's own pages are host-level. Host settings was left out, so its bar carried the project in front: a
+  // "Locked" chip, Working 0 and Tokens 0 over a host-wide form, and a `p` key that paused a project the page never shows.
+  const hostLevel = noProjects || isHostView(view);
   const decisions = facts.blockingDecisions + facts.advisoryDecisions;
   // Tool requests do not ride the event stream, so the badge polls for them (inbox.ts).
   const toolRequests = useToolRequests(client, !serverDown && !noProjects && registry === "known" && !holdView);
