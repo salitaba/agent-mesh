@@ -4102,7 +4102,7 @@ measured in the same run; no number is copied from an earlier pass.
 | Home | 1,247 in 360 (887 hidden) | **one 328 × 44 control; the list is 360 × 631** |
 | Pricing | 908 (548 hidden) | **one 328 × 44 control; the list is 360 × 631** |
 | Security | 1,333 (973 hidden) | **one 328 × 44 control; the list is 360 × 631** |
-| Security at 900 | 1,365 (465 hidden) | **one 708 × 44 control; the list is 640 × 221** |
+| Security at 900 | 1,365 (465 hidden) | **one 640 × 44 control; the list is 640 × 221** |
 | At 1,440 | home 1,440, security 1,440 | **640 × 44 control; 640 × 219 panel, two columns** |
 
 - The control is **44px** and the list rows **48px** at 320/360/390; the control is the page's column (328px at 360, 640px at
