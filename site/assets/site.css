@@ -149,25 +149,45 @@ code { font-family: var(--mono); font-size: .875em; }
 b, strong { font-weight: 650; }
 .muted { color: var(--muted); }
 .small { font-size: .875rem; }
+/* A note inside a card is still a note. The card's own paragraph rule (below) is 15px, the card's body; it outranks
+   `.small` and set the contact page's three notes ("A licence key is issued by hand…") at 15px while the same class
+   reads 14px on the five other pages. The class wins the size, and the card's colour and 1.6 leading still apply. */
+.card p.small { font-size: .875rem; }
 /* Said once: small capitals, a quiet paragraph, a list that is only layout, a one-column grid. */
 .eyebrow, .way-kind, .way dt, .code::before, .foot-col h2, .group, .contact h4, .compare thead th { font-size: .75rem; font-weight: 600; letter-spacing: var(--k-track-caps); text-transform: uppercase; }
-.card p, .steps p, .try p, .tile p, .doc-card > p, .start p, .plan-tag, .rows span, .address-row span, .glance-list p, .split > header p { color: var(--muted); font-size: .9375rem; }
+/* The one-column grid is a list's layout: a row's sentence is its own direct span, and nothing nested in it is a
+   paragraph. `.rows span` also caught the label chips of the docs page's legend (`<b><span class="tag">Reference</span>`)
+   and drew them at 15px, 25% larger than the same chip in the map below and taller than its 22px pill; a mark that says
+   what a label looks like has to be the label. */
+.card p, .steps p, .try p, .tile p, .doc-card > p, .start p, .plan-tag, .rows > li > span, .address-row span, .glance-list p, .split > header p { color: var(--muted); font-size: .9375rem; }
 .proof, .tiles, .try, .starts, .doc-list, .rows, .plain, .tick, .plan-includes, .nf-list, .addresses, .teaser, .glance-list, .toc, .steps, .foot-col ul { margin: 0; padding: 0; list-style: none; }
 .grid, .ways, .steps, .tiles, .try, .starts, .doc-grid, .plans, .nf-list, .glance-list, .cols, .teaser, .hero-grid, .address-row, .split, .calc, .proof { display: grid; grid-template-columns: minmax(0, 1fr); }
 
 .wrap { width: min(100% - 2 * var(--gutter), var(--max)); margin-inline: auto; }
 .section { padding-block: var(--section); }
 .section:not(.band, .tint, .cta, [hidden]) + .section:not(.band, .tint, .cta) { padding-top: 0; }
-.section:has(> .wrap > p:only-child) { padding-block: 48px; }
+/* A section that holds one paragraph is as tall as the paragraph needs. It is a wrap that is the section's only child:
+   the pricing page's "How licences work" has two (the head and its steps, then the limits notice), so the rule that was
+   written for the contact page's closing note also took 53px off that section's top and bottom at 1,440 and closed the
+   gap to its neighbours while every section around it kept the page's rhythm (48px where the page's own padding is 100.8). */
+.section:has(> .wrap:only-child > p:only-child) { padding-block: 48px; }
 .band, .tint { border-block: 1px solid var(--line); }
 .band { background: var(--band); }
 .tint { background: color-mix(in srgb, var(--soft) 60%, var(--bg)); }
 .section-head { max-width: 46rem; margin-bottom: clamp(32px, 5vw, 56px); }
 .section-head .title { margin-bottom: 16px; }
 .eyebrow { display: flex; align-items: center; margin: 0 0 16px; color: var(--link); }
-/* The home page's sections are numbered like ledger entries. */
+/* Every section head that has an eyebrow is numbered like a ledger entry: the home page's eight sections and the pricing
+   page's seven. The counter is on `main` and counts what is drawn, so a section the Curule Cloud switch hides is not
+   counted and the numbers follow the page a reader has. */
 main { counter-reset: sec; }
-main:has(.hero) .section-head .eyebrow::before { counter-increment: sec; content: counter(sec, decimal-leading-zero); margin-right: 12px; padding-right: 12px; border-right: 1px solid var(--line2); color: var(--muted); font-variant-numeric: tabular-nums; }
+main .section-head .eyebrow::before { counter-increment: sec; content: counter(sec, decimal-leading-zero); margin-right: 12px; padding-right: 12px; border-right: 1px solid var(--line2); color: var(--muted); font-variant-numeric: tabular-nums; }
+/* A page whose index has no number of its own (every long page but the home, whose eight entries carry theirs in the
+   markup) numbers its entries with the same figure, from its own counter: the chips the reader can see, so a chip the
+   Cloud switch hides is not counted and the index stays in step with the eyebrows above. */
+.toc { counter-reset: toc; }
+.toc-bar:not(:has(.n)) .toc li:not(.toc-close) { counter-increment: toc; }
+.toc-bar:not(:has(.n)) .toc a::before { content: counter(toc, decimal-leading-zero); flex: none; min-width: 2ch; margin-right: 2px; color: var(--muted); font-size: .75rem; font-weight: 600; letter-spacing: .04em; font-variant-numeric: tabular-nums; }
 .lede { max-width: 40rem; color: var(--ink2); font-size: clamp(1.0625rem, .98rem + .4vw, 1.25rem); line-height: 1.55; }
 .cols { gap: clamp(32px, 5vw, 72px); }
 .cols > * { min-width: 0; }
@@ -685,9 +705,13 @@ main:has(.hero) .section-head .eyebrow::before { counter-increment: sec; content
 .try > li:last-child { padding-bottom: 0; }
 .try > li:last-child::after { display: none; }
 .try h3 { margin-bottom: 6px; }
-/* The Copy button stands on the heading line; the heading stops short of it, and only when the script
-   has put the button there. The 72px is the button's 64px, its 6px inset and a 2px gap. */
-.try > li:has(.code-bar) h3 { padding-right: 72px; }
+/* The Copy button stands on the heading line; the heading stops short of it, and only where the script has put the
+   button there — the home page's four steps. Their code blocks carry no Terminal band (`#try .code` below), so the
+   button is positioned against the step and sits on its heading's line. The pricing page's licence steps keep the
+   band, and their button is in it, 20px under the heading: the reserve reached them too and wrapped "Install it on
+   the host" onto a second line at 320 and 360 (49px, where the words need 25) for a button that was not there.
+   The 72px is the button's 64px, its 6px inset and a 2px gap. */
+#try .try > li:has(.code-bar) h3 { padding-right: 72px; }
 /* The Copy button is the step's, and stands on its heading line: the first paragraph starts below
    its 44px target at every width, not under it. */
 .try > li > p:first-of-type { margin-top: 20px; }
@@ -836,7 +860,12 @@ body:has(#billing-monthly:checked) .head-price-monthly { display: inline; }
 .toc-bar.is-live { position: sticky; top: var(--head-h); z-index: 30; }
 /* The control is the page's column: a 44px line, 8px above and below, its own boundary, the section being read, and a
    chevron. The hidden checkbox is the state; the label is the target. */
-.toc-toggle { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+/* The control's state is a checkbox, and the label that says "On this page" toggles it. A tap focuses the checkbox, and
+   Chrome brings a focused control into view by its layout position: this one sat in the bar at the top of the page, so
+   opening the contents while reading at 1,800 scrolled the page to 1,406 — 394px up, with the line the reader was on.
+   Fixed to the window (1px, as before) the control is always in view, and focusing it moves nothing; the sheet, its
+   close row and its focus outline are unchanged. */
+.toc-toggle { position: fixed; top: 0; left: 0; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
 .toc-summary { display: flex; align-items: center; gap: 12px; width: min(40rem, 100% - 2 * var(--gutter)); min-height: 44px; margin: 0 auto 0 max(var(--gutter), (100% - var(--max)) / 2); padding: 0 14px; border: 1px solid var(--k-line-control); border-radius: var(--k-r-md); background: var(--panel); box-shadow: var(--lift); color: var(--ink2); font-size: 14px; font-weight: 600; cursor: pointer; user-select: none; }
 .toc-summary:hover { background: var(--panel2); }
 .toc-now { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink); }
@@ -849,12 +878,15 @@ body:has(#billing-monthly:checked) .head-price-monthly { display: inline; }
    the index in four rows. */
 .toc { display: none; position: absolute; top: 100%; left: max(var(--gutter), (100% - var(--max)) / 2); z-index: 1; width: min(40rem, 100% - 2 * var(--gutter)); max-height: calc(100vh - var(--head-h) - var(--toc-h) - 16px); overflow-y: auto; padding: 8px var(--gutter) 12px; border-bottom: 1px solid var(--line); background: var(--panel); box-shadow: var(--k-hl), var(--k-shadow-3); }
 .toc-toggle:checked ~ .toc { display: grid; gap: 2px; }
-.toc li { display: flex; min-width: 0; }
-.toc a { flex: 1; display: flex; align-items: center; gap: 10px; min-height: 48px; padding: 0 12px; border: 1px solid transparent; border-radius: var(--k-r-sm); background: transparent; box-shadow: none; color: var(--ink2); font-size: .9375rem; font-weight: 600; text-decoration: none; }
+.toc li { display: flex; min-width: 0; position: relative; }
+.toc a { flex: 1; display: flex; align-items: center; gap: 10px; min-height: 48px; padding: 0 12px 0 22px; border: 1px solid transparent; border-radius: var(--k-r-sm); background: transparent; box-shadow: none; color: var(--ink2); font-size: .9375rem; font-weight: 600; text-decoration: none; }
 .toc a:hover { border-color: var(--line2); background: var(--panel2); color: var(--ink); }
-/* The section being read: a dot before its name (not colour alone), a tint, and the control's boundary. */
-.toc a[aria-current="true"] { position: relative; padding-left: 26px; border-color: color-mix(in srgb, var(--accent) 40%, transparent); background: var(--soft); color: var(--link); }
-.toc a[aria-current="true"]::before { content: ""; position: absolute; left: 10px; top: 50%; width: 6px; height: 6px; margin-top: -3px; border-radius: 50%; background: currentColor; }
+/* The section being read: a tint, the rule of its kind (not colour alone), and a dot in the row's left lane. The dot is
+   the row's, not the link's: the link's ::before carries the entry's number (the home page's in the markup as a span, the
+   other pages' from the counter), and a chip that took the number's place with a dot would shift its number 14px right
+   out of the column the other entries keep. */
+.toc a[aria-current="true"] { border-color: color-mix(in srgb, var(--accent) 40%, transparent); background: var(--soft); color: var(--link); }
+.toc li:has(> a[aria-current="true"])::before { content: ""; position: absolute; left: 9px; top: 50%; width: 6px; height: 6px; margin-top: -3px; border-radius: 50%; background: var(--link); }
 .toc .n { flex: none; min-width: 2ch; margin-right: 2px; color: var(--muted); font-size: .75rem; font-weight: 600; letter-spacing: .04em; font-variant-numeric: tabular-nums; }
 @media (min-width: 720px) { .toc-toggle:checked ~ .toc { grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 6px; } }
 /* On a phone the list is the page's whole screen under the header: every name whole, no scroll behind it, and a Close
@@ -1301,7 +1333,7 @@ body:has(#billing-monthly:checked) .head-price-monthly { display: inline; }
   .doc-card:target, .plan:target { outline: 2px solid Highlight; outline-offset: 2px; }
   .address-row:target { outline: 2px solid Highlight; outline-offset: -2px; }
   /* The dot is the second cue that a chip is the section being read; keep it in High Contrast. */
-  .toc a[aria-current="true"]::before { forced-color-adjust: none; background: Highlight; }
+  .toc li:has(> a[aria-current="true"])::before { forced-color-adjust: none; background: Highlight; }
   /* The contents control says which section is being read; in High Contrast its chosen row keeps its outline. */
   .toc-toggle:checked ~ .toc-summary { outline: 2px solid Highlight; outline-offset: -2px; }
   /* The chosen plan's dot is a background too, and its tint goes: the rule around the label is the mark that stays. */
@@ -1332,8 +1364,12 @@ body:has(#billing-monthly:checked) .head-price-monthly { display: inline; }
   .toc-toggle, .toc-summary, .toc .toc-close { display: none !important; }
   .toc { display: flex !important; flex-wrap: wrap; position: static; width: auto; max-height: none; overflow: visible; padding: 0; border: 0; box-shadow: none; background: transparent; gap: 0 12px; }
   .toc a { flex: none; min-height: 0; padding: 0; border: 0; background: none; box-shadow: none; font-size: 12px; }
-  .toc a[aria-current="true"] { padding-left: 16px; background: none; }
-  .toc .n { margin-right: 4px; }
+  /* A sheet has no pointer: the entry being read is marked by a line, as the header's current page is, and not by the
+     dot (which would sit in a lane the printed row does not have) or an indent (which would stand its number out of the
+     column the others keep). */
+  .toc li:has(> a[aria-current="true"])::before { display: none; }
+  .toc a[aria-current="true"] { background: none; text-decoration: underline; text-underline-offset: .22em; }
+  .toc .n, .toc-bar:not(:has(.n)) .toc a::before { margin-right: 4px; }
   .rv { opacity: 1 !important; transform: none !important; }
   body { background: #fff; color: #000; }
   .cta, .cta .lede { background: none; color: #000; }

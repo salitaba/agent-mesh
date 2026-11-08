@@ -4134,3 +4134,117 @@ measured in the same run; no number is copied from an earlier pass.
   header still gives the page its line and blur once it has moved.
 - **The captures were not retaken, Curule Cloud's prices are still in the app, and `site/ux/` was not edited.** This pass's
   frames are in `/tmp/opencode/ux1108/`.
+
+## 2026-11-08, second pass: a tap on the contents keeps its place, and the ledger numbers every index
+
+Measured with the same probe (Chrome 156 over CDP; reduced motion; light unless said; touch at 320/360/390 and 719; a
+mouse at 768/1,024/1,440; print at 360 and 794; forced colours at 360 and 390; no script at 360; a 24px and a 32px root
+at 320/360; axe-core WCAG 2.0–2.2 A and AA on the seven pages at 320/360/768/1,440 in both schemes and on eight
+interactive states). The before column is the site at `f90c36b`: the page heights and the two component sizes were measured
+on 8081 before any edit, and the tap's scroll, the numbered entries and the print heights were re-measured from a
+`git archive` copy of the same commit served on 8391; no number is copied from an earlier pass.
+
+### What changed
+
+- **A tap on the contents control no longer moves the page.** The control's state is the checkbox the label toggles, and a
+  tap focuses it; it stood in the bar at the top of the page, so Chrome brought the focused control into view by its layout
+  position. Opening the list while reading at 1,800 scrolled the page to **1,406** on a 390×800 phone (394px up, 344 at
+  360×700) and at 3,000 to **2,606**: the line the reader was on moved down the screen with it. The 1px control is
+  `position: fixed` to the window now, so it is always in view and focusing it moves nothing; the sheet, its Close row and
+  its focus outline are what they were.
+- **The marked entry's number keeps its column.** The dot of the section being read took the link's `::before`, the place
+  the entry's number had just taken, so the current row's number stood **14px** right of the others (43 against 29 at 390)
+  — and on the home page, whose numbers are in the markup, it had done so since the numbers arrived. The dot is the row's
+  now (`li:has(> a[aria-current])`), every row keeps a 22px lane for it, and all eight numbers sit at **39**.
+- **Every index and every eyebrow is a numbered entry.** The home page's eight contents entries and its section kickers
+  carried the ledger's 01–08; the pricing page — the page whose job is the figures — numbered **0 of 7** kickers and **0 of
+  7** contents entries, and the other four long pages numbered none. A counter over what is drawn numbers every section
+  head with an eyebrow (the pricing page's seven) and every index whose entries carry no number of their own (the five
+  other long pages: 7, 7, 3, 3, 3), in the same 12px tabular figure as the home page's. Because both counters count what is
+  drawn, the Cloud switch hiding "Who runs it" leaves six and six, and the home page, whose eight entries carry their own
+  numbers in the markup, is not numbered twice.
+- **A heading that has no Copy button on its line does not reserve its width.** The 72px reserve for the demo's Copy button
+  reached the pricing page's licence steps, where the button stands in the command's own Terminal band, 20px under the
+  heading: at 320 and 360 "Install it on the host" wrapped to two lines (**49px**, the second line 119px) where the words
+  need one (**25**, 213px). The rule is scoped to `#try`; the licence step is **326 → 305px** and its heading one line.
+- **The "one paragraph" section rule is the section's only paragraph.** `.section:has(> .wrap > p:only-child)` was written
+  for the contact page's closing note, and it also matched the pricing page's "How licences work", whose second wrap is
+  the limits notice: its padding was **48px where the page's own is 100.8** at 1,440 (71.68 at 1,024, 53.76 at 768), and
+  the gap from the calculator to its heading, and from its notice to the questions, was **185px where every other pair of
+  sections is 238** (156 against 180 at 1,024). The wrap must be the section's only child now: the section keeps the
+  page's rhythm (238/238, 180/180, 144/144) and the contact page's note stays compact.
+- **Two broad rules drew a second copy of a component a step larger.** The docs page's label legend showed its chips
+  (`Reference`, `Guide`, `Short`, `Log`) at **15px in a 104px pill** — the `.rows span` type rule had caught them — where
+  the map below draws the same chip at **12px in 86px**, and taller than the pill's 22px. The rule takes the row's own
+  direct span now, and the four chips measure 12/86. The contact page's three card notes were **15px/24** (heights
+  48/96/72) where `.small` is **14px/22.4** on the five other pages, because the card's paragraph rule outranks the class;
+  the class wins (45/90/67) and the contact page is 38px shorter at 360.
+
+### Measurements after this pass
+
+| Page, height at 320 / 360 / 390 / 768 / 1,024 / 1,440 | Before | After |
+|---|---|---|
+| Home | 13,397 / 12,624 / 12,201 / 12,126 / 11,480 / 11,268 | unchanged |
+| Pricing | 14,558 / 13,537 / 12,941 / 10,247 / 9,478 / 9,390 | **14,536 / 13,516 / 12,941 / 10,258 / 9,525 / 9,495** |
+| Documentation | 9,017 / 8,403 / 8,107 / 5,304 / 4,993 / 4,493 | unchanged |
+| Security | 12,521 / 11,572 / 10,900 / 7,905 / 7,920 / 7,703 | unchanged |
+| Contact | 4,864 / 4,470 / 4,324 / 3,499 / 2,912 / 2,984 | **4,824 / 4,432 / 4,310 / 3,491 / 2,904 / 2,977** |
+| Legal / 404 | unchanged | unchanged |
+
+| The contents control | Before | After |
+|---|---|---|
+| A tap at 1,800 (390×800): the page | **1,406** (394px up) | **1,800** |
+| A tap at 3,000: the page | **2,606** (394px up) | **3,000** |
+| A tap at 360×700: the page | **1,456** (344px up) | **1,800** |
+| The marked entry's number, against the others | **43** vs 29 (14px out) | **39** vs 39 |
+| A sheet row / the Close label | 48–91 / 44 | 48–91 / 44 (the numbers change no height) |
+
+| The ledger's numbers | Before | After |
+|---|---|---|
+| The pricing page's numbered section heads | **0 of 7** | **7 of 7** |
+| The pricing page's numbered contents entries | **0 of 7** | **7 of 7** |
+| The documentation / security / contact / legal index | **0 of 3 / 0 of 7 / 0 of 3 / 0 of 3** | **3 / 7 / 3 / 3** |
+| The pricing page with Curule Cloud closed | — | **6 heads and 6 entries**, 01–06, no gap |
+| The home page's eight entries | 01–08 in the markup | unchanged (the counter skips them) |
+
+| The licence step at 320 / 360 | Before | After |
+|---|---|---|
+| "Install it on the host" | **49px, two lines** (87 + 119) | **25px, one line** (213) |
+| The heading's right padding | 72px | **0** |
+| The step / the licences section / the page | 326 / 1,771 / 13,537 | **305 / 1,749 / 13,516** (360) |
+
+| The pricing page's "How licences work" at 768 / 1,024 / 1,440 | Before | After |
+|---|---|---|
+| Its own padding, top and bottom | 48 / 48 / 48 | **53.76 / 71.68 / 100.8** |
+| The calculator → its heading | 138 / 156 / 185 | **144 / 180 / 238** |
+| Its notice → the questions | 138 / 156 / 185 | **144 / 180 / 238** |
+| The section / the page, at 1,440 | 1,168 / 9,390 | **1,274 / 9,495** |
+
+| The label legend (docs) and the card notes (contact) | Before | After |
+|---|---|---|
+| A legend chip, font / width | **15px / 104px** | **12px / 86px** |
+| The same chip in the map | 12px / 86px | 12px / 86px |
+| The contact cards' notes | **15px/24, 48/96/72** | **14px/22.4, 45/90/67** |
+| The same class on the other five pages | 14px/22.4 | 14px/22.4 |
+
+- The 56 page/width/theme pairs (7 pages × 320/360/390/768/1,024/1,440 × light, and 360/1,440 dark) are **0px over**, with the
+  smallest computed text **12px** and **0** console errors. axe-core reports **0** violations on the 56 default views and on
+  the eight interactive states (the sheet open at 360/390/1,440, the legend open, the phone menu, Monthly, the estimate's
+  error, the docs filter's empty answer).
+- Print at 794 and 360 is **0px over** on all seven pages (pricing 10,647 → **10,681** at 794: the restored section padding is
+  +15 and the numbered index wraps to a second line, +19; contact 3,139 → 3,131); the printed row of the entry being read
+  keeps a line instead of the dot, whose lane paper does not have. Without a script every page is **0px over** at 360 and
+  the sheet opens (831px); the contact page is 4,410. With `forcedColors: active` at 360/390 every page is 0px over and the marked row's dot is the system Highlight.
+  At a 24px and a 32px root every page is **0px over** at 320 and 360.
+- The site's own suites are **176** tests (was 173; three new), all passing; `site-chrome --check` and `pricing:check` pass.
+  `npm run site:check` still exits 1 on the owner's `TODO(owner)` for the terms at `site/legal/index.html:137`.
+
+### What this pass deliberately left
+
+- **The phone's sheet rows still stretch to the screen** (58px at 320×640, 81 at 390×844, 91 on the pricing page at
+  390×844): the sheet is the screen under the header, as the last pass made it, and the numbers now hold its left column.
+  A sheet that hugged its list would be a different shape, not a repair.
+- **A three-entry index is numbered 01–03.** The numbers are the ledger's, not a claim that the page has eight sections.
+- **The legend rows and the card notes keep their line heights**; only the sizes the two classes name changed.
+- **Curule Cloud's prices are still in the app, the captures were not retaken, and `site/ux/` was not edited.** This pass's
+  frames are in `/tmp/opencode/ux1108c/marketing/shots/`.

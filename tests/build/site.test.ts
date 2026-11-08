@@ -452,7 +452,7 @@ test("a card's title has the tile's room above it, a plan's figures share a line
   assert.match(css, /\n\.card > \.mark, \.start > \.mark, \.glance-list \.mark, \.way-head \.mark \{ width: 40px; height: 40px; padding: 10px;/, "a mark in a card, a place to start, a glance or the way in's head is on a 40 px tile");
   assert.match(css, /\n\.start > \.mark \{ margin-bottom: 10px; \}/, "which has the same 16 under it as a card's, with the 6 of the card's rows");
   assert.match(css, /\n\.plan-limits div \{[^}]*flex-direction: column-reverse; justify-content: flex-end;/, "the figure is at the top of its cell, so a label of two lines does not lift it");
-  assert.match(css, /\n\.section:has\(> \.wrap > p:only-child\) \{ padding-block: \d+px; \}/, "a section that holds one paragraph is as tall as the paragraph needs");
+  assert.match(css, /\n\.section:has\(> \.wrap:only-child > p:only-child\) \{ padding-block: \d+px; \}/, "a section that holds one paragraph is as tall as the paragraph needs — and only when that paragraph is the section's whole content");
   // The closing band: its heading and its line are one group (the line's own 16 px under the heading, no gap of the grid), and the
   // actions stand 28 px off it on a phone and level with it, beside it, on a desktop.
   assert.match(css, /\n\.cta \.wrap \{ display: grid; gap: 0 64px; \}\n\.cta \.btn-row \{ margin-top: 28px; \}/);
@@ -1233,9 +1233,84 @@ test("a row list that stands in the page's column holds its sentences to the pro
 test("a reader's larger text keeps a step's Copy button off its heading, and a plan's figure label whole", () => {
   const css = fs.readFileSync(path.join(SITE, "assets", "site.css"), "utf8");
   assert.match(css, /\n\.try \.copy \{ width: 64px; justify-content: center;/, "the step's Copy button keeps one width, so its word wraps instead of growing over the heading");
-  assert.match(css, /\n\.try > li:has\(\.code-bar\) h3 \{ padding-right: 72px; \}/, "the heading reserves the button's 64px, its 6px inset and a 2px gap");
+  assert.match(css, /\n#try \.try > li:has\(\.code-bar\) h3 \{ padding-right: 72px; \}/, "the heading reserves the button's 64px, its 6px inset and a 2px gap — on the page whose blocks carry no Terminal band, where the button really is on the heading's line");
+  // The reserve belongs to the step's own shape: the pricing page's licence steps keep the Terminal band, and their
+  // Copy button stands in it 20px under the heading. Unscoped, the reserve wrapped "Install it on the host" to a
+  // second line at 320 and 360 (49px where the words need 25) for a button that was not there.
+  assert.ok(!/\n\.try > li:has\(\.code-bar\) h3/.test(css), "a step whose Copy button stands in its own block's band does not reserve the heading's width");
+  const pricing = page(pages, "pricing/index.html").html;
+  assert.match(pricing, /<div class="code"><pre data-scroll><code>curule license install/, "the licence command's block is its own, with the band the script puts the button in");
   assert.match(css, /\n\.plan-limits dt \{[^}]*font-size: 12px;/, "a plan's figure label keeps the ramp's 12px caption size at every root");
   assert.ok(!/\.plan-limits dt \{[^}]*font-size: \.75rem;/.test(css), "so a 24px root cannot make it 18px and clip it in its 79px cell");
+});
+
+/**
+ * The same component, drawn once. Two broad selectors reached a second place and drew it a step larger: the docs page's
+ * legend showed its label chips at 15px (the `.rows span` type rule) where the map below draws the same chip at 12px, and
+ * the contact page's three card notes were 15px (the card's own paragraph rule) where `.small` reads 14px on five pages.
+ */
+test("a label chip in the legend is the chip in the map, and a note in a card is a note", () => {
+  const css = fs.readFileSync(path.join(SITE, "assets", "site.css"), "utf8");
+  assert.match(css, /\.rows > li > span, \.address-row span/, "a row's sentence is its own direct span, so a chip nested in the row's title is not set as a paragraph");
+  assert.ok(!/\.rows span[ ,{]/.test(css), "the type rule that caught the legend's chip is gone");
+  assert.match(css, /\n\.tag \{[^}]*font-size: \.75rem;/, "a label chip is 12px and a 22px pill");
+  const docs = page(pages, "docs/index.html").html;
+  assert.match(docs, /<li><b><span class="tag">Reference<\/span> long, to search<\/b><span>/, "the legend shows the label as the map does, inside the row's title");
+  assert.match(css, /\n\.card p\.small \{ font-size: \.875rem; \}/, "a note keeps the note's 14px inside a card, whose body is 15px");
+  const contact = page(pages, "contact/index.html").html;
+  assert.equal((contact.match(/<p class="small">/g) ?? []).length, 3, "the contact page's three card notes are the class the rule restores");
+});
+
+/**
+ * The surface's one visual idea is the ledger: a numbered entry. The home page numbers its eight contents entries in
+ * the markup and its section eyebrows from a counter. The pricing page — the page whose job is the figures — numbered
+ * neither: its seven eyebrows were plain kickers and its seven contents entries plain names. Both take the same figure
+ * from a counter over what is drawn, so the Cloud switch hiding "Who runs it" leaves the two sequences in step (six and
+ * six), and the home page, whose entries carry their own numbers, is not numbered twice.
+ */
+test("every contents index and every eyebrow is the ledger's numbered entry, from one counter over what is drawn", () => {
+  const css = fs.readFileSync(path.join(SITE, "assets", "site.css"), "utf8");
+  assert.match(css, /\nmain \{ counter-reset: sec; \}/);
+  assert.match(css, /\nmain \.section-head \.eyebrow::before \{ counter-increment: sec; content: counter\(sec, decimal-leading-zero\);/, "every section head with an eyebrow is numbered, not only the home page's");
+  assert.ok(!/main:has\(\.hero\) \.section-head \.eyebrow/.test(css), "the home-page-only scope is gone");
+  assert.match(css, /\n\.toc \{ counter-reset: toc; \}/);
+  assert.match(css, /\n\.toc-bar:not\(:has\(\.n\)\) \.toc li:not\(\.toc-close\) \{ counter-increment: toc; \}/, "an index that carries no number of its own counts its drawn entries");
+  assert.match(css, /\n\.toc-bar:not\(:has\(\.n\)\) \.toc a::before \{ content: counter\(toc, decimal-leading-zero\);/, "and shows it in the ledger's 12px figure");
+  // The home page's numbers are its own markup: the guard keeps its entries from being numbered twice.
+  const home = page(pages, "index.html").html;
+  assert.equal((home.match(/<span class="n">\d\d<\/span>/g) ?? []).length, 8, "the home page's eight entries keep their own numbers");
+  for (const rel of ["pricing/index.html", "docs/index.html", "security/index.html", "contact/index.html", "legal/index.html"]) {
+    const html = page(pages, rel).html;
+    assert.ok(!/<span class="n">/.test(html), `${rel}: no entry carries a number in the markup, so the counter is the only source`);
+  }
+  // The pricing page's seven eyebrows and seven entries are the same seven sections in the same order, so the two
+  // counters cannot disagree.
+  const pricing = page(pages, "pricing/index.html");
+  const nav = /<nav class="toc-bar"[^>]*>([\s\S]*?)<\/nav>/.exec(pricing.html)![1]!;
+  const chips = [...nav.matchAll(/<a href="#([\w-]+)"/g)].map((m) => m[1]!);
+  const heads = [...pricing.html.matchAll(/<section class="section(?: band)?" id="([\w-]+)"[^>]*>\s*<div class="wrap(?: cols)?">\s*<div class="section-head">\s*<p class="eyebrow"/g)].map((m) => m[1]!);
+  assert.deepEqual(chips, heads, "one numbered entry for each section head, in the page's order");
+  assert.equal(chips.length, 7, "seven sections on the pricing page");
+});
+
+/**
+ * Opening the contents list is a tap on its label, which focuses the checkbox behind it. The control stands in the bar,
+ * which is sticky once the script has run: its layout position is far up the page when the reader is deep in it, and
+ * Chrome brings a focused control into view by that position. Measured before this rule, a tap at 1,800 on a 390×800
+ * phone scrolled the page to 1,406 (394px up) and the marked section moved under the reader ("Plans and prices" became
+ * "Contents"); at 3,000 it went to 2,606. Fixed to the window the 1px control is always in view, so the tap moves nothing.
+ * The marked row's dot is the row's, which leaves the link's ::before to the entry's number: as the link's dot it stood
+ * where the number stands and pushed the current entry's number 14px out of the column the others keep.
+ */
+test("opening the contents list does not move the page, and its dot leaves the number's place", () => {
+  const css = fs.readFileSync(path.join(SITE, "assets", "site.css"), "utf8");
+  assert.match(css, /\n\.toc-toggle \{ position: fixed; top: 0; left: 0; width: 1px; height: 1px; opacity: 0; pointer-events: none; \}/, "the control is fixed to the window, so focusing it never scrolls the page");
+  assert.match(css, /\n\.toc li:has\(> a\[aria-current="true"\]\)::before \{ content: ""; position: absolute; left: 9px;/, "the dot of the section being read belongs to its row");
+  assert.ok(!/\n\.toc a\[aria-current="true"\]::before \{ content: ""/.test(css), "and the link's ::before holds the entry's number");
+  assert.match(css, /\n\.toc a \{[^}]*padding: 0 12px 0 22px;/, "every row keeps the dot's lane, so every number starts at one x");
+  const print = /@media print \{[\s\S]*?\n\}/.exec(css)![0];
+  assert.match(print, /\.toc li:has\(> a\[aria-current="true"\]\)::before \{ display: none; \}/, "the printed row has no lane for the dot");
+  assert.match(print, /\.toc a\[aria-current="true"\] \{ background: none; text-decoration: underline;/, "so on paper the entry being read keeps a line instead, as the header's current page does");
 });
 
 /**
