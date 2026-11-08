@@ -339,7 +339,10 @@ export function ProjectTabs({ parked, parkedId, inert, pageView }: { parked?: bo
         className="pj-switch"
         aria-haspopup="dialog"
         aria-expanded={switcher}
-        aria-label={frontName ? `Project in front: ${frontName}. Switch project` : "Choose a project"}
+        // The name must contain the words drawn inside it: the project's name and the state word under it. "Project in front:"
+        // before the name and a period after the state broke the contiguous drawn text (axe label-content-name-mismatch on
+        // both host pages at 360 and 1440). The action follows the drawn words instead.
+        aria-label={frontName ? `${frontName} ${frontLook?.word ?? ""}. Switch project` : "No project. Choose a project"}
         onClick={() => setSwitcher(true)}
       >
         <span className="pj-switch-ico" data-tone={frontLook?.tone}><Icon name={frontLook?.icon ?? "folder"} size={16} /></span>

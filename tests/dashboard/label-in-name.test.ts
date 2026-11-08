@@ -36,6 +36,15 @@ test("a Designer seat is named from the face, the name and the role it draws", (
   assert.doesNotMatch(tsx, /data-seat=\{id\} aria-pressed=\{sel\} aria-label=\{label\}/, "no shorter label overrides the card");
 });
 
+test("the project switcher is named by the project and state it draws", () => {
+  // Measured 2026-11-08 at 360 and 1440 on both host pages: axe reported label-content-name-mismatch (serious) on `.pj-switch`,
+  // whose name was "Project in front: Demo Mesh (stub agents). Switch project" over the drawn "Demo Mesh (stub agents) / Locked".
+  const tabs = read("tabs.tsx");
+  assert.match(tabs, /aria-label=\{frontName \? `\$\{frontName\} \$\{frontLook\?\.word \?\? ""\}\. Switch project`/, "the name begins with the drawn name and state, in order");
+  assert.match(tabs, /<b>\{frontName \?\? "No project"\}<\/b>\s*<small>\{frontLook\?\.word \?\? "Choose"\}<\/small>/, "which are the two lines the button draws");
+  assert.doesNotMatch(tabs, /aria-label=\{frontName \? `Project in front:/, "the old label interrupted the drawn text");
+});
+
 test("an inbox control with a count is named by the words it draws", () => {
   // Measured 2026-11-04 with one decision waiting: axe 4.14 reported label-content-name-mismatch (serious) on the bar's inbox
   // button and on the dock's "Needs you" tab — the name "Needs you: 1 waiting on you" interrupted the drawn "Needs you 1" with a
