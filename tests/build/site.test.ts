@@ -535,7 +535,8 @@ test("nothing is hidden by the stylesheet to be shown later: what arrives as the
   // A browser does not print backgrounds unless it is told to: the primary button's white label and the closing band's light one would
   // be white on white. On paper a button is black text in a black line, and the band is black text on the paper.
   const print = /@media print \{[\s\S]*?\n\}/.exec(css)![0];
-  assert.match(print, /\.toc \{ display: flex !important; flex-wrap: wrap;/, "the printed contents are a wrapped list, so every section name prints whole");
+  assert.match(print, /\.toc \{ display: flex !important; flex-wrap: wrap; position: static !important; width: min\(100% - 2 \* var\(--gutter\), var\(--max\)\) !important;/, "the printed index is laid out in the page's column, not fixed to the screen");
+  assert.match(print, /\.toc \.toc-close \{ display: flex !important; flex: 0 0 100%;/, "and it keeps the name above it");
   assert.match(print, /\.btn \{ background: none !important; border-color: #000 !important; color: #000 !important; \}/);
   assert.match(print, /\.cta, \.cta \.lede \{ background: none; color: #000; \}/);
   assert.match(css, /\n  \.rv \{ opacity: 0; transform: translateY\(8px\);/, "a rise of eight pixels and a fade");
@@ -645,7 +646,9 @@ test("the On this page bar is a contents control that opens every section, at ev
   assert.match(home, /<span class="toc-kicker">On this page<\/span> <span class="toc-now">Contents<\/span>/, "the control says what it is and what is being read");
   assert.equal((home.match(/id="toc-open"/g) ?? []).length, 1, "one toggle per page");
   assert.match(home, /<li class="toc-close"><span>On this page<\/span><label for="toc-open">Close<\/label><\/li>/, "the phone's sheet has a way out that needs no script");
-  assert.match(css, /\.toc \{ position: fixed; top: var\(--head-h\); bottom: 0; left: 0; right: 0;/, "on a phone the list is the screen under the header, not a dropdown past the bottom of it");
+  assert.match(css, /@media \(max-width: 719px\) \{\n  body:has\(\.toc-bar\.is-live \.toc-toggle:checked\) \{ overflow: hidden; \}\n  \.toc-bar\.is-live \.toc \{ position: fixed; top: var\(--head-h\); bottom: 0;/, "with the script the sheet is the screen under the header, and the script closes it when a section is chosen");
+  assert.ok(!/^\.toc \{ position: fixed; top: var\(--head-h\)/m.test(css), "without the script it is a panel in the page: a no-script follow must not leave the sheet behind");
+  assert.ok(!/body:has\(\.toc-toggle:checked\) \{ overflow: hidden; \}/.test(css), "and the page is not locked behind it");
   for (const p of pages.filter((q) => q.markup.includes('class="toc-bar"'))) {
     assert.match(p.markup, /<input class="toc-toggle" type="checkbox" id="toc-open"[^>]*>\s*<label class="toc-summary" for="toc-open"[^>]*>[\s\S]*?<\/label>\s*<ul class="toc">/, `${p.rel}: the control comes before the list it opens`);
   }

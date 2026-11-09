@@ -889,12 +889,14 @@ body:has(#billing-monthly:checked) .head-price-monthly { display: inline; }
 .toc li:has(> a[aria-current="true"])::before { content: ""; position: absolute; left: 9px; top: 50%; width: 6px; height: 6px; margin-top: -3px; border-radius: 50%; background: var(--link); }
 .toc .n { flex: none; min-width: 2ch; margin-right: 2px; color: var(--muted); font-size: .75rem; font-weight: 600; letter-spacing: .04em; font-variant-numeric: tabular-nums; }
 @media (min-width: 720px) { .toc-toggle:checked ~ .toc { grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 6px; } }
-/* On a phone the list is the page's whole screen under the header: every name whole, no scroll behind it, and a Close
-   row at the top so the sheet is never a trap with no script. */
+/* On a phone the list is a panel under the bar without the script, so following a section is not left behind it: the
+   base rule above is a dropdown in the page, and the page is not locked. With the script the bar is `.is-live`, and the
+   panel is the screen under the header, as it was: the script closes it when a section is chosen, so the full-screen
+   sheet is never a dead end, and it shows every name at once. */
 .toc .toc-close { display: none; }
 @media (max-width: 719px) {
-  body:has(.toc-toggle:checked) { overflow: hidden; }
-  .toc { position: fixed; top: var(--head-h); bottom: 0; left: 0; right: 0; width: 100%; max-height: none; padding: 8px var(--gutter) 24px; border: 0; border-top: 1px solid var(--line); border-radius: 0; box-shadow: var(--k-shadow-3); overscroll-behavior: contain; }
+  body:has(.toc-bar.is-live .toc-toggle:checked) { overflow: hidden; }
+  .toc-bar.is-live .toc { position: fixed; top: var(--head-h); bottom: 0; left: 0; right: 0; width: 100%; max-height: none; padding: 8px var(--gutter) 24px; border: 0; border-top: 1px solid var(--line); border-radius: 0; box-shadow: var(--k-shadow-3); overscroll-behavior: contain; }
   .toc .toc-close { display: flex; align-items: center; justify-content: space-between; min-height: 44px; margin-bottom: 4px; padding: 0 12px; border-bottom: 1px solid var(--line); color: var(--muted); font-size: 12px; font-weight: 600; letter-spacing: var(--k-track-caps); text-transform: uppercase; }
   .toc-close label { display: inline-flex; align-items: center; justify-content: center; min-width: 44px; min-height: 44px; margin-right: -12px; border-radius: var(--k-r-sm); color: var(--ink); font-size: 14px; font-weight: 600; letter-spacing: 0; text-transform: none; cursor: pointer; }
   .toc-close label:hover { background: var(--panel2); }
@@ -1123,9 +1125,12 @@ body:has(#billing-monthly:checked) .head-price-monthly { display: inline; }
 .compare thead th:first-child { position: sticky; left: 0; z-index: 2; }
 @media (max-width: 799px) { .compare tbody th, .compare thead th:first-child { box-shadow: inset -1px 0 0 var(--line); } }
 .compare tbody tr:last-child th, .compare tbody tr:last-child td { border-bottom: 0; }
-/* Below 720 the table is one plan at a time (above); at 720 and up it fits its box. */
+/* Below 720 the table is one plan at a time (above); at 720 and up it fits its box. The box loses the window's
+   scrollbar, so at a 720 window it is 650px, not the 660 the table used to demand: the last 10px of the table (its
+   right rule and the edge of the last column) were behind a sideways scroll that nothing announced. The table takes
+   the box it is in; at 768 it is still 695px and at 800 and up the base 720px floor is unchanged. */
 @media (max-width: 799px) {
-  .compare { min-width: 660px; }
+  .compare { min-width: 0; }
   .compare th, .compare td { padding: 12px 14px; }
 }
 .calc { gap: 24px; }
@@ -1362,7 +1367,12 @@ body:has(#billing-monthly:checked) .head-price-monthly { display: inline; }
   /* A printed page has no control to open: the contents are printed as a wrapped list of names, so the sheet carries the
      index and no name is cut at the paper's edge. */
   .toc-toggle, .toc-summary, .toc .toc-close { display: none !important; }
-  .toc { display: flex !important; flex-wrap: wrap; position: static; width: auto; max-height: none; overflow: visible; padding: 0; border: 0; box-shadow: none; background: transparent; gap: 0 12px; }
+  /* The printed index keeps its name. The Close row was hidden with the control, so the list of eight names had no title
+     above it and read as eight loose lines under the hero. The row's own words are the name ("On this page"); its Close
+     label belongs to the screen and is not printed. */
+  .toc .toc-close { display: flex !important; flex: 0 0 100%; min-height: 0; margin: 0 0 6px; padding: 0; border: 0; color: var(--muted); font-size: 12px; font-weight: 600; letter-spacing: var(--k-track-caps); text-transform: uppercase; }
+  .toc .toc-close label { display: none; }
+  .toc { display: flex !important; flex-wrap: wrap; position: static !important; width: min(100% - 2 * var(--gutter), var(--max)) !important; margin-inline: auto; max-height: none; overflow: visible; padding: 0 !important; border: 0 !important; box-shadow: none !important; background: transparent !important; gap: 0 12px; }
   .toc a { flex: none; min-height: 0; padding: 0; border: 0; background: none; box-shadow: none; font-size: 12px; }
   /* A sheet has no pointer: the entry being read is marked by a line, as the header's current page is, and not by the
      dot (which would sit in a lane the printed row does not have) or an indent (which would stand its number out of the

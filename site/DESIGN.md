@@ -4248,3 +4248,90 @@ on 8081 before any edit, and the tap's scroll, the numbered entries and the prin
 - **The legend rows and the card notes keep their line heights**; only the sizes the two classes name changed.
 - **Curule Cloud's prices are still in the app, the captures were not retaken, and `site/ux/` was not edited.** This pass's
   frames are in `/tmp/opencode/ux1108c/marketing/shots/`.
+
+## 2026-11-09: the contents follows a section with no script, the table fits at 720, and the printed index keeps its name
+
+Measured with the workspace image's Chrome (156) over CDP, reduced motion, light unless said; touch at 320/360/390 and a
+mouse at 720/768/1,024/1,440; print at 390/794/1,440; no script at 320/360/390/768/1,440; `forcedColors: active` at 390.
+The before column is the site at this pass's start (`b7b17ff`), extracted with `git archive` and served on 8,891, and the
+after is the worktree on 8,801; no number is copied from an earlier pass.
+
+### What changed
+
+- **Without a script, the phone's contents list is a panel in the page, and a section it chooses is not left behind it.**
+  The list used to be `position: fixed` from the header to the bottom of the window with `overflow: hidden` on the body
+  below 720. At 390 the sheet was **390 × 775 at 69–844**, its Close row and seven links **88 + 91 px** each, and the page
+  was locked. A no-script reader who pressed "Compare" scrolled the page to 2,860 — the section's top at **150**, with the
+  sheet still at **69–844** over it — so the tap looked like nothing. The base `.toc` rule is the list now: a **358 × 420**
+  panel under the bar at 578–998, its rows **45 + 48 px**, the page unlocked. After the same press the panel is at
+  **−2,282 to −1,862**, the section is at 150, and **none of it is covered**. The bar's full-screen sheet is kept for the
+  script, which marks the bar `.is-live` and closes the list when a section is chosen: there it is still **390 × 775 at
+  69–844**, the Close row 44 and the seven links 91, and the body is locked while it is open. The selector is
+  `.toc-bar.is-live .toc`; the base panel is what a page without the script gets. At 320 × 568 with the script the sheet is
+  **320 × 499** with 56px rows; without it the panel is 288 × 420.
+- **The plan and model comparison tables fit the 720 window they are drawn in.** Below 720 the phone stack is shown; at 720
+  and up the table is shown, but the window's scrollbar leaves a 650–652px box and the table still demanded 660px
+  (`min-width: 660px`). At 720 the plan table was **660 × 650 in a 650–652px box: 10px hidden**, the wrap was 667px tall
+  because the 10px overflow added a 15px scrollbar of its own, and the model table had the same 660-in-650. The page is
+  **10,480px**. The `min-width` is 0 in that band now, so both tables are **650 × 650 in the same box, 0 hidden**, the wraps
+  are 652px, and the page is **10,450px** — 30px shorter, 15 for each table. At 729 the tables are 659 in 659, at 730 660 in
+  660, at 768 695 in 695, and at 1,440 1,118 in 1,118, all 0 over; with a coarse pointer at 720 the 662px box already held
+  660 and is unchanged.
+- **The printed index has its name, and it is in the page's column.** The print rule hid the Close row with the control
+  (`.toc-close { display: none }`), and the list was left at x = 0: at 390 it was **0, 390 wide, 58px tall**, at 794
+  **0, 784, 38**, and at 1,440 **0, 1,430, 19** — a row of names flush to the paper's edge with nothing saying it was the
+  contents. The row's own span is printed now ("On this page", 12px caps) and the Close label is not; the list is
+  `width: min(100% - 2 * var(--gutter), var(--max))` with `margin-inline: auto`, so it shares the page's left edge. At 390
+  it is **16, 358, 83**, at 794 **32, 720, 64**, at 1,440 **155, 1,120, 44**; the printed pages are **15,389 → 15,415**,
+  **13,155 → 13,180** and **12,265 → 12,291** (the title's 19px and the line it adds at the two phone widths). The print
+  rule's `position: static`, `width`, padding, border, shadow and ground are `!important`, because the script's
+  `.toc-bar.is-live .toc` fixed rule outranks a plain `.toc` in print at 390 and put the list over the hero.
+
+### Measurements after this pass
+
+| The contents list at 390 | Before | After |
+|---|---|---|
+| With no script, the open list | 390 × 775 at 69–844; body locked | **358 × 420 at 578–998; body scrolls** |
+| Its rows (Close + seven sections) | 88 + 91 × 7 | **45 + 48 × 7** |
+| After choosing `#compare`, the list | **still 69–844 over the section at 150** | **−2,282 to −1,862; the section at 150** |
+| With the script, the open sheet | 390 × 775 at 69–844; 88 + 91 × 7; body locked | 390 × 775 at 69–844; 44 + 91 × 7; body locked |
+
+| The comparison tables at 720 (fine pointer) | Before | After |
+|---|---|---|
+| The plan table, in its box | 660 in 650–652 (10px hidden) | **650 in 650–652 (0)** |
+| The wrap's height (the inner scrollbar) | 667 | **652** |
+| The model table | 660 in 650–652 (10px hidden) | **650 in 650–652 (0)** |
+| The pricing page | 10,480 | **10,450** |
+
+| The printed contents at 390 / 794 / 1,440 | Before | After |
+|---|---|---|
+| Left, width, height | 0, 390, 58 / 0, 784, 38 / 0, 1,430, 19 | **16, 358, 83 / 32, 720, 64 / 155, 1,120, 44** |
+| Its name | not printed | **"On this page" 19px; the Close label not printed** |
+| The printed page | 15,389 / 13,155 / 12,265 | **15,415 / 13,180 / 12,291** |
+
+- The screen pages are unchanged at 320/360/390/768/1,024/1,440: the **84 page/width/theme pairs (six widths in both
+  schemes) are 0px over**, the smallest computed text is **12px**, and the probe reports **0** console errors. The pricing
+  page at 720 is the one screen change, and it is **30px shorter**.
+- No script: the home and pricing pages are 0px over at 320/360/390/768/1,440; the open phone panel and a followed section
+  were measured above. Print at 390 and 794: **0px over** on all seven pages, and every page with a contents bar prints the
+  row's name. Forced colours at 390: **0px over** on the home, pricing and contact pages. axe-core WCAG 2.0–2.2 A and AA:
+  **0** violations on the 42 default views at 320/390/1,440 in both schemes and on the six states (the
+  contents open at 390, the phone menu, Monthly, the estimate's refusal, the docs filter's empty answer, a copied address).
+- The site's own suites are **176** tests, all passing; the named command (site, set-domain, pages-workflow, ui-kit-tokens,
+  no-mojibake) is **211 pass, 0 fail**; `site-chrome --check`, `pricing:check`, typecheck and build are clean.
+  `npm run site:check` still exits 1 on the owner's `TODO(owner)` for the terms at `site/legal/index.html:137`.
+- This pass's frames are in `site/ux/shots/20261109-marketing-*`.
+
+### What this pass deliberately left
+
+- **The no-script phone list is a dropdown, and its lower rows can be below the window.** At 390 its 420px panel ends at
+  998 in an 844px window; the first four of the seven names are visible without scrolling, the Close row is at the top, and
+  the page itself scrolls. The script path keeps the full-screen sheet, which shows all seven at once. A full-screen sheet
+  that a link can dismiss without a script is not expressible in CSS (a link cannot uncheck the checkbox that opens it), so
+  the two states are different shapes on purpose.
+- **The table at 720 is 10px narrower than it was and wraps the same height.** The last column recovers its rule and its
+  edge, but its words have 10px less room than at 730; the page does not scroll, and no hint is printed for a table that
+  no longer scrolls.
+- **The printed index is 25–26px taller** for its name and, at 390, the line the name takes; the page heights above are
+  the cost.
+- **Curule Cloud's prices are still in the app and no capture was retaken.** `site/ux/index.html` was not edited.
