@@ -140,6 +140,28 @@ test("an empty tool-gate page offers the Designer it names", () => {
   assert.match(toolAccess, /const \{[^}]*setView[^}]*\} = useMesh\(\)/, "and the page can go there");
 });
 
+test("an empty roster offers the Designer it names", () => {
+  // "No agents in this mesh" told the reader to add seats in the Designer but drew 0 controls, so on a phone the way there was
+  // the navigation drawer. The Graph's and the tool gates' empty states already offer that same door.
+  assert.match(agents, /title="No agents in this mesh"\s+action=\{<Button variant="soft" icon="designer" onClick=\{\(\) => setView\("designer"\)\}>Open the Designer<\/Button>\}/, "the empty state's next move is a control");
+  assert.match(agents, /The mesh answered, and it has no seats configured\. Add them in the Designer/, "one subject: the mesh, on either kind of server");
+});
+
+test("a read the Overview words itself is not said again in the corner", () => {
+  // Measured at 390 and 1440 with /artifacts answering 500: the What shipped row said "could not load" and the corner said
+  // "server error ×3 /artifacts -> 500" over the page, once for each read the event stream prompted, in the route and code's
+  // words instead of a sentence. The panel is that read's one answer now, and it carries the reason the notice used to.
+  assert.match(overview, /api\("GET", "\/artifacts", undefined, \{ quiet: true \}\)/, "the file list's read is quiet");
+  assert.match(overview, /api\("GET", "\/steps\?limit=6", undefined, \{ quiet: true \}\)/, "and so is the recent steps read");
+  assert.match(store, /api\("GET", "\/steps\?limit=6", undefined, \{ quiet: true \}\)/, "including the store's live patch, which reads the same six");
+  assert.match(overview, /setStepsErr\(`Could not load recent work\. \$\{readWhy\(st, "the step history"\)\}`\)/, "the steps failure keeps its sentence and adds the reason");
+  assert.match(overview, /setArtsError\(`Could not load the files this mission made\. \$\{readWhy\(ar, "the file list"\)\}`\)/, "and so does the file list");
+  assert.match(overview, /error=\{artsError\}/, "the result panel draws it");
+  assert.match(overview, /filesError=\{delivered \? null : artsError\}/, "and Goal checks draws it wherever the result is not on the page");
+  const goalChecks = fs.readFileSync(path.join(SRC, "views", "GoalChecks.tsx"), "utf8");
+  assert.match(goalChecks, /\{filesError \? \([\s\S]*?A file a check names cannot be opened until it loads\.[\s\S]*?onRetryFiles/, "the note says what the reader loses and how to ask again");
+});
+
 test("a registry that never answers is a failure with a retry, not the loading placeholder for ever", () => {
   // Measured at 360 with /api/projects answering 503: the console sat on "Loading this page…" indefinitely. `hasRegistry`
   // stayed null, so the shell held every view, and no banner could name the failure because no page had rendered.

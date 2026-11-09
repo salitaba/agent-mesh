@@ -668,7 +668,9 @@ export function MeshProvider({ children, projectId = null, background = false }:
     // reply lands, so one request at a time.
     if (viewRef.current === "overview" && Date.now() - stepsAt.current > 5000 && !overviewStepsInflight.current) {
       overviewStepsInflight.current = true;
-      clientRef.current.api("GET", "/steps?limit=6").then(({ json }) => {
+      // Quiet: the Overview's Latest work panel draws this failure and its Try again, so the same read is not also a corner
+      // notice naming the route and the code.
+      clientRef.current.api("GET", "/steps?limit=6", undefined, { quiet: true }).then(({ json }) => {
         if (Array.isArray(json)) {
           setSteps(json);
           stepsAt.current = Date.now();

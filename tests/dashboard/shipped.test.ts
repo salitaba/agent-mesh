@@ -25,6 +25,13 @@ test("the What shipped cards show the repository path and never the store's", ()
   assert.doesNotMatch(shipped, /contentRef|shortRef/, "the store path is not read for a card");
 });
 
+test("a group heading counts files with a space and a unit", () => {
+  // Measured at 390 and 1440: the three headings' textContent was "Delivered3", "Closed without a verdict6" and "Drafts1".
+  // They draw a flex row with a gap, so a reader saw three words and a screen reader heard the label and the figure as one
+  // word, with no word for what the figure counted. The Files page's groups already read "Approved and merged 3 files".
+  assert.match(shipped, /<span>\{g\.label\}<\/span>\{" "\}<b className="ship-n">\{g\.files\.length\} \{g\.files\.length === 1 \? "file" : "files"\}<\/b>/, "label, then a space, the count and its unit");
+});
+
 test("a delivered mission's undecided files say what the Files page says: closed without a verdict", () => {
   // The Overview used to say "Awaiting review" and "ready for review" beside "Delivered", while the Files page, one press
   // away, said "Closed without a verdict". A delivered mission is not waiting on a reviewer; `CLOSED_REVIEW` is the one set
