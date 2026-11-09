@@ -49,9 +49,11 @@ the pricing page's two ways in and the documentation page's map included, and a 
 with its chip, so the list never offers a link to something that is not there. The home page's list is the contents index it
 opens with, under the hero: its eight entries keep the ledger numbers the sections' eyebrows use ("01 Plans and prices" … "08
 Questions"), and it is the only navigation a phone's header does not keep, since the header's four links are hidden below 600.
-The control is a checkbox and its label, so it opens and closes with no script. On a phone the list is the whole screen under the
-header, one 48px row per section and a Close row at its top; from 720 it is a panel under the control in two columns. With a
-script the bar stays under the header while the page is read, the section being read is marked (`aria-current`, a tint and a
+The control is a checkbox and its label, so it opens and closes with no script. On a phone without the script the list is a
+panel under the bar, so a followed section is not left behind it; with the script it is the screen under the header, one
+48px row per section and a Close row at its top, and choosing a section closes it. From 720 it is a panel under the control
+in two columns. With a script the bar stays under the header while the page is read, the section being read is marked
+(`aria-current`, a tint and a
 dot) and named in the control, and choosing a section, a tap outside, Escape, or Tab leaving the list closes it. A followed link
 lands below the header and the bar: `--head-h` and `--toc-h` in `assets/site.css` are their heights, and
 `tests/build/site-script.test.ts` checks them against the rules that make them. The reading position is looked at when a
