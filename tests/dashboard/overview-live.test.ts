@@ -29,7 +29,7 @@ test("the Overview watches the newest artifact event, the signal that a file was
 });
 
 test("and reads the file list again when that signal moves, not only when the page opens", () => {
-  const files = overview.indexOf('client.api("GET", "/artifacts")');
+  const files = overview.indexOf('client.api("GET", "/artifacts", undefined, { quiet: true })');
   assert.ok(files > 0, "the page still reads the file list");
   const deps = overview.slice(files).match(/\}, \[([^\]]*)\]\);/);
   assert.ok(deps, "the effect that reads the files has a dependency list");

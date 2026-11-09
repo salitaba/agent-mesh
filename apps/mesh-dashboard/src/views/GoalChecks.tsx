@@ -29,12 +29,22 @@ function GoalText({ text }: { text: string }): React.JSX.Element | null {
  * A delivered mission's note is read here too (`noteBelongs`): it is the gate's exact sentence, and the checks it names are this
  * list. The receipt above states the claim in its headline; the section that proves it carries the full wording.
  */
-export function GoalChecks({ goal, arts, openArt, why, fold }: { goal: any; arts: any[]; openArt: (a: any) => void; why?: HeroNote | null; fold?: Fold }): React.JSX.Element {
+export function GoalChecks({ goal, arts, openArt, why, fold, filesError, onRetryFiles }: {
+  goal: any; arts: any[]; openArt: (a: any) => void; why?: HeroNote | null; fold?: Fold;
+  /** The file list did not load: a check's evidence cannot be opened until it does. Said here wherever the result is not the page's subject. */
+  filesError?: string | null; onRetryFiles?: () => void;
+}): React.JSX.Element {
   const criteria: any[] = goal?.acceptanceCriteria || [];
   const sum = checksSummary(criteria);
   return (
     <Panel id="ov-goal" className="ov-goalcard" title="Goal checks" fold={fold} meta={sum.total ? `${sum.done} of ${sum.total} mandatory evidenced` : undefined}>
       {sum.total ? <Progress value={sum.done} max={sum.total} label="Mandatory checks evidenced" tone="ok" /> : null}
+      {filesError ? (
+        <div className="ov-retry">
+          {filesError} A file a check names cannot be opened until it loads.
+          {onRetryFiles ? <Button variant="small" icon="refresh" onClick={onRetryFiles}>Try again</Button> : null}
+        </div>
+      ) : null}
       {why ? (
         <div className="ov-why">
           <p>{why.summary}</p>

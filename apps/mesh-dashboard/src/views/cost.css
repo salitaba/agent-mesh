@@ -135,6 +135,9 @@
   .cost-facts > div + div { padding-left: var(--s4); }
   .cost-table th, .cost-table td { padding-left: var(--s1-5); padding-right: var(--s1-5); font-size: 13px; }
   .cost-table thead th:first-child, .cost-table tbody th[scope="row"] { width: 34%; }
+  /* A phone has no hover, so a budget's own name is not left in a `title`: the four figures keep their columns and the label
+     wraps in the space it has ("The whole mission", a conversation's id) rather than being cut at "The whole m…". */
+  .cost-table tbody th[scope="row"] .cost-trunc { white-space: normal; overflow-wrap: anywhere; }
 }
 
 /* ---- Windows High Contrast ----

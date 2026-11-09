@@ -383,8 +383,77 @@ Breakpoints: **1280 1100 900 800 760 620 560**. 800 is the sidebar drawer (JS
     two cards but stack each row's label and control. Measure it with a real host before changing the row shape.
 17. Decide whether "No status" is enough for a first failed read: every view already draws its own sentence and Try again, and the bar
     now says the console has not read the mission, but a person may still want the bar's chip to be a door to the page that says why.
+18. Decide two things about a failed read the page already words (2026-11-09): whether a phone's Goal checks fold row should name a
+    failed file read (its figure says "7 of 7 evidenced" while the sentence is inside the row), and whether `quiet` should also
+    suppress the generic "request timed out" line, which every page's quiet read still raises because that path is shared.
 
 ## Pass log
+
+### 2026-11-09 — a failed read is said once with its reason, a heading's count says what it counts, and an empty roster has its door
+
+Surface: `src/views/Overview.tsx` (the steps and file reads, their failure's words), `src/store.tsx` (the Overview's live
+steps patch), `src/views/Shipped.tsx` (the group headings and the failure's reason), `src/views/GoalChecks.tsx` (the file list
+where the result is not the page's subject), `src/views/Agents.tsx` (the empty roster), `src/views/cost.css` (a budget's own
+label on a phone), with `tests/dashboard/failure-states.test.ts`, `shipped.test.ts`, `cost.test.ts`, `overview-index.test.ts`
+and `overview-live.test.ts`.
+
+Measured on the scripted demo at **Delivered** in the production build served by `curule console`, Chromium 1248 at
+320/360/390/768/1024/1440 in light and dark (12 views, 144 reads, reduced motion, touch at 900 and below). The before is the
+untouched build on its own delivered run (491 events, 51.0k of 2.0M tokens, 9 files, 29 turns, 7 checks, 7 seats); the after
+is this branch's build on its own delivered run (480 events, 49.3k tokens, 9 files, 28 turns; the delivered state used for the
+screenshots is 507 events after two `--resume` boots). Every failure was forced with `page.route`.
+
+- **A failed Overview read was said three times in the corner, and not with its reason.** At 390 with `/artifacts` answering
+  500, the What shipped row said "could not load" and a **366 × 66** notice at y = 72 read **"server error ×3 /artifacts ->
+  500"**, pushing the page title to **152** (78 without it); at 1,440 the **217 × 66** toast sat at (1,205, 806), over Goal
+  checks. `/steps?limit=6` answering 500 raised the same **66 px** notice (**"server error ×3 /steps?limit=6 -> 500"**). Both
+  reads are quiet now — the Overview's and the store's live patch of the same six steps — and the panel carries the reason:
+  **324 × 115** at 390, "Could not load the files this mission made. The server answered 500 instead of the file list.", and
+  **324 × 94** for recent work, each with a **108 × 44** Try again. Corner notices **1 (×3) → 0** for both reads and the title
+  **152 → 78**. Where the result is not on the page (a parked or running mission), Goal checks says it instead: **465 × 99** at
+  1,440, "… A file a check names cannot be opened until it loads.", with the same Try again; at 390 it is inside the folded
+  Goal checks row.
+- **What shipped's headings read "Delivered3".** At 390 and 1,440 the three `<h4>`s' textContent was **"Delivered3"**,
+  **"Closed without a verdict6"** and **"Drafts1"**: the 8 px flex gap separated them on screen, so a screen reader heard the
+  label and the figure as one word and the figure never said what it counted. They read **"Delivered 3 files"**, **"Closed
+  without a verdict 6 files"** and **"Drafts 1 file"**; the count's box is **49 px** (it was a bare digit), and the heading's
+  line stays **14.4 px** on one line at 390.
+- **An empty roster named the Designer but had no way there.** Forced with `/status` answering a roster with no agents, the
+  page said "No agents in this mesh … Add seats in the Designer" and the empty state drew **0 controls**, so on a phone the way
+  there was the navigation drawer. It draws **Open the Designer** (**202 × 44** at 390; **202 × 36** on a fine pointer at
+  1,440) and says "The mesh answered, and it has no seats configured", one subject on either kind of server. The empty state is
+  **224 → 276 px** at 390 and **203 → 247** at 1,440; the page heights are unchanged (780 and 836) because the page had the room.
+- **A phone cut a budget's own label.** With "All budgets" open at 390 the first column is **98 px** of text: "The whole
+  mission" needs **120** and a conversation's id **198–213**, and each was ellipsised with the whole value only in a `title`,
+  which a touch screen cannot show. Below 621 px the label wraps in its column: the mission row is **48 px** (was 36), the
+  label **98/98** with its whole words on two lines, and the table keeps its four named columns. At 1,440 nothing moves.
+
+| | Before | After |
+|---|---|---|
+| `/artifacts` 500, 390: corner / page title y / the row's sentence | 1 notice (×3), 366 × 66 at y=72 / 152 / no reason | **0 / 78 / 324 × 115, "… The server answered 500 instead of the file list."** |
+| `/artifacts` 500, 1,440: corner | 217 × 66 at (1,205, 806) | **0** |
+| `/steps?limit=6` 500, 390: corner / the row / retry | 1 notice (×3), 66 px / no reason / — | **0 / 324 × 94 / 108 × 44** |
+| Parked, `/artifacts` 500, 1,440: the sentence | none | **465 × 99 at Goal checks**, 108 × 28 Try again |
+| What shipped headings, 390 and 1,440 | "Delivered3", "Closed without a verdict6", "Drafts1" | **"Delivered 3 files", "Closed without a verdict 6 files", "Drafts 1 file"** |
+| The count's box / the heading's line | a bare digit / 14.4 px | **49 px / 14.4 px, one line** |
+| Empty roster, 390: controls / empty state / page | 0 / 224 / 780 | **1 (202 × 44) / 276 / 780** |
+| Empty roster, 1,440: controls / empty state / page | 0 / 203 / 836 | **1 (202 × 36) / 247 / 836** |
+| A budget's label at 390: column / the text / the row | 98 / 120–213 (ellipsis, title only) / 36 | **98 / 98 (wrapped) / 48** |
+| Axe, 12 views × 320–1,440 × both themes | 0 | **0 (144 reads)** |
+| Axe, the six forced states × 320/390/1,440, light and dark | 0 | **0 (22 reads)** |
+| Horizontal page scroll, 320–1,440 | 0 | **0 (144 reads)** |
+| Controls under 44 at 320/360/390 | 1, the raw switch inside its 44 px label | **unchanged** |
+
+Floors: `npm run typecheck` and `npm run build` clean; the dashboard suite **1,307 pass, 0 fail** and the build suite **253
+pass, 0 fail**; eslint **0** on the touched TypeScript; axe **0** in the 144 reads and 22 forced-state reads; no page scrolls
+sideways. The new rules were mutation-checked — removing the space and unit, restoring the unquiet call, removing the empty
+roster's action and returning `white-space: nowrap` each failed its test, then passed again.
+
+**Left.** On a phone the Goal checks sentence is inside the folded row, so its closed figure still says "7 of 7 evidenced" and
+not "files unread". `quiet` suppresses a 5xx notice; a timed-out read still raises the generic "request timed out" line,
+because that path is shared by every read. A file list that fails after a good read still keeps the last list and says nothing
+(only a first read gets the row's sentence). On a phone the All budgets table is 1,119 px with 15 rows and its conversation ids
+wrap to two lines; a copy control would be the alternative if real use reads those ids often.
 
 ### 2026-11-08 (second pass) — a failed workspace read is a sentence at the field, and a group's count is part of its name
 

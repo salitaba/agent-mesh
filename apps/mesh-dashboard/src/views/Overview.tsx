@@ -31,6 +31,17 @@ import "./overview.css";
 const EVENT_TAIL = 150;
 
 /**
+ * Why a read this page words itself did not land. The reads are asked quietly: the sentence belongs at the row it is about, and
+ * the corner notice it used to raise said the route and the code instead (2026-11-09).
+ */
+function readWhy(r: { status?: number; timeout?: boolean; json?: any } | null | undefined, what: string): string {
+  if (!r) return "The server did not answer.";
+  if (r.timeout) return "The request timed out. The server may be busy.";
+  if (typeof r.status === "number" && r.status !== 200) return `The server answered ${r.status} instead of ${what}.`;
+  return "The server sent something this page could not read.";
+}
+
+/**
  * Where the evidence below the hero is drawn one row a section, and the hero keeps one action and behind "…" the rest.
  *
  * It began as the dock's own break (800). It is the ladder's 900 now, because 800 was the wrong question: above 800 the sidebar
@@ -92,7 +103,8 @@ export default function Overview(): React.JSX.Element {
   const [metrics, setMetrics] = useState<any>(null);
   const [arts, setArts] = useState<any[]>([]);
   const [artsState, setArtsState] = useState<LoadState>("loading");
-  const [stepsErr, setStepsErr] = useState(false);
+  const [artsError, setArtsError] = useState<string | null>(null);
+  const [stepsErr, setStepsErr] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
   // Bumped to read the steps again without reading everything else: the list can be a few seconds older than the status beside it.
   const [stepsTick, setStepsTick] = useState(0);
@@ -146,14 +158,15 @@ export default function Overview(): React.JSX.Element {
     let dead = false;
     // A failure from before the mission was read (a project still starting answers 409) is not this read's: while it is in flight
     // the panel says it is loading, not "Could not load recent work".
-    setStepsErr(false);
-    client.api("GET", "/steps?limit=6").catch(() => null).then((st) => {
+    setStepsErr(null);
+    // Quiet: the panel below draws this failure and its Try again, so the corner must not say the same read a second time.
+    client.api("GET", "/steps?limit=6", undefined, { quiet: true }).catch(() => null).then((st) => {
       if (dead) return;
       if (Array.isArray(st?.json)) {
         setSteps(st.json);
-        setStepsErr(false);
+        setStepsErr(null);
       } else {
-        setStepsErr(true);
+        setStepsErr(`Could not load recent work. ${readWhy(st, "the step history")}`);
       }
     });
     return () => {
@@ -198,14 +211,17 @@ export default function Overview(): React.JSX.Element {
     let dead = false;
     setArtsState((s) => (s === "ready" ? s : "loading"));
     const t = setTimeout(() => {
-      client.api("GET", "/artifacts").catch(() => null).then((ar) => {
+      // Quiet for the same reason as the steps read: the panel says it at the row, with a retry.
+      client.api("GET", "/artifacts", undefined, { quiet: true }).catch(() => null).then((ar) => {
         if (dead) return;
         if (Array.isArray(ar?.json)) {
           filesLoaded.current = true;
           setArts(ar.json);
           setArtsState("ready");
+          setArtsError(null);
         } else if (!filesLoaded.current) {
           // A refresh that fails after a good read keeps the list it has; only a page that never had one reports the failure.
+          setArtsError(`Could not load the files this mission made. ${readWhy(ar, "the file list")}`);
           setArtsState("error");
         }
       });
@@ -403,7 +419,7 @@ export default function Overview(): React.JSX.Element {
           onOpen={jumpTo}
         />
       )}
-      {delivered ? <Shipped arts={goalArts} state={artsState} fold={foldOf("ov-shipped", artsFold)} onRetry={() => setAttempt((n) => n + 1)} openArt={openArt} onOpenFiles={() => setView("artifacts")} delivered /> : null}
+      {delivered ? <Shipped arts={goalArts} state={artsState} error={artsError} fold={foldOf("ov-shipped", artsFold)} onRetry={() => setAttempt((n) => n + 1)} openArt={openArt} onOpenFiles={() => setView("artifacts")} delivered /> : null}
       {/* Renders nothing unless a collaboration is actually open, and owns its own hooks so this component's hook count does not move. */}
       <CollabCard />
       <div className="ov-grid">
@@ -414,7 +430,7 @@ export default function Overview(): React.JSX.Element {
           actions={<Button variant="small" onClick={() => setView("steps")}>All steps</Button>}
         >
           {stepsErr && !steps.length ? (
-            <div className="ov-retry">Could not load recent work. <Button variant="small" icon="refresh" onClick={() => setAttempt((n) => n + 1)}>Try again</Button></div>
+            <div className="ov-retry">{stepsErr} <Button variant="small" icon="refresh" onClick={() => setAttempt((n) => n + 1)}>Try again</Button></div>
           ) : steps.length ? (
             // Every step the section counted is drawn. It used to take 6 and draw 5, so the phone's closed row said "6 steps" and
             // the index said "Latest work 6" over five rows; the sixth was fetched and thrown away.
@@ -426,7 +442,12 @@ export default function Overview(): React.JSX.Element {
             </div>
           ) : <TimelineSkeleton label="Loading recent work." />}
         </Panel>
-        <GoalChecks goal={goal} arts={arts} openArt={openArt} why={noteAt === "checks" ? note : null} fold={foldOf("ov-goal", checks.total ? `${checks.done} of ${checks.total} evidenced` : "no checks")} />
+        <GoalChecks
+          goal={goal} arts={arts} openArt={openArt} why={noteAt === "checks" ? note : null}
+          fold={foldOf("ov-goal", checks.total ? `${checks.done} of ${checks.total} evidenced` : "no checks")}
+          // Delivered, the result panel under the hero already says the file list failed; elsewhere this is the panel that reads it.
+          filesError={delivered ? null : artsError} onRetryFiles={() => setAttempt((n) => n + 1)}
+        />
         <Panel
           id="ov-events" className="ov-events" title="Just happened"
           fold={foldOf("ov-events", eventsFold)}

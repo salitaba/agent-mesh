@@ -89,8 +89,8 @@ function Row({ a, openArt, closed }: { a: any; openArt: (a: any) => void; closed
   );
 }
 
-export function Shipped({ arts, state, onRetry, openArt, onOpenFiles, fold, delivered }: {
-  arts: any[]; state: LoadState; onRetry: () => void; openArt: (a: any) => void; onOpenFiles: () => void; fold?: Fold; delivered: boolean;
+export function Shipped({ arts, state, error, onRetry, openArt, onOpenFiles, fold, delivered }: {
+  arts: any[]; state: LoadState; error?: string | null; onRetry: () => void; openArt: (a: any) => void; onOpenFiles: () => void; fold?: Fold; delivered: boolean;
 }): React.JSX.Element {
   const files = useMemo(() => sortFiles(arts), [arts]);
   const ws = useMemo(() => workspaceOf(arts), [arts]);
@@ -139,7 +139,7 @@ export function Shipped({ arts, state, onRetry, openArt, onOpenFiles, fold, deli
         </div>
       ) : null}
       {state === "error" ? (
-        <div className="ov-retry">Could not load the files this mission made. <Button variant="small" icon="refresh" onClick={onRetry}>Try again</Button></div>
+        <div className="ov-retry">{error ?? "Could not load the files this mission made."} <Button variant="small" icon="refresh" onClick={onRetry}>Try again</Button></div>
       ) : null}
       {state === "ready" && !files.length ? <p className="ov-empty">No files are recorded for this goal.</p> : null}
       {files.length ? (
@@ -149,7 +149,7 @@ export function Shipped({ arts, state, onRetry, openArt, onOpenFiles, fold, deli
             const hidden = g.files.length - shown.length;
             return (
               <div key={g.key} className={`ship-group ${g.key}`}>
-                <h4 className="ship-h"><span>{g.label}</span><b className="ship-n">{g.files.length}</b></h4>
+                <h4 className="ship-h"><span>{g.label}</span>{" "}<b className="ship-n">{g.files.length} {g.files.length === 1 ? "file" : "files"}</b></h4>
                 {g.key === "delivered" && cards ? (
                   <ul className="ov-files ship-cards">{shown.map((a) => <Card key={a.id} a={a} openArt={openArt} />)}</ul>
                 ) : (

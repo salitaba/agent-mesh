@@ -94,6 +94,14 @@ test("a row's bar is its share, and the page draws the bar to that one number", 
   assert.doesNotMatch(css, /\.cost-cols\s*\{\s*display:\s*none/, "the column head is not hidden on a phone");
 });
 
+test("a phone does not cut a budget's own label", () => {
+  // Measured at 390 with "All budgets" open: the first column is 98 px of text, "The whole mission" needs 120, and the six
+  // conversation ids need 198–213. Each was ellipsised, and the whole value lived in a `title`, which a phone cannot show.
+  const css = fs.readFileSync(path.join(path.resolve(__dirname, "..", "..", ".."), "apps", "mesh-dashboard", "src", "views", "cost.css"), "utf8");
+  const phone = css.slice(css.indexOf("@media (max-width: 620px)"));
+  assert.match(phone, /\.cost-table tbody th\[scope="row"\] \.cost-trunc \{ white-space: normal; overflow-wrap: anywhere; \}/, "the label wraps in its column instead of being cut");
+});
+
 test("the top bar and this page use the same thresholds", () => {
   // shell.tsx is not DOM-free, so it is read: the bar's meter takes its tone from budgetTone, not from numbers of its own, so the two
   // cannot drift apart. (They were two copies of 0.8 and 0.95, and this test compared them by pattern.)

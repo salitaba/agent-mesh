@@ -386,8 +386,11 @@ export default function Agents(): React.JSX.Element {
         </section>
       ))}
       {!roster.length ? (
-        <EmptyState icon="agents" title="No agents in this mesh">
-          The mesh answered, and this project has no agents configured. Add seats in the Designer.
+        <EmptyState
+          icon="agents" title="No agents in this mesh"
+          action={<Button variant="soft" icon="designer" onClick={() => setView("designer")}>Open the Designer</Button>}
+        >
+          The mesh answered, and it has no seats configured. Add them in the Designer, and they appear here.
         </EmptyState>
       ) : null}
       <NextLinks links={[
