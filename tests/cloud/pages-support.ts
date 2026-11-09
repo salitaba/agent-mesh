@@ -175,6 +175,12 @@ export class FakeNode {
     this.doc.activeElement = this;
   }
 
+  /** A page that brings a note under a phone's screen into view: the fake records the ask, the browser is where it is checked. */
+  scrolls = 0;
+  scrollIntoView(): void {
+    this.scrolls += 1;
+  }
+
   addEventListener(type: string, fn: Listener): void {
     this.listeners.set(type, [...(this.listeners.get(type) ?? []), fn]);
   }

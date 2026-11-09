@@ -2416,6 +2416,10 @@
       state.planNote = { kind: "bad", text: r.error.message, plan: planId || "" };
       attachStatus();
       say($("plan-status"), "bad", r.error.message);
+      // The sentence is under the button that asked, so on a small phone it can arrive below the screen. Bring it into view and
+      // leave the cursor where the press was: the button stays the next Tab, and the reader sees what it said.
+      const note = $("plan-status");
+      if (note && typeof note.scrollIntoView === "function") note.scrollIntoView({ block: "nearest" });
     }
 
     /** A request made from the card at the top that fails says so in the card, under the sentence it is about. */
