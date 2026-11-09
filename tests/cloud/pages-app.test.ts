@@ -1022,6 +1022,7 @@ test("a payment page that cannot be opened is said, with the button back, and an
   assert.ok(card.contains(v.$("plan-status")), "the refusal is in the card whose button asked, under it, not above the list where nobody is looking");
   assert.equal(card.children.filter((n) => !n.isText).at(-1), v.$("plan-status"), "at the foot of that card");
   assert.equal(v.doc.activeElement, v.button("plan", "Choose Team"), "and the cursor is back on the button that was pressed");
+  assert.equal(v.$("plan-status").scrolls, 1, "the sentence under a card's button is brought into view on a phone whose screen it would arrive below, without taking the cursor");
   assert.deepEqual(v.navigations, []);
   const again = v.button("plan", "Choose Team");
   assert.equal(again.disabled, false);

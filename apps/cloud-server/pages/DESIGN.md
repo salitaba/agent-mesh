@@ -4564,3 +4564,81 @@ plan list and a session read that fails — were answered by that stand-in on bo
 - **At 200% text the account's one action is still below the first screen** (the statement above the record
   grows); the normal first screen is the one this pass measured. The checkout stand-in, the prose-only 18–19px
   links, the usage read's limit and the key form's height are the earlier entries.
+
+## 2026-11-09: the bar at 320, the sentence under the button, and the consent at the foot
+
+Same harness: Chromium 156 through `playwright-core` 1.64 (Chromium 1248) against this worktree's trial on
+`localhost:8802`, 320 / 360 / 390 / 768 / 1,024 / 1,440 in light, 320 / 360 / 1,440 in dark, forced colours at
+360, `prefers-reduced-motion: reduce`, scripts off, and a touch pointer below 721. "Before" is `b7b17ff`'s own
+`app.css` and `app.js`, served through request interception over the same trial in the same browser session, on
+the same fixtures; no figure is copied from an earlier record. The fixtures are a Team account with one running
+workspace and `$10.00` available, a fresh account with no plan, the same Team account with `/api/me` held to an
+empty workspace list, `/api/plans` answering 503, `/api/session` answering 503, `/api/checkout` answering 503,
+and the sign-up form with the consent tick missing. Heights are `document.documentElement.scrollHeight`;
+positions are `getBoundingClientRect` plus `scrollY`; names are `document.activeElement`.
+
+- **The signed-in bar is one row at 320, and the paid account's only action is inside an 800px screen.** The
+  bar's content box at 320 is **288px** (`100% - 2 × 16`); the mark (73.8) + an 8px gap + the nav (207) is
+  **288.8**, so the nav wrapped by **0.8px** onto a second row. The header was **97 → 61px**, the card that holds
+  the only action began at **218.61 → 182.61**, and `Create workspace` was **786.28–834.28** — its top 14px on
+  an 800px screen, its label below the foot. Below 360 the bar's gap is **4px** and the stage's top padding is
+  **16px**: the header is **61px**, the card begins at **182.61**, the button is **742.28–790.28** (9.72px above
+  the foot) and the page is **1,880 → 1,836**. At 360 / 390 / 1,440 nothing moves: the header is 61 and the
+  button is **667.30–715.30 / 650.38–698.38 / 446.39–494.39**.
+- **A plan action's refusal is brought into view at the foot of a phone.** With `/api/checkout` answering 503,
+  pressing **Choose Team** put its sentence 14px under the button that asked: at 360 it was at
+  **785.34–859.34**, so only **15px** of a 50px note was on an 800px screen; at 320 it was at
+  **799.47–873.47**, with **0.5px** on the screen. The note now asks to be brought into view
+  (`scrollIntoView({ block: "nearest" })`) and the cursor stays on the button. At 360 `scrollY` is **0 → 59**
+  and the note is **726.34–800.34**; at 320 `scrollY` **0 → 37** and the note **726.47–800.47**; at 390 the
+  scroll is **35**; at 768 and 1,440 the note was already visible and nothing scrolls (**718.80–792.80** and
+  **681.63–731.63**). `document.activeElement` is still **`#plan-choose-team`**, so the next Tab starts on the
+  button that was pressed, and the sentence, not the button's removal, is what moved.
+- **A missing consent tick no longer puts Create account below a 320 screen.** The refusal was a 74px boxed
+  note with a 16px bottom margin: at 320 it put the submit at **809.98–853.98**, 54px below the foot. Below 360
+  the sentence is the **24px** line the tick's own explanation is, with a 4px top and 8px bottom margin, no
+  box or icon; the button is **751.98–795.98** and the page is **1,638 → 1,580**. The note keeps
+  `role="status"`, `aria-live="polite"` and the tick's `aria-describedby`; at 360 / 390 / 1,440 it is still
+  the 50px note it was, and the button is **683.77–727.77 / 683.77–727.77 / 700.41–744.41**.
+- **Widths, schemes and the floor.** 320 / 360 / 390 / 768 / 1,024 / 1,440 in light, 320 / 360 / 1,440 in dark,
+  forced colours at 360, scripts off: **145 checks, 41 of them axe-core runs**, and **no failure** — no
+  sideways page scroll at any width (320: 320; 360: 360; 390: 390; 768: 768; 1,024: 1,024; 1,440: 1,440),
+  nothing computes below **12px**, no control is under 44 × 44 below 721, and axe finds no violation on the
+  signed-out pages (sign-up, sign-in, forgot, verify, 404) or the account in its running, fresh, no-workspace,
+  plans-503, session-503 and checkout-failed states at 360 and 1,440 in both schemes.
+- **The budget.** `app.css` is **40,801 → 40,960 bytes of 40,960** (0 left): the three rules (the bar's 4px gap,
+  the stage's 16px top, the compact consent note) are 159 bytes. The script's four lines and the fake DOM's
+  `scrollIntoView` are the rest.
+
+**Tests.** `npm run typecheck` clean; `npm run build`; `node --test "dist/tests/cloud/pages*.test.js"` —
+**205 pass, 0 fail**; `dist/tests/cloud/*.test.js` — **900 pass, 0 fail**; `dist/tests/build/*.test.js` —
+**253 pass, 0 fail**; `npx eslint` on the touched script and tests — 0 errors. `pages-app.test.ts` holds the
+plan-refusal note's scroll (the fake DOM records the ask and the cursor stays on the button).
+
+| measured | before | after |
+| --- | --- | --- |
+| The signed-in bar, 320 | **97px** (the nav wrapped by 0.8px) | **61px** |
+| The paid account's `Create workspace`, 320 | **786.28–834.28** (14px on an 800 screen) | **742.28–790.28** |
+| … the page | 1,880 | **1,836** |
+| A failed Choose Team, 360 | note **785.34–859.34**, scrollY 0 | **726.34–800.34**, scrollY **59** |
+| … 320 | **799.47–873.47**, scrollY 0 | **726.47–800.47**, scrollY **37** |
+| The consent refusal, 320: the note / the button / the page | **74px / 809.98–853.98 / 1,638** | **24px / 751.98–795.98 / 1,580** |
+| The same at 360 / 1,440 | 50px; 683.77–727.77 / 700.41–744.41 | **the same** |
+| `app.css` | 40,801 bytes | **40,960** |
+
+### What this pass leaves
+
+- **The 320 consent refusal still has only 4px above the foot.** The sentence is read and the button is wholly
+  on the screen at 795.98, but a longer error on the same line would not be. The note is a plain red line at
+  320 because the boxed 74px one could not fit; at 360 it is the box the other field errors draw.
+- **The failed action's note ends 0.34–0.47px past the foot when it is scrolled into view.** The sentence and
+  its text are on the screen; the last fraction of the bottom edge is not. `block: "nearest"` is the smallest
+  scroll that shows it; centring it would move the page about 60px more.
+- **The bar's 4px gap is the whole saving at 320.** A longer nav label would wrap again; the fix does not
+  shrink the type or the 44px targets. At 360 the gap is still 8.
+- **The plan section's rail still says "Choose a plan" when the plans could not be read.** The 2026-11-04
+  record chose that on purpose: the step is still the reader's, and the note below says the list is missing.
+  This pass did not change it.
+- **At 200% text the account's one action is still below the first screen**, and the account's skeleton still
+  promises a card a running account does not draw; the checkout stand-in, the prose-only 18–19px links, the
+  usage read's limit and the key form's height are the earlier entries, unchanged.
